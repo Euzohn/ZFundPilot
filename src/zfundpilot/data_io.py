@@ -12,11 +12,10 @@ CSV 列（表头，第一行）：
 from __future__ import annotations
 
 import io
-from typing import Union
 
 import pandas as pd
 
-from models import ACTION_BUY, ACTION_SELL, Transaction
+from .models import ACTION_BUY, ACTION_SELL, Transaction
 
 # 标准列顺序
 CSV_COLUMNS = [
@@ -98,12 +97,12 @@ def _clean_str(value):
     return "" if s.lower() == "nan" else s
 
 
-def _parse_action(value) -> Union[str, None]:
+def _parse_action(value) -> str | None:
     s = str(value).strip().lower()
     return _ACTION_MAP.get(s)
 
 
-def parse_transactions_csv(source: Union[bytes, str, io.BytesIO]) -> tuple[list[Transaction], list[str]]:
+def parse_transactions_csv(source: bytes | str | io.BytesIO) -> tuple[list[Transaction], list[str]]:
     """解析交易流水 CSV，返回 (transactions, 错误信息)。"""
     errors: list[str] = []
 

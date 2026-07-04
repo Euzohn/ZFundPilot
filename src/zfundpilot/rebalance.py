@@ -7,13 +7,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
-import analysis
-import config
-from config import RiskThresholds as RT
-from models import Position
-from risk import RiskReport, build_risk_report
+from . import analysis
+from .config import RiskThresholds as RT
+from .models import Position
+from .risk import RiskReport, build_risk_report
 
 
 @dataclass
@@ -29,8 +27,8 @@ def _sector_distribution(positions: list[Position]):
 
 
 def generate_advice(
-    positions: Optional[list[Position]] = None,
-    report: Optional[RiskReport] = None,
+    positions: list[Position] | None = None,
+    report: RiskReport | None = None,
 ) -> list[Advice]:
     """基于持仓结构与风险报告生成结构优化建议列表。"""
     if positions is None:
@@ -121,7 +119,7 @@ def format_advice_text(advice: list[Advice]) -> str:
 
 
 if __name__ == "__main__":
-    import db
+    from . import db
     db.init_db()
     for a in generate_advice():
         print(f"[{a.category}] {a.text}")

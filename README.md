@@ -21,7 +21,13 @@
 ## 安装
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
+```
+
+开发模式（含测试与代码检查）：
+
+```bash
+pip install -e ".[dev]"
 ```
 
 若 akshare 安装失败，可用国内镜像：
@@ -72,19 +78,24 @@ streamlit run app.py
 
 ```text
 ZFundPilot/
-├── app.py            # Streamlit 主界面
-├── config.py         # 全局配置、渠道、风险阈值
-├── models.py         # 数据结构（Fund / Transaction / Position）
-├── db.py             # SQLite 数据库操作
-├── fetch_fund.py     # 净值获取 + 名称/类型/板块自动识别
-├── analysis.py       # 交易流水汇总、收益计算、组合曲线
-├── risk.py           # 风险分析
-├── rebalance.py      # 结构优化建议
-├── data_io.py        # 交易流水 CSV 导入/导出
-├── requirements.txt
-└── data/
-    ├── fund.db          # SQLite 数据库（自动生成）
-    └── sector_map.json  # 基金代码→板块 映射（自动维护）
+├── app.py                # Streamlit 启动入口（薄壳）
+├── pyproject.toml        # 打包配置、依赖、Ruff/Pytest 配置
+├── src/zfundpilot/       # Python 包
+│   ├── __init__.py
+│   ├── app.py            # Streamlit 主界面（7 个页面）
+│   ├── config.py         # 全局配置、渠道、风险阈值
+│   ├── models.py         # 数据结构（Fund / Transaction / Position）
+│   ├── db.py             # SQLite 数据库操作
+│   ├── fetch_fund.py     # 净值获取 + 名称/类型/板块自动识别
+│   ├── analysis.py       # 交易流水汇总、收益计算、组合曲线
+│   ├── risk.py           # 风险分析
+│   ├── rebalance.py      # 结构优化建议
+│   └── data_io.py        # 交易流水 CSV 导入/导出
+├── tests/                # Pytest 测试套件
+├── data/
+│   ├── fund.db           # SQLite 数据库（自动生成）
+│   └── sector_map.json   # 基金代码→板块 映射（自动维护）
+└── frontend/             # React 前端（规划中）
 ```
 
 ## 数据模型

@@ -13,16 +13,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-import analysis
-import config
-import db
-from config import RiskThresholds as RT
-from models import Position
+from . import analysis, config, db
+from .config import RiskThresholds as RT
+from .models import Position
 
 
 @dataclass
@@ -36,8 +33,8 @@ class RiskFlag:
 @dataclass
 class RiskReport:
     """完整风险报告。"""
-    max_drawdown: Optional[float] = None
-    volatility: Optional[float] = None
+    max_drawdown: float | None = None
+    volatility: float | None = None
     max_single_weight: float = 0.0
     max_single_name: str = ""
     hhi: float = 0.0                     # 赫芬达尔指数，衡量集中度
@@ -54,7 +51,7 @@ class RiskReport:
 # ---------------------------------------------------------------------------
 # 基础指标
 # ---------------------------------------------------------------------------
-def calculate_max_drawdown(values: pd.Series) -> Optional[float]:
+def calculate_max_drawdown(values: pd.Series) -> float | None:
     """最大回撤，返回负数（-0.15 表示 -15%）。数据不足返回 None。"""
     if values is None or len(values) < 2:
         return None
@@ -68,7 +65,7 @@ def calculate_max_drawdown(values: pd.Series) -> Optional[float]:
 
 
 def calculate_volatility(values: pd.Series,
-                         annualize: bool = True) -> Optional[float]:
+                         annualize: bool = True) -> float | None:
     """基于日收益率标准差的波动率。数据不足返回 None。"""
     if values is None or len(values) < 3:
         return None
@@ -113,7 +110,7 @@ def structure_weights(positions: list[Position]) -> tuple[float, float, float]:
 # ---------------------------------------------------------------------------
 # 组合回撤/波动（基于组合收益曲线）
 # ---------------------------------------------------------------------------
-def portfolio_drawdown_and_vol() -> tuple[Optional[float], Optional[float]]:
+def portfolio_drawdown_and_vol() -> tuple[float | None, float | None]:
     curve = analysis.build_portfolio_curve()
     if curve.empty:
         return None, None
@@ -187,7 +184,7 @@ def generate_risk_flags(report: RiskReport) -> list[RiskFlag]:
     return flags
 
 
-def build_risk_report(positions: Optional[list[Position]] = None) -> RiskReport:
+def build_risk_report(positions: list[Position] | None = None) -> RiskReport:
     """一站式生成风险报告。"""
     if positions is None:
         positions = analysis.calculate_positions()

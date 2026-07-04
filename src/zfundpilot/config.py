@@ -10,7 +10,15 @@ import os
 # ---------------------------------------------------------------------------
 # 路径配置
 # ---------------------------------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# 开发模式（src-layout）：从包目录上溯三级找到项目根（含 pyproject.toml）
+# 安装模式：找不到 pyproject.toml 时退回 cwd，保证数据可写
+_PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
+_SRC_DIR = os.path.dirname(_PACKAGE_DIR)
+_PROJECT_ROOT = os.path.dirname(_SRC_DIR)
+if not os.path.exists(os.path.join(_PROJECT_ROOT, "pyproject.toml")):
+    _PROJECT_ROOT = os.getcwd()
+
+BASE_DIR = os.environ.get("ZFUNDPILOT_HOME") or _PROJECT_ROOT
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "fund.db")
 

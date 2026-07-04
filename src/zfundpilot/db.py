@@ -13,11 +13,11 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from typing import Iterable, Iterator, Optional
 
-import config
-from models import Fund, NavPoint, Transaction
+from . import config
+from .models import Fund, NavPoint, Transaction
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +172,7 @@ def upsert_fund(fund: Fund) -> None:
         )
 
 
-def get_fund(fund_code: str) -> Optional[Fund]:
+def get_fund(fund_code: str) -> Fund | None:
     with get_connection() as conn:
         row = conn.execute(
             "SELECT * FROM funds WHERE fund_code=?", (fund_code,)
@@ -240,7 +240,7 @@ def delete_all_transactions() -> None:
         conn.execute("DELETE FROM transactions")
 
 
-def get_transactions(fund_code: Optional[str] = None) -> list[Transaction]:
+def get_transactions(fund_code: str | None = None) -> list[Transaction]:
     """返回流水，按日期升序（同日按 id）。可按基金过滤。"""
     with get_connection() as conn:
         if fund_code:
@@ -310,7 +310,7 @@ def upsert_nav_batch(points: Iterable[NavPoint]) -> int:
     return len(rows)
 
 
-def get_latest_nav(fund_code: str) -> Optional[sqlite3.Row]:
+def get_latest_nav(fund_code: str) -> sqlite3.Row | None:
     with get_connection() as conn:
         return conn.execute(
             "SELECT * FROM nav_history WHERE fund_code=? ORDER BY date DESC LIMIT 1",
@@ -326,7 +326,7 @@ def get_nav_history(fund_code: str) -> list[sqlite3.Row]:
         ).fetchall()
 
 
-def get_nav_on_or_after(fund_code: str, date_str: str) -> Optional[sqlite3.Row]:
+def get_nav_on_or_after(fund_code: str, date_str: str) -> sqlite3.Row | None:
     """返回某日期当天或之后最近的一条净值。"""
     with get_connection() as conn:
         return conn.execute(
@@ -336,7 +336,7 @@ def get_nav_on_or_after(fund_code: str, date_str: str) -> Optional[sqlite3.Row]:
         ).fetchone()
 
 
-def get_nav_last_update() -> Optional[str]:
+def get_nav_last_update() -> str | None:
     with get_connection() as conn:
         row = conn.execute("SELECT MAX(date) AS d FROM nav_history").fetchone()
     return row["d"] if row and row["d"] else None

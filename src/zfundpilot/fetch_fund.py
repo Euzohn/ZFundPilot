@@ -21,12 +21,11 @@ import os
 import re
 import time
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional
 
-import config
-import db
-from models import NavPoint
+from . import config, db
+from .models import NavPoint
 
 # 天天基金类型 -> 系统标准资产类型（config.FUND_TYPES）的映射
 _TYPE_KEYWORD_MAP = [
@@ -82,8 +81,8 @@ class FetchResult:
     ok: bool
     written: int = 0
     message: str = ""
-    latest_date: Optional[str] = None
-    latest_nav: Optional[float] = None
+    latest_date: str | None = None
+    latest_nav: float | None = None
 
 
 @dataclass
@@ -223,7 +222,7 @@ def _fetch_via_akshare(fund_code: str) -> list[NavPoint]:
     return points
 
 
-def _match_col(columns, candidates) -> Optional[str]:
+def _match_col(columns, candidates) -> str | None:
     """在 DataFrame 列中模糊匹配候选名。"""
     cols = list(columns)
     for cand in candidates:
@@ -306,7 +305,7 @@ def update_fund_nav(fund_code: str) -> FetchResult:
 
 
 def update_all_holdings_nav(
-    progress: Optional[Callable[[int, int, str], None]] = None,
+    progress: Callable[[int, int, str], None] | None = None,
 ) -> list[FetchResult]:
     """更新所有持仓基金的净值。
 

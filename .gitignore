@@ -2,14 +2,21 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+dist/
+build/
 .venv/
 venv/
 env/
+
+# 测试与检查缓存
+.pytest_cache/
+.ruff_cache/
 
 # 数据库与本地数据
 data/*.db
 data/*.sqlite
 fund.md
+context.md
 
 # 临时文件
 tmp/
@@ -20,3 +27,8 @@ tmp/
 # IDE
 .idea/
 .vscode/
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local

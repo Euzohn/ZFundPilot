@@ -19,14 +19,11 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import Optional
 
 import pandas as pd
 
-import config
-import db
-from models import (ACTION_BUY, ACTION_SELL, Fund, PortfolioSummary,
-                    Position, Transaction)
+from . import db
+from .models import ACTION_BUY, ACTION_SELL, Fund, PortfolioSummary, Position, Transaction
 
 
 # ---------------------------------------------------------------------------
@@ -39,9 +36,9 @@ def _position_key(fund_code: str, channel: str) -> tuple[str, str]:
 def _build_positions_from_transactions(
     transactions: list[Transaction],
     funds: dict[str, Fund],
-) -> "OrderedDict[tuple[str, str], Position]":
+) -> OrderedDict[tuple[str, str], Position]:
     """按 (基金, 渠道) 用均价法汇总流水，返回持仓字典（含已清仓的）。"""
-    positions: "OrderedDict[tuple[str, str], Position]" = OrderedDict()
+    positions: OrderedDict[tuple[str, str], Position] = OrderedDict()
 
     # 流水需按日期升序处理，保证卖出时均价正确
     for tx in sorted(transactions, key=lambda t: (t.date or "", t.id or 0)):
@@ -131,7 +128,7 @@ def calculate_positions(include_closed: bool = False) -> list[Position]:
     return positions
 
 
-def calculate_summary(positions: Optional[list[Position]] = None) -> PortfolioSummary:
+def calculate_summary(positions: list[Position] | None = None) -> PortfolioSummary:
     """组合汇总。含浮动 + 已实现盈亏、累计买卖金额。"""
     if positions is None:
         positions = calculate_positions(include_closed=True)
@@ -282,7 +279,7 @@ def build_portfolio_curve() -> pd.DataFrame:
     return curve
 
 
-def _first_ge(sorted_list: list[str], value: str) -> Optional[int]:
+def _first_ge(sorted_list: list[str], value: str) -> int | None:
     """返回有序列表中第一个 >= value 的索引。"""
     import bisect
     i = bisect.bisect_left(sorted_list, value)

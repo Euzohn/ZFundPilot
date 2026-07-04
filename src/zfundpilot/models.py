@@ -13,8 +13,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict, field
-from typing import Optional
+from dataclasses import asdict, dataclass
 
 # 交易方向
 ACTION_BUY = "buy"
@@ -35,7 +34,7 @@ class Fund:
         return asdict(self)
 
     @classmethod
-    def from_row(cls, row) -> "Fund":
+    def from_row(cls, row) -> Fund:
         data = dict(row)
         known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
         return cls(**{k: v for k, v in data.items() if k in known})
@@ -47,7 +46,7 @@ class NavPoint:
     fund_code: str
     date: str            # YYYY-MM-DD
     nav: float           # 单位净值
-    accumulated_nav: Optional[float] = None
+    accumulated_nav: float | None = None
     source: str = "akshare"
 
 
@@ -62,15 +61,15 @@ class Transaction:
     fund_code: str
     action: str                       # buy / sell
     date: str                         # YYYY-MM-DD
-    amount: Optional[float] = None    # 成交金额（正数）
-    shares: Optional[float] = None    # 成交份额（正数）
-    nav: Optional[float] = None       # 成交净值
+    amount: float | None = None    # 成交金额（正数）
+    shares: float | None = None    # 成交份额（正数）
+    nav: float | None = None       # 成交净值
     fee: float = 0.0                  # 手续费
     channel: str = ""                 # 购买渠道
     note: str = ""
-    id: Optional[int] = None
+    id: int | None = None
 
-    def normalize(self) -> "Transaction":
+    def normalize(self) -> Transaction:
         """根据已知字段补全 amount / shares / nav。就地修改并返回自身。"""
         a, s, n = self.amount, self.shares, self.nav
         if a and s and not n:
@@ -92,7 +91,7 @@ class Transaction:
         return asdict(self)
 
     @classmethod
-    def from_row(cls, row) -> "Transaction":
+    def from_row(cls, row) -> Transaction:
         data = dict(row)
         known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
         return cls(**{k: v for k, v in data.items() if k in known})
@@ -108,13 +107,13 @@ class Position:
     channel: str = ""                 # 购买渠道
     held_shares: float = 0.0          # 当前持有份额
     total_cost: float = 0.0           # 当前持仓成本（已扣卖出结转）
-    avg_cost_nav: Optional[float] = None  # 持仓均价
-    latest_nav: Optional[float] = None
-    latest_date: Optional[str] = None
+    avg_cost_nav: float | None = None  # 持仓均价
+    latest_nav: float | None = None
+    latest_date: str | None = None
     market_value: float = 0.0         # 当前市值
     unrealized_pnl: float = 0.0       # 浮动盈亏
     realized_pnl: float = 0.0         # 已实现盈亏（历次卖出累计）
-    return_rate: Optional[float] = None   # 浮动收益率
+    return_rate: float | None = None   # 浮动收益率
     weight: float = 0.0               # 当前市值占组合比例
     buy_count: int = 0
     sell_count: int = 0
@@ -150,7 +149,7 @@ class PortfolioSummary:
     holding_count: int = 0            # 当前持仓基金数
     max_single_weight: float = 0.0
     max_single_name: str = ""
-    as_of_date: Optional[str] = None
+    as_of_date: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)

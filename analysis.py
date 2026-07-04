@@ -1,0 +1,303 @@
+"""收益计算模块（交易流水驱动）。
+
+持仓由 transactions 流水按 (基金代码 + 渠道) 汇总计算，
+采用「移动加权平均成本法」：
+
+  买入：held_shares += 份额；total_cost += 金额(+手续费)
+        avg_cost_nav = total_cost / held_shares
+  卖出：按当前均价结转成本
+        结转成本 = 卖出份额 * avg_cost_nav
+        已实现盈亏 += 卖出金额 - 结转成本 - 手续费
+        held_shares -= 卖出份额；total_cost -= 结转成本
+
+  浮动盈亏 = 当前市值 - 当前持仓成本
+  浮动收益率 = 当前市值 / 当前持仓成本 - 1
+
+同一只基金在不同渠道（支付宝/理财通等）视为独立持仓，成本分别计算。
+"""
+
+from __future__ import annotations
+
+from collections import OrderedDict
+from typing import Optional
+
+import pandas as pd
+
+import config
+import db
+from models import (ACTION_BUY, ACTION_SELL, Fund, PortfolioSummary,
+                    Position, Transaction)
+
+
+# ---------------------------------------------------------------------------
+# 流水 -> 持仓
+# ---------------------------------------------------------------------------
+def _position_key(fund_code: str, channel: str) -> tuple[str, str]:
+    return (fund_code, channel or "")
+
+
+def _build_positions_from_transactions(
+    transactions: list[Transaction],
+    funds: dict[str, Fund],
+) -> "OrderedDict[tuple[str, str], Position]":
+    """按 (基金, 渠道) 用均价法汇总流水，返回持仓字典（含已清仓的）。"""
+    positions: "OrderedDict[tuple[str, str], Position]" = OrderedDict()
+
+    # 流水需按日期升序处理，保证卖出时均价正确
+    for tx in sorted(transactions, key=lambda t: (t.date or "", t.id or 0)):
+        tx.normalize()
+        if not tx.amount or not tx.shares:
+            continue
+        key = _position_key(tx.fund_code, tx.channel)
+        if key not in positions:
+            fund = funds.get(tx.fund_code)
+            positions[key] = Position(
+                fund_code=tx.fund_code,
+                fund_name=fund.fund_name if fund else tx.fund_code,
+                fund_type=fund.fund_type if fund else "其它",
+                sector=fund.sector if fund else "",
+                channel=tx.channel or "",
+            )
+        pos = positions[key]
+
+        if tx.action == ACTION_BUY:
+            pos.held_shares += tx.shares
+            pos.total_cost += tx.amount + (tx.fee or 0.0)
+            pos.buy_count += 1
+        elif tx.action == ACTION_SELL:
+            # 结转成本按当前均价
+            avg = (pos.total_cost / pos.held_shares) if pos.held_shares > 1e-9 else 0.0
+            sell_shares = min(tx.shares, pos.held_shares)  # 防止卖超
+            cost_out = sell_shares * avg
+            pos.realized_pnl += tx.amount - cost_out - (tx.fee or 0.0)
+            pos.held_shares -= sell_shares
+            pos.total_cost -= cost_out
+            pos.sell_count += 1
+            if pos.held_shares < 1e-6:
+                pos.held_shares = 0.0
+                pos.total_cost = 0.0
+
+    # 计算均价
+    for pos in positions.values():
+        pos.avg_cost_nav = (pos.total_cost / pos.held_shares
+                            if pos.held_shares > 1e-9 else None)
+    return positions
+
+
+def _apply_market_value(pos: Position) -> None:
+    """填充最新净值、市值、浮动盈亏、收益率。"""
+    latest = db.get_latest_nav(pos.fund_code)
+    if latest:
+        pos.latest_nav = float(latest["nav"])
+        pos.latest_date = latest["date"]
+
+    if pos.held_shares > 0 and pos.latest_nav is not None:
+        pos.market_value = pos.held_shares * pos.latest_nav
+    else:
+        # 无净值时用成本兜底
+        pos.market_value = pos.total_cost
+
+    pos.unrealized_pnl = pos.market_value - pos.total_cost
+    pos.return_rate = (pos.market_value / pos.total_cost - 1
+                       if pos.total_cost > 1e-9 else None)
+
+
+# ---------------------------------------------------------------------------
+# 对外接口
+# ---------------------------------------------------------------------------
+def calculate_positions(include_closed: bool = False) -> list[Position]:
+    """返回当前持仓列表（按市值降序），默认只含未清仓的。
+
+    include_closed=True 时也返回已清仓持仓（用于查看历史已实现收益）。
+    """
+    transactions = db.get_transactions()
+    funds = {f.fund_code: f for f in db.get_funds()}
+    pos_map = _build_positions_from_transactions(transactions, funds)
+
+    positions = list(pos_map.values())
+    for pos in positions:
+        _apply_market_value(pos)
+
+    if not include_closed:
+        positions = [p for p in positions if p.is_open]
+
+    # 市值占比（仅对持仓中的）
+    total_value = sum(p.market_value for p in positions if p.is_open)
+    if total_value > 0:
+        for p in positions:
+            p.weight = p.market_value / total_value if p.is_open else 0.0
+
+    positions.sort(key=lambda p: p.market_value, reverse=True)
+    return positions
+
+
+def calculate_summary(positions: Optional[list[Position]] = None) -> PortfolioSummary:
+    """组合汇总。含浮动 + 已实现盈亏、累计买卖金额。"""
+    if positions is None:
+        positions = calculate_positions(include_closed=True)
+
+    open_positions = [p for p in positions if p.is_open]
+
+    total_cost = sum(p.total_cost for p in open_positions)
+    total_value = sum(p.market_value for p in open_positions)
+    unrealized = sum(p.unrealized_pnl for p in open_positions)
+    realized = sum(p.realized_pnl for p in positions)  # 含已清仓的历史收益
+
+    # 累计买入/卖出金额，直接从流水统计更准
+    total_buy = total_sell = 0.0
+    for tx in db.get_transactions():
+        tx.normalize()
+        if not tx.amount:
+            continue
+        if tx.action == ACTION_BUY:
+            total_buy += tx.amount
+        elif tx.action == ACTION_SELL:
+            total_sell += tx.amount
+
+    summary = PortfolioSummary(
+        total_cost=total_cost,
+        total_value=total_value,
+        unrealized_pnl=unrealized,
+        realized_pnl=realized,
+        total_pnl=unrealized + realized,
+        total_return=(total_value / total_cost - 1) if total_cost > 1e-9 else 0.0,
+        total_buy=total_buy,
+        total_sell=total_sell,
+        holding_count=len(open_positions),
+    )
+
+    if open_positions:
+        top = max(open_positions, key=lambda p: p.weight)
+        summary.max_single_weight = top.weight
+        summary.max_single_name = top.fund_name
+        summary.as_of_date = max(
+            (p.latest_date for p in open_positions if p.latest_date), default=None)
+    return summary
+
+
+# ---------------------------------------------------------------------------
+# 分布统计（按基金聚合，跨渠道合并）
+# ---------------------------------------------------------------------------
+def distribution_by(positions: list[Position], field: str) -> pd.DataFrame:
+    """按指定字段（fund_type / sector / channel）聚合市值与占比。"""
+    open_positions = [p for p in positions if p.is_open]
+    if not open_positions:
+        return pd.DataFrame(columns=[field, "market_value", "weight"])
+
+    rows = [{field: getattr(p, field) or "其它", "market_value": p.market_value}
+            for p in open_positions]
+    df = pd.DataFrame(rows)
+    grouped = (df.groupby(field, as_index=False)["market_value"].sum()
+               .sort_values("market_value", ascending=False))
+    total = grouped["market_value"].sum()
+    grouped["weight"] = grouped["market_value"] / total if total > 0 else 0.0
+    return grouped.reset_index(drop=True)
+
+
+def positions_to_dataframe(positions: list[Position]) -> pd.DataFrame:
+    if not positions:
+        return pd.DataFrame()
+    return pd.DataFrame([p.to_dict() for p in positions])
+
+
+# ---------------------------------------------------------------------------
+# 组合历史收益曲线
+# ---------------------------------------------------------------------------
+def build_portfolio_curve() -> pd.DataFrame:
+    """基于流水与净值历史，还原组合每日市值曲线。
+
+    做法：对每只(基金,渠道)持仓，按流水累积每日持有份额，
+    再乘以当日净值得市值，最后跨持仓求和。
+    返回列：date, total_value, invested_cost, total_return
+    起点取最早一笔交易日期。
+    """
+    transactions = db.get_transactions()
+    if not transactions:
+        return pd.DataFrame(columns=["date", "total_value", "invested_cost", "total_return"])
+
+    for t in transactions:
+        t.normalize()
+    tx_sorted = sorted(transactions, key=lambda t: (t.date or "", t.id or 0))
+    start_date = tx_sorted[0].date
+
+    codes = sorted({t.fund_code for t in transactions})
+
+    # 收集所有净值日期作为时间轴
+    nav_map: dict[str, pd.Series] = {}
+    all_dates: set[str] = set()
+    for code in codes:
+        rows = db.get_nav_history(code)
+        if not rows:
+            continue
+        s = pd.Series({r["date"]: float(r["nav"]) for r in rows})
+        nav_map[code] = s
+        all_dates.update(s.index)
+
+    if not all_dates:
+        return pd.DataFrame(columns=["date", "total_value", "invested_cost", "total_return"])
+
+    timeline = sorted(d for d in all_dates if d >= start_date)
+    if not timeline:
+        return pd.DataFrame(columns=["date", "total_value", "invested_cost", "total_return"])
+
+    # 每只基金：按日期累积净买入份额；同时累积净投入成本
+    total_value = pd.Series(0.0, index=timeline)
+    invested = pd.Series(0.0, index=timeline)
+
+    # 预处理每个基金的份额/成本变动事件
+    for code in codes:
+        if code not in nav_map:
+            continue
+        navs = nav_map[code].reindex(timeline).ffill()
+
+        # 构造每日累计份额
+        share_delta = pd.Series(0.0, index=timeline)
+        cost_delta = pd.Series(0.0, index=timeline)
+        for t in tx_sorted:
+            if t.fund_code != code or not t.shares:
+                continue
+            d = t.date if t.date >= start_date else start_date
+            # 找到时间轴上 >= d 的第一个点
+            idx = _first_ge(timeline, d)
+            if idx is None:
+                continue
+            sign = 1.0 if t.action == ACTION_BUY else -1.0
+            share_delta.iloc[idx] += sign * t.shares
+            cost_delta.iloc[idx] += sign * t.amount
+
+        held = share_delta.cumsum().clip(lower=0)
+        invested_code = cost_delta.cumsum().clip(lower=0)
+        total_value = total_value.add(held * navs, fill_value=0.0)
+        invested = invested.add(invested_code, fill_value=0.0)
+
+    curve = pd.DataFrame({
+        "date": timeline,
+        "total_value": total_value.values,
+        "invested_cost": invested.values,
+    })
+    curve = curve[curve["invested_cost"] > 0].reset_index(drop=True)
+    if curve.empty:
+        return curve
+    curve["total_return"] = curve["total_value"] / curve["invested_cost"] - 1
+    return curve
+
+
+def _first_ge(sorted_list: list[str], value: str) -> Optional[int]:
+    """返回有序列表中第一个 >= value 的索引。"""
+    import bisect
+    i = bisect.bisect_left(sorted_list, value)
+    return i if i < len(sorted_list) else None
+
+
+if __name__ == "__main__":
+    db.init_db()
+    positions = calculate_positions(include_closed=True)
+    summary = calculate_summary(positions)
+    print(f"持仓 {summary.holding_count} 个  成本 {summary.total_cost:.2f}  "
+          f"市值 {summary.total_value:.2f}")
+    print(f"浮动盈亏 {summary.unrealized_pnl:.2f}  已实现 {summary.realized_pnl:.2f}  "
+          f"总盈亏 {summary.total_pnl:.2f}")
+    for p in positions:
+        tag = "" if p.is_open else "[已清仓]"
+        print(f"  {p.fund_name[:18]:20} {p.channel:6} 份额{p.held_shares:.1f} "
+              f"浮动{p.unrealized_pnl:.1f} 已实现{p.realized_pnl:.1f} {tag}")

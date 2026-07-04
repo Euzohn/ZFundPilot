@@ -1,0 +1,373 @@
+"""SQLite 数据库操作层（交易流水驱动）。
+
+表结构：
+- funds               基金基础信息（代码/名称/类型/板块）
+- transactions        买入/卖出流水
+- nav_history         基金净值历史
+- portfolio_snapshots 组合每日快照
+
+设计：持仓不再单独存表，而是由 transactions 流水汇总计算（见 analysis.py）。
+兼容旧版：若检测到旧 holdings 表，自动迁移为一条买入流水。
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from contextlib import contextmanager
+from typing import Iterable, Iterator, Optional
+
+import config
+from models import Fund, NavPoint, Transaction
+
+
+# ---------------------------------------------------------------------------
+# 连接管理
+# ---------------------------------------------------------------------------
+@contextmanager
+def get_connection() -> Iterator[sqlite3.Connection]:
+    conn = sqlite3.connect(config.DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 初始化 & 迁移
+# ---------------------------------------------------------------------------
+def init_db() -> None:
+    """创建所有表（若不存在），并迁移旧数据。幂等。"""
+    with get_connection() as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS funds (
+                fund_code  TEXT PRIMARY KEY,
+                fund_name  TEXT DEFAULT '',
+                fund_type  TEXT DEFAULT '其它',
+                sector     TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now','localtime')),
+                updated_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS transactions (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                fund_code  TEXT NOT NULL,
+                action     TEXT NOT NULL CHECK(action IN ('buy','sell')),
+                date       TEXT NOT NULL,
+                amount     REAL NOT NULL,
+                shares     REAL NOT NULL,
+                nav        REAL,
+                fee        REAL DEFAULT 0,
+                channel    TEXT DEFAULT '',
+                note       TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS nav_history (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                fund_code       TEXT NOT NULL,
+                date            TEXT NOT NULL,
+                nav             REAL NOT NULL,
+                accumulated_nav REAL,
+                source          TEXT DEFAULT 'akshare',
+                created_at      TEXT DEFAULT (datetime('now','localtime')),
+                UNIQUE(fund_code, date)
+            );
+
+            CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                date         TEXT NOT NULL UNIQUE,
+                total_cost   REAL NOT NULL,
+                total_value  REAL NOT NULL,
+                total_profit REAL NOT NULL,
+                total_return REAL NOT NULL,
+                created_at   TEXT DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_tx_code ON transactions(fund_code);
+            CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
+            CREATE INDEX IF NOT EXISTS idx_nav_code_date
+                ON nav_history(fund_code, date);
+            """
+        )
+    _migrate_add_columns()
+    _migrate_legacy_holdings()
+
+
+def _migrate_add_columns() -> None:
+    """为已存在的旧表补充新增列（如 channel）。幂等。"""
+    with get_connection() as conn:
+        cols = {r["name"] for r in
+                conn.execute("PRAGMA table_info(transactions)").fetchall()}
+        if "channel" not in cols:
+            conn.execute(
+                "ALTER TABLE transactions ADD COLUMN channel TEXT DEFAULT ''"
+            )
+
+
+def _migrate_legacy_holdings() -> None:
+    """把旧版 holdings 表迁移为 funds + 一条买入流水。仅执行一次。"""
+    with get_connection() as conn:
+        has_old = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='holdings'"
+        ).fetchone()
+        if not has_old:
+            return
+        # 已迁移标记：若已有交易流水，跳过
+        tx_count = conn.execute("SELECT COUNT(*) c FROM transactions").fetchone()["c"]
+        rows = conn.execute("SELECT * FROM holdings").fetchall()
+        if tx_count > 0 or not rows:
+            conn.execute("ALTER TABLE holdings RENAME TO holdings_legacy_backup")
+            return
+
+        for r in rows:
+            d = dict(r)
+            code = d.get("fund_code", "").strip()
+            if not code:
+                continue
+            amount = d.get("buy_amount") or 0.0
+            cost_nav = d.get("cost_nav")
+            shares = d.get("shares")
+            if not shares:
+                shares = amount / cost_nav if cost_nav else amount  # 无净值时份额=金额兜底
+            conn.execute(
+                "INSERT OR IGNORE INTO funds(fund_code,fund_name,fund_type,sector) "
+                "VALUES(?,?,?,?)",
+                (code, d.get("fund_name") or code, d.get("fund_type") or "其它",
+                 d.get("sector") or ""),
+            )
+            conn.execute(
+                "INSERT INTO transactions(fund_code,action,date,amount,shares,nav,note) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (code, "buy", d.get("buy_date") or "2024-01-01",
+                 amount, shares, cost_nav, "自旧版持仓迁移"),
+            )
+        conn.execute("ALTER TABLE holdings RENAME TO holdings_legacy_backup")
+
+
+# ---------------------------------------------------------------------------
+# funds 基础信息
+# ---------------------------------------------------------------------------
+def upsert_fund(fund: Fund) -> None:
+    """新增或更新基金基础信息。"""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO funds(fund_code, fund_name, fund_type, sector)
+            VALUES(?,?,?,?)
+            ON CONFLICT(fund_code) DO UPDATE SET
+                fund_name=excluded.fund_name,
+                fund_type=excluded.fund_type,
+                sector=excluded.sector,
+                updated_at=datetime('now','localtime')
+            """,
+            (fund.fund_code.strip(), fund.fund_name.strip(),
+             fund.fund_type, fund.sector),
+        )
+
+
+def get_fund(fund_code: str) -> Optional[Fund]:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM funds WHERE fund_code=?", (fund_code,)
+        ).fetchone()
+    return Fund.from_row(row) if row else None
+
+
+def get_funds() -> list[Fund]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM funds ORDER BY fund_code").fetchall()
+    return [Fund.from_row(r) for r in rows]
+
+
+def update_fund_sector(fund_code: str, sector: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE funds SET sector=?, updated_at=datetime('now','localtime') "
+            "WHERE fund_code=?",
+            (sector, fund_code),
+        )
+
+
+# ---------------------------------------------------------------------------
+# transactions 流水 CRUD
+# ---------------------------------------------------------------------------
+def add_transaction(tx: Transaction) -> int:
+    """新增一笔流水，返回 id。会自动 normalize 补全字段。"""
+    tx.normalize()
+    with get_connection() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note)
+            VALUES(?,?,?,?,?,?,?,?,?)
+            """,
+            (tx.fund_code.strip(), tx.action, tx.date, tx.amount, tx.shares,
+             tx.nav, tx.fee, tx.channel, tx.note),
+        )
+        return int(cur.lastrowid)
+
+
+def update_transaction(tx: Transaction) -> None:
+    if tx.id is None:
+        raise ValueError("update_transaction 需要 tx.id")
+    tx.normalize()
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE transactions SET
+                fund_code=?, action=?, date=?, amount=?, shares=?, nav=?,
+                fee=?, channel=?, note=?
+            WHERE id=?
+            """,
+            (tx.fund_code.strip(), tx.action, tx.date, tx.amount, tx.shares,
+             tx.nav, tx.fee, tx.channel, tx.note, tx.id),
+        )
+
+
+def delete_transaction(tx_id: int) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM transactions WHERE id=?", (tx_id,))
+
+
+def delete_all_transactions() -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM transactions")
+
+
+def get_transactions(fund_code: Optional[str] = None) -> list[Transaction]:
+    """返回流水，按日期升序（同日按 id）。可按基金过滤。"""
+    with get_connection() as conn:
+        if fund_code:
+            rows = conn.execute(
+                "SELECT * FROM transactions WHERE fund_code=? ORDER BY date ASC, id ASC",
+                (fund_code,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM transactions ORDER BY date ASC, id ASC"
+            ).fetchall()
+    return [Transaction.from_row(r) for r in rows]
+
+
+def get_transactions_desc() -> list[Transaction]:
+    """返回流水，按日期降序（最新在前），用于展示。"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM transactions ORDER BY date DESC, id DESC"
+        ).fetchall()
+    return [Transaction.from_row(r) for r in rows]
+
+
+def get_distinct_fund_codes() -> list[str]:
+    """返回有流水记录的所有基金代码。"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT fund_code FROM transactions WHERE fund_code != ''"
+        ).fetchall()
+    return [r["fund_code"] for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# 净值写入 / 查询
+# ---------------------------------------------------------------------------
+def upsert_nav(point: NavPoint) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO nav_history(fund_code,date,nav,accumulated_nav,source)
+            VALUES(?,?,?,?,?)
+            ON CONFLICT(fund_code,date) DO UPDATE SET
+                nav=excluded.nav, accumulated_nav=excluded.accumulated_nav,
+                source=excluded.source
+            """,
+            (point.fund_code, point.date, point.nav, point.accumulated_nav,
+             point.source),
+        )
+
+
+def upsert_nav_batch(points: Iterable[NavPoint]) -> int:
+    rows = [(p.fund_code, p.date, p.nav, p.accumulated_nav, p.source)
+            for p in points]
+    if not rows:
+        return 0
+    with get_connection() as conn:
+        conn.executemany(
+            """
+            INSERT INTO nav_history(fund_code,date,nav,accumulated_nav,source)
+            VALUES(?,?,?,?,?)
+            ON CONFLICT(fund_code,date) DO UPDATE SET
+                nav=excluded.nav, accumulated_nav=excluded.accumulated_nav,
+                source=excluded.source
+            """,
+            rows,
+        )
+    return len(rows)
+
+
+def get_latest_nav(fund_code: str) -> Optional[sqlite3.Row]:
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM nav_history WHERE fund_code=? ORDER BY date DESC LIMIT 1",
+            (fund_code,),
+        ).fetchone()
+
+
+def get_nav_history(fund_code: str) -> list[sqlite3.Row]:
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM nav_history WHERE fund_code=? ORDER BY date ASC",
+            (fund_code,),
+        ).fetchall()
+
+
+def get_nav_on_or_after(fund_code: str, date_str: str) -> Optional[sqlite3.Row]:
+    """返回某日期当天或之后最近的一条净值。"""
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM nav_history WHERE fund_code=? AND date>=? "
+            "ORDER BY date ASC LIMIT 1",
+            (fund_code, date_str),
+        ).fetchone()
+
+
+def get_nav_last_update() -> Optional[str]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT MAX(date) AS d FROM nav_history").fetchone()
+    return row["d"] if row and row["d"] else None
+
+
+# ---------------------------------------------------------------------------
+# 组合快照
+# ---------------------------------------------------------------------------
+def save_snapshot(date_str: str, total_cost: float, total_value: float,
+                  total_profit: float, total_return: float) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO portfolio_snapshots(date,total_cost,total_value,
+                total_profit,total_return)
+            VALUES(?,?,?,?,?)
+            ON CONFLICT(date) DO UPDATE SET
+                total_cost=excluded.total_cost, total_value=excluded.total_value,
+                total_profit=excluded.total_profit, total_return=excluded.total_return
+            """,
+            (date_str, total_cost, total_value, total_profit, total_return),
+        )
+
+
+def get_snapshots() -> list[sqlite3.Row]:
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM portfolio_snapshots ORDER BY date ASC"
+        ).fetchall()
+
+
+if __name__ == "__main__":
+    init_db()
+    print(f"数据库已初始化：{config.DB_PATH}")

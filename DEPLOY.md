@@ -97,7 +97,27 @@ uvicorn zfundpilot.api:app --port 8000
 
 ## 3. Docker 部署（服务器推荐）
 
-### 3.1 克隆 + 配置密码
+### 3.1 配置 Docker 镜像加速（国内服务器必做）
+
+国内服务器直连 Docker Hub 会超时，需先配镜像加速器：
+
+```bash
+mkdir -p /etc/docker
+cat > /etc/docker/daemon.json << 'EOF'
+{
+  "registry-mirrors": [
+    "https://mirror.ccs.tencentyun.com",
+    "https://docker.m.daocloud.io",
+    "https://hub-mirror.c.163.com"
+  ]
+}
+EOF
+sudo systemctl daemon-reload && sudo systemctl restart docker
+```
+
+> 阿里云 ECS 也可用专属加速器：登录 [容器镜像服务控制台](https://cr.console.aliyun.com/cn-hangzhou/instances/mirrors) 获取个人加速器地址。
+
+### 3.2 克隆 + 配置密码
 
 ```bash
 git clone https://github.com/Euzohn/ZFundPilot.git
@@ -106,27 +126,31 @@ cp .env.example .env
 vi .env                      # 填入你的密码和密钥
 ```
 
-### 3.2 构建并启动
+### 3.3 构建并启动
 
 ```bash
 docker compose up -d --build
 ```
 
-浏览器打开 `http://服务器IP:8000` → 输入密码 → 进入系统。
+浏览器打开 `http://服务器IP:8080` → 输入密码 → 进入系统。
 
 容器会自动重启（`restart: always`），服务器重启后无需手动干预。
 
-### 3.3 防火墙
+> Dockerfile 已内置 npm（npmmirror）和 pip（阿里云）国内镜像，构建速度有保障。
+
+### 3.4 防火墙
 
 ```bash
 # Ubuntu / Debian
-sudo ufw allow 8000
+sudo ufw allow 8080
 
 # CentOS / RHEL
-sudo firewall-cmd --permanent --add-port=8000/tcp && sudo firewall-cmd --reload
+sudo firewall-cmd --permanent --add-port=8080/tcp && sudo firewall-cmd --reload
 ```
 
-### 3.4 日常运维
+> 阿里云 ECS 还需在安全组规则中放行 8080 端口（TCP）。
+
+### 3.5 日常运维
 
 | 操作 | 命令 |
 |------|------|
@@ -135,7 +159,7 @@ sudo firewall-cmd --permanent --add-port=8000/tcp && sudo firewall-cmd --reload
 | 更新代码 | `git pull && docker compose up -d --build` |
 | 备份数据 | `cp data/fund.db data/fund.db.bak` |
 
-### 3.5 环境变量
+### 3.6 环境变量
 
 | 变量 | 必填 | 说明 |
 |------|------|------|

@@ -165,3 +165,50 @@ AUTH_ENABLED = bool(AUTH_PASSWORD_HASH)
 
 # token 有效期（秒），默认 7 天
 AUTH_TOKEN_MAX_AGE = 7 * 24 * 3600
+
+
+# ---------------------------------------------------------------------------
+# AI 投顾配置
+# ---------------------------------------------------------------------------
+# AI 配置存储在 data/ai_config.json 中。
+# 支持 OpenAI 兼容 API（OpenAI / 智谱 / Kimi / 通义千问 / DeepSeek 等）。
+# 联网搜索根据 base_url 自动识别提供商格式。
+
+AI_CONFIG_PATH = os.path.join(DATA_DIR, "ai_config.json")
+
+
+def _load_ai_config() -> dict:
+    if not os.path.exists(AI_CONFIG_PATH):
+        return {}
+    try:
+        with open(AI_CONFIG_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_ai_config(data: dict) -> None:
+    with open(AI_CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def update_ai_config(base_url: str, api_key: str, model: str, web_search: bool) -> None:
+    """更新 AI 配置（内存 + 持久化）。"""
+    global AI_BASE_URL, AI_API_KEY, AI_MODEL, AI_WEB_SEARCH
+    AI_BASE_URL = base_url
+    AI_API_KEY = api_key
+    AI_MODEL = model
+    AI_WEB_SEARCH = web_search
+    _save_ai_config({
+        "base_url": base_url,
+        "api_key": api_key,
+        "model": model,
+        "web_search": web_search,
+    })
+
+
+_ai_config = _load_ai_config()
+AI_BASE_URL: str = _ai_config.get("base_url", "")
+AI_API_KEY: str = _ai_config.get("api_key", "")
+AI_MODEL: str = _ai_config.get("model", "")
+AI_WEB_SEARCH: bool = _ai_config.get("web_search", True)

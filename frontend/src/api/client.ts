@@ -51,6 +51,63 @@ export const api = {
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     }),
 
+  // AI Config
+  getAIConfig: () =>
+    request<{ base_url: string; model: string; has_key: boolean; web_search: boolean }>("/settings/ai"),
+  updateAIConfig: (base_url: string, api_key: string, model: string, web_search: boolean) =>
+    request<{ ok: boolean }>("/settings/ai", {
+      method: "PUT",
+      body: JSON.stringify({ base_url, api_key, model, web_search }),
+    }),
+
+  // AI Chat (SSE streaming — bypasses standard request() wrapper)
+  streamChat: async (
+    messages: { role: string; content: string }[],
+    onChunk: (data: { content?: string; status?: string; error?: string; done?: boolean }) => void,
+  ) => {
+    const token = getToken()
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    if (token) headers["Authorization"] = `Bearer ${token}`
+
+    const res = await fetch(`${BASE}/ai/chat`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ messages }),
+    })
+
+    if (res.status === 401) {
+      clearToken()
+      window.location.reload()
+      throw new Error("未登录或登录已过期")
+    }
+    if (!res.ok) {
+      throw new Error(await res.text().catch(() => res.statusText))
+    }
+
+    const reader = res.body!.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ""
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      const lines = buffer.split("\n")
+      buffer = lines.pop() || ""
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const data = line.slice(6).trim()
+          if (data === "[DONE]") return
+          try {
+            onChunk(JSON.parse(data))
+          } catch { /* skip malformed */ }
+        }
+      }
+    }
+  },
+
   // Summary
   getSummary: () => request<PortfolioSummary>("/summary"),
   getDistribution: (field: string) =>

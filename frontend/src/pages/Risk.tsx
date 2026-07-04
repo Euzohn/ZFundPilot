@@ -3,9 +3,14 @@ import { api } from "@/api/client"
 import type { RiskReport, Advice } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { pct, pnlColor } from "@/lib/format"
-import { ShieldAlert, AlertTriangle, Info, Lightbulb } from "lucide-react"
+import { ShieldAlert, AlertTriangle, Info, Lightbulb, Bot, Send, Search } from "lucide-react"
 import type { ReactNode } from "react"
+import { useRef, useEffect, useState } from "react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 function MetricCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
@@ -96,6 +101,184 @@ export default function Risk() {
           )}
         </CardContent>
       </Card>
+
+      {/* AI 投顾对话 */}
+      <AIChatPanel />
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// AI 对话面板
+// ---------------------------------------------------------------------------
+interface ChatMessage {
+  role: "user" | "assistant"
+  content: string
+}
+
+const QUICK_PROMPTS = [
+  "分析当前组合的风险",
+  "给出调仓建议",
+  "科技板块最近怎么样？",
+]
+
+function AIChatPanel() {
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState("")
+  const [streaming, setStreaming] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const { data: aiConfig } = useApi(() => api.getAIConfig(), [])
+  const chatEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages, searching])
+
+  const handleSend = async (text?: string) => {
+    const content = (text ?? input).trim()
+    if (!content || streaming) return
+
+    const userMsg: ChatMessage = { role: "user", content }
+    const newMessages = [...messages, userMsg]
+    setMessages([...newMessages, { role: "assistant", content: "" }])
+    setInput("")
+    setStreaming(true)
+    setSearching(false)
+
+    const aiIndex = newMessages.length
+
+    try {
+      await api.streamChat(
+        newMessages.map((m) => ({ role: m.role, content: m.content })),
+        (chunk) => {
+          if (chunk.status === "searching") {
+            setSearching(true)
+          } else if (chunk.content) {
+            setSearching(false)
+            setMessages((prev) => {
+              const updated = [...prev]
+              updated[aiIndex] = { role: "assistant", content: updated[aiIndex].content + chunk.content }
+              return updated
+            })
+          } else if (chunk.error) {
+            setSearching(false)
+            setMessages((prev) => {
+              const updated = [...prev]
+              updated[aiIndex] = { role: "assistant", content: `❌ ${chunk.error}` }
+              return updated
+            })
+          }
+        },
+      )
+    } catch (e) {
+      setMessages((prev) => {
+        const updated = [...prev]
+        updated[aiIndex] = { role: "assistant", content: `❌ 请求失败: ${e}` }
+        return updated
+      })
+    } finally {
+      setStreaming(false)
+      setSearching(false)
+    }
+  }
+
+  const configured = aiConfig?.base_url && aiConfig?.model
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Bot className="h-5 w-5 text-blue-500" />
+          AI 投顾对话
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          基于实时资讯 + 当前持仓数据，给出风险分析与调仓建议
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!configured ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            请先到「设置」页面配置 AI 模型 API
+          </p>
+        ) : (
+          <>
+            {/* 消息列表 */}
+            <div className="max-h-[400px] overflow-y-auto space-y-3 rounded-lg border bg-slate-50/50 p-4">
+              {messages.length === 0 && (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  开始对话吧！AI 会先搜索最新市场资讯，再结合你的持仓给出建议。
+                </p>
+              )}
+              {messages.map((msg, i) => (
+                <div key={i} className={msg.role === "user" ? "text-right" : "text-left"}>
+                  <div
+                    className={
+                      msg.role === "user"
+                        ? "inline-block max-w-[85%] rounded-lg bg-blue-600 px-3 py-2 text-sm text-white"
+                        : "inline-block max-w-[85%] rounded-lg bg-white border px-3 py-2 text-sm"
+                    }
+                  >
+                    {msg.role === "assistant" ? (
+                      <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-headings:mb-1 prose-headings:mt-2">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content || "..."}</ReactMarkdown>
+                      </div>
+                    ) : (
+                      msg.content
+                    )}
+                  </div>
+                </div>
+              ))}
+              {searching && (
+                <div className="text-left">
+                  <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-700">
+                    <Search className="h-3.5 w-3.5 animate-pulse" />
+                    正在搜索最新资讯...
+                  </span>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* 快捷提示 */}
+            <div className="flex flex-wrap gap-2">
+              {QUICK_PROMPTS.map((prompt) => (
+                <button
+                  key={prompt}
+                  onClick={() => !streaming && handleSend(prompt)}
+                  disabled={streaming}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+
+            {/* 输入区 */}
+            <div className="flex gap-2">
+              <Input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSend()
+                  }
+                }}
+                placeholder="输入问题，如「我的科技基金占比太高怎么办？」"
+                disabled={streaming}
+              />
+              <Button
+                onClick={() => handleSend()}
+                disabled={streaming || !input.trim()}
+                size="icon"
+                className="shrink-0"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }

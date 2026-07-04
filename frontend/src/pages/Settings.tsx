@@ -8,7 +8,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
-import { ChevronUp, ChevronDown, Plus, Trash2, RotateCcw, Save, KeyRound } from "lucide-react"
+import { ChevronUp, ChevronDown, Plus, Trash2, RotateCcw, Save, KeyRound, Bot } from "lucide-react"
+
+function detectProvider(baseUrl: string): string {
+  const url = baseUrl.toLowerCase()
+  if (url.includes("moonshot") || url.includes("kimi")) return "Kimi (月之暗面) → $web_search"
+  if (url.includes("bigmodel") || url.includes("zhipu") || url.includes("glm")) return "智谱 GLM → web_search"
+  if (url.includes("dashscope") || url.includes("aliyun")) return "通义千问 → enable_search"
+  if (url.includes("deepseek")) return "DeepSeek（不支持联网搜索）"
+  return "通用 OpenAI 兼容"
+}
 
 export default function Settings() {
   const [channels, setChannels] = useState<string[]>(() => getChannels())
@@ -18,6 +27,20 @@ export default function Settings() {
   const [newPwd, setNewPwd] = useState("")
   const [confirmPwd, setConfirmPwd] = useState("")
   const [changingPwd, setChangingPwd] = useState(false)
+  const { data: aiConfig, reload: reloadAIConfig } = useApi(() => api.getAIConfig(), [])
+  const [aiBaseUrl, setAiBaseUrl] = useState("")
+  const [aiApiKey, setAiApiKey] = useState("")
+  const [aiModel, setAiModel] = useState("")
+  const [aiWebSearch, setAiWebSearch] = useState(true)
+  const [savingAI, setSavingAI] = useState(false)
+
+  // Sync AI config from server when loaded
+  const aiLoaded = aiConfig != null && aiBaseUrl === "" && aiModel === "" && !savingAI
+  if (aiLoaded) {
+    setAiBaseUrl(aiConfig!.base_url)
+    setAiModel(aiConfig!.model)
+    setAiWebSearch(aiConfig!.web_search)
+  }
 
   const moveUp = (i: number) => {
     if (i === 0) return
@@ -165,6 +188,79 @@ export default function Settings() {
           </CardContent>
         </Card>
       )}
+
+      {/* AI 投顾配置 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Bot className="h-4 w-4" /> AI 投顾配置
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            配置 OpenAI 兼容 API，启用智能对话与联网搜索。支持智谱 / Kimi / 通义千问 / DeepSeek 等。
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <Label className="mb-1.5 block">API Base URL</Label>
+              <Input
+                value={aiBaseUrl}
+                onChange={(e) => setAiBaseUrl(e.target.value)}
+                placeholder="https://api.moonshot.cn/v1"
+              />
+            </div>
+            <div>
+              <Label className="mb-1.5 block">API Key</Label>
+              <Input
+                type="password"
+                value={aiApiKey}
+                onChange={(e) => setAiApiKey(e.target.value)}
+                placeholder={aiConfig?.has_key ? "已配置（输入新值覆盖）" : "sk-..."}
+              />
+            </div>
+            <div>
+              <Label className="mb-1.5 block">模型 ID</Label>
+              <Input
+                value={aiModel}
+                onChange={(e) => setAiModel(e.target.value)}
+                placeholder="kimi-k2.6 / glm-4-plus / qwen-plus"
+              />
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={aiWebSearch}
+              onChange={(e) => setAiWebSearch(e.target.checked)}
+              className="rounded"
+            />
+            启用联网搜索（自动根据 Base URL 识别提供商格式）
+          </label>
+          {aiWebSearch && aiBaseUrl && (
+            <p className="text-xs text-muted-foreground">
+              当前识别：{detectProvider(aiBaseUrl)}
+            </p>
+          )}
+
+          <Button
+            onClick={async () => {
+              if (!aiBaseUrl.trim() || !aiModel.trim()) { toast.error("Base URL 和模型 ID 不能为空"); return }
+              setSavingAI(true)
+              try {
+                await api.updateAIConfig(aiBaseUrl.trim(), aiApiKey, aiModel.trim(), aiWebSearch)
+                setAiApiKey("")
+                reloadAIConfig()
+                toast.success("AI 配置已保存")
+              } catch (e) { toast.error(`保存失败: ${e}`) }
+              finally { setSavingAI(false) }
+            }}
+            disabled={savingAI}
+          >
+            <Save className="mr-1 h-4 w-4" /> {savingAI ? "保存中..." : "保存配置"}
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   )
 }

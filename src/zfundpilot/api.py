@@ -18,10 +18,10 @@ from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from . import analysis, config, data_io, db, fetch_fund, rebalance, risk
+from . import ai, analysis, config, data_io, db, fetch_fund, rebalance, risk
 from .models import Fund, Transaction
 
 app = FastAPI(title="ZFundPilot API", version="0.1.0")
@@ -124,6 +124,55 @@ def change_password(body: ChangePasswordRequest) -> dict[str, Any]:
         raise HTTPException(400, "新密码至少 6 位")
     config.update_password(body.new_password)
     return {"ok": True, "message": "密码已修改"}
+
+
+# ---------------------------------------------------------------------------
+# AI 投顾配置 & 对话
+# ---------------------------------------------------------------------------
+class AIConfigUpdate(BaseModel):
+    base_url: str
+    api_key: str = ""
+    model: str
+    web_search: bool = True
+
+
+class ChatRequest(BaseModel):
+    messages: list[dict[str, str]]
+
+
+@app.get("/api/settings/ai")
+def get_ai_config() -> dict[str, Any]:
+    """返回 AI 配置（不返回明文 API Key）。"""
+    return {
+        "base_url": config.AI_BASE_URL,
+        "model": config.AI_MODEL,
+        "has_key": bool(config.AI_API_KEY),
+        "web_search": config.AI_WEB_SEARCH,
+    }
+
+
+@app.put("/api/settings/ai")
+def update_ai_config(body: AIConfigUpdate) -> dict[str, Any]:
+    """保存 AI 配置。api_key 为空时保留原值。"""
+    api_key = body.api_key if body.api_key else config.AI_API_KEY
+    config.update_ai_config(body.base_url, api_key, body.model, body.web_search)
+    return {"ok": True}
+
+
+@app.post("/api/ai/chat")
+async def ai_chat(body: ChatRequest):
+    """AI 投顾对话（SSE 流式）。自动注入持仓上下文 + 联网搜索。"""
+    context = ai.build_portfolio_context()
+
+    async def generate():
+        try:
+            async for chunk in ai.chat_stream(body.messages, context):
+                yield f"data: {chunk}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------

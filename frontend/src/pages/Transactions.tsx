@@ -256,7 +256,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
           <div className="grid grid-cols-3 gap-4">
             <div>
               <Label className="mb-1.5 block">金额 <span className="text-xs text-muted-foreground font-normal">(三选二)</span></Label>
-              <Input type="number" step="100" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+              <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
             </div>
             <div>
               <Label className="mb-1.5 block">份额 <span className="text-xs text-muted-foreground font-normal">(三选二)</span></Label>

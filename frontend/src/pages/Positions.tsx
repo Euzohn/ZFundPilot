@@ -72,7 +72,7 @@ export default function Positions() {
                 {view.map((p) => (
                   <TableRow key={`${p.fund_code}-${p.channel}`}>
                     <TableCell className="font-mono text-xs">{p.fund_code}</TableCell>
-                    <TableCell className="font-medium">{p.fund_name}</TableCell>
+                    <TableCell className="font-medium max-w-[120px] truncate" title={p.fund_name}>{p.fund_name}</TableCell>
                     <TableCell>{p.channel || "未标注"}</TableCell>
                     <TableCell>{p.fund_type}</TableCell>
                     <TableCell className="text-right tabular-nums">{p.held_shares.toFixed(2)}</TableCell>
@@ -142,7 +142,7 @@ export default function Positions() {
                 {mergedRows.map(([code, m]) => (
                   <TableRow key={code}>
                     <TableCell className="font-mono text-xs">{code}</TableCell>
-                    <TableCell className="font-medium">{m.name}</TableCell>
+                    <TableCell className="font-medium max-w-[120px] truncate" title={m.name}>{m.name}</TableCell>
                     <TableCell className="text-right">{money(m.value)}</TableCell>
                     <TableCell className="text-right">{money(m.cost)}</TableCell>
                     <TableCell className={`text-right ${pnlColor(m.pnl)}`}>{money(m.pnl)}</TableCell>

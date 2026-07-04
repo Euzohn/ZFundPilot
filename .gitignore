@@ -24,8 +24,9 @@ tmp/
 # 系统文件
 .DS_Store
 
-# 密钥
+# 密钥 / 服务器本地配置
 .env
+docker-compose.override.yml
 
 # IDE
 .idea/

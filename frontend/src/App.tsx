@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react"
 import { Routes, Route } from "react-router-dom"
 import Layout from "@/components/Layout"
 import Overview from "@/pages/Overview"
@@ -6,8 +7,26 @@ import Positions from "@/pages/Positions"
 import NavUpdate from "@/pages/NavUpdate"
 import Returns from "@/pages/Returns"
 import Risk from "@/pages/Risk"
+import Login from "@/pages/Login"
+import { api } from "@/api/client"
+import { getToken } from "@/lib/auth"
 
 export default function App() {
+  const [authRequired, setAuthRequired] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    api.getAuthStatus().then((s) => setAuthRequired(s.required)).catch(() => setAuthRequired(false))
+  }, [])
+
+  if (authRequired === null) {
+    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">加载中...</div>
+  }
+
+  // 需要登录但本地无 token → 展示登录页
+  if (authRequired && !getToken()) {
+    return <Login onSuccess={() => window.location.reload()} />
+  }
+
   return (
     <Routes>
       <Route path="/" element={<Layout />}>

@@ -7,8 +7,10 @@ import {
   TrendingUp,
   ShieldCheck,
   Package,
+  LogOut,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { clearToken } from "@/lib/auth"
 
 const navItems = [
   { to: "/", label: "组合总览", icon: LayoutDashboard },
@@ -53,11 +55,18 @@ export default function Layout() {
           ))}
         </nav>
 
-        <div className="border-t border-slate-800 px-6 py-4">
+        <div className="border-t border-slate-800 px-6 py-4 space-y-3">
           <p className="text-xs leading-relaxed text-slate-600">
             仅用于数据分析与风险管理，
             不构成任何投资建议或交易指令。
           </p>
+          <button
+            onClick={() => { clearToken(); window.location.reload() }}
+            className="flex items-center gap-2 text-xs text-slate-500 transition-colors hover:text-red-400"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            退出登录
+          </button>
         </div>
       </aside>
 

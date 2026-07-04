@@ -8,15 +8,20 @@
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import os
+import time
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-from . import analysis, data_io, db, fetch_fund, rebalance, risk
+from . import analysis, config, data_io, db, fetch_fund, rebalance, risk
 from .models import Fund, Transaction
 
 app = FastAPI(title="ZFundPilot API", version="0.1.0")
@@ -30,9 +35,76 @@ app.add_middleware(
 )
 
 
+# ---------------------------------------------------------------------------
+# 认证
+# ---------------------------------------------------------------------------
+def _create_token() -> str:
+    """生成签名 token（HMAC + 过期时间）。"""
+    payload = json.dumps({"exp": int(time.time()) + config.AUTH_TOKEN_MAX_AGE})
+    payload_bytes = payload.encode()
+    sig = hmac.new(config.AUTH_SECRET.encode(), payload_bytes, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(payload_bytes + b"." + sig).decode()
+
+
+def _verify_token(token: str) -> bool:
+    """校验 token 签名与有效期。"""
+    try:
+        decoded = base64.urlsafe_b64decode(token.encode())
+        payload_bytes, sig = decoded.rsplit(b".", 1)
+        expected = hmac.new(config.AUTH_SECRET.encode(), payload_bytes, hashlib.sha256).digest()
+        if not hmac.compare_digest(sig, expected):
+            return False
+        payload = json.loads(payload_bytes)
+        return payload["exp"] > time.time()
+    except Exception:
+        return False
+
+
+class LoginRequest(BaseModel):
+    password: str
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """所有 /api/* 请求需要认证（/api/auth/* 除外）。未设置密码时跳过。"""
+    if not config.AUTH_PASSWORD:
+        return await call_next(request)
+
+    path = request.url.path
+    if path.startswith("/api/auth") or not path.startswith("/api"):
+        return await call_next(request)
+
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+        if _verify_token(token):
+            return await call_next(request)
+
+    return JSONResponse(status_code=401, content={"detail": "未登录或 token 已过期"})
+
+
 @app.on_event("startup")
 def _startup() -> None:
     db.init_db()
+
+
+# ---------------------------------------------------------------------------
+# 认证端点（无需 token）
+# ---------------------------------------------------------------------------
+@app.get("/api/auth/status")
+def auth_status() -> dict[str, Any]:
+    """返回是否需要登录。前端据此决定是否展示登录页。"""
+    return {"required": bool(config.AUTH_PASSWORD)}
+
+
+@app.post("/api/auth/login")
+def auth_login(body: LoginRequest) -> dict[str, Any]:
+    """验证密码，返回 token。"""
+    if not config.AUTH_PASSWORD:
+        return {"ok": True, "token": "", "message": "未设置密码，无需登录"}
+    if body.password != config.AUTH_PASSWORD:
+        raise HTTPException(401, "密码错误")
+    return {"ok": True, "token": _create_token(), "message": "登录成功"}
 
 
 # ---------------------------------------------------------------------------

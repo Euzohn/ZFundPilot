@@ -91,3 +91,22 @@ TRADING_DAYS_PER_YEAR = 244
 
 # 净值获取失败时的最大重试次数
 FETCH_MAX_RETRIES = 2
+
+
+# ---------------------------------------------------------------------------
+# 认证配置
+# ---------------------------------------------------------------------------
+# 设置密码后，所有 API 请求需要携带登录后获取的 token。
+# 不设置密码时（默认），应用为开放访问（适合纯本地使用）。
+#
+# 设置方式：
+#   export ZFUNDPILOT_PASSWORD="your_password"
+# 或写入 .env 等环境变量管理工具
+
+AUTH_PASSWORD = os.environ.get("ZFUNDPILOT_PASSWORD", "")
+
+# 用于签名 token 的密钥，不设则从密码派生
+AUTH_SECRET = os.environ.get("ZFUNDPILOT_SECRET", "") or AUTH_PASSWORD
+
+# token 有效期（秒），默认 7 天
+AUTH_TOKEN_MAX_AGE = 7 * 24 * 3600

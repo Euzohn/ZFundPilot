@@ -11,14 +11,25 @@ import type {
   Transaction,
   CSVParseResult,
 } from "./types"
+import { getToken, clearToken } from "@/lib/auth"
 
 const BASE = "/api"
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = getToken()
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (token) headers["Authorization"] = `Bearer ${token}`
+
   const res = await fetch(`${BASE}${url}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: { ...headers, ...options?.headers },
   })
+
+  if (res.status === 401) {
+    clearToken()
+    window.location.reload()
+    throw new Error("未登录或登录已过期")
+  }
   if (!res.ok) {
     const msg = await res.text().catch(() => res.statusText)
     throw new Error(msg || `${res.status}`)
@@ -27,6 +38,14 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // Auth
+  getAuthStatus: () => request<{ required: boolean }>("/auth/status"),
+  login: (password: string) =>
+    request<{ ok: boolean; token: string; message: string }>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+
   // Summary
   getSummary: () => request<PortfolioSummary>("/summary"),
   getDistribution: (field: string) =>

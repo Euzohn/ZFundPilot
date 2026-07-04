@@ -80,12 +80,18 @@ nohup uvicorn zfundpilot.api:app --host 0.0.0.0 --port 8000 > zfundpilot.log 2>&
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `ZFUNDPILOT_HOME` | 项目根目录 | 数据目录（`data/` 所在位置） |
+| `ZFUNDPILOT_PASSWORD` | 空（不设密码） | 访问密码，设置后所有 API 需登录 |
+| `ZFUNDPILOT_SECRET` | 同密码值 | token 签名密钥，建议与密码不同 |
 
 ```bash
-# 示例：将数据放在 /var/lib/zfundpilot
+# 示例：设置访问密码 + 自定义数据目录
+export ZFUNDPILOT_PASSWORD="your_secret_password"
 export ZFUNDPILOT_HOME=/var/lib/zfundpilot
 uvicorn zfundpilot.api:app --port 8000
 ```
+
+> ⚠️ 如果通过 `--host 0.0.0.0` 对外暴露，**务必设置 `ZFUNDPILOT_PASSWORD`**，
+> 否则任何人都能查看你的持仓数据。
 
 ---
 
@@ -107,10 +113,11 @@ docker run -d \
   -v $(pwd)/data:/app/data \
   zfundpilot
 
-# 自定义数据目录
+# 自定义数据目录 + 密码保护
 docker run -d \
   --name zfundpilot \
   -p 8000:8000 \
+  -e ZFUNDPILOT_PASSWORD="your_password" \
   -e ZFUNDPILOT_HOME=/data \
   -v /path/to/data:/data \
   zfundpilot

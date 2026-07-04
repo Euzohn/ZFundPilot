@@ -30,7 +30,10 @@ export default function FundDetail() {
 
   const { data: fund, loading: fundLoading } = useApi<Fund>(() => api.getFund(code!), [code])
   const { data: positions } = useApi<Position[]>(() => api.getPositions(true), [])
-  const { data: txs } = useApi<Transaction[]>(() => api.getTransactionsByFund(code!), [code])
+  const { data: txs } = useApi<Transaction[]>(() =>
+    api.getTransactionsByFund(code!).then((rows) =>
+      rows.sort((a, b) => b.date.localeCompare(a.date) || (b.id ?? 0) - (a.id ?? 0)),
+    ), [code])
   const { data: navHistory } = useApi<{ date: string; nav: number }[]>(
     () => api.getNavHistory(code!).then((rows) => rows.map((r) => ({ date: r.date, nav: r.nav }))),
     [code],

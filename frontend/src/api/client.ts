@@ -57,6 +57,8 @@ export const api = {
 
   // Transactions
   getTransactions: () => request<Transaction[]>("/transactions"),
+  getTransactionsByFund: (code: string) =>
+    request<Transaction[]>(`/transactions?fund_code=${encodeURIComponent(code)}`),
   addTransaction: (tx: Transaction) =>
     request<{ id: number }>("/transactions", {
       method: "POST",
@@ -74,12 +76,15 @@ export const api = {
 
   // Funds
   getFunds: () => request<FundMeta[]>("/funds"),
+  getFund: (code: string) => request<FundMeta>(`/funds/${encodeURIComponent(code)}`),
   fetchFundMeta: (code: string) =>
     request<FundMeta>(`/funds/${code}/fetch`, { method: "POST" }),
 
   // NAV
   updateNav: () => request<FetchResult[]>("/nav/update", { method: "POST" }),
   getLatestNavs: () => request<LatestNav[]>("/nav/latest"),
+  getNavHistory: (code: string) =>
+    request<{ fund_code: string; date: string; nav: number; accumulated_nav: number | null; source: string }[]>(`/nav/${encodeURIComponent(code)}`),
 
   // Portfolio curve
   getPortfolioCurve: () => request<CurvePoint[]>("/portfolio/curve"),

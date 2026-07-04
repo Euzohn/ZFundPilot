@@ -162,7 +162,9 @@ def get_positions(include_closed: bool = False) -> list[dict[str, Any]]:
 # 交易流水
 # ---------------------------------------------------------------------------
 @app.get("/api/transactions")
-def get_transactions() -> list[dict[str, Any]]:
+def get_transactions(fund_code: str | None = None) -> list[dict[str, Any]]:
+    if fund_code:
+        return [t.to_dict() for t in db.get_transactions(fund_code)]
     return [t.to_dict() for t in db.get_transactions_desc()]
 
 

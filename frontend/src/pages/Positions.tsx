@@ -7,22 +7,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { money, pct, navStr, pnlColor } from "@/lib/format"
-import { TrendingUp, TrendingDown } from "lucide-react"
+import { money, pct, pnlColor } from "@/lib/format"
+import { TrendingUp, TrendingDown, ChevronRight } from "lucide-react"
 
 export default function Positions() {
   const navigate = useNavigate()
   const [showClosed, setShowClosed] = useState(false)
-  const { data: positions, loading, reload } = useApi(() => api.getPositions(true))
+  const { data: positions, loading } = useApi(() => api.getPositions(true))
 
   if (loading) return <div className="py-20 text-center text-muted-foreground">加载中...</div>
   if (!positions) return <div className="py-20 text-center text-red-500">加载失败</div>
 
   const view = showClosed ? positions : positions.filter((p) => p.is_open)
 
-  const merged: Record<string, { name: string; value: number; cost: number; pnl: number; channels: number }> = {}
+  // 按基金合并（跨渠道）
+  const merged: Record<string, { name: string; type: string; value: number; cost: number; pnl: number; channels: number }> = {}
   for (const p of view.filter((p) => p.is_open)) {
-    const m = merged[p.fund_code] ?? { name: p.fund_name, value: 0, cost: 0, pnl: 0, channels: 0 }
+    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, value: 0, cost: 0, pnl: 0, channels: 0 }
     m.value += p.market_value
     m.cost += p.total_cost
     m.pnl += p.unrealized_pnl
@@ -40,120 +41,131 @@ export default function Positions() {
         </Button>
       </div>
 
+      {/* 按基金合并视图（主视图，简洁） */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">按基金 + 渠道拆分</CardTitle>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">持仓列表</CardTitle>
         </CardHeader>
         <CardContent>
-          {view.length === 0 ? (
+          {mergedRows.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">暂无持仓数据</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>代码</TableHead>
                   <TableHead>名称</TableHead>
-                  <TableHead>渠道</TableHead>
                   <TableHead>类型</TableHead>
-                  <TableHead className="text-right">份额</TableHead>
-                  <TableHead className="text-right">成本</TableHead>
-                  <TableHead className="text-right">均价</TableHead>
-                  <TableHead className="text-right">最新净值</TableHead>
                   <TableHead className="text-right">市值</TableHead>
                   <TableHead className="text-right">浮动盈亏</TableHead>
                   <TableHead className="text-right">收益率</TableHead>
-                  <TableHead className="text-right">已实现</TableHead>
-                  <TableHead className="text-right">占比</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead className="w-24">操作</TableHead>
+                  <TableHead className="text-right">渠道</TableHead>
+                  <TableHead className="w-20">操作</TableHead>
+                  <TableHead className="w-8"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {view.map((p) => (
-                  <TableRow key={`${p.fund_code}-${p.channel}`}>
-                    <TableCell className="font-mono text-xs">{p.fund_code}</TableCell>
-                    <TableCell className="font-medium max-w-[120px] truncate" title={p.fund_name}>{p.fund_name}</TableCell>
-                    <TableCell>{p.channel || "未标注"}</TableCell>
-                    <TableCell>{p.fund_type}</TableCell>
-                    <TableCell className="text-right tabular-nums">{p.held_shares.toFixed(2)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{money(p.total_cost)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{navStr(p.avg_cost_nav)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{navStr(p.latest_nav)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{money(p.market_value)}</TableCell>
-                    <TableCell className={`text-right tabular-nums ${pnlColor(p.unrealized_pnl)}`}>{money(p.unrealized_pnl)}</TableCell>
-                    <TableCell className={`text-right tabular-nums ${pnlColor(p.return_rate)}`}>{pct(p.return_rate)}</TableCell>
-                    <TableCell className={`text-right tabular-nums ${pnlColor(p.realized_pnl)}`}>{money(p.realized_pnl)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{p.is_open ? pct(p.weight) : "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant={p.is_open ? "success" : "secondary"}>
-                        {p.is_open ? "持有" : "已清仓"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2 text-xs text-gain border-gain/30 hover:bg-gain/5"
-                          onClick={() => navigate(`/transactions?code=${p.fund_code}&action=buy`)}
-                        >
-                          <TrendingUp className="h-3 w-3" /> 买入
-                        </Button>
-                        {p.is_open && (
+                {mergedRows.map(([code, m]) => {
+                  const ret = m.cost ? m.value / m.cost - 1 : null
+                  return (
+                    <TableRow
+                      key={code}
+                      className="cursor-pointer"
+                      onClick={() => navigate(`/fund/${code}`)}
+                    >
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-medium max-w-[160px] truncate" title={m.name}>{m.name}</span>
+                          <span className="font-mono text-xs text-muted-foreground">{code}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell><Badge variant="outline">{m.type}</Badge></TableCell>
+                      <TableCell className="text-right tabular-nums font-medium">{money(m.value)}</TableCell>
+                      <TableCell className={`text-right tabular-nums ${pnlColor(m.pnl)}`}>{money(m.pnl)}</TableCell>
+                      <TableCell className={`text-right tabular-nums ${pnlColor(ret)}`}>{pct(ret)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">{m.channels}</TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs text-gain border-gain/30 hover:bg-gain/5"
+                            onClick={() => navigate(`/transactions?code=${code}&action=buy`)}
+                          >
+                            <TrendingUp className="h-3 w-3" />
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"
                             className="h-7 px-2 text-xs text-loss border-loss/30 hover:bg-loss/5"
-                            onClick={() => navigate(`/transactions?code=${p.fund_code}&action=sell`)}
+                            onClick={() => navigate(`/transactions?code=${code}&action=sell`)}
                           >
-                            <TrendingDown className="h-3 w-3" /> 卖出
+                            <TrendingDown className="h-3 w-3" />
                           </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <ChevronRight className="h-4 w-4" />
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           )}
-          <p className="mt-3 text-sm text-muted-foreground">共 {view.length} 个持仓</p>
+          <p className="mt-3 text-sm text-muted-foreground">共 {mergedRows.length} 只基金 · 点击行查看详情</p>
         </CardContent>
       </Card>
 
-      {mergedRows.length > 0 && (
+      {/* 已清仓记录（仅在 showClosed 时显示） */}
+      {showClosed && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">按基金合并（跨渠道）</CardTitle>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">已清仓记录</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>代码</TableHead>
-                  <TableHead>名称</TableHead>
-                  <TableHead className="text-right">市值</TableHead>
-                  <TableHead className="text-right">成本</TableHead>
-                  <TableHead className="text-right">浮动盈亏</TableHead>
-                  <TableHead className="text-right">收益率</TableHead>
-                  <TableHead className="text-right">渠道数</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {mergedRows.map(([code, m]) => (
-                  <TableRow key={code}>
-                    <TableCell className="font-mono text-xs">{code}</TableCell>
-                    <TableCell className="font-medium max-w-[120px] truncate" title={m.name}>{m.name}</TableCell>
-                    <TableCell className="text-right">{money(m.value)}</TableCell>
-                    <TableCell className="text-right">{money(m.cost)}</TableCell>
-                    <TableCell className={`text-right ${pnlColor(m.pnl)}`}>{money(m.pnl)}</TableCell>
-                    <TableCell className={`text-right ${pnlColor(m.value / m.cost - 1)}`}>
-                      {pct(m.cost ? m.value / m.cost - 1 : null)}
-                    </TableCell>
-                    <TableCell className="text-right">{m.channels}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            {(() => {
+              const closed = positions.filter((p) => !p.is_open)
+              const closedMerged: Record<string, { name: string; realized: number; channels: number }> = {}
+              for (const p of closed) {
+                const m = closedMerged[p.fund_code] ?? { name: p.fund_name, realized: 0, channels: 0 }
+                m.realized += p.realized_pnl
+                m.channels += 1
+                closedMerged[p.fund_code] = m
+              }
+              const closedRows = Object.entries(closedMerged)
+              if (closedRows.length === 0) return <p className="py-4 text-center text-muted-foreground">无已清仓记录</p>
+              return (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>名称</TableHead>
+                      <TableHead className="text-right">已实现盈亏</TableHead>
+                      <TableHead className="text-right">渠道数</TableHead>
+                      <TableHead className="w-8"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {closedRows.map(([code, m]) => (
+                      <TableRow
+                        key={code}
+                        className="cursor-pointer"
+                        onClick={() => navigate(`/fund/${code}`)}
+                      >
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium max-w-[160px] truncate" title={m.name}>{m.name}</span>
+                            <span className="font-mono text-xs text-muted-foreground">{code}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className={`text-right tabular-nums ${pnlColor(m.realized)}`}>{money(m.realized)}</TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">{m.channels}</TableCell>
+                        <TableCell className="text-muted-foreground"><ChevronRight className="h-4 w-4" /></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )
+            })()}
           </CardContent>
         </Card>
       )}

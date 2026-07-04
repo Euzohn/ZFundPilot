@@ -96,6 +96,12 @@
   animation: fadeInUp 300ms ease;
 }
 
+/* 移动端：禁止橡皮筋滚动 + 安全区适配 */
+html, body {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* loading spinner */
 @keyframes spin {
   to { transform: rotate(360deg); }

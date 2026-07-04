@@ -34,8 +34,8 @@ export default function Positions() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">持仓明细</h1>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-xl md:text-2xl font-bold">持仓明细</h1>
         <Button variant="outline" size="sm" onClick={() => setShowClosed(!showClosed)}>
           {showClosed ? "隐藏已清仓" : "显示已清仓"}
         </Button>

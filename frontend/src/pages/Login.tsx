@@ -29,7 +29,7 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100">
+    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
           <Package className="h-12 w-12 text-blue-500" />

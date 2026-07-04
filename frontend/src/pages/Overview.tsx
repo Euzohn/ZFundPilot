@@ -17,10 +17,10 @@ function MetricCard({ icon: Icon, label, value, sub, color }: {
 }) {
   return (
     <Card className="card-hover">
-      <CardContent className="flex items-center justify-between p-5">
+      <CardContent className="flex items-center justify-between p-4 md:p-5">
         <div className="space-y-0.5">
           <p className="text-xs font-medium text-muted-foreground">{label}</p>
-          <p className={`text-xl font-bold tabular-nums fade-in-up ${color ?? ""}`}>{value}</p>
+          <p className={`text-lg md:text-xl font-bold tabular-nums fade-in-up ${color ?? ""}`}>{value}</p>
           {sub && <p className={`text-xs tabular-nums ${color ?? "text-muted-foreground"}`}>{sub}</p>}
         </div>
         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-50">
@@ -53,7 +53,7 @@ export default function Overview() {
   if (noData) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold">组合总览</h1>
+        <h1 className="text-xl md:text-2xl font-bold">组合总览</h1>
         <Card>
           <CardContent className="py-20 text-center text-muted-foreground">
             还没有交易记录。请到「交易管理」添加买入/卖出流水或导入 CSV。
@@ -65,8 +65,8 @@ export default function Overview() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">组合总览</h1>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-xl md:text-2xl font-bold tracking-tight">组合总览</h1>
         {summary.max_single_name && (
           <p className="text-sm text-muted-foreground">
             最大单持仓：<span className="font-medium text-foreground">{summary.max_single_name}</span>
@@ -76,7 +76,7 @@ export default function Overview() {
       </div>
 
       {/* Metrics row 1 */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <MetricCard icon={Wallet} label="当前持仓成本" value={money(summary.total_cost)} />
         <MetricCard icon={DollarSign} label="当前市值" value={money(summary.total_value)} />
         <MetricCard icon={TrendingUp} label="浮动盈亏" value={signedMoney(summary.unrealized_pnl)} sub={pct(summary.total_return)} color={pnlColor(summary.unrealized_pnl)} />
@@ -84,7 +84,7 @@ export default function Overview() {
       </div>
 
       {/* Metrics row 2 */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <MetricCard icon={PiggyBank} label="总盈亏（浮动+已实现）" value={signedMoney(summary.total_pnl)} color={pnlColor(summary.total_pnl)} />
         <MetricCard icon={ArrowUpFromLine} label="累计买入 / 卖出" value={`${money(summary.total_buy)} / ${money(summary.total_sell)}`} />
         <MetricCard icon={Wallet} label="持仓数量" value={`${summary.holding_count} 个`} />
@@ -92,7 +92,7 @@ export default function Overview() {
       </div>
 
       {/* Charts */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
         <Card className="card-hover">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">资产类型</CardTitle></CardHeader>
           <CardContent>

@@ -37,22 +37,22 @@ export default function NavUpdate() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">净值更新</h1>
+      <h1 className="text-xl md:text-2xl font-bold">净值更新</h1>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
         <Card>
-          <CardContent className="flex items-center justify-between p-6">
+          <CardContent className="flex items-center justify-between p-4 md:p-6">
             <div>
               <p className="text-sm text-muted-foreground">待更新基金数</p>
-              <p className="text-2xl font-bold">{navs?.length ?? 0} 只</p>
+              <p className="text-xl md:text-2xl font-bold">{navs?.length ?? 0} 只</p>
             </div>
             <RefreshCw className="h-8 w-8 text-blue-500" />
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-6">
+          <CardContent className="p-4 md:p-6">
             <p className="text-sm text-muted-foreground">净值最近更新</p>
-            <p className="text-2xl font-bold">
+            <p className="text-xl md:text-2xl font-bold">
               {navs?.length ? navs[0].date : "未更新"}
             </p>
           </CardContent>
@@ -81,7 +81,7 @@ export default function NavUpdate() {
 
           {results && (
             <div className="space-y-2">
-              <div className="flex items-center gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                 <span className="flex items-center gap-1 text-green-600">
                   <CheckCircle2 className="h-4 w-4" /> 成功 {okCount} 只
                 </span>

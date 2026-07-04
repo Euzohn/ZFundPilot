@@ -16,9 +16,9 @@ const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出" }
 function MetricCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <Card className="card-hover">
-      <CardContent className="p-4">
+      <CardContent className="p-3 md:p-4">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p className={`mt-1 text-lg font-bold tabular-nums ${color ?? ""}`}>{value}</p>
+        <p className={`mt-1 text-base md:text-lg font-bold tabular-nums ${color ?? ""}`}>{value}</p>
       </CardContent>
     </Card>
   )
@@ -63,19 +63,19 @@ export default function FundDetail() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/positions")}>
+      <div className="flex items-center gap-3 flex-wrap">
+        <Button variant="ghost" size="icon" onClick={() => navigate("/positions")} className="shrink-0">
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">{fund?.fund_name ?? code}</h1>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-xl md:text-2xl font-bold tracking-tight truncate">{fund?.fund_name ?? code}</h1>
             <span className="font-mono text-sm text-muted-foreground">{code}</span>
             {fund?.fund_type && <Badge variant="secondary">{fund.fund_type}</Badge>}
             {fund?.sector && <Badge variant="outline">{fund.sector}</Badge>}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0">
           <Button
             size="sm"
             variant="outline"
@@ -98,7 +98,7 @@ export default function FundDetail() {
       </div>
 
       {/* Summary metrics */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <MetricCard label="持有份额" value={totalShares.toFixed(2)} />
         <MetricCard label="持仓成本" value={money(totalCost)} />
         <MetricCard label="持仓均价" value={navStr(avgCost)} />

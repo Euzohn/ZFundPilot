@@ -50,9 +50,9 @@ export default function Transactions() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">交易管理</h1>
+      <h1 className="text-xl md:text-2xl font-bold">交易管理</h1>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+        <TabsList className="grid w-full grid-cols-3 sm:inline-flex sm:w-auto">
           <TabsTrigger value="form">单笔录入</TabsTrigger>
           <TabsTrigger value="list">交易流水</TabsTrigger>
           <TabsTrigger value="csv">CSV 导入/导出</TabsTrigger>
@@ -270,7 +270,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
 
         {/* Step 2: transaction details */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <Label className="mb-1.5 block">操作 *</Label>
               <Select value={action} onChange={(e) => setAction(e.target.value)}>
@@ -297,7 +297,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {action === "buy" ? (
               <>
                 <div>
@@ -339,7 +339,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label className="mb-1.5 block">手续费</Label>
               <Input type="number" step="0.01" min="0" value={fee} onChange={(e) => setFee(e.target.value)} />
@@ -570,7 +570,7 @@ function CSVImportExport() {
                 </Table>
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <label className="flex items-center gap-2 text-sm">
                   <input type="radio" checked={!clearExisting} onChange={() => setClearExisting(false)} /> 追加到现有流水
                 </label>

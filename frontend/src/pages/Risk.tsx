@@ -10,9 +10,9 @@ import type { ReactNode } from "react"
 function MetricCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
     <Card className="card-hover">
-      <CardContent className="p-5">
+      <CardContent className="p-4 md:p-5">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p className={`mt-1 text-xl font-bold tabular-nums ${color ?? ""}`}>{value}</p>
+        <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${color ?? ""}`}>{value}</p>
         {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
       </CardContent>
     </Card>
@@ -33,16 +33,16 @@ export default function Risk() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">风险与建议</h1>
+      <h1 className="text-xl md:text-2xl font-bold">风险与建议</h1>
 
       {/* Metrics */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <MetricCard label="最大回撤" value={report.max_drawdown != null ? pct(report.max_drawdown) : "数据不足"} color={pnlColor(report.max_drawdown ?? 0)} />
         <MetricCard label="年化波动率" value={report.volatility != null ? pct(report.volatility) : "数据不足"} />
         <MetricCard label="最大单基金占比" value={pct(report.max_single_weight)} sub={report.max_single_name} />
         <MetricCard label="集中度 HHI" value={report.hhi.toFixed(3)} />
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
         <MetricCard label="权益类占比" value={pct(report.equity_weight)} />
         <MetricCard label="债券类占比" value={pct(report.bond_weight)} />
         <MetricCard label="QDII 占比" value={pct(report.qdii_weight)} />

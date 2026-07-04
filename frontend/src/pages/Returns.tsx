@@ -22,25 +22,25 @@ export default function Returns() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">收益分析</h1>
+      <h1 className="text-xl md:text-2xl font-bold">收益分析</h1>
 
       {/* Metrics */}
-      <div className="grid grid-cols-4 gap-4">
-        <Card className="card-hover"><CardContent className="p-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <Card className="card-hover"><CardContent className="p-4 md:p-5">
           <p className="text-xs font-medium text-muted-foreground">当前市值</p>
-          <p className="mt-1 text-xl font-bold tabular-nums">{money(summary.total_value)}</p>
+          <p className="mt-1 text-lg md:text-xl font-bold tabular-nums">{money(summary.total_value)}</p>
         </CardContent></Card>
-        <Card className="card-hover"><CardContent className="p-5">
+        <Card className="card-hover"><CardContent className="p-4 md:p-5">
           <p className="text-xs font-medium text-muted-foreground">浮动盈亏</p>
-          <p className={`mt-1 text-xl font-bold tabular-nums ${pnlColor(summary.unrealized_pnl)}`}>{signedMoney(summary.unrealized_pnl)}</p>
+          <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${pnlColor(summary.unrealized_pnl)}`}>{signedMoney(summary.unrealized_pnl)}</p>
         </CardContent></Card>
-        <Card className="card-hover"><CardContent className="p-5">
+        <Card className="card-hover"><CardContent className="p-4 md:p-5">
           <p className="text-xs font-medium text-muted-foreground">已实现盈亏</p>
-          <p className={`mt-1 text-xl font-bold tabular-nums ${pnlColor(summary.realized_pnl)}`}>{signedMoney(summary.realized_pnl)}</p>
+          <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${pnlColor(summary.realized_pnl)}`}>{signedMoney(summary.realized_pnl)}</p>
         </CardContent></Card>
-        <Card className="card-hover"><CardContent className="p-5">
+        <Card className="card-hover"><CardContent className="p-4 md:p-5">
           <p className="text-xs font-medium text-muted-foreground">总收益率</p>
-          <p className={`mt-1 text-xl font-bold tabular-nums ${pnlColor(summary.total_return)}`}>{pct(summary.total_return)}</p>
+          <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${pnlColor(summary.total_return)}`}>{pct(summary.total_return)}</p>
         </CardContent></Card>
       </div>
 

@@ -1,7 +1,7 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { Transaction, CSVParseResult, FundMeta } from "@/api/types"
+import type { Transaction, CSVParseResult, FundMeta, Fund } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,24 +12,41 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money } from "@/lib/format"
 import { toast } from "sonner"
-import { Search, Plus, Trash2, Download, Upload, FileDown } from "lucide-react"
-import type { Fund } from "@/api/types"
+import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown } from "lucide-react"
 
 const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出" }
 const CHANNELS = ["支付宝", "理财通", "天天基金", "基金公司直销", "银行", "券商", "其它"]
 
 export default function Transactions() {
+  const [activeTab, setActiveTab] = useState("form")
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  const [listReloadKey, setListReloadKey] = useState(0)
+
+  const handleEdit = (tx: Transaction) => {
+    setEditingTx(tx)
+    setActiveTab("form")
+  }
+
+  const handleFormDone = () => {
+    setEditingTx(null)
+    setListReloadKey((k) => k + 1)
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">交易管理</h1>
-      <Tabs defaultValue="form">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="form">单笔录入</TabsTrigger>
           <TabsTrigger value="list">交易流水</TabsTrigger>
           <TabsTrigger value="csv">CSV 导入/导出</TabsTrigger>
         </TabsList>
-        <TabsContent value="form"><TransactionForm /></TabsContent>
-        <TabsContent value="list"><TransactionList /></TabsContent>
+        <TabsContent value="form">
+          <TransactionForm editingTx={editingTx} onDone={handleFormDone} />
+        </TabsContent>
+        <TabsContent value="list">
+          <TransactionList key={listReloadKey} onEdit={handleEdit} />
+        </TabsContent>
         <TabsContent value="csv"><CSVImportExport /></TabsContent>
       </Tabs>
     </div>
@@ -37,9 +54,12 @@ export default function Transactions() {
 }
 
 // ---------------------------------------------------------------------------
-// 单笔录入
+// 单笔录入 / 编辑
 // ---------------------------------------------------------------------------
-function TransactionForm() {
+function TransactionForm({ editingTx, onDone }: {
+  editingTx: Transaction | null
+  onDone: () => void
+}) {
   const [code, setCode] = useState("")
   const [meta, setMeta] = useState<FundMeta | null>(null)
   const [fetching, setFetching] = useState(false)
@@ -55,6 +75,44 @@ function TransactionForm() {
   const [saving, setSaving] = useState(false)
   const [afterThree, setAfterThree] = useState(false)
 
+  const isEditing = !!editingTx
+
+  // 编辑模式：回填表单
+  useEffect(() => {
+    if (!editingTx) return
+    setCode(editingTx.fund_code)
+    setAction(editingTx.action)
+    setDate(editingTx.date)
+    setAmount(editingTx.amount?.toString() ?? "")
+    setShares(editingTx.shares?.toString() ?? "")
+    setNav(editingTx.nav?.toString() ?? "")
+    setFee(editingTx.fee?.toString() ?? "0")
+
+    // 渠道：预设值走 select，非预设值走 customChannel
+    if (editingTx.channel && CHANNELS.includes(editingTx.channel)) {
+      setChannel(editingTx.channel)
+      setCustomChannel("")
+    } else {
+      setChannel("其它")
+      setCustomChannel(editingTx.channel ?? "")
+    }
+
+    // 备注：拆分 T+1确认 标记
+    const noteStr = editingTx.note ?? ""
+    const hasT1 = noteStr.includes("T+1确认")
+    setAfterThree(hasT1)
+    const cleanNote = noteStr
+      .replace(/\s*\|\s*T\+1确认\s*$/, "")
+      .replace(/^T\+1确认\s*$/, "")
+      .trim()
+    setNote(cleanNote)
+
+    // 尝试回填基金信息
+    if (editingTx.fund_code) {
+      api.fetchFundMeta(editingTx.fund_code).then((m) => setMeta(m)).catch(() => {})
+    }
+  }, [editingTx])
+
   const handleFetchMeta = async () => {
     if (!code.trim()) { toast.warning("请先输入基金代码"); return }
     setFetching(true)
@@ -67,6 +125,12 @@ function TransactionForm() {
     finally { setFetching(false) }
   }
 
+  const resetForm = () => {
+    setCode(""); setMeta(null); setAction("buy"); setDate("")
+    setAmount(""); setShares(""); setNav(""); setFee("0")
+    setCustomChannel(""); setNote(""); setAfterThree(false)
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!code.trim()) { toast.error("基金代码不能为空"); return }
@@ -74,26 +138,38 @@ function TransactionForm() {
     const filled = [amount, shares, nav].filter((v) => parseFloat(v) > 0).length
     if (filled < 2) { toast.error("金额 / 份额 / 净值 至少填写两项"); return }
 
+    const payload = {
+      fund_code: code.trim(), action, date,
+      amount: parseFloat(amount) || null,
+      shares: parseFloat(shares) || null,
+      nav: parseFloat(nav) || null,
+      fee: parseFloat(fee) || 0,
+      channel: customChannel.trim() || channel,
+      note: (note.trim() ? note.trim() + " | " : "") + (afterThree ? "T+1确认" : ""),
+    }
+
     setSaving(true)
     try {
-      await api.addTransaction({
-        fund_code: code.trim(), action, date,
-        amount: parseFloat(amount) || null,
-        shares: parseFloat(shares) || null,
-        nav: parseFloat(nav) || null,
-        fee: parseFloat(fee) || 0,
-        channel: customChannel.trim() || channel,
-        note: (note.trim() ? note.trim() + " | " : "") + (afterThree ? "T+1确认" : ""),
-      })
-      toast.success(`${ACTION_LABELS[action]} ${code.trim()} 已保存`)
-      setAmount(""); setShares(""); setNav(""); setFee("0"); setNote(""); setCustomChannel(""); setAfterThree(false)
+      if (isEditing && editingTx?.id) {
+        await api.updateTransaction(editingTx.id, payload)
+        toast.success(`${ACTION_LABELS[action]} ${code.trim()} 已更新`)
+      } else {
+        await api.addTransaction(payload)
+        toast.success(`${ACTION_LABELS[action]} ${code.trim()} 已保存`)
+      }
+      resetForm()
+      onDone()
     } catch (e) { toast.error(`保存失败: ${e}`) }
     finally { setSaving(false) }
   }
 
   return (
     <Card>
-      <CardHeader><CardTitle className="text-base">单笔录入</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle className="text-base">
+          {isEditing ? `编辑交易 #${editingTx?.id}` : "单笔录入"}
+        </CardTitle>
+      </CardHeader>
       <CardContent>
         {/* Step 1: fund code */}
         <div className="mb-6">
@@ -168,9 +244,20 @@ function TransactionForm() {
             <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="可选" />
           </div>
 
-          <Button type="submit" disabled={saving} className="w-full">
-            <Plus className="mr-1 h-4 w-4" /> {saving ? "保存中..." : "保存交易"}
-          </Button>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={saving} className="flex-1">
+              {isEditing ? (
+                <><Pencil className="mr-1 h-4 w-4" /> {saving ? "更新中..." : "更新交易"}</>
+              ) : (
+                <><Plus className="mr-1 h-4 w-4" /> {saving ? "保存中..." : "保存交易"}</>
+              )}
+            </Button>
+            {isEditing && (
+              <Button type="button" variant="outline" onClick={() => { resetForm(); onDone() }}>
+                取消编辑
+              </Button>
+            )}
+          </div>
         </form>
       </CardContent>
     </Card>
@@ -180,7 +267,7 @@ function TransactionForm() {
 // ---------------------------------------------------------------------------
 // 交易流水
 // ---------------------------------------------------------------------------
-function TransactionList() {
+function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
   const { data: txs, loading, reload } = useApi<Transaction[]>(() => api.getTransactions())
   const [funds, setFunds] = useState<Record<string, Fund>>({})
 
@@ -234,7 +321,7 @@ function TransactionList() {
                 <TableHead className="text-right">净值</TableHead>
                 <TableHead className="text-right">手续费</TableHead>
                 <TableHead>备注</TableHead>
-                <TableHead className="w-10"></TableHead>
+                <TableHead className="w-20">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -252,15 +339,20 @@ function TransactionList() {
                     <TableCell className="font-mono text-xs">{t.fund_code}</TableCell>
                     <TableCell>{fund?.fund_name ?? t.fund_code}</TableCell>
                     <TableCell>{t.channel || "未标注"}</TableCell>
-                    <TableCell className="text-right">{t.amount ? money(t.amount) : "—"}</TableCell>
-                    <TableCell className="text-right">{t.shares?.toFixed(2) ?? "—"}</TableCell>
-                    <TableCell className="text-right">{t.nav?.toFixed(4) ?? "—"}</TableCell>
-                    <TableCell className="text-right">{t.fee || "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{t.amount ? money(t.amount) : "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{t.shares?.toFixed(2) ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{t.nav?.toFixed(4) ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{t.fee || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{t.note}</TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(t.id!)}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => onEdit(t)}>
+                          <Pencil className="h-4 w-4 text-blue-500" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(t.id!)}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )
@@ -357,9 +449,9 @@ function CSVImportExport() {
                         <TableCell className="font-mono text-xs">{t.fund_code}</TableCell>
                         <TableCell><Badge variant={t.action === "buy" ? "success" : "destructive"}>{ACTION_LABELS[t.action] ?? t.action}</Badge></TableCell>
                         <TableCell>{t.date}</TableCell>
-                        <TableCell className="text-right">{t.amount ? money(t.amount) : "—"}</TableCell>
-                        <TableCell className="text-right">{t.shares?.toFixed(2) ?? "—"}</TableCell>
-                        <TableCell className="text-right">{t.nav?.toFixed(4) ?? "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{t.amount ? money(t.amount) : "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{t.shares?.toFixed(2) ?? "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{t.nav?.toFixed(4) ?? "—"}</TableCell>
                         <TableCell>{t.channel || "—"}</TableCell>
                       </TableRow>
                     ))}

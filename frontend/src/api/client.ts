@@ -64,6 +64,11 @@ export const api = {
     }),
   deleteTransaction: (id: number) =>
     request<{ ok: boolean }>(`/transactions/${id}`, { method: "DELETE" }),
+  updateTransaction: (id: number, tx: Transaction) =>
+    request<{ ok: boolean }>(`/transactions/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(tx),
+    }),
   deleteAllTransactions: () =>
     request<{ ok: boolean }>("/transactions", { method: "DELETE" }),
 

@@ -187,6 +187,28 @@ def add_transaction(body: TransactionCreate) -> dict[str, Any]:
     return {"id": tx_id, **tx.to_dict()}
 
 
+@app.put("/api/transactions/{tx_id}")
+def update_transaction(tx_id: int, body: TransactionCreate) -> dict[str, Any]:
+    _ensure_fund_exists(body.fund_code)
+    tx = Transaction(
+        id=tx_id,
+        fund_code=body.fund_code,
+        action=body.action,
+        date=body.date,
+        amount=body.amount,
+        shares=body.shares,
+        nav=body.nav,
+        fee=body.fee,
+        channel=body.channel,
+        note=body.note,
+    )
+    tx.normalize()
+    if not tx.is_valid():
+        raise HTTPException(400, "金额/份额/净值信息不足，至少需要其中两项")
+    db.update_transaction(tx)
+    return {"ok": True, **tx.to_dict()}
+
+
 @app.delete("/api/transactions/{tx_id}")
 def delete_transaction(tx_id: int) -> dict[str, bool]:
     db.delete_transaction(tx_id)

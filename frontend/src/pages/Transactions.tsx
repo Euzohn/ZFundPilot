@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { useSearchParams } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { Transaction, CSVParseResult, FundMeta, Fund } from "@/api/types"
@@ -18,17 +19,32 @@ const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出" }
 const CHANNELS = ["支付宝", "理财通", "天天基金", "基金公司直销", "银行", "券商", "其它"]
 
 export default function Transactions() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [activeTab, setActiveTab] = useState("form")
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [listReloadKey, setListReloadKey] = useState(0)
+  const [prefill, setPrefill] = useState<{ code: string; action: string } | null>(null)
+
+  // 从 URL 参数消费预填数据（从持仓页跳转过来）
+  useEffect(() => {
+    const code = searchParams.get("code")
+    const action = searchParams.get("action")
+    if (code) {
+      setPrefill({ code, action: action || "buy" })
+      setActiveTab("form")
+      setSearchParams({}, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
 
   const handleEdit = (tx: Transaction) => {
     setEditingTx(tx)
+    setPrefill(null)
     setActiveTab("form")
   }
 
   const handleFormDone = () => {
     setEditingTx(null)
+    setPrefill(null)
     setListReloadKey((k) => k + 1)
   }
 
@@ -42,7 +58,12 @@ export default function Transactions() {
           <TabsTrigger value="csv">CSV 导入/导出</TabsTrigger>
         </TabsList>
         <TabsContent value="form">
-          <TransactionForm editingTx={editingTx} onDone={handleFormDone} />
+          <TransactionForm
+            editingTx={editingTx}
+            prefill={prefill}
+            onPrefillConsumed={() => setPrefill(null)}
+            onDone={handleFormDone}
+          />
         </TabsContent>
         <TabsContent value="list">
           <TransactionList key={listReloadKey} onEdit={handleEdit} />
@@ -56,8 +77,10 @@ export default function Transactions() {
 // ---------------------------------------------------------------------------
 // 单笔录入 / 编辑
 // ---------------------------------------------------------------------------
-function TransactionForm({ editingTx, onDone }: {
+function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   editingTx: Transaction | null
+  prefill: { code: string; action: string } | null
+  onPrefillConsumed: () => void
   onDone: () => void
 }) {
   const [code, setCode] = useState("")
@@ -112,6 +135,24 @@ function TransactionForm({ editingTx, onDone }: {
       api.fetchFundMeta(editingTx.fund_code).then((m) => setMeta(m)).catch(() => {})
     }
   }, [editingTx])
+
+  // 预填模式：从持仓页跳转过来，只回填代码 + 操作方向
+  useEffect(() => {
+    if (!prefill) return
+    setCode(prefill.code)
+    setAction(prefill.action)
+    setAmount(""); setShares(""); setNav(""); setFee("0")
+    setNote(""); setAfterThree(false); setCustomChannel("")
+    setMeta(null)
+    // 自动获取基金信息
+    if (prefill.code.trim()) {
+      setFetching(true)
+      api.fetchFundMeta(prefill.code.trim())
+        .then((m) => { setMeta(m); setFetching(false) })
+        .catch(() => setFetching(false))
+    }
+    onPrefillConsumed()
+  }, [prefill, onPrefillConsumed])
 
   const handleFetchMeta = async () => {
     if (!code.trim()) { toast.warning("请先输入基金代码"); return }

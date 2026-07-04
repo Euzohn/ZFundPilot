@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { Position } from "@/api/types"
@@ -7,9 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, navStr, pnlColor } from "@/lib/format"
-import { ChevronDown, ChevronRight } from "lucide-react"
+import { TrendingUp, TrendingDown } from "lucide-react"
 
 export default function Positions() {
+  const navigate = useNavigate()
   const [showClosed, setShowClosed] = useState(false)
   const { data: positions, loading, reload } = useApi(() => api.getPositions(true))
 
@@ -63,6 +65,7 @@ export default function Positions() {
                   <TableHead className="text-right">已实现</TableHead>
                   <TableHead className="text-right">占比</TableHead>
                   <TableHead>状态</TableHead>
+                  <TableHead className="w-24">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -85,6 +88,28 @@ export default function Positions() {
                       <Badge variant={p.is_open ? "success" : "secondary"}>
                         {p.is_open ? "持有" : "已清仓"}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs text-gain border-gain/30 hover:bg-gain/5"
+                          onClick={() => navigate(`/transactions?code=${p.fund_code}&action=buy`)}
+                        >
+                          <TrendingUp className="h-3 w-3" /> 买入
+                        </Button>
+                        {p.is_open && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs text-loss border-loss/30 hover:bg-loss/5"
+                            onClick={() => navigate(`/transactions?code=${p.fund_code}&action=sell`)}
+                          >
+                            <TrendingDown className="h-3 w-3" /> 卖出
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

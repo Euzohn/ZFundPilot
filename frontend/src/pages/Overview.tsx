@@ -7,7 +7,7 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts"
-import { Wallet, TrendingUp, TrendingDown, DollarSign, PiggyBank, ArrowUpFromLine, ArrowDownToLine, Calendar } from "lucide-react"
+import { Wallet, TrendingUp, DollarSign, PiggyBank, ArrowUpFromLine, Calendar } from "lucide-react"
 import type { ElementType } from "react"
 
 const PIE_COLORS = ["#1E40AF", "#3B82F6", "#60A5FA", "#93C5FD", "#D97706", "#F59E0B", "#6366F1"]
@@ -80,7 +80,7 @@ export default function Overview() {
         <MetricCard icon={Wallet} label="当前持仓成本" value={money(summary.total_cost)} />
         <MetricCard icon={DollarSign} label="当前市值" value={money(summary.total_value)} />
         <MetricCard icon={TrendingUp} label="浮动盈亏" value={signedMoney(summary.unrealized_pnl)} sub={pct(summary.total_return)} color={pnlColor(summary.unrealized_pnl)} />
-        <MetricCard icon={TrendingDown} label="已实现盈亏" value={signedMoney(summary.realized_pnl)} color={pnlColor(summary.realized_pnl)} />
+        <MetricCard icon={TrendingUp} label="已实现盈亏" value={signedMoney(summary.realized_pnl)} color={pnlColor(summary.realized_pnl)} />
       </div>
 
       {/* Metrics row 2 */}

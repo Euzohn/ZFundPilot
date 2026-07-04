@@ -167,3 +167,10 @@ ZFundPilot/
 | 权益类偏重 | 70% |
 | 高风险回撤 | -15% |
 | 高波动率 | 25% |
+
+## 联系我们
+
+欢迎提交 [Issues](https://github.com/Euzohn/ZFundPilot/issues) 报告问题或提出新需求，
+也欢迎提交 [Pull Requests](https://github.com/Euzohn/ZFundPilot/pulls) 一起改进。
+
+**作者邮箱**：Zongid@outlook.com

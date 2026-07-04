@@ -64,14 +64,20 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    """所有 /api/* 请求需要认证（/api/auth/* 除外）。未设置密码时跳过。"""
-    if not config.AUTH_PASSWORD:
+    """所有 /api/* 请求需要认证（/api/auth/login 和 /api/auth/status 除外）。未设置密码时跳过。"""
+    if not config.AUTH_ENABLED:
         return await call_next(request)
 
     path = request.url.path
-    if path.startswith("/api/auth") or not path.startswith("/api"):
+    # 静态文件（非 /api）和公开认证端点不需要 token
+    if not path.startswith("/api") or path in ("/api/auth/login", "/api/auth/status"):
         return await call_next(request)
 
     auth_header = request.headers.get("Authorization", "")
@@ -94,17 +100,30 @@ def _startup() -> None:
 @app.get("/api/auth/status")
 def auth_status() -> dict[str, Any]:
     """返回是否需要登录。前端据此决定是否展示登录页。"""
-    return {"required": bool(config.AUTH_PASSWORD)}
+    return {"required": config.AUTH_ENABLED}
 
 
 @app.post("/api/auth/login")
 def auth_login(body: LoginRequest) -> dict[str, Any]:
     """验证密码，返回 token。"""
-    if not config.AUTH_PASSWORD:
+    if not config.AUTH_ENABLED:
         return {"ok": True, "token": "", "message": "未设置密码，无需登录"}
-    if body.password != config.AUTH_PASSWORD:
+    if not config.verify_password(body.password, config.AUTH_PASSWORD_HASH):
         raise HTTPException(401, "密码错误")
     return {"ok": True, "token": _create_token(), "message": "登录成功"}
+
+
+@app.post("/api/auth/change-password")
+def change_password(body: ChangePasswordRequest) -> dict[str, Any]:
+    """修改密码（需已登录 + 当前密码验证）。"""
+    if not config.AUTH_ENABLED:
+        raise HTTPException(400, "未启用密码认证")
+    if not config.verify_password(body.current_password, config.AUTH_PASSWORD_HASH):
+        raise HTTPException(401, "当前密码错误")
+    if len(body.new_password) < 6:
+        raise HTTPException(400, "新密码至少 6 位")
+    config.update_password(body.new_password)
+    return {"ok": True, "message": "密码已修改"}
 
 
 # ---------------------------------------------------------------------------

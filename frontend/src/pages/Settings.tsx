@@ -1,14 +1,23 @@
 import { useState } from "react"
 import { getChannels, saveChannels, getDefaultChannels } from "@/lib/channels"
+import { useApi } from "@/lib/useApi"
+import { api } from "@/api/client"
+import { clearToken } from "@/lib/auth"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
-import { ChevronUp, ChevronDown, Plus, Trash2, RotateCcw, Save } from "lucide-react"
+import { ChevronUp, ChevronDown, Plus, Trash2, RotateCcw, Save, KeyRound } from "lucide-react"
 
 export default function Settings() {
   const [channels, setChannels] = useState<string[]>(() => getChannels())
   const [newChannel, setNewChannel] = useState("")
+  const { data: authStatus } = useApi(() => api.getAuthStatus(), [])
+  const [currentPwd, setCurrentPwd] = useState("")
+  const [newPwd, setNewPwd] = useState("")
+  const [confirmPwd, setConfirmPwd] = useState("")
+  const [changingPwd, setChangingPwd] = useState(false)
 
   const moveUp = (i: number) => {
     if (i === 0) return
@@ -49,6 +58,19 @@ export default function Settings() {
     setChannels(defaults)
     saveChannels(defaults)
     toast.success("已恢复默认渠道顺序")
+  }
+
+  const handleChangePassword = async () => {
+    if (!currentPwd) { toast.error("请输入当前密码"); return }
+    if (newPwd.length < 6) { toast.error("新密码至少 6 位"); return }
+    if (newPwd !== confirmPwd) { toast.error("两次输入的新密码不一致"); return }
+    setChangingPwd(true)
+    try {
+      await api.changePassword(currentPwd, newPwd)
+      toast.success("密码已修改，请重新登录")
+      setTimeout(() => { clearToken(); window.location.reload() }, 1500)
+    } catch (e) { toast.error(`修改失败: ${e}`) }
+    finally { setChangingPwd(false) }
   }
 
   return (
@@ -106,6 +128,43 @@ export default function Settings() {
           </div>
         </CardContent>
       </Card>
+
+      {authStatus?.required && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <KeyRound className="h-4 w-4" /> 修改密码
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              修改后需重新登录。密码以 SHA-256 哈希存储，不以明文保存。
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <Label className="mb-1.5 block">当前密码 *</Label>
+                <Input type="password" value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)} autoFocus />
+              </div>
+              <div>
+                <Label className="mb-1.5 block">新密码 * <span className="text-xs text-muted-foreground">至少 6 位</span></Label>
+                <Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} />
+              </div>
+              <div>
+                <Label className="mb-1.5 block">确认新密码 *</Label>
+                <Input
+                  type="password"
+                  value={confirmPwd}
+                  onChange={(e) => setConfirmPwd(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleChangePassword() } }}
+                />
+              </div>
+            </div>
+            <Button onClick={handleChangePassword} disabled={changingPwd}>
+              <KeyRound className="mr-1 h-4 w-4" /> {changingPwd ? "修改中..." : "确认修改"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

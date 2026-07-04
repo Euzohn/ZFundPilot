@@ -45,6 +45,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ password }),
     }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ ok: boolean; message: string }>("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
 
   // Summary
   getSummary: () => request<PortfolioSummary>("/summary"),

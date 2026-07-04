@@ -5,7 +5,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import os
+import secrets as _secrets
 
 # ---------------------------------------------------------------------------
 # 路径配置
@@ -96,17 +100,68 @@ FETCH_MAX_RETRIES = 2
 # ---------------------------------------------------------------------------
 # 认证配置
 # ---------------------------------------------------------------------------
-# 设置密码后，所有 API 请求需要携带登录后获取的 token。
+# 密码以 SHA-256 哈希存储在 data/auth.json 中，不以明文保存。
+# 首次启动时，若设置了 ZFUNDPILOT_PASSWORD 环境变量，则自动迁移到 auth.json。
+# 之后密码管理通过 API /api/auth/change-password 进行，无需修改环境变量。
 # 不设置密码时（默认），应用为开放访问（适合纯本地使用）。
-#
-# 设置方式：
-#   export ZFUNDPILOT_PASSWORD="your_password"
-# 或写入 .env 等环境变量管理工具
 
-AUTH_PASSWORD = os.environ.get("ZFUNDPILOT_PASSWORD", "")
+AUTH_DATA_PATH = os.path.join(DATA_DIR, "auth.json")
 
-# 用于签名 token 的密钥，不设则从密码派生
-AUTH_SECRET = os.environ.get("ZFUNDPILOT_SECRET", "") or AUTH_PASSWORD
+
+def _hash_password(password: str) -> str:
+    """SHA-256 哈希密码。"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """验证密码与哈希是否匹配（常量时间比较）。"""
+    return hmac.compare_digest(_hash_password(password), password_hash)
+
+
+def _load_auth_data() -> dict | None:
+    """从 auth.json 读取认证数据。"""
+    if not os.path.exists(AUTH_DATA_PATH):
+        return None
+    try:
+        with open(AUTH_DATA_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _save_auth_data(data: dict) -> None:
+    """写入 auth.json。"""
+    with open(AUTH_DATA_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def update_password(new_password: str) -> None:
+    """更新密码哈希（内存 + 持久化）。"""
+    global AUTH_PASSWORD_HASH
+    AUTH_PASSWORD_HASH = _hash_password(new_password)
+    auth_data = _load_auth_data() or {}
+    auth_data["password_hash"] = AUTH_PASSWORD_HASH
+    _save_auth_data(auth_data)
+
+
+# 初始化：优先从 auth.json 读取，回退到环境变量（首次迁移）
+_auth_data = _load_auth_data()
+_env_password = os.environ.get("ZFUNDPILOT_PASSWORD", "")
+_env_secret = os.environ.get("ZFUNDPILOT_SECRET", "")
+
+if _auth_data and _auth_data.get("password_hash"):
+    AUTH_PASSWORD_HASH: str = _auth_data["password_hash"]
+    AUTH_SECRET: str = _auth_data.get("secret", "") or _env_secret or _env_password
+elif _env_password:
+    AUTH_PASSWORD_HASH = _hash_password(_env_password)
+    AUTH_SECRET = _env_secret or _secrets.token_hex(32)
+    _save_auth_data({"password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
+else:
+    AUTH_PASSWORD_HASH = ""
+    AUTH_SECRET = ""
+
+# 是否启用认证
+AUTH_ENABLED = bool(AUTH_PASSWORD_HASH)
 
 # token 有效期（秒），默认 7 天
 AUTH_TOKEN_MAX_AGE = 7 * 24 * 3600

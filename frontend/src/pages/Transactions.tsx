@@ -14,9 +14,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { money } from "@/lib/format"
 import { toast } from "sonner"
 import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown } from "lucide-react"
+import { getChannels } from "@/lib/channels"
 
 const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出" }
-const CHANNELS = ["支付宝", "理财通", "天天基金", "基金公司直销", "银行", "券商", "其它"]
 
 export default function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -88,7 +88,8 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   const [fetching, setFetching] = useState(false)
   const [action, setAction] = useState("buy")
   const [date, setDate] = useState("")
-  const [channel, setChannel] = useState(CHANNELS[0])
+  const [channels] = useState<string[]>(() => getChannels())
+  const [channel, setChannel] = useState(channels[0])
   const [amount, setAmount] = useState("")
   const [shares, setShares] = useState("")
   const [nav, setNav] = useState("")
@@ -114,7 +115,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     setFee(editingTx.fee?.toString() ?? "0")
 
     // 渠道：预设值走 select，非预设值走 customChannel
-    if (editingTx.channel && CHANNELS.includes(editingTx.channel)) {
+    if (editingTx.channel && channels.includes(editingTx.channel)) {
       setChannel(editingTx.channel)
       setCustomChannel("")
     } else {
@@ -291,7 +292,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             <div>
               <Label className="mb-1.5 block">渠道</Label>
               <Select value={channel} onChange={(e) => setChannel(e.target.value)}>
-                {CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
+                {channels.map((c) => <option key={c} value={c}>{c}</option>)}
               </Select>
             </div>
           </div>

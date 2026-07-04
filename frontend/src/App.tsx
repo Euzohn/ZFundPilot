@@ -8,6 +8,7 @@ import FundDetail from "@/pages/FundDetail"
 import NavUpdate from "@/pages/NavUpdate"
 import Returns from "@/pages/Returns"
 import Risk from "@/pages/Risk"
+import Settings from "@/pages/Settings"
 import Login from "@/pages/Login"
 import { api } from "@/api/client"
 import { getToken } from "@/lib/auth"
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="nav" element={<NavUpdate />} />
         <Route path="returns" element={<Returns />} />
         <Route path="risk" element={<Risk />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>
   )

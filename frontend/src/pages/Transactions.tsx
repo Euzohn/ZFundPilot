@@ -53,6 +53,7 @@ function TransactionForm() {
   const [customChannel, setCustomChannel] = useState("")
   const [note, setNote] = useState("")
   const [saving, setSaving] = useState(false)
+  const [afterThree, setAfterThree] = useState(false)
 
   const handleFetchMeta = async () => {
     if (!code.trim()) { toast.warning("请先输入基金代码"); return }
@@ -82,10 +83,10 @@ function TransactionForm() {
         nav: parseFloat(nav) || null,
         fee: parseFloat(fee) || 0,
         channel: customChannel.trim() || channel,
-        note: note.trim(),
+        note: (note.trim() ? note.trim() + " | " : "") + (afterThree ? "T+1确认" : ""),
       })
       toast.success(`${ACTION_LABELS[action]} ${code.trim()} 已保存`)
-      setAmount(""); setShares(""); setNav(""); setFee("0"); setNote(""); setCustomChannel("")
+      setAmount(""); setShares(""); setNav(""); setFee("0"); setNote(""); setCustomChannel(""); setAfterThree(false)
     } catch (e) { toast.error(`保存失败: ${e}`) }
     finally { setSaving(false) }
   }
@@ -119,6 +120,13 @@ function TransactionForm() {
             <div>
               <Label className="mb-1.5 block">成交日期 *</Label>
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <p className="mt-1 text-xs text-muted-foreground">
+                📍 15:00 前下单按当日净值确认（T日），15:00 后按下一交易日确认（T+1日）
+              </p>
+              <label className="mt-1 flex items-center gap-1.5 text-sm">
+                <input type="checkbox" checked={afterThree} onChange={(e) => setAfterThree(e.target.checked)} className="rounded" />
+                15:00 后下单
+              </label>
             </div>
             <div>
               <Label className="mb-1.5 block">渠道</Label>
@@ -136,7 +144,7 @@ function TransactionForm() {
             </div>
             <div>
               <Label className="mb-1.5 block">份额</Label>
-              <Input type="number" step="1" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="0.00" />
+              <Input type="number" step="0.01" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="0.00" />
             </div>
             <div>
               <Label className="mb-1.5 block">成交净值</Label>

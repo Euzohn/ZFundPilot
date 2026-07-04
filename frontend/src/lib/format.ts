@@ -21,7 +21,7 @@ export function navStr(v: number | null | undefined): string {
 
 export function pnlColor(v: number | null | undefined): string {
   if (v == null) return ""
-  if (v > 0) return "text-green-600"
-  if (v < 0) return "text-red-600"
+  if (v > 0) return "text-gain"
+  if (v < 0) return "text-loss"
   return ""
 }

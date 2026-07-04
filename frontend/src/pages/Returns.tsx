@@ -4,7 +4,7 @@ import type { PortfolioSummary, CurvePoint, Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, pnlColor } from "@/lib/format"
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart } from "recharts"
 import { TrendingUp } from "lucide-react"
 
 export default function Returns() {
@@ -26,39 +26,45 @@ export default function Returns() {
 
       {/* Metrics */}
       <div className="grid grid-cols-4 gap-4">
-        <Card><CardContent className="p-5">
-          <p className="text-sm text-muted-foreground">当前市值</p>
-          <p className="mt-1 text-xl font-bold">{money(summary.total_value)}</p>
+        <Card className="card-hover"><CardContent className="p-5">
+          <p className="text-xs font-medium text-muted-foreground">当前市值</p>
+          <p className="mt-1 text-xl font-bold tabular-nums">{money(summary.total_value)}</p>
         </CardContent></Card>
-        <Card><CardContent className="p-5">
-          <p className="text-sm text-muted-foreground">浮动盈亏</p>
-          <p className={`mt-1 text-xl font-bold ${pnlColor(summary.unrealized_pnl)}`}>{signedMoney(summary.unrealized_pnl)}</p>
+        <Card className="card-hover"><CardContent className="p-5">
+          <p className="text-xs font-medium text-muted-foreground">浮动盈亏</p>
+          <p className={`mt-1 text-xl font-bold tabular-nums ${pnlColor(summary.unrealized_pnl)}`}>{signedMoney(summary.unrealized_pnl)}</p>
         </CardContent></Card>
-        <Card><CardContent className="p-5">
-          <p className="text-sm text-muted-foreground">已实现盈亏</p>
-          <p className={`mt-1 text-xl font-bold ${pnlColor(summary.realized_pnl)}`}>{signedMoney(summary.realized_pnl)}</p>
+        <Card className="card-hover"><CardContent className="p-5">
+          <p className="text-xs font-medium text-muted-foreground">已实现盈亏</p>
+          <p className={`mt-1 text-xl font-bold tabular-nums ${pnlColor(summary.realized_pnl)}`}>{signedMoney(summary.realized_pnl)}</p>
         </CardContent></Card>
-        <Card><CardContent className="p-5">
-          <p className="text-sm text-muted-foreground">总收益率</p>
-          <p className={`mt-1 text-xl font-bold ${pnlColor(summary.total_return)}`}>{pct(summary.total_return)}</p>
+        <Card className="card-hover"><CardContent className="p-5">
+          <p className="text-xs font-medium text-muted-foreground">总收益率</p>
+          <p className={`mt-1 text-xl font-bold tabular-nums ${pnlColor(summary.total_return)}`}>{pct(summary.total_return)}</p>
         </CardContent></Card>
       </div>
 
       {/* Portfolio curve */}
-      <Card>
-        <CardHeader><CardTitle className="text-base">组合收益曲线</CardTitle></CardHeader>
+      <Card className="card-hover">
+        <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">组合收益曲线</CardTitle></CardHeader>
         <CardContent>
           {curve && curve.length >= 2 ? (
-            <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={curve} margin={{ left: 10, right: 10, top: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" fontSize={11} tick={{ fill: "#94a3b8" }} />
-                <YAxis tickFormatter={(v: number) => `¥${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: "#94a3b8" }} />
-                <Tooltip formatter={(v: number) => money(v)} labelStyle={{ color: "#1e293b" }} />
-                <Legend />
-                <Line type="monotone" dataKey="total_value" name="组合市值" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="invested_cost" name="累计净投入" stroke="#94a3b8" strokeWidth={1.5} dot={false} strokeDasharray="5 5" />
-              </LineChart>
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={curve} margin={{ left: 10, right: 10, top: 5 }}>
+                <defs>
+                  <linearGradient id="valueGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.15} />
+                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="date" fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={(v: number) => `¥${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(v: number) => money(v)} labelStyle={{ color: '#1e293b' }} contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Area type="monotone" dataKey="total_value" name="组合市值" stroke="#3B82F6" strokeWidth={2} fill="url(#valueGradient)" />
+                <Line type="monotone" dataKey="invested_cost" name="累计净投入" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
+              </AreaChart>
             </ResponsiveContainer>
           ) : (
             <p className="py-12 text-center text-sm text-muted-foreground">

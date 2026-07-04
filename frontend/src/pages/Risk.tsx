@@ -9,10 +9,10 @@ import type { ReactNode } from "react"
 
 function MetricCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
-    <Card>
+    <Card className="card-hover">
       <CardContent className="p-5">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        <p className={`mt-1 text-xl font-bold ${color ?? ""}`}>{value}</p>
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        <p className={`mt-1 text-xl font-bold tabular-nums ${color ?? ""}`}>{value}</p>
         {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
       </CardContent>
     </Card>

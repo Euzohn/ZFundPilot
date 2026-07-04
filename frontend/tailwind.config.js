@@ -33,11 +33,23 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        gain: {
+          DEFAULT: "#16a34a",
+          light: "#22c55e",
+        },
+        loss: {
+          DEFAULT: "#dc2626",
+          light: "#ef4444",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      fontFamily: {
+        sans: ["Fira Sans", "system-ui", "sans-serif"],
+        mono: ["Fira Code", "monospace"],
       },
     },
   },

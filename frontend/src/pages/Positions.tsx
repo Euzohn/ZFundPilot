@@ -72,15 +72,15 @@ export default function Positions() {
                     <TableCell className="font-medium">{p.fund_name}</TableCell>
                     <TableCell>{p.channel || "未标注"}</TableCell>
                     <TableCell>{p.fund_type}</TableCell>
-                    <TableCell className="text-right">{p.held_shares.toFixed(2)}</TableCell>
-                    <TableCell className="text-right">{money(p.total_cost)}</TableCell>
-                    <TableCell className="text-right">{navStr(p.avg_cost_nav)}</TableCell>
-                    <TableCell className="text-right">{navStr(p.latest_nav)}</TableCell>
-                    <TableCell className="text-right">{money(p.market_value)}</TableCell>
-                    <TableCell className={`text-right ${pnlColor(p.unrealized_pnl)}`}>{money(p.unrealized_pnl)}</TableCell>
-                    <TableCell className={`text-right ${pnlColor(p.return_rate)}`}>{pct(p.return_rate)}</TableCell>
-                    <TableCell className={`text-right ${pnlColor(p.realized_pnl)}`}>{money(p.realized_pnl)}</TableCell>
-                    <TableCell className="text-right">{p.is_open ? pct(p.weight) : "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{p.held_shares.toFixed(2)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{money(p.total_cost)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{navStr(p.avg_cost_nav)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{navStr(p.latest_nav)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{money(p.market_value)}</TableCell>
+                    <TableCell className={`text-right tabular-nums ${pnlColor(p.unrealized_pnl)}`}>{money(p.unrealized_pnl)}</TableCell>
+                    <TableCell className={`text-right tabular-nums ${pnlColor(p.return_rate)}`}>{pct(p.return_rate)}</TableCell>
+                    <TableCell className={`text-right tabular-nums ${pnlColor(p.realized_pnl)}`}>{money(p.realized_pnl)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{p.is_open ? pct(p.weight) : "—"}</TableCell>
                     <TableCell>
                       <Badge variant={p.is_open ? "success" : "secondary"}>
                         {p.is_open ? "持有" : "已清仓"}

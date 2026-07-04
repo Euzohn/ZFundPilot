@@ -32,3 +32,6 @@ tmp/
 frontend/node_modules/
 frontend/dist/
 frontend/.env.local
+frontend/*.tsbuildinfo
+frontend/vite.config.d.ts
+frontend/vite.config.js

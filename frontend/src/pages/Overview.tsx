@@ -135,7 +135,7 @@ export default function Overview() {
                   <XAxis type="number" tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                   <YAxis type="category" dataKey="sector" width={65} fontSize={11} tick={{ fill: '#64748b' }} axisLine={false} tickLine={false} />
                   <Bar dataKey="market_value" fill="#1E40AF" radius={[0, 4, 4, 0]} barSize={14} />
-                  <Tooltip content={<ChartTooltip />} cursor={{ fill: '#f8fafc' }} />
+                  <Tooltip content={<ChartTooltip />} cursor={{ fill: '#3B82F6', opacity: 0.08 }} />
                 </BarChart>
               </ResponsiveContainer>
             ) : <p className="py-12 text-center text-sm text-muted-foreground">暂无数据</p>}

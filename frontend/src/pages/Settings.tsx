@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { getChannels, saveChannels, getDefaultChannels } from "@/lib/channels"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
@@ -35,12 +35,13 @@ export default function Settings() {
   const [savingAI, setSavingAI] = useState(false)
 
   // Sync AI config from server when loaded
-  const aiLoaded = aiConfig != null && aiBaseUrl === "" && aiModel === "" && !savingAI
-  if (aiLoaded) {
-    setAiBaseUrl(aiConfig!.base_url)
-    setAiModel(aiConfig!.model)
-    setAiWebSearch(aiConfig!.web_search)
-  }
+  useEffect(() => {
+    if (aiConfig) {
+      setAiBaseUrl(aiConfig.base_url)
+      setAiModel(aiConfig.model)
+      setAiWebSearch(aiConfig.web_search)
+    }
+  }, [aiConfig])
 
   const moveUp = (i: number) => {
     if (i === 0) return

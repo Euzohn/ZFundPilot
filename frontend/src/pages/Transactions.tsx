@@ -155,7 +155,7 @@ function TransactionForm() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label className="mb-1.5 block">手续费</Label>
-              <Input type="number" step="1" min="0" value={fee} onChange={(e) => setFee(e.target.value)} />
+              <Input type="number" step="0.01" min="0" value={fee} onChange={(e) => setFee(e.target.value)} />
             </div>
             <div>
               <Label className="mb-1.5 block">自定义渠道（可选，覆盖上面选择）</Label>

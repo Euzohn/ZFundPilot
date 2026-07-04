@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -298,3 +299,16 @@ def _ensure_fund_exists(code: str, name: str = "", ftype: str = "其它",
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("zfundpilot.api:app", host="127.0.0.1", port=8000, reload=True)
+
+
+# ---------------------------------------------------------------------------
+# 静态文件（生产模式：前端构建后由 FastAPI 统一服务）
+# ---------------------------------------------------------------------------
+# src/zfundpilot/api.py → 上溯三级 = 项目根 → frontend/dist
+_frontend_dist = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "frontend", "dist",
+)
+if os.path.isdir(_frontend_dist):
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/", StaticFiles(directory=_frontend_dist, html=True), name="frontend")

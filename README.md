@@ -41,6 +41,8 @@ pip install akshare -i http://mirrors.aliyun.com/pypi/simple/ --trusted-host=mir
 
 ## 启动
 
+> 详细部署方式（开发/生产/Docker）见 [DEPLOY.md](DEPLOY.md)
+
 ### 方式一：React 前端 + FastAPI 后端（推荐）
 
 ```bash
@@ -53,7 +55,16 @@ cd frontend && npm install && npm run dev
 
 浏览器打开 http://localhost:5173
 
-### 方式二：Streamlit（旧版界面，仍可用）
+### 方式二：生产模式（单进程，前端构建后由后端统一服务）
+
+```bash
+cd frontend && npm install && npm run build && cd ..
+uvicorn zfundpilot.api:app --host 0.0.0.0 --port 8000
+```
+
+浏览器打开 http://localhost:8000
+
+### 方式三：Streamlit（旧版界面，仍可用）
 
 ```bash
 streamlit run app.py

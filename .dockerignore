@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# 前端（构建产物由 Dockerfile 内生成）
+frontend/node_modules/
+frontend/dist/
+
+# 数据
+data/*.db
+data/*.sqlite
+fund.md
+context.md
+tmp/
+
+# 文档
+DEPLOY.md
+CONTRIBUTING.md
+CHANGELOG.md
+
+# 系统
+.DS_Store
+.idea/
+.vscode/
+.opencode/

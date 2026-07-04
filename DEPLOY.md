@@ -126,31 +126,46 @@ cp .env.example .env
 vi .env                      # 填入你的密码和密钥
 ```
 
-### 3.3 构建并启动
+### 3.3 配置端口
+
+`docker-compose.yml` 不设默认端口，端口由 `docker-compose.override.yml` 指定（该文件已被 .gitignore，不会被 git 追踪）：
+
+```bash
+cat > docker-compose.override.yml << 'EOF'
+services:
+  zfundpilot:
+    ports:
+      - "8080:8000"
+EOF
+```
+
+把 `8080` 换成你想要的端口。
+
+### 3.4 构建并启动
 
 ```bash
 docker compose up -d --build
 ```
 
-浏览器打开 `http://服务器IP:8080` → 输入密码 → 进入系统。
+浏览器打开 `http://服务器IP:你的端口` → 输入密码 → 进入系统。
 
 容器会自动重启（`restart: always`），服务器重启后无需手动干预。
 
 > Dockerfile 已内置 npm（npmmirror）和 pip（阿里云）国内镜像，构建速度有保障。
 
-### 3.4 防火墙
+### 3.5 防火墙
 
 ```bash
-# Ubuntu / Debian
+# Ubuntu / Debian — 端口跟你 override 里设的一致
 sudo ufw allow 8080
 
 # CentOS / RHEL
 sudo firewall-cmd --permanent --add-port=8080/tcp && sudo firewall-cmd --reload
 ```
 
-> 阿里云 ECS 还需在安全组规则中放行 8080 端口（TCP）。
+> 阿里云 ECS 还需在安全组规则中放行对应端口（TCP）。
 
-### 3.5 日常运维
+### 3.6 日常运维
 
 | 操作 | 命令 |
 |------|------|

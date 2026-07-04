@@ -3,8 +3,6 @@ services:
     build: .
     container_name: zfundpilot
     restart: always
-    ports:
-      - "8080:8000"
     env_file: .env
     volumes:
       - ./data:/app/data

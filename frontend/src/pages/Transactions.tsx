@@ -253,18 +253,17 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             </div>
           </div>
 
-          <p className="text-sm text-muted-foreground">金额 / 份额 / 净值：填写其中任意两项即可，系统自动补全第三项。</p>
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <Label className="mb-1.5 block">金额</Label>
+              <Label className="mb-1.5 block">金额 <span className="text-xs text-muted-foreground font-normal">(三选二)</span></Label>
               <Input type="number" step="100" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
             </div>
             <div>
-              <Label className="mb-1.5 block">份额</Label>
+              <Label className="mb-1.5 block">份额 <span className="text-xs text-muted-foreground font-normal">(三选二)</span></Label>
               <Input type="number" step="0.01" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="0.00" />
             </div>
             <div>
-              <Label className="mb-1.5 block">成交净值</Label>
+              <Label className="mb-1.5 block">成交净值 <span className="text-xs text-muted-foreground font-normal">(三选二)</span></Label>
               <Input type="number" step="0.0001" min="0" value={nav} onChange={(e) => setNav(e.target.value)} placeholder="0.0000" />
             </div>
           </div>

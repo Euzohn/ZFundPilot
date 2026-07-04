@@ -85,6 +85,8 @@ export const api = {
   getLatestNavs: () => request<LatestNav[]>("/nav/latest"),
   getNavHistory: (code: string) =>
     request<{ fund_code: string; date: string; nav: number; accumulated_nav: number | null; source: string }[]>(`/nav/${encodeURIComponent(code)}`),
+  getNavForDate: (code: string, date: string) =>
+    request<{ date: string; nav: number }[]>(`/nav/${encodeURIComponent(code)}?date=${date}`),
 
   // Portfolio curve
   getPortfolioCurve: () => request<CurvePoint[]>("/portfolio/curve"),

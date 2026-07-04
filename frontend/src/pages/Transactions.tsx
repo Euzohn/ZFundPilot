@@ -97,6 +97,8 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   const [note, setNote] = useState("")
   const [saving, setSaving] = useState(false)
   const [afterThree, setAfterThree] = useState(false)
+  const [navLoading, setNavLoading] = useState(false)
+  const [navNotFound, setNavNotFound] = useState(false)
 
   const isEditing = !!editingTx
 
@@ -154,6 +156,39 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     onPrefillConsumed()
   }, [prefill, onPrefillConsumed])
 
+  // 自动查询日期对应净值
+  useEffect(() => {
+    if (!code.trim() || !date) return
+    setNavLoading(true)
+    setNavNotFound(false)
+    api.getNavForDate(code.trim(), date)
+      .then((rows) => {
+        if (rows.length > 0) {
+          setNav(rows[0].nav.toFixed(4))
+        } else {
+          setNav("")
+          setNavNotFound(true)
+        }
+      })
+      .catch(() => { setNav(""); setNavNotFound(true) })
+      .finally(() => setNavLoading(false))
+  }, [code, date])
+
+  // 买入：金额 - 手续费 → 份额；卖出：份额 × 净值 - 手续费 → 金额
+  const a = parseFloat(amount) || 0
+  const f = parseFloat(fee) || 0
+  const n = parseFloat(nav) || 0
+  const s = parseFloat(shares) || 0
+
+  // 买入时自动算份额（只读显示）
+  const autoShares = action === "buy" && a > 0 && n > 0 && a - f > 0
+    ? ((a - f) / n).toFixed(2)
+    : ""
+  // 卖出时自动算金额（只读显示）
+  const autoAmount = action === "sell" && s > 0 && n > 0
+    ? (s * n - f).toFixed(2)
+    : ""
+
   const handleFetchMeta = async () => {
     if (!code.trim()) { toast.warning("请先输入基金代码"); return }
     setFetching(true)
@@ -176,14 +211,22 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     e.preventDefault()
     if (!code.trim()) { toast.error("基金代码不能为空"); return }
     if (!date) { toast.error("请选择成交日期"); return }
-    const filled = [amount, shares, nav].filter((v) => parseFloat(v) > 0).length
-    if (filled < 2) { toast.error("金额 / 份额 / 净值 至少填写两项"); return }
+
+    // 使用自动计算的结果
+    const finalShares = action === "buy" ? (parseFloat(autoShares) || null) : (parseFloat(shares) || null)
+    const finalAmount = action === "sell" ? (parseFloat(autoAmount) || null) : (parseFloat(amount) || null)
+    const finalNav = parseFloat(nav) || null
+
+    if (!finalAmount || !finalShares) {
+      toast.error(action === "buy" ? "请填写金额和净值（或手动输入净值）" : "请填写份额和净值（或手动输入净值）")
+      return
+    }
 
     const payload = {
       fund_code: code.trim(), action, date,
-      amount: parseFloat(amount) || null,
-      shares: parseFloat(shares) || null,
-      nav: parseFloat(nav) || null,
+      amount: finalAmount,
+      shares: finalShares,
+      nav: finalNav,
       fee: parseFloat(fee) || 0,
       channel: customChannel.trim() || channel,
       note: (note.trim() ? note.trim() + " | " : "") + (afterThree ? "T+1确认" : ""),
@@ -253,22 +296,45 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             </div>
           </div>
 
-          <p className="text-sm text-muted-foreground">填写其中任意两项即可，系统自动补全第三项。</p>
           <div className="grid grid-cols-3 gap-4">
-            <div>
-              <Label className="mb-1.5 block">金额</Label>
-              <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
-              <p className="mt-1 text-xs text-muted-foreground">本次买入/卖出的总金额（元）</p>
-            </div>
-            <div>
-              <Label className="mb-1.5 block">份额</Label>
-              <Input type="number" step="0.01" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="0.00" />
-              <p className="mt-1 text-xs text-muted-foreground">本次买入/卖出的基金份额（份）</p>
-            </div>
+            {action === "buy" ? (
+              <>
+                <div>
+                  <Label className="mb-1.5 block">金额 *</Label>
+                  <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" autoFocus={!isEditing} />
+                  <p className="mt-1 text-xs text-muted-foreground">买入总金额（元），含手续费</p>
+                </div>
+                <div>
+                  <Label className="mb-1.5 block">份额 <span className="text-xs text-blue-500">自动计算</span></Label>
+                  <Input type="number" step="0.01" value={autoShares} readOnly className="bg-muted/50" placeholder="—" />
+                  <p className="mt-1 text-xs text-muted-foreground">(金额 - 手续费) ÷ 净值</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <Label className="mb-1.5 block">份额 *</Label>
+                  <Input type="number" step="0.01" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="0.00" autoFocus={!isEditing} />
+                  <p className="mt-1 text-xs text-muted-foreground">卖出的基金份额（份）</p>
+                </div>
+                <div>
+                  <Label className="mb-1.5 block">金额 <span className="text-xs text-blue-500">自动计算</span></Label>
+                  <Input type="number" step="0.01" value={autoAmount} readOnly className="bg-muted/50" placeholder="—" />
+                  <p className="mt-1 text-xs text-muted-foreground">份额 × 净值 - 手续费</p>
+                </div>
+              </>
+            )}
             <div>
               <Label className="mb-1.5 block">成交净值</Label>
-              <Input type="number" step="0.0001" min="0" value={nav} onChange={(e) => setNav(e.target.value)} placeholder="0.0000" />
-              <p className="mt-1 text-xs text-muted-foreground">每份基金的成交价格（单位净值）</p>
+              <Input
+                type="number" step="0.0001" min="0" value={nav}
+                onChange={(e) => { setNav(e.target.value); setNavNotFound(false) }}
+                placeholder={navLoading ? "查询中..." : "0.0000"}
+                className={navNotFound ? "border-amber-400" : ""}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {navLoading ? "正在查询..." : navNotFound ? "未找到净值，请手动输入或先更新净值" : "每份基金的成交价格"}
+              </p>
             </div>
           </div>
 

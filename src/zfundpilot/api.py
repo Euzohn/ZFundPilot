@@ -265,7 +265,12 @@ def update_nav() -> list[dict[str, Any]]:
 
 
 @app.get("/api/nav/{code}")
-def get_nav_history(code: str) -> list[dict[str, Any]]:
+def get_nav_history(code: str, date: str | None = None) -> list[dict[str, Any]]:
+    if date:
+        row = db.get_nav_on_or_after(code, date)
+        if row:
+            return [dict(row)]
+        return []
     rows = db.get_nav_history(code)
     return [dict(r) for r in rows]
 

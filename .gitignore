@@ -24,6 +24,9 @@ tmp/
 # 系统文件
 .DS_Store
 
+# 密钥
+.env
+
 # IDE
 .idea/
 .vscode/

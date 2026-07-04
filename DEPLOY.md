@@ -95,42 +95,55 @@ uvicorn zfundpilot.api:app --port 8000
 
 ---
 
-## 3. Docker 部署
+## 3. Docker 部署（服务器推荐）
 
-### 3.1 构建镜像
-
-```bash
-docker build -t zfundpilot .
-```
-
-### 3.2 运行容器
+### 3.1 克隆 + 配置密码
 
 ```bash
-# 数据持久化到宿主机 ./data 目录
-docker run -d \
-  --name zfundpilot \
-  -p 8000:8000 \
-  -v $(pwd)/data:/app/data \
-  zfundpilot
-
-# 自定义数据目录 + 密码保护
-docker run -d \
-  --name zfundpilot \
-  -p 8000:8000 \
-  -e ZFUNDPILOT_PASSWORD="your_password" \
-  -e ZFUNDPILOT_HOME=/data \
-  -v /path/to/data:/data \
-  zfundpilot
+git clone https://github.com/Euzohn/ZFundPilot.git
+cd ZFundPilot
+cp .env.example .env
+vi .env                      # 填入你的密码和密钥
 ```
 
-浏览器打开 http://localhost:8000
-
-### 3.3 停止 / 更新
+### 3.2 构建并启动
 
 ```bash
-docker stop zfundpilot && docker rm zfundpilot
-docker build -t zfundpilot . && docker run -d ...  # 重新运行
+docker compose up -d --build
 ```
+
+浏览器打开 `http://服务器IP:8000` → 输入密码 → 进入系统。
+
+容器会自动重启（`restart: always`），服务器重启后无需手动干预。
+
+### 3.3 防火墙
+
+```bash
+# Ubuntu / Debian
+sudo ufw allow 8000
+
+# CentOS / RHEL
+sudo firewall-cmd --permanent --add-port=8000/tcp && sudo firewall-cmd --reload
+```
+
+### 3.4 日常运维
+
+| 操作 | 命令 |
+|------|------|
+| 查看日志 | `docker compose logs -f` |
+| 停止 | `docker compose down` |
+| 更新代码 | `git pull && docker compose up -d --build` |
+| 备份数据 | `cp data/fund.db data/fund.db.bak` |
+
+### 3.5 环境变量
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `ZFUNDPILOT_PASSWORD` | 服务器部署必填 | 访问密码 |
+| `ZFUNDPILOT_SECRET` | 建议 | token 签名密钥，建议与密码不同 |
+| `ZFUNDPILOT_HOME` | 可选 | 数据目录位置，默认 `/app/data` |
+
+> ⚠️ 服务器对外暴露时**务必设置 `ZFUNDPILOT_PASSWORD`**，否则任何人都能查看你的持仓。
 
 ---
 

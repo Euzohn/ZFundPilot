@@ -55,9 +55,19 @@ export default function FundDetail() {
   const latestNav = openPositions[0]?.latest_nav ?? null
   const returnRate = totalCost > 0 ? totalValue / totalCost - 1 : null
 
-  // 净值图表数据（最近 180 天）
+  // 交易日期查找表
+  const txMap: Record<string, Transaction[]> = {}
+  txs?.forEach(t => {
+    if (!txMap[t.date]) txMap[t.date] = []
+    txMap[t.date].push(t)
+  })
+
+  // 净值图表数据（最近 180 天），带上交易标记
   const chartData = navHistory
-    ? [...navHistory].sort((a, b) => a.date.localeCompare(b.date)).slice(-180)
+    ? [...navHistory]
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(-180)
+        .map(d => ({ ...d, _tx: txMap[d.date] || null }))
     : []
 
   return (
@@ -153,12 +163,55 @@ export default function FundDetail() {
                 <XAxis dataKey="date" fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <YAxis fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
                 <Tooltip
-                  formatter={(v: number) => navStr(v)}
-                  labelStyle={{ color: '#1e293b' }}
-                  contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }}
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null
+                    const d = payload[0].payload
+                    const txInfo = d._tx as Transaction[] | null
+                    return (
+                      <div className="rounded-lg border bg-white px-3 py-2 shadow-lg">
+                        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+                        <p className="text-sm font-bold tabular-nums text-primary">{navStr(d.nav)}</p>
+                        {txInfo && txInfo.length > 0 && (
+                          <div className="mt-1 space-y-0.5 border-t pt-1">
+                            {txInfo.map((t, i) => (
+                              <p key={i} className={`text-xs tabular-nums ${t.action === 'buy' ? 'text-gain' : 'text-loss'}`}>
+                                {t.action === 'buy' ? '↑ 买入' : '↓ 卖出'}
+                                {t.amount ? ` ${money(t.amount)}` : ''}
+                                {t.shares ? ` ${t.shares.toFixed(2)} 份` : ''}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }}
                 />
                 {avgCost && <ReferenceLine y={avgCost} stroke="#94a3b8" strokeDasharray="5 5" label={{ value: `均价 ${navStr(avgCost)}`, fontSize: 11, fill: '#94a3b8' }} />}
-                <Line type="monotone" dataKey="nav" stroke="#3B82F6" strokeWidth={2} dot={false} />
+                <Line
+                  type="monotone"
+                  dataKey="nav"
+                  stroke="#3B82F6"
+                  strokeWidth={2}
+                  dot={(props: any) => {
+                    const { cx, cy, payload } = props
+                    if (!payload?.date || cx == null || cy == null) return <g />
+                    const txList: Transaction[] | null = payload._tx
+                    if (!txList || txList.length === 0) return <g />
+                    const hasBuy = txList.some(t => t.action === 'buy')
+                    const hasSell = txList.some(t => t.action === 'sell')
+                    const both = hasBuy && hasSell
+                    return (
+                      <g>
+                        {hasBuy && (
+                          <circle cx={both ? cx - 3 : cx} cy={cy} r={4} fill="#16a34a" stroke="#fff" strokeWidth={2} />
+                        )}
+                        {hasSell && (
+                          <circle cx={both ? cx + 3 : cx} cy={cy} r={4} fill="#dc2626" stroke="#fff" strokeWidth={2} />
+                        )}
+                      </g>
+                    )
+                  }}
+                />
               </LineChart>
             </ResponsiveContainer>
           ) : (

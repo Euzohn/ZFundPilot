@@ -13,6 +13,10 @@
 - **收益分析**：浮动盈亏、已实现盈亏、组合收益曲线、收益率排序
 - **风险分析**：最大回撤、年化波动率、集中度（HHI）、结构占比、风险提示
 - **结构建议**：基于组合结构给出再平衡建议（非交易指令）
+- **AI 投顾对话**：配置 OpenAI 兼容 API 后，AI 自动联网搜索最新资讯 + 结合持仓数据给出调仓建议（支持智谱 / Kimi / 通义千问 / DeepSeek）
+- **净值走势图标记**：在净值曲线上自动标记买入/卖出点位，悬停显示交易明细
+- **移动端适配**：抽屉式侧边栏导航、响应式网格布局
+- **密码认证**：HMAC 签名 token，支持设置页在线修改密码（SHA-256 哈希存储）
 
 ## 环境要求
 
@@ -39,7 +43,7 @@ pip install akshare -i http://mirrors.aliyun.com/pypi/simple/ --trusted-host=mir
 > macOS 上如遇 `SSL: CERTIFICATE_VERIFY_FAILED`，运行一次
 > `/Applications/Python\ 3.x/Install\ Certificates.command` 即可修复。
 
-## 启动
+## 部署
 
 > 详细部署方式（开发/生产/Docker）见 [DEPLOY.md](DEPLOY.md)
 
@@ -72,6 +76,14 @@ streamlit run app.py
 
 浏览器打开 http://localhost:8501
 
+## 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `ZFUNDPILOT_PASSWORD` | 空 | **仅首次启动**时用于初始化密码哈希，之后密码存在 `data/auth.json`，可通过设置页修改 |
+| `ZFUNDPILOT_SECRET` | 自动生成 | **仅首次启动**时用于初始化 token 签名密钥，之后存于 `data/auth.json` |
+| `ZFUNDPILOT_HOME` | 项目根 | 数据目录（`data/`）所在位置 |
+
 ## 使用流程
 
 1. **交易录入 → 单笔录入**：输入基金代码点「获取基金信息」自动补全，选择买入/卖出、渠道，
@@ -103,24 +115,36 @@ streamlit run app.py
 
 ```text
 ZFundPilot/
-├── app.py                # Streamlit 启动入口（薄壳）
+├── app.py                # Streamlit 旧版启动入口（仍可用）
 ├── pyproject.toml        # 打包配置、依赖、Ruff/Pytest 配置
+├── Dockerfile            # 多阶段构建 Docker 镜像
+├── docker-compose.yml    # Docker 部署（端口由 override 指定）
 ├── src/zfundpilot/       # Python 包
 │   ├── __init__.py
-│   ├── app.py            # Streamlit 主界面（7 个页面）
-│   ├── config.py         # 全局配置、渠道、风险阈值
+│   ├── config.py         # 全局配置、渠道、风险阈值、认证/AI 配置存储
 │   ├── models.py         # 数据结构（Fund / Transaction / Position）
 │   ├── db.py             # SQLite 数据库操作
 │   ├── fetch_fund.py     # 净值获取 + 名称/类型/板块自动识别
 │   ├── analysis.py       # 交易流水汇总、收益计算、组合曲线
-│   ├── risk.py           # 风险分析
+│   ├── risk.py           # 风险分析（回撤/波动率/集中度/结构占比）
 │   ├── rebalance.py      # 结构优化建议
-│   └── data_io.py        # 交易流水 CSV 导入/导出
-├── tests/                # Pytest 测试套件
+│   ├── data_io.py        # 交易流水 CSV 导入/导出
+│   ├── api.py            # FastAPI REST API（28 路由 + 认证中间件）
+│   └── ai.py             # AI 投顾对话（持仓上下文 + 联网搜索 + LLM 流式调用）
+├── tests/                # Pytest 测试套件（25 测试）
 ├── data/
 │   ├── fund.db           # SQLite 数据库（自动生成）
-│   └── sector_map.json   # 基金代码→板块 映射（自动维护）
-└── frontend/             # React 前端（规划中）
+│   ├── auth.json         # 密码哈希 / token 密钥（自动生成）
+│   ├── ai_config.json    # AI 模型配置（自动生成）
+│   └── sector_map.json   # 基金代码→板块映射（自动维护）
+├── frontend/             # React + Vite + TypeScript + Tailwind + shadcn/ui
+│   ├── src/
+│   │   ├── pages/        # 9 个页面（Overview / Transactions / Positions / FundDetail / NavUpdate / Returns / Risk / Settings / Login）
+│   │   ├── components/   # Layout + shadcn/ui 组件
+│   │   ├── api/          # 类型化 API client + streamChat (SSE)
+│   │   └── lib/          # 工具函数（format / auth / channels / useApi）
+│   └── dist/             # 构建产物（生产模式）
+└── .env.example           # 环境变量模板
 ```
 
 ## 数据模型

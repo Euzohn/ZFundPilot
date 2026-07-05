@@ -381,6 +381,8 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
 function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
   const { data: txs, loading, reload } = useApi<Transaction[]>(() => api.getTransactions())
   const [funds, setFunds] = useState<Record<string, Fund>>({})
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [clearConfirmText, setClearConfirmText] = useState("")
 
   // Load fund names
   useApi(() => api.getFunds(), []).data?.forEach((f: Fund) => {
@@ -398,10 +400,11 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
   }
 
   const handleClearAll = async () => {
-    if (!confirm("确认清空全部交易？此操作不可撤销。")) return
     try {
       await api.deleteAllTransactions()
       toast.success("已清空全部交易")
+      setShowClearConfirm(false)
+      setClearConfirmText("")
       reload()
     } catch (e) { toast.error(`清空失败: ${e}`) }
   }
@@ -410,7 +413,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
     <Card>
       <CardHeader className="flex-row items-center justify-between">
         <CardTitle className="text-base">交易流水</CardTitle>
-        <Button variant="destructive" size="sm" onClick={handleClearAll}>
+        <Button variant="destructive" size="sm" onClick={() => { setShowClearConfirm(true); setClearConfirmText("") }}>
           <Trash2 className="mr-1 h-4 w-4" /> 清空全部
         </Button>
       </CardHeader>
@@ -473,6 +476,37 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
         )}
         {txs && txs.length > 0 && <p className="mt-3 text-sm text-muted-foreground">共 {txs.length} 笔交易</p>}
       </CardContent>
+
+      {/* 清空确认弹窗 */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowClearConfirm(false)}>
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-red-600">⚠️ 清空全部交易流水</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              此操作将删除所有交易记录，<strong>不可撤销</strong>。
+            </p>
+            <p className="mt-3 text-sm text-muted-foreground">
+              请输入 <code className="rounded bg-muted px-1.5 py-0.5 text-sm font-mono">确认清空</code> 以确认：
+            </p>
+            <Input
+              value={clearConfirmText}
+              onChange={(e) => setClearConfirmText(e.target.value)}
+              placeholder="确认清空"
+              className="mt-2"
+              onKeyDown={(e) => { if (e.key === "Enter" && clearConfirmText === "确认清空") { e.preventDefault(); handleClearAll() } }}
+              autoFocus
+            />
+            <div className="mt-4 flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => { setShowClearConfirm(false); setClearConfirmText("") }}>
+                取消
+              </Button>
+              <Button variant="destructive" className="flex-1" disabled={clearConfirmText !== "确认清空"} onClick={handleClearAll}>
+                确认清空
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   )
 }

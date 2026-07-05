@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useSearchParams } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
@@ -12,8 +12,9 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown } from "lucide-react"
+import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown } from "lucide-react"
 import { getChannels } from "@/lib/channels"
 
 const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出" }
@@ -383,11 +384,58 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
   const [funds, setFunds] = useState<Record<string, Fund>>({})
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [clearConfirmText, setClearConfirmText] = useState("")
+  const [sortField, setSortField] = useState("date")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
 
   // Load fund names
   useApi(() => api.getFunds(), []).data?.forEach((f: Fund) => {
     if (!funds[f.fund_code]) setFunds((prev) => ({ ...prev, [f.fund_code]: f }))
   })
+
+  const toggleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc")
+    } else {
+      setSortField(field)
+      setSortDir("desc")
+    }
+  }
+
+  const sortedTxs = useMemo(() => {
+    if (!txs) return txs
+    return [...txs].sort((a, b) => {
+      const getVal = (t: Transaction): string | number => {
+        if (sortField === "date") return t.date
+        if (sortField === "fund_code") return t.fund_code
+        if (sortField === "amount") return t.amount ?? 0
+        if (sortField === "shares") return t.shares ?? 0
+        if (sortField === "nav") return t.nav ?? 0
+        if (sortField === "fee") return t.fee ?? 0
+        return t.id ?? 0
+      }
+      const va = getVal(a)
+      const vb = getVal(b)
+      const cmp = typeof va === "string" && typeof vb === "string"
+        ? va.localeCompare(vb)
+        : (va as number) - (vb as number)
+      return sortDir === "asc" ? cmp : -cmp
+    })
+  }, [txs, sortField, sortDir])
+
+  function SortHeader({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) {
+    const active = sortField === field
+    return (
+      <TableHead
+        className={cn("cursor-pointer select-none", active ? "text-foreground" : "", className)}
+        onClick={() => toggleSort(field)}
+      >
+        <span className="inline-flex items-center gap-1">
+          {children}
+          {active && (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+        </span>
+      </TableHead>
+    )
+  }
 
   if (loading) return <div className="py-8 text-center text-muted-foreground">加载中...</div>
 
@@ -421,25 +469,25 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
         {!txs || txs.length === 0 ? (
           <p className="py-8 text-center text-muted-foreground">暂无交易流水</p>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-16">ID</TableHead>
-                <TableHead>日期</TableHead>
-                <TableHead>操作</TableHead>
-                <TableHead>代码</TableHead>
-                <TableHead>名称</TableHead>
-                <TableHead>渠道</TableHead>
-                <TableHead className="text-right">金额</TableHead>
-                <TableHead className="text-right">份额</TableHead>
-                <TableHead className="text-right">净值</TableHead>
-                <TableHead className="text-right">手续费</TableHead>
-                <TableHead>备注</TableHead>
-                <TableHead className="w-20">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {txs.map((t) => {
+<Table>
+              <TableHeader>
+                <TableRow>
+                  <SortHeader field="id" className="w-16">ID</SortHeader>
+                  <SortHeader field="date">日期</SortHeader>
+                  <TableHead>操作</TableHead>
+                  <SortHeader field="fund_code">代码</SortHeader>
+                  <TableHead>名称</TableHead>
+                  <TableHead>渠道</TableHead>
+                  <SortHeader field="amount" className="text-right">金额</SortHeader>
+                  <SortHeader field="shares" className="text-right">份额</SortHeader>
+                  <SortHeader field="nav" className="text-right">净值</SortHeader>
+                  <SortHeader field="fee" className="text-right">手续费</SortHeader>
+                  <TableHead>备注</TableHead>
+                  <TableHead className="w-20">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedTxs?.map((t) => {
                 const fund = funds[t.fund_code]
                 return (
                   <TableRow key={t.id}>

@@ -122,7 +122,7 @@ def detect_provider(base_url: str) -> str:
         return "kimi"
     if "bigmodel" in url or "zhipu" in url or "glm" in url:
         return "zhipu"
-    if "dashscope" in url or "aliyun" in url:
+    if "dashscope" in url or "aliyun" in url or "aliyuncs" in url or "maas" in url:
         return "qwen"
     if "deepseek" in url:
         return "deepseek"
@@ -147,7 +147,10 @@ def _build_tools(provider: str) -> tuple[list | None, dict[str, Any]]:
             {},
         )
     if provider == "qwen":
-        return None, {"enable_search": True}
+        return None, {
+            "enable_search": True,
+            "search_options": {"forced_search": True},
+        }
     # deepseek / default / none: 不启用联网搜索
     return None, {}
 

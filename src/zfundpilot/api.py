@@ -254,6 +254,8 @@ def add_transaction(body: TransactionCreate) -> dict[str, Any]:
     if not tx.is_valid():
         raise HTTPException(400, "金额/份额/净值信息不足，至少需要其中两项")
     tx_id = db.add_transaction(tx)
+    if not db.get_latest_nav(body.fund_code):
+        fetch_fund.update_fund_nav(body.fund_code)
     return {"id": tx_id, **tx.to_dict()}
 
 
@@ -276,6 +278,8 @@ def update_transaction(tx_id: int, body: TransactionCreate) -> dict[str, Any]:
     if not tx.is_valid():
         raise HTTPException(400, "金额/份额/净值信息不足，至少需要其中两项")
     db.update_transaction(tx)
+    if not db.get_latest_nav(body.fund_code):
+        fetch_fund.update_fund_nav(body.fund_code)
     return {"ok": True, **tx.to_dict()}
 
 
@@ -447,6 +451,10 @@ def confirm_import(body: CSVImportConfirm) -> dict[str, Any]:
         )
         db.add_transaction(tx)
         count += 1
+    new_codes = {t.fund_code for t in body.transactions}
+    for code in new_codes:
+        if not db.get_latest_nav(code):
+            fetch_fund.update_fund_nav(code)
     return {"imported": count}
 
 

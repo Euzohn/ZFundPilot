@@ -20,10 +20,7 @@ export default function Positions() {
   const [closedSortDir, setClosedSortDir] = useState<"asc" | "desc">("desc")
   const { data: positions, loading } = useApi(() => api.getPositions(true))
 
-  if (loading) return <div className="py-20 text-center text-muted-foreground">加载中...</div>
-  if (!positions) return <div className="py-20 text-center text-red-500">加载失败</div>
-
-  const view = showClosed ? positions : positions.filter((p) => p.is_open)
+  const view = positions ? (showClosed ? positions : positions.filter((p) => p.is_open)) : []
 
   // 按基金合并（跨渠道）
   const merged: Record<string, { name: string; type: string; sector: string; value: number; cost: number; pnl: number; channels: number }> = {}
@@ -86,6 +83,12 @@ export default function Positions() {
 
   return (
     <div className="space-y-6">
+      {loading ? (
+        <div className="py-20 text-center text-muted-foreground">加载中...</div>
+      ) : !positions ? (
+        <div className="py-20 text-center text-red-500">加载失败</div>
+      ) : (
+      <>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl md:text-2xl font-bold">持仓明细</h1>
         <Button variant="outline" size="sm" onClick={() => setShowClosed(!showClosed)}>
@@ -243,6 +246,8 @@ export default function Positions() {
             })()}
           </CardContent>
         </Card>
+      )}
+      </>
       )}
     </div>
   )

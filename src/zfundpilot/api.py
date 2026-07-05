@@ -123,7 +123,7 @@ def change_password(body: ChangePasswordRequest) -> dict[str, Any]:
     if len(body.new_password) < 6:
         raise HTTPException(400, "新密码至少 6 位")
     config.update_password(body.new_password)
-    return {"ok": True, "message": "密码已修改"}
+    return {"ok": True, "message": "密码已修改，所有设备需要重新登录"}
 
 
 # ---------------------------------------------------------------------------

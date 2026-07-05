@@ -136,12 +136,11 @@ def _save_auth_data(data: dict) -> None:
 
 
 def update_password(new_password: str) -> None:
-    """更新密码哈希（内存 + 持久化）。"""
-    global AUTH_PASSWORD_HASH
+    """更新密码哈希并刷新 token 签名密钥（使所有已有 token 立即失效）。"""
+    global AUTH_PASSWORD_HASH, AUTH_SECRET
     AUTH_PASSWORD_HASH = _hash_password(new_password)
-    auth_data = _load_auth_data() or {}
-    auth_data["password_hash"] = AUTH_PASSWORD_HASH
-    _save_auth_data(auth_data)
+    AUTH_SECRET = _secrets.token_hex(32)
+    _save_auth_data({"password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
 
 
 # 初始化：优先从 auth.json 读取，回退到环境变量（首次迁移）

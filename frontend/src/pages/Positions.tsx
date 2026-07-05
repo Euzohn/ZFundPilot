@@ -26,9 +26,9 @@ export default function Positions() {
   const view = showClosed ? positions : positions.filter((p) => p.is_open)
 
   // 按基金合并（跨渠道）
-  const merged: Record<string, { name: string; type: string; value: number; cost: number; pnl: number; channels: number }> = {}
+  const merged: Record<string, { name: string; type: string; sector: string; value: number; cost: number; pnl: number; channels: number }> = {}
   for (const p of view.filter((p) => p.is_open)) {
-    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, value: 0, cost: 0, pnl: 0, channels: 0 }
+    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, value: 0, cost: 0, pnl: 0, channels: 0 }
     m.value += p.market_value
     m.cost += p.total_cost
     m.pnl += p.unrealized_pnl
@@ -52,6 +52,7 @@ export default function Positions() {
         switch (sortField) {
           case "name": return m.name
           case "type": return m.type
+          case "sector": return m.sector
           case "value": return m.value
           case "pnl": return m.pnl
           case "return": return m.cost ? m.value / m.cost - 1 : -999
@@ -106,6 +107,7 @@ export default function Positions() {
                   <TableRow>
                     <SortHeader field="name">名称</SortHeader>
                     <SortHeader field="type">类型</SortHeader>
+                    <SortHeader field="sector">板块</SortHeader>
                     <SortHeader field="value" className="text-right">市值</SortHeader>
                     <SortHeader field="pnl" className="text-right">浮动盈亏</SortHeader>
                     <SortHeader field="return" className="text-right">收益率</SortHeader>
@@ -130,6 +132,7 @@ export default function Positions() {
                         </div>
                       </TableCell>
                       <TableCell><Badge variant="outline">{m.type}</Badge></TableCell>
+                      <TableCell>{m.sector ? <Badge variant="secondary" className="font-normal">{m.sector}</Badge> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">{money(m.value)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(m.pnl)}`}>{money(m.pnl)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(ret)}`}>{pct(ret)}</TableCell>

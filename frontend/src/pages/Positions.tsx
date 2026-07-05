@@ -181,7 +181,8 @@ export default function Positions() {
           </CardHeader>
           <CardContent>
             {(() => {
-              const closed = positions.filter((p) => !p.is_open)
+              const openCodes = new Set(positions.filter(p => p.is_open).map(p => p.fund_code))
+              const closed = positions.filter((p) => !p.is_open && !openCodes.has(p.fund_code))
               const closedMerged: Record<string, { name: string; realized: number; channels: number }> = {}
               for (const p of closed) {
                 const m = closedMerged[p.fund_code] ?? { name: p.fund_name, realized: 0, channels: 0 }

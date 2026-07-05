@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { money } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown } from "lucide-react"
+import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2 } from "lucide-react"
 import { getChannels } from "@/lib/channels"
 
 const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出" }
@@ -148,7 +148,6 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     setAmount(""); setShares(""); setNav(""); setFee("0")
     setNote(""); setAfterThree(false); setCustomChannel("")
     setMeta(null)
-    // 自动获取基金信息
     if (prefill.code.trim()) {
       setFetching(true)
       api.fetchFundMeta(prefill.code.trim())
@@ -191,16 +190,22 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     ? (s * n - f).toFixed(2)
     : ""
 
-  const handleFetchMeta = async () => {
-    if (!code.trim()) { toast.warning("请先输入基金代码"); return }
+  const handleFetchMeta = async (silent = false) => {
+    if (!code.trim()) return
     setFetching(true)
     try {
       const m = await api.fetchFundMeta(code.trim())
       setMeta(m)
-      if (m.ok) toast.success(`已识别：${m.fund_name}（${m.fund_type}）`)
-      else toast.error(`获取失败：${m.message}`)
-    } catch (e) { toast.error(`请求失败: ${e}`) }
+      if (m.ok && !silent) toast.success(`已识别：${m.fund_name}`)
+    } catch (e) { if (!silent) toast.error(`获取失败: ${e}`) }
     finally { setFetching(false) }
+  }
+
+  const handleCodeBlur = () => {
+    const c = code.trim()
+    if (c.length === 6 && /^\d{6}$/.test(c) && !meta) {
+      handleFetchMeta(true)
+    }
   }
 
   const resetForm = () => {
@@ -251,122 +256,148 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-3">
         <CardTitle className="text-base">
           {isEditing ? `编辑交易 #${editingTx?.id}` : "单笔录入"}
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {/* Step 1: fund code */}
-        <div className="mb-6">
-          <Label className="mb-2 block">第一步：输入代码，自动获取基金信息</Label>
-          <div className="flex gap-2">
-            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="如 011612" className="max-w-[200px]" />
-            <Button type="button" variant="secondary" onClick={handleFetchMeta} disabled={fetching}>
-              <Search className="mr-1 h-4 w-4" /> {fetching ? "查询中..." : "获取基金信息"}
-            </Button>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* ── 基金代码 ── */}
+          <div>
+            <div className="flex gap-2">
+              <div className="flex-1 max-w-[200px]">
+                <Label className="mb-1.5 block text-xs text-muted-foreground">基金代码</Label>
+                <Input
+                  value={code} onChange={(e) => setCode(e.target.value)} onBlur={handleCodeBlur}
+                  placeholder="如 011612" className="h-9"
+                />
+              </div>
+              <div className="pt-5">
+                <Button type="button" variant="outline" size="sm" onClick={() => handleFetchMeta(false)} disabled={fetching} className="h-9">
+                  {fetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                </Button>
+              </div>
+              {meta?.ok && (
+                <div className="pt-5 flex-1 min-w-0">
+                  <p className="text-sm truncate">
+                    <span className="font-medium">{meta.fund_name}</span>
+                    <span className="text-muted-foreground mx-1.5">·</span>
+                    <span className="text-xs text-muted-foreground">{meta.fund_type}{meta.sector ? ` · ${meta.sector}` : ""}</span>
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
-          {meta?.ok && <p className="mt-2 text-sm text-green-600">当前基金：{meta.fund_name}（{meta.fund_type}）{meta.sector ? ` 板块:${meta.sector}` : ""}</p>}
-        </div>
 
-        {/* Step 2: transaction details */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="border-t border-slate-100" />
+
+          {/* ── 操作 / 日期 / 渠道 ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div>
-              <Label className="mb-1.5 block">操作 *</Label>
-              <Select value={action} onChange={(e) => setAction(e.target.value)}>
+              <Label className="mb-1.5 block text-xs text-muted-foreground">操作</Label>
+              <Select value={action} onChange={(e) => setAction(e.target.value)} className="h-9">
                 <option value="buy">买入</option>
                 <option value="sell">卖出</option>
               </Select>
             </div>
-            <div>
-              <Label className="mb-1.5 block">成交日期 *</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-              <p className="mt-1 text-xs text-muted-foreground">
-                📍 15:00 前下单按当日净值确认（T日），15:00 后按下一交易日确认（T+1日）
-              </p>
-              <label className="mt-1 flex items-center gap-1.5 text-sm">
-                <input type="checkbox" checked={afterThree} onChange={(e) => setAfterThree(e.target.checked)} className="rounded" />
-                15:00 后下单
-              </label>
+            <div className="sm:col-span-2">
+              <Label className="mb-1.5 block text-xs text-muted-foreground">成交日期</Label>
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9" />
+              <div className="mt-1 flex items-center gap-3">
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  15:00 前按当日净值确认（T日），之后按下一交易日（T+1）
+                </p>
+                <label className="shrink-0 flex items-center gap-1 text-[11px] cursor-pointer select-none">
+                  <input type="checkbox" checked={afterThree} onChange={(e) => setAfterThree(e.target.checked)} className="rounded" />
+                  15:00 后
+                </label>
+              </div>
             </div>
             <div>
-              <Label className="mb-1.5 block">渠道</Label>
-              <Select value={channel} onChange={(e) => setChannel(e.target.value)}>
+              <Label className="mb-1.5 block text-xs text-muted-foreground">渠道</Label>
+              <Select value={channel} onChange={(e) => setChannel(e.target.value)} className="h-9">
                 {channels.map((c) => <option key={c} value={c}>{c}</option>)}
               </Select>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="border-t border-slate-100" />
+
+          {/* ── 金额 / 份额 / 净值 / 手续费 ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             {action === "buy" ? (
               <>
                 <div>
-                  <Label className="mb-1.5 block">金额 *</Label>
-                  <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" autoFocus={!isEditing} />
-                  <p className="mt-1 text-xs text-muted-foreground">买入总金额（元），含手续费</p>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">金额（元）</Label>
+                  <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="h-9" autoFocus={!isEditing} />
                 </div>
                 <div>
-                  <Label className="mb-1.5 block">份额 <span className="text-xs text-blue-500">自动计算</span></Label>
-                  <Input type="number" step="0.01" value={autoShares} readOnly className="bg-muted/50" placeholder="—" />
-                  <p className="mt-1 text-xs text-muted-foreground">(金额 - 手续费) ÷ 净值</p>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">
+                    份额 <span className="text-blue-500">自动</span>
+                  </Label>
+                  <Input type="number" step="0.01" value={autoShares} readOnly className="h-9 bg-muted/50" placeholder="—" />
                 </div>
               </>
             ) : (
               <>
                 <div>
-                  <Label className="mb-1.5 block">份额 *</Label>
-                  <Input type="number" step="0.01" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="0.00" autoFocus={!isEditing} />
-                  <p className="mt-1 text-xs text-muted-foreground">卖出的基金份额（份）</p>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">份额（份）</Label>
+                  <Input type="number" step="0.01" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="0.00" className="h-9" autoFocus={!isEditing} />
                 </div>
                 <div>
-                  <Label className="mb-1.5 block">金额 <span className="text-xs text-blue-500">自动计算</span></Label>
-                  <Input type="number" step="0.01" value={autoAmount} readOnly className="bg-muted/50" placeholder="—" />
-                  <p className="mt-1 text-xs text-muted-foreground">份额 × 净值 - 手续费</p>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">
+                    金额 <span className="text-blue-500">自动</span>
+                  </Label>
+                  <Input type="number" step="0.01" value={autoAmount} readOnly className="h-9 bg-muted/50" placeholder="—" />
                 </div>
               </>
             )}
             <div>
-              <Label className="mb-1.5 block">成交净值</Label>
-              <Input
-                type="number" step="0.0001" min="0" value={nav}
-                onChange={(e) => { setNav(e.target.value); setNavNotFound(false) }}
-                placeholder={navLoading ? "查询中..." : "0.0000"}
-                className={navNotFound ? "border-amber-400" : ""}
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                {navLoading ? "正在查询..." : navNotFound ? "未找到净值，请手动输入或先更新净值" : "每份基金的成交价格"}
+              <Label className="mb-1.5 block text-xs text-muted-foreground">成交净值</Label>
+              <div className="relative">
+                <Input
+                  type="number" step="0.0001" min="0" value={nav}
+                  onChange={(e) => { setNav(e.target.value); setNavNotFound(false) }}
+                  placeholder={navLoading ? "查询中..." : "0.0000"}
+                  className={cn("h-9", navLoading && "pr-8", navNotFound && "border-amber-400")}
+                />
+                {navLoading && (
+                  <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                )}
+              </div>
+              <p className={cn("mt-1 text-[11px]", navNotFound ? "text-amber-500" : "text-muted-foreground")}>
+                {navLoading ? "正在查询净值..." : navNotFound ? "该日期暂无净值，请手动输入" : "自动加载或手动填写"}
               </p>
             </div>
+            <div>
+              <Label className="mb-1.5 block text-xs text-muted-foreground">手续费（元）</Label>
+              <Input type="number" step="0.01" min="0" value={fee} onChange={(e) => setFee(e.target.value)} className="h-9" />
+            </div>
           </div>
 
+          <div className="border-t border-slate-100" />
+
+          {/* ── 自定义渠道 / 备注 ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <Label className="mb-1.5 block">手续费</Label>
-              <Input type="number" step="0.01" min="0" value={fee} onChange={(e) => setFee(e.target.value)} />
+              <Label className="mb-1.5 block text-xs text-muted-foreground">自定义渠道（可选）</Label>
+              <Input value={customChannel} onChange={(e) => setCustomChannel(e.target.value)} placeholder="覆盖上方选择" className="h-9" />
             </div>
             <div>
-              <Label className="mb-1.5 block">自定义渠道（可选，覆盖上面选择）</Label>
-              <Input value={customChannel} onChange={(e) => setCustomChannel(e.target.value)} placeholder="如 招商银行" />
+              <Label className="mb-1.5 block text-xs text-muted-foreground">备注（可选）</Label>
+              <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="备注信息" className="h-9" />
             </div>
           </div>
 
-          <div>
-            <Label className="mb-1.5 block">备注</Label>
-            <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="可选" />
-          </div>
-
-          <div className="flex gap-2">
-            <Button type="submit" disabled={saving} className="flex-1">
-              {isEditing ? (
-                <><Pencil className="mr-1 h-4 w-4" /> {saving ? "更新中..." : "更新交易"}</>
-              ) : (
-                <><Plus className="mr-1 h-4 w-4" /> {saving ? "保存中..." : "保存交易"}</>
-              )}
+          <div className="flex gap-2 pt-1">
+            <Button type="submit" disabled={saving} className="flex-1 h-9">
+              {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : (isEditing ? <Pencil className="mr-1.5 h-4 w-4" /> : <Plus className="mr-1.5 h-4 w-4" />)}
+              {saving ? "保存中..." : isEditing ? "更新交易" : "保存交易"}
             </Button>
             {isEditing && (
-              <Button type="button" variant="outline" onClick={() => { resetForm(); onDone() }}>
-                取消编辑
+              <Button type="button" variant="outline" onClick={() => { resetForm(); onDone() }} className="h-9">
+                取消
               </Button>
             )}
           </div>

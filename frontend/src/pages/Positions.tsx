@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
@@ -8,11 +8,16 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, pnlColor } from "@/lib/format"
-import { TrendingUp, TrendingDown, ChevronRight } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown } from "lucide-react"
 
 export default function Positions() {
   const navigate = useNavigate()
   const [showClosed, setShowClosed] = useState(false)
+  const [sortField, setSortField] = useState("value")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+  const [closedSortField, setClosedSortField] = useState("realized")
+  const [closedSortDir, setClosedSortDir] = useState<"asc" | "desc">("desc")
   const { data: positions, loading } = useApi(() => api.getPositions(true))
 
   if (loading) return <div className="py-20 text-center text-muted-foreground">加载中...</div>
@@ -32,6 +37,52 @@ export default function Positions() {
   }
   const mergedRows = Object.entries(merged).sort((a, b) => b[1].value - a[1].value)
 
+  const toggleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+    } else {
+      setSortField(field)
+      setSortDir("desc")
+    }
+  }
+
+  const sortedRows = useMemo(() => {
+    return [...mergedRows].sort(([, a], [, b]) => {
+      const getVal = (m: typeof a): number | string => {
+        switch (sortField) {
+          case "name": return m.name
+          case "type": return m.type
+          case "value": return m.value
+          case "pnl": return m.pnl
+          case "return": return m.cost ? m.value / m.cost - 1 : -999
+          case "channels": return m.channels
+          default: return m.value
+        }
+      }
+      const va = getVal(a)
+      const vb = getVal(b)
+      const cmp = typeof va === "string" && typeof vb === "string"
+        ? va.localeCompare(vb)
+        : (va as number) - (vb as number)
+      return sortDir === "asc" ? cmp : -cmp
+    })
+  }, [mergedRows, sortField, sortDir])
+
+  function SortHeader({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) {
+    const active = sortField === field
+    return (
+      <TableHead
+        className={cn("cursor-pointer select-none", active ? "text-foreground" : "", className)}
+        onClick={() => toggleSort(field)}
+      >
+        <span className="inline-flex items-center gap-1">
+          {children}
+          {active && (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+        </span>
+      </TableHead>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -47,24 +98,24 @@ export default function Positions() {
           <CardTitle className="text-sm font-medium text-muted-foreground">持仓列表</CardTitle>
         </CardHeader>
         <CardContent>
-          {mergedRows.length === 0 ? (
+            {sortedRows.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">暂无持仓数据</p>
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>名称</TableHead>
-                  <TableHead>类型</TableHead>
-                  <TableHead className="text-right">市值</TableHead>
-                  <TableHead className="text-right">浮动盈亏</TableHead>
-                  <TableHead className="text-right">收益率</TableHead>
-                  <TableHead className="text-right">渠道</TableHead>
-                  <TableHead className="w-20">操作</TableHead>
-                  <TableHead className="w-8"></TableHead>
-                </TableRow>
+                  <TableRow>
+                    <SortHeader field="name">名称</SortHeader>
+                    <SortHeader field="type">类型</SortHeader>
+                    <SortHeader field="value" className="text-right">市值</SortHeader>
+                    <SortHeader field="pnl" className="text-right">浮动盈亏</SortHeader>
+                    <SortHeader field="return" className="text-right">收益率</SortHeader>
+                    <SortHeader field="channels" className="text-right">渠道</SortHeader>
+                    <TableHead className="w-20">操作</TableHead>
+                    <TableHead className="w-8"></TableHead>
+                  </TableRow>
               </TableHeader>
               <TableBody>
-                {mergedRows.map(([code, m]) => {
+                {sortedRows.map(([code, m]) => {
                   const ret = m.cost ? m.value / m.cost - 1 : null
                   return (
                     <TableRow
@@ -112,7 +163,7 @@ export default function Positions() {
               </TableBody>
             </Table>
           )}
-          <p className="mt-3 text-sm text-muted-foreground">共 {mergedRows.length} 只基金 · 点击行查看详情</p>
+          <p className="mt-3 text-sm text-muted-foreground">共 {sortedRows.length} 只基金 · 点击行查看详情</p>
         </CardContent>
       </Card>
 
@@ -132,20 +183,41 @@ export default function Positions() {
                 m.channels += 1
                 closedMerged[p.fund_code] = m
               }
-              const closedRows = Object.entries(closedMerged)
-              if (closedRows.length === 0) return <p className="py-4 text-center text-muted-foreground">无已清仓记录</p>
+              const closedEntries = Object.entries(closedMerged)
+              const toggleClosedSort = (field: string) => {
+                if (closedSortField === field) setClosedSortDir((d) => (d === "asc" ? "desc" : "asc"))
+                else { setClosedSortField(field); setClosedSortDir("desc") }
+              }
+              const closedSorted = [...closedEntries].sort(([, a], [, b]) => {
+                const va = closedSortField === "name" ? a.name : closedSortField === "channels" ? a.channels : a.realized
+                const vb = closedSortField === "name" ? b.name : closedSortField === "channels" ? b.channels : b.realized
+                const cmp = typeof va === "string" && typeof vb === "string" ? va.localeCompare(vb) : (va as number) - (vb as number)
+                return closedSortDir === "asc" ? cmp : -cmp
+              })
+              function ClosedSortHeader({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) {
+                const active = closedSortField === field
+                return (
+                  <TableHead className={cn("cursor-pointer select-none", active ? "text-foreground" : "", className)} onClick={() => toggleClosedSort(field)}>
+                    <span className="inline-flex items-center gap-1">
+                      {children}
+                      {active && (closedSortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+                    </span>
+                  </TableHead>
+                )
+              }
+              if (closedSorted.length === 0) return <p className="py-4 text-center text-muted-foreground">无已清仓记录</p>
               return (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>名称</TableHead>
-                      <TableHead className="text-right">已实现盈亏</TableHead>
-                      <TableHead className="text-right">渠道数</TableHead>
+                      <ClosedSortHeader field="name">名称</ClosedSortHeader>
+                      <ClosedSortHeader field="realized" className="text-right">已实现盈亏</ClosedSortHeader>
+                      <ClosedSortHeader field="channels" className="text-right">渠道数</ClosedSortHeader>
                       <TableHead className="w-8"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {closedRows.map(([code, m]) => (
+                    {closedSorted.map(([code, m]) => (
                       <TableRow
                         key={code}
                         className="cursor-pointer"

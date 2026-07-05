@@ -357,8 +357,16 @@ def get_nav_history(code: str, date: str | None = None) -> list[dict[str, Any]]:
         row = db.get_nav_on_or_after(code, date)
         if row:
             return [dict(row)]
+        if not db.get_latest_nav(code):
+            fetch_fund.update_fund_nav(code)
+            row = db.get_nav_on_or_after(code, date)
+            if row:
+                return [dict(row)]
         return []
     rows = db.get_nav_history(code)
+    if not rows and not db.get_latest_nav(code):
+        fetch_fund.update_fund_nav(code)
+        rows = db.get_nav_history(code)
     return [dict(r) for r in rows]
 
 

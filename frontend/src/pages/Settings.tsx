@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
-  KeyRound, Bot, ShoppingCart, ShieldCheck, Save,
+  KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
 } from "lucide-react"
 
 function detectProvider(baseUrl: string): string {
@@ -53,6 +53,7 @@ export default function Settings() {
   const [aiModel, setAiModel] = useState("")
   const [aiWebSearch, setAiWebSearch] = useState(true)
   const [savingAI, setSavingAI] = useState(false)
+  const [resettingSectors, setResettingSectors] = useState(false)
 
   useEffect(() => {
     if (aiConfig) {
@@ -129,6 +130,15 @@ export default function Settings() {
     finally { setSavingAI(false) }
   }
 
+  const handleResetSectors = async () => {
+    setResettingSectors(true)
+    try {
+      const res = await api.resetSectors()
+      toast.success(`已重新计算 ${res.reset} 个基金的板块`)
+    } catch (e) { toast.error(`重置失败: ${e}`) }
+    finally { setResettingSectors(false) }
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl md:text-2xl font-bold tracking-tight">设置</h1>
@@ -180,7 +190,16 @@ export default function Settings() {
                 <RotateCcw className="mr-1 h-3.5 w-3.5" /> 恢复默认
               </Button>
             </div>
+
+          {/* ── 板块映射重置 ── */}
+          <div className="px-5 py-5 space-y-3">
+            <SectionHeader icon={RefreshCw} title="板块映射" desc="修改了板块关键词后，点击下方按钮重新计算所有基金的板块分类" />
+            <Button size="sm" variant="outline" onClick={handleResetSectors} disabled={resettingSectors}>
+              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${resettingSectors ? "animate-spin" : ""}`} />
+              {resettingSectors ? "重置中..." : "重置板块映射"}
+            </Button>
           </div>
+        </div>
 
           {/* ── 安全 ── */}
           {authStatus?.required && (

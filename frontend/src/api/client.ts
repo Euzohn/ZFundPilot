@@ -166,6 +166,8 @@ export const api = {
     const res = await fetch(`${BASE}/csv/parse`, { method: "POST", body: form })
     return res.json()
   },
+  resetSectors: () => request<{ reset: number }>("/sectors/reset", { method: "POST" }),
+
   confirmImport: (transactions: Transaction[], clearExisting: boolean, fetchMeta: boolean) =>
     request<{ imported: number }>("/csv/import", {
       method: "POST",

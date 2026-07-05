@@ -327,6 +327,21 @@ def update_sector(code: str, body: SectorUpdate) -> dict[str, bool]:
     return {"ok": True}
 
 
+@app.post("/api/sectors/reset")
+def reset_sectors() -> dict[str, int]:
+    funds = db.get_funds()
+    count = 0
+    for f in funds:
+        if not f.fund_name:
+            continue
+        new_sector = fetch_fund._guess_sector(f.fund_name)
+        if new_sector != f.sector:
+            db.update_fund_sector(f.fund_code, new_sector)
+            fetch_fund.save_sector_mapping(f.fund_code, new_sector)
+            count += 1
+    return {"reset": count}
+
+
 # ---------------------------------------------------------------------------
 # 净值
 # ---------------------------------------------------------------------------

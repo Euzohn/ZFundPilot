@@ -157,12 +157,20 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     onPrefillConsumed()
   }, [prefill, onPrefillConsumed])
 
-  // 自动查询日期对应净值
+  // 自动查询日期对应净值（T+1 则查次日）
+  const effectiveNavDate = useMemo(() => {
+    if (!date) return ""
+    if (!afterThree) return date
+    const d = new Date(date)
+    d.setDate(d.getDate() + 1)
+    return d.toISOString().slice(0, 10)
+  }, [date, afterThree])
+
   useEffect(() => {
-    if (!code.trim() || !date) return
+    if (!code.trim() || !effectiveNavDate) return
     setNavLoading(true)
     setNavNotFound(false)
-    api.getNavForDate(code.trim(), date)
+    api.getNavForDate(code.trim(), effectiveNavDate)
       .then((rows) => {
         if (rows.length > 0) {
           setNav(rows[0].nav.toFixed(4))
@@ -173,7 +181,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
       })
       .catch(() => { setNav(""); setNavNotFound(true) })
       .finally(() => setNavLoading(false))
-  }, [code, date])
+  }, [code, effectiveNavDate])
 
   // 买入：金额 - 手续费 → 份额；卖出：份额 × 净值 - 手续费 → 金额
   const a = parseFloat(amount) || 0

@@ -189,7 +189,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   const n = parseFloat(nav) || 0
   const s = parseFloat(shares) || 0
 
-  // 买入时自动算份额（只读显示）
+  // 买入时自动算份额（自动计算值，用户可手动覆盖）
   const autoShares = action === "buy" && a > 0 && n > 0 && a - f > 0
     ? ((a - f) / n).toFixed(2)
     : ""
@@ -227,8 +227,9 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     if (!code.trim()) { toast.error("基金代码不能为空"); return }
     if (!date) { toast.error("请选择成交日期"); return }
 
-    // 使用自动计算的结果
-    const finalShares = action === "buy" ? (parseFloat(autoShares) || null) : (parseFloat(shares) || null)
+    // 买入：优先手动输入的份额，无则用自动计算值
+    const manualShares = parseFloat(shares) || null
+    const finalShares = action === "buy" ? (manualShares || parseFloat(autoShares) || null) : (manualShares || null)
     const finalAmount = action === "sell" ? (parseFloat(autoAmount) || null) : (parseFloat(amount) || null)
     const finalNav = parseFloat(nav) || null
 
@@ -342,9 +343,9 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
-                    份额 <span className="text-blue-500">自动</span>
+                    份额 <span className="text-blue-500">可修改</span>
                   </Label>
-                  <Input type="number" step="0.01" value={autoShares} readOnly className="h-9 bg-muted/50" placeholder="—" />
+                  <Input type="number" step="0.01" value={shares || autoShares} onChange={(e) => setShares(e.target.value)} className="h-9" placeholder={autoShares || "—"} />
                 </div>
               </>
             ) : (

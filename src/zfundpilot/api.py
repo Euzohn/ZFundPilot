@@ -348,7 +348,26 @@ def reset_sectors() -> dict[str, int]:
 @app.post("/api/nav/update")
 def update_nav() -> list[dict[str, Any]]:
     results = fetch_fund.update_all_holdings_nav()
+    _backfill_transaction_navs()
     return [r.__dict__ for r in results]
+
+
+def _backfill_transaction_navs() -> int:
+    """回填缺失净值的交易记录。净值更新后自动调用。
+
+    查找 nav IS NULL 的交易，按日期查净值，补全 nav 并计算缺失的份额/金额。
+    """
+    txs = db.get_transactions_without_nav()
+    count = 0
+    for tx in txs:
+        nav_point = db.get_nav_on_or_after(tx.fund_code, tx.date)
+        if not nav_point:
+            continue
+        tx.nav = float(nav_point["nav"])
+        tx.normalize()
+        db.update_transaction(tx)
+        count += 1
+    return count
 
 
 @app.get("/api/nav/{code}")

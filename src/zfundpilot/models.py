@@ -82,10 +82,12 @@ class Transaction:
         return self
 
     def is_valid(self) -> bool:
-        """校验：方向合法，且 amount 与 shares 至少能算出来。"""
+        """校验：方向合法，买入至少有金额，卖出至少有份额（净值可能尚未公布）。"""
         if self.action not in ACTIONS:
             return False
-        return bool(self.amount and self.shares)
+        if self.action == ACTION_BUY:
+            return bool(self.amount)
+        return bool(self.shares)
 
     def to_dict(self) -> dict:
         return asdict(self)

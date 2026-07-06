@@ -264,6 +264,15 @@ def get_transactions_desc() -> list[Transaction]:
     return [Transaction.from_row(r) for r in rows]
 
 
+def get_transactions_without_nav() -> list[Transaction]:
+    """返回净值缺失的交易记录（nav IS NULL），待净值更新后回填。"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM transactions WHERE nav IS NULL ORDER BY date ASC, id ASC"
+        ).fetchall()
+    return [Transaction.from_row(r) for r in rows]
+
+
 def get_distinct_fund_codes() -> list[str]:
     """返回有流水记录的所有基金代码。"""
     with get_connection() as conn:

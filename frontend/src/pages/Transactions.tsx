@@ -233,8 +233,13 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     const finalAmount = action === "sell" ? (parseFloat(autoAmount) || null) : (parseFloat(amount) || null)
     const finalNav = parseFloat(nav) || null
 
-    if (!finalAmount || !finalShares) {
-      toast.error(action === "buy" ? "请填写金额和净值（或手动输入净值）" : "请填写份额和净值（或手动输入净值）")
+    // 买入至少有金额，卖出至少有份额（净值可能尚未公布，留空则待确认）
+    if (action === "buy" && !finalAmount) {
+      toast.error("请填写买入金额")
+      return
+    }
+    if (action === "sell" && !finalShares) {
+      toast.error("请填写卖出份额")
       return
     }
 
@@ -548,7 +553,9 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
                     <TableCell>{t.channel || "未标注"}</TableCell>
                     <TableCell className="text-right tabular-nums">{t.amount ? money(t.amount) : "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{t.shares?.toFixed(2) ?? "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{t.nav?.toFixed(4) ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {t.nav != null ? t.nav.toFixed(4) : <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50">待确认</Badge>}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{t.fee || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{t.note}</TableCell>
                     <TableCell>

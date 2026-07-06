@@ -16,8 +16,6 @@ export default function Returns() {
   const [sortField, setSortField] = useState("return_rate")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
 
-  if (sl || !summary) return <div className="py-20 text-center text-muted-foreground">加载中...</div>
-
   const openPositions = positions?.filter((p) => p.is_open) ?? []
 
   const toggleSort = (field: string) => {
@@ -47,6 +45,8 @@ export default function Returns() {
       return sortDir === "asc" ? cmp : -cmp
     })
   }, [openPositions, sortField, sortDir])
+
+  if (sl || !summary) return <div className="py-20 text-center text-muted-foreground">加载中...</div>
 
   function SortHeader({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) {
     const active = sortField === field

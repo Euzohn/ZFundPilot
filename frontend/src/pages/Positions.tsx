@@ -188,9 +188,9 @@ export default function Positions() {
                   const totalPnl = sortedRows.reduce((s, [, m]) => s + m.pnl, 0)
                   const totalRet = totalCost ? totalValue / totalCost - 1 : null
                   return (
-                    <TableRow className="border-t-2 border-slate-200 bg-slate-50/50 font-medium">
-                      <TableCell colSpan={3} className="text-sm">合计（{sortedRows.length} 只）</TableCell>
-                      <TableCell className="text-right tabular-nums">{money(totalValue)}</TableCell>
+                    <TableRow className="border-t-2 border-slate-300 bg-slate-100/80 [&>td]:py-2.5 [&>td]:font-bold [&>td]:text-sm">
+                      <TableCell colSpan={3} className="text-slate-700">合计（{sortedRows.length} 只）</TableCell>
+                      <TableCell className="text-right tabular-nums text-slate-800">{money(totalValue)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalPnl)}`}>{money(totalPnl)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
                       <TableCell colSpan={3}></TableCell>

@@ -68,7 +68,6 @@ export default function Positions() {
           case "type": return m.type
           case "sector": return m.sector
           case "value": return m.value
-          case "date": return m.latestDate ?? ""
           case "pnl": return m.pnl
           case "return": return m.cost ? m.value / m.cost - 1 : -999
           case "channels": return m.channels
@@ -144,7 +143,6 @@ export default function Positions() {
                     <SortHeader field="type">类型</SortHeader>
                     <SortHeader field="sector">板块</SortHeader>
                     <SortHeader field="value" className="text-right">市值</SortHeader>
-                    <SortHeader field="date" className="text-right">净值日期</SortHeader>
                     <SortHeader field="pnl" className="text-right">浮动盈亏</SortHeader>
                     <SortHeader field="return" className="text-right">收益率</SortHeader>
                     <SortHeader field="channels" className="text-right">渠道</SortHeader>
@@ -215,7 +213,6 @@ export default function Positions() {
                     <TableRow className="border-t-2 border-slate-300 bg-slate-100/80 [&>td]:py-2.5 [&>td]:font-bold [&>td]:text-sm">
                       <TableCell colSpan={3} className="text-slate-700">合计（{sortedRows.length} 只）</TableCell>
                       <TableCell className="text-right tabular-nums text-slate-800">{money(totalValue)}</TableCell>
-                      <TableCell></TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalPnl)}`}>{money(totalPnl)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
                       <TableCell colSpan={3}></TableCell>

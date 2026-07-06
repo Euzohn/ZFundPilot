@@ -39,3 +39,4 @@ frontend/.env.local
 frontend/*.tsbuildinfo
 frontend/vite.config.d.ts
 frontend/vite.config.js
+data/auth.json

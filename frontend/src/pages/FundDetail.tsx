@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, navStr, pnlColor } from "@/lib/format"
 import { toast } from "sonner"
-import { ArrowLeft, TrendingUp, TrendingDown } from "lucide-react"
+import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
 
 const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
@@ -30,7 +30,7 @@ export default function FundDetail() {
 
   const { data: fund, loading: fundLoading } = useApi<Fund>(() => api.getFund(code!), [code])
   const { data: positions } = useApi<Position[]>(() => api.getPositions(true), [])
-  const { data: txs } = useApi<Transaction[]>(() =>
+  const { data: txs, reload: reloadTxs } = useApi<Transaction[]>(() =>
     api.getTransactionsByFund(code!).then((rows) =>
       rows.sort((a, b) => b.date.localeCompare(a.date) || (b.id ?? 0) - (a.id ?? 0)),
     ), [code])
@@ -61,6 +61,19 @@ export default function FundDetail() {
     if (!txMap[t.date]) txMap[t.date] = []
     txMap[t.date].push(t)
   })
+
+  const handleEdit = (tx: Transaction) => {
+    navigate("/transactions", { state: { editTx: tx } })
+  }
+
+  const handleDelete = async (txId: number) => {
+    try {
+      await api.deleteTransaction(txId)
+      toast.success("已删除")
+      reloadTxs()
+    } catch (e) { toast.error(`删除失败: ${e}`) }
+  }
+
 
   // 净值图表数据（最近 180 天），带上交易标记
   const chartData = navHistory
@@ -238,6 +251,7 @@ export default function FundDetail() {
                   <TableHead className="text-right">净值</TableHead>
                   <TableHead className="text-right">手续费</TableHead>
                   <TableHead>备注</TableHead>
+                  <TableHead className="w-20">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -258,6 +272,16 @@ export default function FundDetail() {
                     <TableCell className="text-right tabular-nums">{t.nav?.toFixed(4) ?? "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{t.fee || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{t.note}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => handleEdit(t)}>
+                          <Pencil className="h-4 w-4 text-blue-500" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(t.id!)}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

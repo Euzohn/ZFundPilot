@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react"
-import { useSearchParams } from "react-router-dom"
+import { useState, useEffect, useMemo, useRef } from "react"
+import { useSearchParams, useLocation } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { Transaction, CSVParseResult, FundMeta, Fund } from "@/api/types"
@@ -31,10 +31,12 @@ function actionBadgeClass(action: string): string {
 
 export default function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
   const [activeTab, setActiveTab] = useState("form")
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [listReloadKey, setListReloadKey] = useState(0)
   const [prefill, setPrefill] = useState<{ code: string; action: string } | null>(null)
+  const consumedEditTx = useRef(false)
 
   // 从 URL 参数消费预填数据（从持仓页跳转过来）
   useEffect(() => {
@@ -47,7 +49,21 @@ export default function Transactions() {
     }
   }, [searchParams, setSearchParams])
 
+  // 从 navigator.state 消费编辑数据（从详情页跳转过来）
+  useEffect(() => {
+    if (consumedEditTx.current) return
+    const state = location.state as { editTx?: Transaction } | null
+    if (state?.editTx) {
+      consumedEditTx.current = true
+      setEditingTx(state.editTx)
+      setPrefill(null)
+      setActiveTab("form")
+      window.history.replaceState({}, "")
+    }
+  }, [location.state])
+
   const handleEdit = (tx: Transaction) => {
+    consumedEditTx.current = false
     setEditingTx(tx)
     setPrefill(null)
     setActiveTab("form")
@@ -471,6 +487,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
   const [funds, setFunds] = useState<Record<string, Fund>>({})
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [clearConfirmText, setClearConfirmText] = useState("")
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [sortField, setSortField] = useState("date")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
 
@@ -608,7 +625,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
                         <Button variant="ghost" size="icon" onClick={() => onEdit(t)}>
                           <Pencil className="h-4 w-4 text-blue-500" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(t.id!)}>
+                        <Button variant="ghost" size="icon" onClick={() => setConfirmDeleteId(t.id!)}>
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
                       </div>
@@ -621,6 +638,29 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
         )}
         {txs && txs.length > 0 && <p className="mt-3 text-sm text-muted-foreground">共 {txs.length} 笔交易</p>}
       </CardContent>
+
+      {/* 删除单条确认弹窗 */}
+      {confirmDeleteId != null && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={() => setConfirmDeleteId(null)}>
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold">确认删除</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              确定要删除这笔交易记录吗？此操作<strong>不可撤销</strong>。
+            </p>
+            <div className="mt-4 flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setConfirmDeleteId(null)}>
+                取消
+              </Button>
+              <Button variant="destructive" className="flex-1" onClick={async () => {
+                await handleDelete(confirmDeleteId)
+                setConfirmDeleteId(null)
+              }}>
+                删除
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 清空确认弹窗 */}
       {showClearConfirm && (

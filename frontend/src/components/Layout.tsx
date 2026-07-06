@@ -123,9 +123,9 @@ export default function Layout() {
           {!collapsed && (
             <button
               onClick={() => { clearToken(); window.location.reload() }}
-              className="flex items-center gap-2 text-xs text-slate-500 transition-colors hover:text-red-400"
+              className="flex w-full items-center gap-2 rounded-lg py-2 text-xs text-slate-500 transition-colors hover:bg-slate-800 hover:text-red-400"
             >
-              <LogOut className="h-3.5 w-3.5" />
+              <LogOut className="h-4 w-4" />
               退出登录
             </button>
           )}
@@ -187,9 +187,9 @@ export default function Layout() {
           </p>
           <button
             onClick={() => { clearToken(); window.location.reload() }}
-            className="flex items-center gap-2 text-xs text-slate-500 transition-colors hover:text-red-400"
+            className="flex w-full items-center gap-2 rounded-lg py-2 text-xs text-slate-500 transition-colors hover:bg-slate-800 hover:text-red-400"
           >
-            <LogOut className="h-3.5 w-3.5" />
+            <LogOut className="h-4 w-4" />
             退出登录
           </button>
         </div>

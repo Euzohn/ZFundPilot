@@ -52,13 +52,17 @@ def _build_positions_from_transactions(
     # 流水需按日期升序处理，保证卖出时均价正确
     for tx in sorted(transactions, key=lambda t: (t.date or "", t.id or 0)):
         tx.normalize()
-        # 分红只需金额；买入/卖出/再投资需要金额和份额（待确认的跳过）
+        # 分红只需金额；卖出/再投资需要金额和份额；买入只需金额（待确认的暂不记份额）
         if tx.action == ACTION_DIVIDEND:
             if not tx.amount:
                 continue
-        else:
+        elif tx.action == ACTION_SELL:
             if not tx.amount or not tx.shares:
                 continue
+        elif tx.action == ACTION_REINVEST:
+            if not tx.amount or not tx.shares:
+                continue
+        # ACTION_BUY：有金额即可（份额可能待确认）
         key = _position_key(tx.fund_code, tx.channel)
         if key not in positions:
             fund = funds.get(tx.fund_code)
@@ -72,7 +76,8 @@ def _build_positions_from_transactions(
         pos = positions[key]
 
         if tx.action == ACTION_BUY:
-            pos.held_shares += tx.shares
+            if tx.shares:
+                pos.held_shares += tx.shares
             pos.total_cost += tx.amount + (tx.fee or 0.0)
             pos.buy_count += 1
         elif tx.action == ACTION_SELL:
@@ -281,7 +286,15 @@ def build_portfolio_curve() -> pd.DataFrame:
         share_delta = pd.Series(0.0, index=timeline)
         cost_delta = pd.Series(0.0, index=timeline)
         for t in tx_sorted:
-            if t.fund_code != code or not t.shares:
+            if t.fund_code != code:
+                continue
+            if not t.shares:
+                # 待确认交易：只影响成本，不影响份额
+                if t.action == ACTION_BUY and t.amount:
+                    d = t.date if t.date >= start_date else start_date
+                    idx = _first_ge(timeline, d)
+                    if idx is not None:
+                        cost_delta.iloc[idx] += t.amount
                 continue
             if t.action == ACTION_DIVIDEND:
                 continue  # 现金分红不改变份额

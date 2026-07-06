@@ -139,8 +139,8 @@ class Position:
 
     @property
     def is_open(self) -> bool:
-        """是否仍有持仓。"""
-        return self.held_shares > 1e-6
+        """是否仍有持仓（含待确认：有成本但份额未知）。"""
+        return self.held_shares > 1e-6 or self.total_cost > 1e-6
 
     def to_dict(self) -> dict:
         d = asdict(self)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react"
-import { useSearchParams, useLocation } from "react-router-dom"
+import { useSearchParams, useLocation, useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { Transaction, CSVParseResult, FundMeta, Fund } from "@/api/types"
@@ -32,6 +32,7 @@ function actionBadgeClass(action: string): string {
 export default function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState("form")
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [listReloadKey, setListReloadKey] = useState(0)
@@ -69,10 +70,11 @@ export default function Transactions() {
     setActiveTab("form")
   }
 
-  const handleFormDone = () => {
+  const handleFormDone = (fundCode?: string) => {
     setEditingTx(null)
     setPrefill(null)
     setListReloadKey((k) => k + 1)
+    if (fundCode) navigate(`/fund/${fundCode}`)
   }
 
   return (
@@ -108,7 +110,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   editingTx: Transaction | null
   prefill: { code: string; action: string } | null
   onPrefillConsumed: () => void
-  onDone: () => void
+  onDone: (fundCode?: string) => void
 }) {
   const [code, setCode] = useState("")
   const [meta, setMeta] = useState<FundMeta | null>(null)
@@ -291,7 +293,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
         toast.success(`${ACTION_LABELS[action]} ${code.trim()} 已保存`)
       }
       resetForm()
-      onDone()
+      onDone(code.trim())
     } catch (e) { toast.error(`保存失败: ${e}`) }
     finally { setSaving(false) }
   }

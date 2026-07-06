@@ -32,18 +32,21 @@ export default function Positions() {
   useEffect(() => { localStorage.setItem("zfundpilot_showClosed", String(showClosed)) }, [showClosed])
   useEffect(() => { localStorage.setItem("zfundpilot_channelFilter", channelFilter) }, [channelFilter])
 
+  const today = new Date().toISOString().split('T')[0]
+
   const view = positions
     ? (showClosed ? positions : positions.filter((p) => p.is_open)).filter((p) => !channelFilter || p.channel === channelFilter)
     : []
 
   // 按基金合并（跨渠道）
-  const merged: Record<string, { name: string; type: string; sector: string; value: number; cost: number; pnl: number; channels: number }> = {}
+  const merged: Record<string, { name: string; type: string; sector: string; value: number; cost: number; pnl: number; channels: number; latestDate: string | null }> = {}
   for (const p of view.filter((p) => p.is_open)) {
-    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, value: 0, cost: 0, pnl: 0, channels: 0 }
+    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, value: 0, cost: 0, pnl: 0, channels: 0, latestDate: p.latest_date }
     m.value += p.market_value
     m.cost += p.total_cost
     m.pnl += p.unrealized_pnl
     m.channels += 1
+    m.latestDate = p.latest_date
     merged[p.fund_code] = m
   }
   const mergedRows = Object.entries(merged).sort((a, b) => b[1].value - a[1].value)
@@ -65,6 +68,7 @@ export default function Positions() {
           case "type": return m.type
           case "sector": return m.sector
           case "value": return m.value
+          case "date": return m.latestDate ?? ""
           case "pnl": return m.pnl
           case "return": return m.cost ? m.value / m.cost - 1 : -999
           case "channels": return m.channels
@@ -79,6 +83,11 @@ export default function Positions() {
       return sortDir === "asc" ? cmp : -cmp
     })
   }, [mergedRows, sortField, sortDir])
+
+  const maxDate = sortedRows.reduce((best, [, m]) =>
+    m.latestDate && (!best || m.latestDate > best) ? m.latestDate : best,
+    null as string | null,
+  )
 
   function SortHeader({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) {
     const active = sortField === field
@@ -119,7 +128,10 @@ export default function Positions() {
       {/* 按基金合并视图（主视图，简洁） */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">持仓列表</CardTitle>
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            持仓列表
+            {maxDate && <span className="ml-2 text-xs font-normal">净值截至 {maxDate}</span>}
+          </CardTitle>
         </CardHeader>
         <CardContent>
             {sortedRows.length === 0 ? (
@@ -132,6 +144,7 @@ export default function Positions() {
                     <SortHeader field="type">类型</SortHeader>
                     <SortHeader field="sector">板块</SortHeader>
                     <SortHeader field="value" className="text-right">市值</SortHeader>
+                    <SortHeader field="date" className="text-right">净值日期</SortHeader>
                     <SortHeader field="pnl" className="text-right">浮动盈亏</SortHeader>
                     <SortHeader field="return" className="text-right">收益率</SortHeader>
                     <SortHeader field="channels" className="text-right">渠道</SortHeader>
@@ -157,6 +170,11 @@ export default function Positions() {
                       <TableCell><Badge variant="outline">{m.type}</Badge></TableCell>
                       <TableCell>{m.sector ? <Badge variant="secondary" className="font-normal">{m.sector}</Badge> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="text-right tabular-nums font-medium">{money(m.value)}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        <span className={`text-xs ${m.latestDate === today ? "text-muted-foreground" : "text-amber-600"}`}>
+                          {m.latestDate ?? "—"}
+                        </span>
+                      </TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(m.pnl)}`}>{money(m.pnl)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(ret)}`}>{pct(ret)}</TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground">{m.channels}</TableCell>
@@ -195,6 +213,7 @@ export default function Positions() {
                     <TableRow className="border-t-2 border-slate-300 bg-slate-100/80 [&>td]:py-2.5 [&>td]:font-bold [&>td]:text-sm">
                       <TableCell colSpan={3} className="text-slate-700">合计（{sortedRows.length} 只）</TableCell>
                       <TableCell className="text-right tabular-nums text-slate-800">{money(totalValue)}</TableCell>
+                      <TableCell></TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalPnl)}`}>{money(totalPnl)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
                       <TableCell colSpan={3}></TableCell>

@@ -14,12 +14,13 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
 
-function MetricCard({ label, value, color }: { label: string; value: string; color?: string }) {
+function MetricCard({ label, value, color, sub }: { label: string; value: string; color?: string; sub?: string }) {
   return (
     <Card className="card-hover">
       <CardContent className="p-3 md:p-4">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
         <p className={`mt-1 text-base md:text-lg font-bold tabular-nums ${color ?? ""}`}>{value}</p>
+        {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
       </CardContent>
     </Card>
   )
@@ -55,6 +56,7 @@ export default function FundDetail() {
   const totalRealized = fundPositions.reduce((s, p) => s + p.realized_pnl, 0)
   const avgCost = totalShares > 0 ? totalCost / totalShares : null
   const latestNav = openPositions[0]?.latest_nav ?? null
+  const latestDate = openPositions[0]?.latest_date ?? null
   const returnRate = totalCost > 0 ? totalValue / totalCost - 1 : null
 
   // 交易日期查找表
@@ -126,7 +128,7 @@ const handleDelete = async (txId: number) => {
         <MetricCard label="持有份额" value={totalShares.toFixed(2)} />
         <MetricCard label="持仓成本" value={money(totalCost)} />
         <MetricCard label="持仓均价" value={navStr(avgCost)} />
-        <MetricCard label="最新净值" value={navStr(latestNav)} />
+        <MetricCard label="最新净值" value={navStr(latestNav)} sub={latestDate ?? undefined} />
         <MetricCard label="当前市值" value={money(totalValue)} />
         <MetricCard label="浮动盈亏" value={signedMoney(totalUnrealized)} color={pnlColor(totalUnrealized)} />
         <MetricCard label="已实现盈亏" value={signedMoney(totalRealized)} color={pnlColor(totalRealized)} />

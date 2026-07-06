@@ -11,7 +11,7 @@ import { toast } from "sonner"
 import { ArrowLeft, TrendingUp, TrendingDown } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
 
-const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出" }
+const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
 
 function MetricCard({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
@@ -174,8 +174,8 @@ export default function FundDetail() {
                         {txInfo && txInfo.length > 0 && (
                           <div className="mt-1 space-y-0.5 border-t pt-1">
                             {txInfo.map((t, i) => (
-                              <p key={i} className={`text-xs tabular-nums ${t.action === 'buy' ? 'text-gain' : 'text-loss'}`}>
-                                {t.action === 'buy' ? '↑ 买入' : '↓ 卖出'}
+                              <p key={i} className={`text-xs tabular-nums ${t.action === 'buy' ? 'text-gain' : t.action === 'sell' ? 'text-loss' : t.action === 'dividend' ? 'text-blue-500' : 'text-purple-500'}`}>
+                                {ACTION_LABELS[t.action] ?? t.action}
                                 {t.amount ? ` ${money(t.amount)}` : ''}
                                 {t.shares ? ` ${t.shares.toFixed(2)} 份` : ''}
                               </p>
@@ -245,7 +245,10 @@ export default function FundDetail() {
                   <TableRow key={t.id}>
                     <TableCell>{t.date}</TableCell>
                     <TableCell>
-                      <Badge variant={t.action === "buy" ? "success" : "destructive"}>
+                      <Badge
+                        variant={t.action === "buy" ? "success" : t.action === "sell" ? "destructive" : "outline"}
+                        className={t.action === "dividend" ? "text-blue-600 border-blue-300 bg-blue-50" : t.action === "reinvest" ? "text-purple-600 border-purple-300 bg-purple-50" : ""}
+                      >
                         {ACTION_LABELS[t.action] ?? t.action}
                       </Badge>
                     </TableCell>

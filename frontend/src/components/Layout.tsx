@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { NavLink, Outlet, useLocation } from "react-router-dom"
+import Logo from "./Logo"
 import {
   LayoutDashboard,
   ArrowLeftRight,
@@ -7,7 +8,6 @@ import {
   RefreshCw,
   TrendingUp,
   ShieldCheck,
-  Package,
   LogOut,
   Settings as SettingsIcon,
   ChevronLeft,
@@ -86,7 +86,7 @@ export default function Layout() {
         </button>
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-600/15">
-            <Package className="h-4 w-4 text-blue-600" />
+            <Logo className="h-5 w-5" />
           </div>
           <span className="text-base font-bold tracking-tight">ZFundPilot</span>
         </div>
@@ -101,7 +101,7 @@ export default function Layout() {
       >
         <div className={cn("flex py-5", collapsed ? "justify-center" : "items-center gap-2.5 px-5")}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600/20">
-            <Package className="h-5 w-5 text-blue-400" />
+            <Logo className="h-6 w-6" />
           </div>
           {!collapsed && (
             <div className="overflow-hidden">
@@ -162,7 +162,7 @@ export default function Layout() {
         <div className="flex items-center justify-between py-5 px-5">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600/20">
-              <Package className="h-5 w-5 text-blue-400" />
+              <Logo className="h-6 w-6" />
             </div>
             <div className="overflow-hidden">
               <h1 className="text-base font-bold text-white tracking-tight whitespace-nowrap">ZFundPilot</h1>

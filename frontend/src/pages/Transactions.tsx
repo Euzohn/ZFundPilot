@@ -616,7 +616,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
                     <TableCell className="text-right tabular-nums">{t.amount ? money(t.amount) : "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{t.shares?.toFixed(2) ?? "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {t.nav != null ? t.nav.toFixed(4) : <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50">待确认</Badge>}
+                      {t.nav != null ? t.nav.toFixed(4) : t.action === "dividend" ? "—" : <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50">待确认</Badge>}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{t.fee || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{t.note}</TableCell>

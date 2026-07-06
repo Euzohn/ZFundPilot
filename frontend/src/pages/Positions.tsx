@@ -6,6 +6,7 @@ import type { Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Select } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, pnlColor } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -14,13 +15,22 @@ import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown } from "
 export default function Positions() {
   const navigate = useNavigate()
   const [showClosed, setShowClosed] = useState(false)
+  const [channelFilter, setChannelFilter] = useState("")
   const [sortField, setSortField] = useState("value")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [closedSortField, setClosedSortField] = useState("realized")
   const [closedSortDir, setClosedSortDir] = useState<"asc" | "desc">("desc")
   const { data: positions, loading } = useApi(() => api.getPositions(true))
 
-  const view = positions ? (showClosed ? positions : positions.filter((p) => p.is_open)) : []
+  const availableChannels = useMemo(() => {
+    if (!positions) return []
+    const set = new Set(positions.map((p) => p.channel).filter(Boolean))
+    return Array.from(set).sort()
+  }, [positions])
+
+  const view = positions
+    ? (showClosed ? positions : positions.filter((p) => p.is_open)).filter((p) => !channelFilter || p.channel === channelFilter)
+    : []
 
   // 按基金合并（跨渠道）
   const merged: Record<string, { name: string; type: string; sector: string; value: number; cost: number; pnl: number; channels: number }> = {}
@@ -91,9 +101,15 @@ export default function Positions() {
       <>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl md:text-2xl font-bold">持仓明细</h1>
-        <Button variant="outline" size="sm" onClick={() => setShowClosed(!showClosed)}>
-          {showClosed ? "隐藏已清仓" : "显示已清仓"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="h-8 text-xs w-32">
+            <option value="">全部渠道</option>
+            {availableChannels.map((c) => <option key={c} value={c}>{c}</option>)}
+          </Select>
+          <Button variant="outline" size="sm" onClick={() => setShowClosed(!showClosed)}>
+            {showClosed ? "隐藏已清仓" : "显示已清仓"}
+          </Button>
+        </div>
       </div>
 
       {/* 按基金合并视图（主视图，简洁） */}
@@ -182,7 +198,7 @@ export default function Positions() {
           <CardContent>
             {(() => {
               const openCodes = new Set(positions.filter(p => p.is_open).map(p => p.fund_code))
-              const closed = positions.filter((p) => !p.is_open && !openCodes.has(p.fund_code))
+              const closed = positions.filter((p) => !p.is_open && !openCodes.has(p.fund_code) && (!channelFilter || p.channel === channelFilter))
               const closedMerged: Record<string, { name: string; realized: number; channels: number }> = {}
               for (const p of closed) {
                 const m = closedMerged[p.fund_code] ?? { name: p.fund_name, realized: 0, channels: 0 }

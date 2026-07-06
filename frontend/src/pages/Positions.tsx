@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
@@ -14,8 +14,8 @@ import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown } from "
 
 export default function Positions() {
   const navigate = useNavigate()
-  const [showClosed, setShowClosed] = useState(false)
-  const [channelFilter, setChannelFilter] = useState("")
+  const [showClosed, setShowClosed] = useState(() => localStorage.getItem("zfundpilot_showClosed") === "true")
+  const [channelFilter, setChannelFilter] = useState(() => localStorage.getItem("zfundpilot_channelFilter") ?? "")
   const [sortField, setSortField] = useState("value")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [closedSortField, setClosedSortField] = useState("realized")
@@ -27,6 +27,10 @@ export default function Positions() {
     const set = new Set(positions.map((p) => p.channel).filter(Boolean))
     return Array.from(set).sort()
   }, [positions])
+
+  // 持久化渠道筛选和显示已清仓选项
+  useEffect(() => { localStorage.setItem("zfundpilot_showClosed", String(showClosed)) }, [showClosed])
+  useEffect(() => { localStorage.setItem("zfundpilot_channelFilter", channelFilter) }, [channelFilter])
 
   const view = positions
     ? (showClosed ? positions : positions.filter((p) => p.is_open)).filter((p) => !channelFilter || p.channel === channelFilter)

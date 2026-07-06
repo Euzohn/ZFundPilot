@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { FetchResult, LatestNav } from "@/api/types"
+import type { FetchResult, LatestNav, Fund } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -11,20 +11,23 @@ import { navStr } from "@/lib/format"
 
 export default function NavUpdate() {
   const { data: navs, loading, reload } = useApi<LatestNav[]>(() => api.getLatestNavs())
+  const { data: funds } = useApi<Fund[]>(() => api.getFunds(), [])
   const [updating, setUpdating] = useState(false)
   const [progress, setProgress] = useState(0)
   const [results, setResults] = useState<FetchResult[] | null>(null)
+
+  const fundMap: Record<string, Fund> = {}
+  funds?.forEach((f) => { fundMap[f.fund_code] = f })
 
   const handleUpdate = async () => {
     setUpdating(true)
     setProgress(0)
     setResults(null)
     try {
-      // 简单方案：一次性请求，完成后显示结果
       const res = await api.updateNav()
       setResults(res)
       setProgress(100)
-      reload()
+      await reload()
     } catch (e) {
       alert(`更新失败: ${e}`)
     } finally {
@@ -34,6 +37,12 @@ export default function NavUpdate() {
 
   const okCount = results?.filter((r) => r.ok).length ?? 0
   const failCount = results?.filter((r) => !r.ok).length ?? 0
+
+  // 更新后优先用 results 展示（含最新净值），否则用 navs（数据库读取）
+  const rows: { fund_code: string; date: string | null; nav: number | null; ok?: boolean }[] =
+    results
+      ? results.map((r) => ({ fund_code: r.fund_code, date: r.latest_date, nav: r.latest_nav, ok: r.ok }))
+      : (navs ?? []).map((n) => ({ fund_code: n.fund_code, date: n.date, nav: n.nav }))
 
   return (
     <div className="space-y-6">
@@ -107,28 +116,52 @@ export default function NavUpdate() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">各基金最新净值</CardTitle>
+          <CardTitle className="text-base">
+            各基金最新净值{results ? "（更新结果）" : ""}
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {loading && !results ? (
             <p className="py-8 text-center text-muted-foreground">加载中...</p>
+          ) : rows.length === 0 ? (
+            <p className="py-8 text-center text-muted-foreground">暂无净值数据，请先添加交易记录并点击上方更新</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>代码</TableHead>
+                  <TableHead>基金名称</TableHead>
                   <TableHead>最新日期</TableHead>
                   <TableHead className="text-right">最新净值</TableHead>
+                  {results && <TableHead className="text-center">状态</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {navs?.map((n) => (
-                  <TableRow key={n.fund_code}>
-                    <TableCell className="font-mono text-xs">{n.fund_code}</TableCell>
-                    <TableCell>{n.date}</TableCell>
-                    <TableCell className="text-right font-mono">{navStr(n.nav)}</TableCell>
-                  </TableRow>
-                ))}
+                {rows.map((r) => {
+                  const fund = fundMap[r.fund_code]
+                  return (
+                    <TableRow key={r.fund_code}>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-medium max-w-[160px] truncate" title={fund?.fund_name ?? r.fund_code}>
+                            {fund?.fund_name ?? r.fund_code}
+                          </span>
+                          <span className="font-mono text-xs text-muted-foreground">{r.fund_code}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="tabular-nums">{r.date ?? "—"}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{navStr(r.nav)}</TableCell>
+                      {results && (
+                        <TableCell className="text-center">
+                          {r.ok ? (
+                            <CheckCircle2 className="h-4 w-4 text-green-500 inline" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-red-500 inline" />
+                          )}
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           )}

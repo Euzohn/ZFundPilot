@@ -15,7 +15,13 @@ import io
 
 import pandas as pd
 
-from .models import ACTION_BUY, ACTION_SELL, Transaction
+from .models import (
+    ACTION_BUY,
+    ACTION_DIVIDEND,
+    ACTION_REINVEST,
+    ACTION_SELL,
+    Transaction,
+)
 
 # 标准列顺序
 CSV_COLUMNS = [
@@ -41,6 +47,10 @@ _ACTION_MAP = {
     "申购": ACTION_BUY, "定投": ACTION_BUY, "b": ACTION_BUY,
     "sell": ACTION_SELL, "卖出": ACTION_SELL, "卖": ACTION_SELL,
     "赎回": ACTION_SELL, "s": ACTION_SELL,
+    "dividend": ACTION_DIVIDEND, "分红": ACTION_DIVIDEND,
+    "现金分红": ACTION_DIVIDEND, "d": ACTION_DIVIDEND,
+    "reinvest": ACTION_REINVEST, "红利再投资": ACTION_REINVEST,
+    "再投资": ACTION_REINVEST, "r": ACTION_REINVEST,
 }
 
 
@@ -59,6 +69,12 @@ def build_template_dataframe() -> pd.DataFrame:
         {"fund_code": "270042", "action": "买入", "date": "2025-03-01",
          "amount": 2000, "shares": "", "nav": 8.0000, "fee": 0,
          "channel": "理财通", "note": ""},
+        {"fund_code": "011612", "action": "分红", "date": "2025-04-15",
+         "amount": 50.00, "shares": "", "nav": "", "fee": 0,
+         "channel": "支付宝", "note": "现金分红"},
+        {"fund_code": "011612", "action": "红利再投资", "date": "2025-05-20",
+         "amount": "", "shares": 34.48, "nav": 1.4500, "fee": 0,
+         "channel": "支付宝", "note": "红利再投资"},
     ]
     return pd.DataFrame(samples, columns=CSV_COLUMNS)
 
@@ -162,8 +178,8 @@ def parse_transactions_csv(source: bytes | str | io.BytesIO) -> tuple[list[Trans
 
         if not tx.is_valid():
             errors.append(
-                f"第 {line} 行（{code}）：金额/份额/净值信息不足，"
-                f"至少需要其中两项，已跳过。")
+                f"第 {line} 行（{code}）：交易信息不足"
+                f"（买入需金额、卖出需份额、分红需金额、再投资需份额），已跳过。")
             continue
         transactions.append(tx)
 

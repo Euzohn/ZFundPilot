@@ -6,7 +6,7 @@ class TestParseCSV:
     def test_template_parses_cleanly(self):
         csv_bytes = build_template_dataframe().to_csv(index=False).encode("utf-8-sig")
         txs, errors = parse_transactions_csv(csv_bytes)
-        assert len(txs) == 4
+        assert len(txs) == 6
         assert len(errors) == 0
 
     def test_chinese_headers(self):

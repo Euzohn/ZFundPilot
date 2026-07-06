@@ -36,6 +36,8 @@ export interface Position {
   weight: number
   buy_count: number
   sell_count: number
+  dividend_count: number
+  dividend_total: number
   total_pnl: number
   is_open: boolean
 }
@@ -49,6 +51,7 @@ export interface PortfolioSummary {
   total_return: number
   total_buy: number
   total_sell: number
+  total_dividend: number
   holding_count: number
   max_single_weight: number
   max_single_name: string

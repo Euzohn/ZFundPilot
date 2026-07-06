@@ -35,6 +35,7 @@ export default function Returns() {
           case "unrealized_pnl": return p.unrealized_pnl
           case "return_rate": return p.return_rate ?? -999
           case "realized_pnl": return p.realized_pnl
+          case "dividend_total": return p.dividend_total
           case "weight": return p.weight
           default: return 0
         }
@@ -66,6 +67,7 @@ export default function Returns() {
     market_value: openPositions.reduce((s, p) => s + p.market_value, 0),
     unrealized_pnl: openPositions.reduce((s, p) => s + p.unrealized_pnl, 0),
     realized_pnl: openPositions.reduce((s, p) => s + p.realized_pnl, 0),
+    dividend_total: openPositions.reduce((s, p) => s + (p.dividend_total || 0), 0),
   }
   const totalRet = totals.total_cost ? totals.market_value / totals.total_cost - 1 : null
 
@@ -157,6 +159,7 @@ export default function Returns() {
                   <SortHeader field="unrealized_pnl" className="text-right">浮动盈亏</SortHeader>
                   <SortHeader field="return_rate" className="text-right">收益率</SortHeader>
                   <SortHeader field="realized_pnl" className="text-right">已实现</SortHeader>
+                  <SortHeader field="dividend_total" className="text-right">分红</SortHeader>
                   <SortHeader field="weight" className="text-right">占比</SortHeader>
                 </TableRow>
               </TableHeader>
@@ -171,6 +174,7 @@ export default function Returns() {
                     <TableCell className={`text-right tabular-nums ${pnlColor(p.unrealized_pnl)}`}>{money(p.unrealized_pnl)}</TableCell>
                     <TableCell className={`text-right tabular-nums font-medium ${pnlColor(p.return_rate)}`}>{pct(p.return_rate)}</TableCell>
                     <TableCell className={`text-right tabular-nums ${pnlColor(p.realized_pnl)}`}>{money(p.realized_pnl)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-blue-600">{p.dividend_total ? money(p.dividend_total) : "—"}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">{pct(p.weight)}</TableCell>
                   </TableRow>
                 ))}
@@ -182,6 +186,7 @@ export default function Returns() {
                   <TableCell className={`text-right tabular-nums ${pnlColor(totals.unrealized_pnl)}`}>{money(totals.unrealized_pnl)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${pnlColor(totals.realized_pnl)}`}>{money(totals.realized_pnl)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-blue-600">{totals.dividend_total ? money(totals.dividend_total) : "—"}</TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">100%</TableCell>
                 </TableRow>
               </TableBody>

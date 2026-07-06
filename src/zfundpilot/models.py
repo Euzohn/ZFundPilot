@@ -18,8 +18,15 @@ from dataclasses import asdict, dataclass
 # 交易方向
 ACTION_BUY = "buy"
 ACTION_SELL = "sell"
-ACTIONS = (ACTION_BUY, ACTION_SELL)
-ACTION_LABELS = {ACTION_BUY: "买入", ACTION_SELL: "卖出"}
+ACTION_DIVIDEND = "dividend"        # 现金分红
+ACTION_REINVEST = "reinvest"        # 红利再投资
+ACTIONS = (ACTION_BUY, ACTION_SELL, ACTION_DIVIDEND, ACTION_REINVEST)
+ACTION_LABELS = {
+    ACTION_BUY: "买入",
+    ACTION_SELL: "卖出",
+    ACTION_DIVIDEND: "分红",
+    ACTION_REINVEST: "再投资",
+}
 
 
 @dataclass
@@ -82,12 +89,15 @@ class Transaction:
         return self
 
     def is_valid(self) -> bool:
-        """校验：方向合法，买入至少有金额，卖出至少有份额（净值可能尚未公布）。"""
+        """校验：方向合法，买入/再投资至少有金额或份额，卖出至少有份额，分红至少有金额。"""
         if self.action not in ACTIONS:
             return False
-        if self.action == ACTION_BUY:
+        if self.action == ACTION_DIVIDEND:
             return bool(self.amount)
-        return bool(self.shares)
+        if self.action == ACTION_SELL:
+            return bool(self.shares)
+        # buy / reinvest：有金额或份额即可（净值可能尚未公布）
+        return bool(self.amount or self.shares)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -119,6 +129,8 @@ class Position:
     weight: float = 0.0               # 当前市值占组合比例
     buy_count: int = 0
     sell_count: int = 0
+    dividend_count: int = 0           # 分红/再投资次数
+    dividend_total: float = 0.0       # 累计分红金额（含再投资）
 
     @property
     def total_pnl(self) -> float:
@@ -148,6 +160,7 @@ class PortfolioSummary:
     total_return: float = 0.0         # 浮动收益率（市值/成本-1）
     total_buy: float = 0.0            # 累计买入金额
     total_sell: float = 0.0           # 累计卖出金额
+    total_dividend: float = 0.0       # 累计分红金额（含再投资）
     holding_count: int = 0            # 当前持仓基金数
     max_single_weight: float = 0.0
     max_single_name: str = ""

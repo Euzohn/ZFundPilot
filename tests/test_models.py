@@ -1,5 +1,11 @@
 """Transaction 模型测试：normalize 补全 + is_valid 校验。"""
-from zfundpilot.models import ACTION_BUY, ACTION_SELL, Transaction
+from zfundpilot.models import (
+    ACTION_BUY,
+    ACTION_DIVIDEND,
+    ACTION_REINVEST,
+    ACTION_SELL,
+    Transaction,
+)
 
 
 class TestNormalize:
@@ -49,3 +55,37 @@ class TestIsValid:
     def test_missing_amount_and_shares(self):
         tx = Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-01")
         assert not tx.is_valid()
+
+    def test_valid_dividend(self):
+        """分红只需金额。"""
+        tx = Transaction(fund_code="001", action=ACTION_DIVIDEND, date="2025-01-01",
+                         amount=50.0)
+        assert tx.is_valid()
+
+    def test_invalid_dividend_no_amount(self):
+        tx = Transaction(fund_code="001", action=ACTION_DIVIDEND, date="2025-01-01",
+                         shares=100)
+        assert not tx.is_valid()
+
+    def test_valid_reinvest_with_shares(self):
+        """再投资只需份额。"""
+        tx = Transaction(fund_code="001", action=ACTION_REINVEST, date="2025-01-01",
+                         shares=34.48, nav=1.45)
+        assert tx.is_valid()
+
+    def test_valid_reinvest_with_amount(self):
+        """再投资有金额也行。"""
+        tx = Transaction(fund_code="001", action=ACTION_REINVEST, date="2025-01-01",
+                         amount=50.0, nav=1.45)
+        assert tx.is_valid()
+
+    def test_invalid_reinvest_empty(self):
+        tx = Transaction(fund_code="001", action=ACTION_REINVEST, date="2025-01-01")
+        assert not tx.is_valid()
+
+    def test_normalize_reinvest_shares_nav(self):
+        """再投资：份额 + 净值 → 自动算金额。"""
+        tx = Transaction(fund_code="001", action=ACTION_REINVEST, date="2025-01-01",
+                         shares=34.48, nav=1.45)
+        tx.normalize()
+        assert abs(tx.amount - 50.0) < 0.01

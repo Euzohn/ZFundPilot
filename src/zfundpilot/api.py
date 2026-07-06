@@ -252,7 +252,7 @@ def add_transaction(body: TransactionCreate) -> dict[str, Any]:
     )
     tx.normalize()
     if not tx.is_valid():
-        raise HTTPException(400, "金额/份额/净值信息不足，至少需要其中两项")
+        raise HTTPException(400, "交易信息不完整")
     tx_id = db.add_transaction(tx)
     if not db.get_latest_nav(body.fund_code):
         fetch_fund.update_fund_nav(body.fund_code)
@@ -276,7 +276,7 @@ def update_transaction(tx_id: int, body: TransactionCreate) -> dict[str, Any]:
     )
     tx.normalize()
     if not tx.is_valid():
-        raise HTTPException(400, "金额/份额/净值信息不足，至少需要其中两项")
+        raise HTTPException(400, "交易信息不完整")
     db.update_transaction(tx)
     if not db.get_latest_nav(body.fund_code):
         fetch_fund.update_fund_nav(body.fund_code)
@@ -356,10 +356,13 @@ def _backfill_transaction_navs() -> int:
     """回填缺失净值的交易记录。净值更新后自动调用。
 
     查找 nav IS NULL 的交易，按日期查净值，补全 nav 并计算缺失的份额/金额。
+    现金分红的 nav 是每份分红金额（非基金净值），不自动回填。
     """
     txs = db.get_transactions_without_nav()
     count = 0
     for tx in txs:
+        if tx.action == "dividend":
+            continue  # 分红的 nav 含义不同，不自动回填
         nav_point = db.get_nav_on_or_after(tx.fund_code, tx.date)
         if not nav_point:
             continue

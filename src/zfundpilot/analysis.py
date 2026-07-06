@@ -23,7 +23,16 @@ from collections import OrderedDict
 import pandas as pd
 
 from . import db
-from .models import ACTION_BUY, ACTION_SELL, Fund, PortfolioSummary, Position, Transaction
+from .models import (
+    ACTION_BUY,
+    ACTION_DIVIDEND,
+    ACTION_REINVEST,
+    ACTION_SELL,
+    Fund,
+    PortfolioSummary,
+    Position,
+    Transaction,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -43,8 +52,13 @@ def _build_positions_from_transactions(
     # 流水需按日期升序处理，保证卖出时均价正确
     for tx in sorted(transactions, key=lambda t: (t.date or "", t.id or 0)):
         tx.normalize()
-        if not tx.amount or not tx.shares:
-            continue
+        # 分红只需金额；买入/卖出/再投资需要金额和份额（待确认的跳过）
+        if tx.action == ACTION_DIVIDEND:
+            if not tx.amount:
+                continue
+        else:
+            if not tx.amount or not tx.shares:
+                continue
         key = _position_key(tx.fund_code, tx.channel)
         if key not in positions:
             fund = funds.get(tx.fund_code)
@@ -73,6 +87,19 @@ def _build_positions_from_transactions(
             if pos.held_shares < 1e-6:
                 pos.held_shares = 0.0
                 pos.total_cost = 0.0
+        elif tx.action == ACTION_DIVIDEND:
+            # 现金分红：计入已实现收益，份额和成本不变
+            pos.realized_pnl += tx.amount
+            pos.dividend_count += 1
+            pos.dividend_total += tx.amount
+        elif tx.action == ACTION_REINVEST:
+            # 红利再投资：份额增加，成本增加（=分红金额），同时计入已实现收益
+            # 金额和成本同时增加，相互抵消，总盈亏不变
+            pos.held_shares += tx.shares
+            pos.total_cost += tx.amount
+            pos.realized_pnl += tx.amount
+            pos.dividend_count += 1
+            pos.dividend_total += tx.amount
 
     # 计算均价
     for pos in positions.values():
@@ -140,8 +167,8 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
     unrealized = sum(p.unrealized_pnl for p in open_positions)
     realized = sum(p.realized_pnl for p in positions)  # 含已清仓的历史收益
 
-    # 累计买入/卖出金额，直接从流水统计更准
-    total_buy = total_sell = 0.0
+    # 累计买入/卖出/分红金额，直接从流水统计更准
+    total_buy = total_sell = total_dividend = 0.0
     for tx in db.get_transactions():
         tx.normalize()
         if not tx.amount:
@@ -150,6 +177,8 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
             total_buy += tx.amount
         elif tx.action == ACTION_SELL:
             total_sell += tx.amount
+        elif tx.action in (ACTION_DIVIDEND, ACTION_REINVEST):
+            total_dividend += tx.amount
 
     summary = PortfolioSummary(
         total_cost=total_cost,
@@ -160,6 +189,7 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
         total_return=(total_value / total_cost - 1) if total_cost > 1e-9 else 0.0,
         total_buy=total_buy,
         total_sell=total_sell,
+        total_dividend=total_dividend,
         holding_count=len(open_positions),
     )
 
@@ -253,14 +283,17 @@ def build_portfolio_curve() -> pd.DataFrame:
         for t in tx_sorted:
             if t.fund_code != code or not t.shares:
                 continue
+            if t.action == ACTION_DIVIDEND:
+                continue  # 现金分红不改变份额
             d = t.date if t.date >= start_date else start_date
             # 找到时间轴上 >= d 的第一个点
             idx = _first_ge(timeline, d)
             if idx is None:
                 continue
-            sign = 1.0 if t.action == ACTION_BUY else -1.0
+            # 买入/再投资 = +份额, 卖出 = -份额
+            sign = -1.0 if t.action == ACTION_SELL else 1.0
             share_delta.iloc[idx] += sign * t.shares
-            cost_delta.iloc[idx] += sign * t.amount
+            cost_delta.iloc[idx] += sign * (t.amount or 0.0)
 
         held = share_delta.cumsum().clip(lower=0)
         invested_code = cost_delta.cumsum().clip(lower=0)

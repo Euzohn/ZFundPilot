@@ -17,7 +17,17 @@ import { toast } from "sonner"
 import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2 } from "lucide-react"
 import { getChannels } from "@/lib/channels"
 
-const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出" }
+const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
+
+function actionBadgeClass(action: string): string {
+  switch (action) {
+    case "buy": return ""
+    case "sell": return ""
+    case "dividend": return "text-blue-600 border-blue-300 bg-blue-50"
+    case "reinvest": return "text-purple-600 border-purple-300 bg-purple-50"
+    default: return ""
+  }
+}
 
 export default function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -193,9 +203,9 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   const autoShares = action === "buy" && a > 0 && n > 0 && a - f > 0
     ? ((a - f) / n).toFixed(2)
     : ""
-  // 卖出时自动算金额（只读显示）
-  const autoAmount = action === "sell" && s > 0 && n > 0
-    ? (s * n - f).toFixed(2)
+  // 卖出/再投资时自动算金额（卖出扣手续费，再投资无手续费）
+  const autoAmount = ((action === "sell" && s > 0 && n > 0) || (action === "reinvest" && s > 0 && n > 0))
+    ? (action === "sell" ? (s * n - f) : (s * n)).toFixed(2)
     : ""
 
   const handleFetchMeta = async (silent = false) => {
@@ -230,16 +240,18 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     // 买入：优先手动输入的份额，无则用自动计算值
     const manualShares = parseFloat(shares) || null
     const finalShares = action === "buy" ? (manualShares || parseFloat(autoShares) || null) : (manualShares || null)
-    const finalAmount = action === "sell" ? (parseFloat(autoAmount) || null) : (parseFloat(amount) || null)
-    const finalNav = parseFloat(nav) || null
+    const finalAmount = action === "sell" || action === "reinvest"
+      ? (parseFloat(autoAmount) || parseFloat(amount) || null)
+      : (parseFloat(amount) || null)
+    const finalNav = action === "dividend" ? null : (parseFloat(nav) || null)
 
-    // 买入至少有金额，卖出至少有份额（净值可能尚未公布，留空则待确认）
-    if (action === "buy" && !finalAmount) {
-      toast.error("请填写买入金额")
+    // 买入至少有金额，卖出/再投资至少有份额，分红至少有金额（净值可能尚未公布，留空则待确认）
+    if ((action === "buy" || action === "dividend") && !finalAmount) {
+      toast.error(action === "buy" ? "请填写买入金额" : "请填写分红金额")
       return
     }
-    if (action === "sell" && !finalShares) {
-      toast.error("请填写卖出份额")
+    if ((action === "sell" || action === "reinvest") && !finalShares) {
+      toast.error(action === "sell" ? "请填写卖出份额" : "请填写红利份额")
       return
     }
 
@@ -313,6 +325,8 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
               <Select value={action} onChange={(e) => setAction(e.target.value)} className="h-9">
                 <option value="buy">买入</option>
                 <option value="sell">卖出</option>
+                <option value="dividend">分红</option>
+                <option value="reinvest">再投资</option>
               </Select>
             </div>
             <div className="sm:col-span-2">
@@ -340,7 +354,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
 
           {/* ── 金额 / 份额 / 净值 / 手续费 ── */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            {action === "buy" ? (
+            {action === "buy" && (
               <>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">金额（元）</Label>
@@ -353,7 +367,8 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                   <Input type="number" step="0.01" value={shares || autoShares} onChange={(e) => setShares(e.target.value)} className="h-9" placeholder={autoShares || "—"} />
                 </div>
               </>
-            ) : (
+            )}
+            {action === "sell" && (
               <>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">份额（份）</Label>
@@ -367,27 +382,54 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                 </div>
               </>
             )}
-            <div>
-              <Label className="mb-1.5 block text-xs text-muted-foreground">成交净值</Label>
-              <div className="relative">
-                <Input
-                  type="number" step="0.0001" min="0" value={nav}
-                  onChange={(e) => { setNav(e.target.value); setNavNotFound(false) }}
-                  placeholder={navLoading ? "查询中..." : "0.0000"}
-                  className={cn("h-9", navLoading && "pr-8", navNotFound && "border-amber-400")}
-                />
-                {navLoading && (
-                  <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-                )}
+            {action === "dividend" && (
+              <div className="sm:col-span-2">
+                <Label className="mb-1.5 block text-xs text-muted-foreground">分红金额（元）</Label>
+                <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="到账现金" className="h-9" autoFocus={!isEditing} />
+                <p className="mt-1 text-[11px] text-muted-foreground">现金分红到账金额，会计入已实现收益</p>
               </div>
-              <p className={cn("mt-1 text-[11px]", navNotFound ? "text-amber-500" : "text-muted-foreground")}>
-                {navLoading ? "正在查询净值..." : navNotFound ? "该日期暂无净值，请手动输入" : "自动加载或手动填写"}
-              </p>
-            </div>
-            <div>
-              <Label className="mb-1.5 block text-xs text-muted-foreground">手续费（元）</Label>
-              <Input type="number" step="0.01" min="0" value={fee} onChange={(e) => setFee(e.target.value)} className="h-9" />
-            </div>
+            )}
+            {action === "reinvest" && (
+              <>
+                <div>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">红利份额</Label>
+                  <Input type="number" step="0.01" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="新得份额" className="h-9" autoFocus={!isEditing} />
+                </div>
+                <div>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">
+                    金额 <span className="text-blue-500">自动</span>
+                  </Label>
+                  <Input type="number" step="0.01" value={autoAmount} readOnly className="h-9 bg-muted/50" placeholder="—" />
+                </div>
+              </>
+            )}
+            {/* 净值：买入/卖出/再投资需要，分红不需要 */}
+            {action !== "dividend" && (
+              <div>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">成交净值</Label>
+                <div className="relative">
+                  <Input
+                    type="number" step="0.0001" min="0" value={nav}
+                    onChange={(e) => { setNav(e.target.value); setNavNotFound(false) }}
+                    placeholder={navLoading ? "查询中..." : "0.0000"}
+                    className={cn("h-9", navLoading && "pr-8", navNotFound && "border-amber-400")}
+                  />
+                  {navLoading && (
+                    <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                  )}
+                </div>
+                <p className={cn("mt-1 text-[11px]", navNotFound ? "text-amber-500" : "text-muted-foreground")}>
+                  {navLoading ? "正在查询净值..." : navNotFound ? "该日期暂无净值，请手动输入" : "自动加载或手动填写"}
+                </p>
+              </div>
+            )}
+            {/* 手续费：买入/卖出需要，分红/再投资不需要 */}
+            {action !== "dividend" && action !== "reinvest" && (
+              <div>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">手续费（元）</Label>
+                <Input type="number" step="0.01" min="0" value={fee} onChange={(e) => setFee(e.target.value)} className="h-9" />
+              </div>
+            )}
           </div>
 
           <div className="border-t border-slate-100" />
@@ -544,7 +586,10 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
                     <TableCell className="text-xs text-muted-foreground">{t.id}</TableCell>
                     <TableCell>{t.date}</TableCell>
                     <TableCell>
-                      <Badge variant={t.action === "buy" ? "success" : "destructive"}>
+                      <Badge
+                        variant={t.action === "buy" ? "success" : t.action === "sell" ? "destructive" : "outline"}
+                        className={actionBadgeClass(t.action)}
+                      >
                         {ACTION_LABELS[t.action] ?? t.action}
                       </Badge>
                     </TableCell>
@@ -651,7 +696,7 @@ function CSVImportExport() {
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
             必填列：<code className="rounded bg-muted px-1">fund_code</code>、
-            <code className="rounded bg-muted px-1">action</code>（买入/卖出）、
+            <code className="rounded bg-muted px-1">action</code>（买入/卖出/分红/再投资）、
             <code className="rounded bg-muted px-1">date</code>；
             <code className="rounded bg-muted px-1">amount</code>/<code className="rounded bg-muted px-1">shares</code>/<code className="rounded bg-muted px-1">nav</code> 至少两项；支持中文表头。
           </p>
@@ -692,7 +737,7 @@ function CSVImportExport() {
                     {parseResult.transactions.map((t, i) => (
                       <TableRow key={i}>
                         <TableCell className="font-mono text-xs">{t.fund_code}</TableCell>
-                        <TableCell><Badge variant={t.action === "buy" ? "success" : "destructive"}>{ACTION_LABELS[t.action] ?? t.action}</Badge></TableCell>
+                        <TableCell><Badge variant={t.action === "buy" ? "success" : t.action === "sell" ? "destructive" : "outline"} className={actionBadgeClass(t.action)}>{ACTION_LABELS[t.action] ?? t.action}</Badge></TableCell>
                         <TableCell>{t.date}</TableCell>
                         <TableCell className="text-right tabular-nums">{t.amount ? money(t.amount) : "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">{t.shares?.toFixed(2) ?? "—"}</TableCell>

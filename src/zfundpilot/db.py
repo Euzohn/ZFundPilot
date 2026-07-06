@@ -58,10 +58,10 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS transactions (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 fund_code  TEXT NOT NULL,
-                action     TEXT NOT NULL CHECK(action IN ('buy','sell')),
+                action     TEXT NOT NULL,
                 date       TEXT NOT NULL,
-                amount     REAL NOT NULL,
-                shares     REAL NOT NULL,
+                amount     REAL,
+                shares     REAL,
                 nav        REAL,
                 fee        REAL DEFAULT 0,
                 channel    TEXT DEFAULT '',
@@ -97,6 +97,7 @@ def init_db() -> None:
             """
         )
     _migrate_add_columns()
+    _migrate_relax_transactions_schema()
     _migrate_legacy_holdings()
 
 
@@ -109,6 +110,50 @@ def _migrate_add_columns() -> None:
             conn.execute(
                 "ALTER TABLE transactions ADD COLUMN channel TEXT DEFAULT ''"
             )
+
+
+def _migrate_relax_transactions_schema() -> None:
+    """放宽 transactions 表约束：移除 CHECK(action) 和 amount/shares 的 NOT NULL。
+
+    旧表有 CHECK(action IN ('buy','sell')) 和 amount/shares NOT NULL，
+    阻止插入 dividend/reinvest 操作和待确认交易（NULL 字段）。
+    SQLite 无法直接 ALTER 约束，需重建表。
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='transactions'"
+        ).fetchone()
+        if not row:
+            return
+        sql_text = row["sql"]
+        if "CHECK" not in sql_text and "NOT NULL" not in sql_text:
+            return  # 已是新schema，无需迁移
+
+        conn.executescript(
+            """
+            CREATE TABLE transactions_new (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                fund_code  TEXT NOT NULL,
+                action     TEXT NOT NULL,
+                date       TEXT NOT NULL,
+                amount     REAL,
+                shares     REAL,
+                nav        REAL,
+                fee        REAL DEFAULT 0,
+                channel    TEXT DEFAULT '',
+                note       TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+            INSERT INTO transactions_new
+                (id, fund_code, action, date, amount, shares, nav, fee, channel, note, created_at)
+            SELECT id, fund_code, action, date, amount, shares, nav, fee, channel, note, created_at
+            FROM transactions;
+            DROP TABLE transactions;
+            ALTER TABLE transactions_new RENAME TO transactions;
+            CREATE INDEX IF NOT EXISTS idx_tx_code ON transactions(fund_code);
+            CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
+            """
+        )
 
 
 def _migrate_legacy_holdings() -> None:

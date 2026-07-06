@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
@@ -27,6 +28,7 @@ function MetricCard({ label, value, color }: { label: string; value: string; col
 export default function FundDetail() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
 
   const { data: fund, loading: fundLoading } = useApi<Fund>(() => api.getFund(code!), [code])
   const { data: positions } = useApi<Position[]>(() => api.getPositions(true), [])
@@ -66,14 +68,13 @@ export default function FundDetail() {
     navigate("/transactions", { state: { editTx: tx } })
   }
 
-  const handleDelete = async (txId: number) => {
+const handleDelete = async (txId: number) => {
     try {
       await api.deleteTransaction(txId)
       toast.success("已删除")
       reloadTxs()
     } catch (e) { toast.error(`删除失败: ${e}`) }
   }
-
 
   // 净值图表数据（最近 180 天），带上交易标记
   const chartData = navHistory
@@ -277,7 +278,7 @@ export default function FundDetail() {
                         <Button variant="ghost" size="icon" onClick={() => handleEdit(t)}>
                           <Pencil className="h-4 w-4 text-blue-500" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(t.id!)}>
+                        <Button variant="ghost" size="icon" onClick={() => setConfirmDeleteId(t.id!)}>
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
                       </div>
@@ -290,6 +291,29 @@ export default function FundDetail() {
           {txs && txs.length > 0 && <p className="mt-3 text-sm text-muted-foreground">共 {txs.length} 笔交易</p>}
         </CardContent>
       </Card>
+
+      {/* 删除确认弹窗 */}
+      {confirmDeleteId != null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmDeleteId(null)}>
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold">确认删除</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              确定要删除这笔交易记录吗？此操作<strong>不可撤销</strong>。
+            </p>
+            <div className="mt-4 flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setConfirmDeleteId(null)}>
+                取消
+              </Button>
+              <Button variant="destructive" className="flex-1" onClick={async () => {
+                await handleDelete(confirmDeleteId)
+                setConfirmDeleteId(null)
+              }}>
+                删除
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -4,6 +4,25 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.3.0] - 2025-07-06
+
+### Added
+- 现金分红（dividend）和红利再投资（reinvest）交易类型支持
+- 分红/再投资表单录入：分红只需到账金额，再投资自动计算金额
+- 交易列表按操作类型显示不同颜色 Badge（分红=蓝色、再投资=紫色）
+- 收益分析页单基金表格新增「分红」列（累计分红金额，可排序）
+- 持仓模型新增 `dividend_count` / `dividend_total` 字段
+- 组合汇总新增 `total_dividend`（累计分红总额）
+- CSV 导入/导出支持分红/再投资（识别"分红"/"红利再投资"中文）
+- 新增 9 个分红/再投资相关测试用例（is_valid / normalize / 持仓计算）
+
+### Changed
+- DB 迁移：重建 `transactions` 表，去掉 `CHECK(action IN ('buy','sell'))` 约束，放宽 `amount`/`shares` 的 NOT NULL（同时修复待确认交易的 DB 层拦截 bug）
+- `_backfill_transaction_navs()` 跳过分红交易（分红 nav 含义为每股股息，非基金净值）
+
+### Fixed
+- `calculate_summary()` 中 `realized=` → `realized_pnl=` 参数名错误（端到端调用时触发 TypeError）
+
 ## [0.2.0] - 2025-07-06
 
 ### Added

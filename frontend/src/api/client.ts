@@ -37,6 +37,20 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json()
 }
 
+async function downloadWithAuth(url: string, filename: string) {
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (token) headers["Authorization"] = `Bearer ${token}`
+  const res = await fetch(`${BASE}${url}`, { headers })
+  if (!res.ok) throw new Error(await res.text().catch(() => res.statusText))
+  const blob = await res.blob()
+  const a = document.createElement("a")
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
 export const api = {
   // Auth
   getAuthStatus: () => request<{ required: boolean }>("/auth/status"),
@@ -158,8 +172,8 @@ export const api = {
   getRebalanceAdvice: () => request<Advice[]>("/rebalance"),
 
   // CSV
-  downloadTemplate: () => window.open(`${BASE}/csv/template`),
-  exportCsv: () => window.open(`${BASE}/csv/export`),
+  downloadTemplate: () => downloadWithAuth("/csv/template", "transactions_template.csv"),
+  exportCsv: () => downloadWithAuth("/csv/export", "my_transactions.csv"),
   parseCsv: async (file: File): Promise<CSVParseResult> => {
     const form = new FormData()
     form.append("file", file)

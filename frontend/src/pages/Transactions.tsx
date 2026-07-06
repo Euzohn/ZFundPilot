@@ -501,9 +501,14 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
     <Card>
       <CardHeader className="flex-row items-center justify-between">
         <CardTitle className="text-base">交易流水</CardTitle>
-        <Button variant="destructive" size="sm" onClick={() => { setShowClearConfirm(true); setClearConfirmText("") }}>
-          <Trash2 className="mr-1 h-4 w-4" /> 清空全部
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={async () => { try { await api.exportCsv(); toast.success("已导出 CSV") } catch (e) { toast.error(String(e)) } }}>
+            <FileDown className="mr-1 h-4 w-4" /> 导出 CSV
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => { setShowClearConfirm(true); setClearConfirmText("") }}>
+            <Trash2 className="mr-1 h-4 w-4" /> 清空全部
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {!txs || txs.length === 0 ? (

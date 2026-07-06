@@ -169,11 +169,13 @@ export default function Positions() {
                       </TableCell>
                       <TableCell><Badge variant="outline">{m.type}</Badge></TableCell>
                       <TableCell>{m.sector ? <Badge variant="secondary" className="font-normal">{m.sector}</Badge> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>
-                      <TableCell className="text-right tabular-nums font-medium">{money(m.value)}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        <span className={`text-xs ${m.latestDate === today ? "text-muted-foreground" : "text-amber-600"}`}>
-                          {m.latestDate ?? "—"}
-                        </span>
+<TableCell className="text-right tabular-nums font-medium">
+                        <div className="flex flex-col items-end">
+                          <span>{money(m.value)}</span>
+                          <span className={`text-xs font-normal ${m.latestDate === today ? "text-muted-foreground" : "text-amber-600"}`}>
+                            {m.latestDate ?? "—"}
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(m.pnl)}`}>{money(m.pnl)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(ret)}`}>{pct(ret)}</TableCell>

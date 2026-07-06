@@ -132,8 +132,8 @@ export default function Layout() {
           <button
             onClick={toggle}
             className={cn(
-              "flex items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-800 hover:text-white",
-              collapsed ? "w-full py-2" : "w-full gap-2 py-2 text-xs",
+              "flex items-center rounded-lg text-slate-500 transition-colors hover:bg-slate-800 hover:text-white",
+              collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 py-2 text-xs",
             )}
             title={collapsed ? "展开侧边栏" : "收起侧边栏"}
           >

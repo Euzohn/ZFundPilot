@@ -278,7 +278,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
       nav: finalNav,
       fee: parseFloat(fee) || 0,
       channel: customChannel.trim() || channel,
-      note: (note.trim() ? note.trim() + " | " : "") + (afterThree ? "T+1确认" : ""),
+      note: (note.trim() ? note.trim() + (afterThree ? " | " : "") : "") + (afterThree ? "T+1确认" : ""),
     }
 
     setSaving(true)

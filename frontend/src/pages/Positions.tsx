@@ -182,6 +182,21 @@ export default function Positions() {
                     </TableRow>
                   )
                 })}
+                {(() => {
+                  const totalValue = sortedRows.reduce((s, [, m]) => s + m.value, 0)
+                  const totalCost = sortedRows.reduce((s, [, m]) => s + m.cost, 0)
+                  const totalPnl = sortedRows.reduce((s, [, m]) => s + m.pnl, 0)
+                  const totalRet = totalCost ? totalValue / totalCost - 1 : null
+                  return (
+                    <TableRow className="border-t-2 border-slate-200 bg-slate-50/50 font-medium">
+                      <TableCell colSpan={3} className="text-sm">合计（{sortedRows.length} 只）</TableCell>
+                      <TableCell className="text-right tabular-nums">{money(totalValue)}</TableCell>
+                      <TableCell className={`text-right tabular-nums ${pnlColor(totalPnl)}`}>{money(totalPnl)}</TableCell>
+                      <TableCell className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
+                      <TableCell colSpan={3}></TableCell>
+                    </TableRow>
+                  )
+                })()}
               </TableBody>
             </Table>
           )}

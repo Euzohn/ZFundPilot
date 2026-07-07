@@ -155,16 +155,26 @@ def _build_tools(provider: str) -> tuple[list | None, dict[str, Any]]:
     return None, {}
 
 
-def _build_system_prompt(context: str) -> str:
-    return f"""你是 ZFundPilot 的 AI 投顾助手。你正在分析用户的基金持仓数据。
-
-【核心要求】
+def _build_system_prompt(context: str, has_search: bool = True) -> str:
+    if has_search:
+        core = """【核心要求】
 1. 必须先搜索最新市场资讯，再结合用户持仓数据给出建议
 2. 所有市场判断必须基于搜索到的真实资讯，不得凭空猜测
 3. 引用资讯时请注明来源和日期
 4. 建议要具体、可操作，但明确声明这不是交易指令
 5. 如果搜索不到相关资讯，请如实告知，不要编造
-6. 金额单位为人民币元
+6. 金额单位为人民币元"""
+    else:
+        core = """【核心要求】
+1. 当前模型未启用联网搜索，请基于用户持仓数据和历史信息给出建议
+2. 不得编造未经验证的市场数据或资讯
+3. 如需最新市场行情，请提示用户自行查阅
+4. 建议要具体、可操作，但明确声明这不是交易指令
+5. 金额单位为人民币元"""
+
+    return f"""你是 ZFundPilot 的 AI 投顾助手。你正在分析用户的基金持仓数据。
+
+{core}
 
 【交易记录录入能力】
 你可以帮用户录入基金交易记录。当用户描述一笔交易（例如「我昨天在支付宝买了1000元005827」「上周卖出易方达蓝筹500份」），请提取信息并输出一个 ```json 代码块，格式如下：
@@ -255,8 +265,9 @@ async def chat_stream(
 
     provider = detect_provider(config.AI_BASE_URL) if config.AI_WEB_SEARCH else "none"
     tools, extra_params = _build_tools(provider)
+    has_search = provider in ("kimi", "zhipu", "qwen")
 
-    system_prompt = _build_system_prompt(context)
+    system_prompt = _build_system_prompt(context, has_search)
     full_messages = [{"role": "system", "content": system_prompt}] + messages
 
     url = f"{config.AI_BASE_URL.rstrip('/')}/chat/completions"

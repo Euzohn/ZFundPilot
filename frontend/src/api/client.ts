@@ -10,6 +10,7 @@ import type {
   RiskReport,
   Transaction,
   CSVParseResult,
+  AIUsageStats,
 } from "./types"
 import { getToken, clearToken } from "@/lib/auth"
 
@@ -74,10 +75,13 @@ export const api = {
       body: JSON.stringify({ base_url, api_key, model, web_search }),
     }),
 
+  // AI Usage
+  getAIUsage: () => request<AIUsageStats>("/ai/usage"),
+
   // AI Chat (SSE streaming — bypasses standard request() wrapper)
   streamChat: async (
     messages: { role: string; content: string }[],
-    onChunk: (data: { content?: string; status?: string; error?: string; done?: boolean }) => void,
+    onChunk: (data: { content?: string; status?: string; error?: string; done?: boolean; usage?: { prompt: number; completion: number; total: number } }) => void,
   ) => {
     const token = getToken()
     const headers: Record<string, string> = { "Content-Type": "application/json" }

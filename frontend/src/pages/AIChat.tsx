@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { Transaction } from "@/api/types"
+import type { Transaction, AIUsageStats } from "@/api/types"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -74,6 +74,12 @@ function formatRelativeTime(iso: string): string {
   if (day < 30) return `${day} 天前`
   const d = new Date(iso)
   return `${d.getMonth() + 1} 月 ${d.getDate()} 日`
+}
+
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1000000) return (n / 1000).toFixed(n < 10000 ? 1 : 0) + "k"
+  return (n / 1000000).toFixed(1) + "m"
 }
 
 function loadSessions(): PersistedSessions {
@@ -159,6 +165,9 @@ export default function AIChat() {
   const [txStatus, setTxStatus] = useState<TxState>(() => restored.activeTxStatus)
   const [adding, setAdding] = useState<number | null>(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [lastUsage, setLastUsage] = useState<{ prompt: number; completion: number; total: number } | null>(null)
+  const { data: usageStats, reload: reloadUsage } = useApi<AIUsageStats>(() => api.getAIUsage(), [])
+  const [showUsage, setShowUsage] = useState(false)
 
   // 持久化：当前会话 + 归档列表，切页面/刷新可恢复（含上下文）
   useEffect(() => {
@@ -199,6 +208,8 @@ export default function AIChat() {
               updated[aiIndex] = { role: "assistant", content: updated[aiIndex].content + chunk.content }
               return updated
             })
+          } else if (chunk.usage) {
+            setLastUsage(chunk.usage)
           } else if (chunk.error) {
             setSearching(false)
             setMessages((prev) => {
@@ -218,6 +229,7 @@ export default function AIChat() {
     } finally {
       setStreaming(false)
       setSearching(false)
+      reloadUsage()
     }
   }
 
@@ -465,10 +477,61 @@ export default function AIChat() {
                   {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </Button>
               </div>
+
+              {/* token 用量状态栏 */}
+              <div className="flex items-center justify-between shrink-0">
+                <p className="text-[11px] text-muted-foreground/70">
+                  {lastUsage
+                    ? `本次 ${formatTokens(lastUsage.total)}（入 ${formatTokens(lastUsage.prompt)} / 出 ${formatTokens(lastUsage.completion)}）`
+                    : "等待回复即可查看本次 token 消耗"}
+                  {usageStats ? ` · 今日 ${formatTokens(usageStats.today)} · 累计 ${formatTokens(usageStats.total)}` : ""}
+                </p>
+                {usageStats && usageStats.recent.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowUsage(true)}
+                    className="text-[11px] text-muted-foreground/60 hover:text-blue-500 hover:underline transition-colors"
+                  >
+                    用量明细
+                  </button>
+                )}
+              </div>
             </>
           )}
         </CardContent>
       </Card>
+
+      {/* 用量明细弹窗 */}
+      {showUsage && usageStats && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowUsage(false)}>
+          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold">AI 用量明细</h3>
+              <span className="text-xs text-muted-foreground">今日 {formatTokens(usageStats.today)} · 累计 {formatTokens(usageStats.total)}</span>
+            </div>
+            <div className="max-h-72 overflow-y-auto space-y-1">
+              {usageStats.recent.map((r) => (
+                <div key={r.id} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
+                    <span className="text-muted-foreground shrink-0">{formatRelativeTime(r.created_at)}</span>
+                    <span className="truncate">{r.model || "—"}</span>
+                  </div>
+                  <span className="tabular-nums shrink-0 ml-2">
+                    {formatTokens(r.total_tokens)}（入 {formatTokens(r.prompt_tokens)} / 出 {formatTokens(r.completion_tokens)}）
+                    <span className="text-muted-foreground ml-1">· {r.turns} 轮</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 text-right">
+              <Button variant="outline" size="sm" className="h-7" onClick={() => setShowUsage(false)}>
+                关闭
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

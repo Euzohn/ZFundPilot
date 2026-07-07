@@ -122,3 +122,19 @@ export interface CSVParseResult {
   transactions: Transaction[]
   errors: string[]
 }
+
+export interface AIUsageRow {
+  id: number
+  created_at: string
+  model: string
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  turns: number
+}
+
+export interface AIUsageStats {
+  today: number
+  total: number
+  recent: AIUsageRow[]
+}

@@ -159,6 +159,12 @@ def update_ai_config(body: AIConfigUpdate) -> dict[str, Any]:
     return {"ok": True}
 
 
+@app.get("/api/ai/usage")
+def get_ai_usage() -> dict[str, Any]:
+    """返回 AI token 用量统计（今日、累计、最近 20 条明细）。"""
+    return db.get_ai_usage_stats()
+
+
 @app.post("/api/ai/chat")
 async def ai_chat(body: ChatRequest):
     """AI 投顾对话（SSE 流式）。自动注入持仓上下文 + 联网搜索。"""

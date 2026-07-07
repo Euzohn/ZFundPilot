@@ -269,6 +269,7 @@ async def chat_stream(
         "model": config.AI_MODEL,
         "messages": full_messages,
         "stream": True,
+        "stream_options": {"include_usage": True},
     }
     if tools:
         body["tools"] = tools
@@ -279,6 +280,7 @@ async def chat_stream(
             # 第一轮流式请求
             tool_calls_deltas: list = []
             has_tool_calls = False
+            usage_acc = {"prompt": 0, "completion": 0, "total": 0}
 
             async with client.stream("POST", url, headers=headers, json=body) as resp:
                 if resp.status_code != 200:
@@ -313,6 +315,13 @@ async def chat_stream(
 
                         if choice.get("finish_reason") == "tool_calls":
                             has_tool_calls = True
+
+                        # 捕获 token 用量（累加，Kimi 两轮合计即总消耗）
+                        if "usage" in chunk and chunk["usage"]:
+                            u = chunk["usage"]
+                            usage_acc["prompt"] += u.get("prompt_tokens", 0) or 0
+                            usage_acc["completion"] += u.get("completion_tokens", 0) or 0
+                            usage_acc["total"] += u.get("total_tokens", 0) or 0
                     except (json.JSONDecodeError, KeyError, IndexError):
                         continue
 
@@ -364,8 +373,24 @@ async def chat_stream(
                             content = delta.get("content")
                             if content:
                                 yield json.dumps({"content": content}, ensure_ascii=False)
+
+                            # 捕获 token 用量（累加至第一轮结果上）
+                            if "usage" in chunk and chunk["usage"]:
+                                u = chunk["usage"]
+                                usage_acc["prompt"] += u.get("prompt_tokens", 0) or 0
+                                usage_acc["completion"] += u.get("completion_tokens", 0) or 0
+                                usage_acc["total"] += u.get("total_tokens", 0) or 0
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
+
+            # 有 token 用量 → 持久化 + 通知前端
+            if usage_acc["total"] > 0:
+                db.add_ai_usage(
+                    config.AI_MODEL, usage_acc["prompt"],
+                    usage_acc["completion"], usage_acc["total"],
+                    len(messages),
+                )
+                yield json.dumps({"usage": usage_acc}, ensure_ascii=False)
 
             yield json.dumps({"done": True}, ensure_ascii=False)
     except httpx.ConnectError as e:

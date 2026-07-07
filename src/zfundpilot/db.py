@@ -90,6 +90,16 @@ def init_db() -> None:
                 created_at   TEXT DEFAULT (datetime('now','localtime'))
             );
 
+            CREATE TABLE IF NOT EXISTS ai_usage (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at       TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                model            TEXT DEFAULT '',
+                prompt_tokens    INTEGER DEFAULT 0,
+                completion_tokens INTEGER DEFAULT 0,
+                total_tokens     INTEGER DEFAULT 0,
+                turns            INTEGER DEFAULT 0
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tx_code ON transactions(fund_code);
             CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
             CREATE INDEX IF NOT EXISTS idx_nav_code_date
@@ -420,6 +430,48 @@ def get_snapshots() -> list[sqlite3.Row]:
         return conn.execute(
             "SELECT * FROM portfolio_snapshots ORDER BY date ASC"
         ).fetchall()
+
+
+# ---------------------------------------------------------------------------
+# AI 用量记录
+# ---------------------------------------------------------------------------
+def add_ai_usage(model: str, prompt_tokens: int, completion_tokens: int,
+                 total_tokens: int, turns: int) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO ai_usage(model,prompt_tokens,completion_tokens,total_tokens,turns)"
+            " VALUES(?,?,?,?,?)",
+            (model, prompt_tokens, completion_tokens, total_tokens, turns),
+        )
+
+
+def get_ai_usage_stats() -> dict:
+    """返回今日总计、历史累计、最近 20 条明细"""
+    with get_connection() as conn:
+        today = conn.execute(
+            "SELECT COALESCE(SUM(total_tokens),0) AS t FROM ai_usage"
+            " WHERE created_at >= date('now','localtime')"
+        ).fetchone()["t"]
+
+        total = conn.execute(
+            "SELECT COALESCE(SUM(total_tokens),0) AS t FROM ai_usage"
+        ).fetchone()["t"]
+
+        recent_rows = conn.execute(
+            "SELECT * FROM ai_usage ORDER BY id DESC LIMIT 20"
+        ).fetchall()
+
+    recent = [{
+        "id": r["id"],
+        "created_at": r["created_at"],
+        "model": r["model"],
+        "prompt_tokens": r["prompt_tokens"],
+        "completion_tokens": r["completion_tokens"],
+        "total_tokens": r["total_tokens"],
+        "turns": r["turns"],
+    } for r in recent_rows]
+
+    return {"today": today, "total": total, "recent": recent}
 
 
 if __name__ == "__main__":

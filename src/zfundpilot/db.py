@@ -439,8 +439,8 @@ def add_ai_usage(model: str, prompt_tokens: int, completion_tokens: int,
                  total_tokens: int, turns: int) -> None:
     with get_connection() as conn:
         conn.execute(
-            "INSERT INTO ai_usage(model,prompt_tokens,completion_tokens,total_tokens,turns)"
-            " VALUES(?,?,?,?,?)",
+            "INSERT INTO ai_usage(created_at,model,prompt_tokens,completion_tokens,total_tokens,turns)"
+            " VALUES(datetime('now'),?,?,?,?,?)",
             (model, prompt_tokens, completion_tokens, total_tokens, turns),
         )
 
@@ -450,7 +450,7 @@ def get_ai_usage_stats() -> dict:
     with get_connection() as conn:
         today = conn.execute(
             "SELECT COALESCE(SUM(total_tokens),0) AS t FROM ai_usage"
-            " WHERE created_at >= date('now','localtime')"
+            " WHERE created_at >= date('now')"
         ).fetchone()["t"]
 
         total = conn.execute(
@@ -481,12 +481,12 @@ def get_ai_usage_daily(days: int = 7) -> list[dict]:
         rows = conn.execute(
             "SELECT date(created_at) AS d, COALESCE(SUM(total_tokens),0) AS t"
             " FROM ai_usage"
-            " WHERE created_at >= date('now','localtime', ?)"
+            " WHERE created_at >= date('now', ?)"
             " GROUP BY date(created_at) ORDER BY d ASC",
             (f"-{days} days",),
         ).fetchall()
     usage_map = {r["d"]: r["t"] for r in rows}
-    today = dt.date.today()
+    today = dt.datetime.now(dt.timezone.utc).date()
     dates = [(today - dt.timedelta(days=days - 1 - i)).isoformat() for i in range(days)]
     return [{"date": d, "tokens": usage_map.get(d, 0)} for d in dates]
 

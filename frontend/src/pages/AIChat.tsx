@@ -63,7 +63,9 @@ function deriveTitle(messages: ChatMessage[]): string {
 }
 
 function formatRelativeTime(iso: string): string {
-  const t = new Date(iso).getTime()
+  // 后端存的是 UTC（datetime('now')），格式 "YYYY-MM-DD HH:MM:SS"
+  // 加 T 和 Z 标记为 UTC，new Date() 自动转为本地时区
+  const t = new Date(iso.replace(" ", "T") + "Z").getTime()
   if (isNaN(t)) return ""
   const diff = Date.now() - t
   const min = Math.floor(diff / 60000)

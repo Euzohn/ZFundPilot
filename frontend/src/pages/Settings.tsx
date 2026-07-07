@@ -233,7 +233,7 @@ export default function Settings() {
 
           {/* ── AI 投顾 ── */}
           <div className="px-5 py-5 space-y-3">
-            <SectionHeader icon={Bot} title="AI 投顾配置" desc="配置 OpenAI 兼容 API 后，可在「风险与建议」页面与 AI 对话" />
+            <SectionHeader icon={Bot} title="AI 投顾配置" desc="配置 OpenAI 兼容 API 后，可在「AI 助手」页面对话并录入交易" />
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>

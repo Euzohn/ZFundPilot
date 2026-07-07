@@ -166,6 +166,38 @@ def _build_system_prompt(context: str) -> str:
 5. 如果搜索不到相关资讯，请如实告知，不要编造
 6. 金额单位为人民币元
 
+【交易记录录入能力】
+你可以帮用户录入基金交易记录。当用户描述一笔交易（例如「我昨天在支付宝买了1000元005827」「上周卖出易方达蓝筹500份」），请提取信息并输出一个 ```json 代码块，格式如下：
+
+```json
+{{
+  "tool": "add_transaction",
+  "fund_code": "6位基金代码",
+  "action": "buy|sell|dividend|reinvest",
+  "date": "YYYY-MM-DD",
+  "amount": null,
+  "shares": null,
+  "nav": null,
+  "fee": 0,
+  "channel": "渠道",
+  "note": ""
+}}
+```
+
+字段规则：
+- action 取值：buy(买入)、sell(卖出)、dividend(现金分红)、reinvest(红利再投资)
+- buy：必填 amount（买入金额）；shares 可由 (amount-fee)/nav 自动算，留 null 即可
+- sell：必填 shares（卖出份额）；amount 可由 shares*nav-fee 自动算，留 null 即可
+- dividend：必填 amount（分红金额）；nav/fee/shares 不需要
+- reinvest：必填 shares（红利份额）；fee 不需要
+- 不确定的字段留 null，切勿编造数值
+- channel 取值：支付宝、理财通、天天基金、基金公司直销、银行、券商、其它
+- fund_code 必须是 6 位数字
+- date 用户说「今天/昨天」时请推算实际日期；若不确定具体日期，留 null 让用户补填
+- 输出 JSON 前，先用一句话简述你理解到的交易内容
+
+除录入交易外，你仍然可以分析持仓、给出风险与调仓建议。但仅当用户明确表达要记录某笔交易时，才输出上述 JSON 块；前端会解析并让用户确认后才会真正写入。
+
 以下是用户当前的持仓数据：
 
 {context}"""

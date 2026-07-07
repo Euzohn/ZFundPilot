@@ -8,6 +8,7 @@ import {
   RefreshCw,
   TrendingUp,
   ShieldCheck,
+  Bot,
   LogOut,
   Settings as SettingsIcon,
   ChevronLeft,
@@ -26,6 +27,7 @@ const navItems = [
   { to: "/nav", label: "净值更新", icon: RefreshCw },
   { to: "/returns", label: "收益分析", icon: TrendingUp },
   { to: "/risk", label: "风险与建议", icon: ShieldCheck },
+  { to: "/ai", label: "AI 助手", icon: Bot },
   { to: "/settings", label: "设置", icon: SettingsIcon },
 ]
 

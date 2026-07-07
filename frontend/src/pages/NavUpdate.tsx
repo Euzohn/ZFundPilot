@@ -12,8 +12,8 @@ import { RefreshCw, CheckCircle2, XCircle, RotateCw, AlertTriangle } from "lucid
 import { navStr } from "@/lib/format"
 
 export default function NavUpdate() {
-  const { data: navs, loading, reload } = useApi<LatestNav[]>(() => api.getLatestNavs())
-  const { data: funds, reload: reloadFunds } = useApi<Fund[]>(() => api.getFunds(), [])
+  const { data: navs, loading: navsLoading, reload } = useApi<LatestNav[]>(() => api.getLatestNavs())
+  const { data: funds, loading: fundsLoading, reload: reloadFunds } = useApi<Fund[]>(() => api.getFunds(), [])
   const [updating, setUpdating] = useState(false)
   const [progress, setProgress] = useState(0)
   const [results, setResults] = useState<FetchResult[] | null>(null)
@@ -31,6 +31,8 @@ export default function NavUpdate() {
       return !n || n.date < todayStr
     }).length
   }, [funds, navs, todayStr])
+
+  const isLoading = navsLoading || fundsLoading
 
   // 最近更新日期：所有基金中最新净值日期的最大值
   const lastUpdateDate = useMemo(() => {
@@ -199,7 +201,7 @@ export default function NavUpdate() {
           </Button>
         </CardHeader>
         <CardContent>
-          {loading ? (
+          {isLoading ? (
             <div className="flex py-8 items-center justify-center"><LogoSpinner className="h-10 w-10" /></div>
           ) : sortedRows.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">暂无基金数据，请先添加交易记录</p>

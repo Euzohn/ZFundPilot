@@ -189,3 +189,18 @@ export interface FeeLot {
   rate: number
   fee: number
 }
+
+// ── 关键词映射 ──
+export interface KeywordEntry {
+  keyword: string
+  mapped: string
+}
+
+export interface KeywordMaps {
+  type_defaults: KeywordEntry[]
+  sector_defaults: KeywordEntry[]
+  type_custom: KeywordEntry[]
+  sector_custom: KeywordEntry[]
+  available_types: string[]
+  available_sectors: string[]
+}

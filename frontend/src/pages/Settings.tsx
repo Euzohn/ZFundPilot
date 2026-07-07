@@ -12,11 +12,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import LogoSpinner from "@/components/LogoSpinner"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import type { AIUsageStats, AIUsageDaily } from "@/api/types"
+import type { AIUsageStats, AIUsageDaily, KeywordMaps, KeywordEntry } from "@/api/types"
 import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
   SlidersHorizontal, LogOut, Loader2, CheckCircle2, XCircle, Zap,
+  Search, X,
 } from "lucide-react"
 
 function detectProvider(baseUrl: string): string {
@@ -201,6 +202,65 @@ export default function Settings() {
     finally { setResettingSectors(false) }
   }
 
+  // --- Keyword Maps ---
+  const [keywordMaps, setKeywordMaps] = useState<KeywordMaps | null>(null)
+  const [kwTab, setKwTab] = useState("sector")
+  const [kwSearch, setKwSearch] = useState("")
+  const [kwShowDefaults, setKwShowDefaults] = useState(false)
+  const [newKwKeyword, setNewKwKeyword] = useState("")
+  const [newKwMapped, setNewKwMapped] = useState("")
+  const [kwSaving, setKwSaving] = useState(false)
+
+  const { data: kwData } = useApi(() => api.getKeywordMaps(), [])
+  useEffect(() => {
+    if (kwData && !keywordMaps) setKeywordMaps(kwData)
+  }, [kwData])
+
+  const kwCustom = keywordMaps ? (kwTab === "sector" ? keywordMaps.sector_custom : keywordMaps.type_custom) : []
+  const kwDefaults = keywordMaps ? (kwTab === "sector" ? keywordMaps.sector_defaults : keywordMaps.type_defaults) : []
+  const kwAvailable = keywordMaps ? (kwTab === "sector" ? keywordMaps.available_sectors : keywordMaps.available_types) : []
+
+  const kwFilteredDefaults = kwDefaults.filter((e) => !kwSearch || e.keyword.includes(kwSearch) || e.mapped.includes(kwSearch))
+
+  const addCustomKeyword = async () => {
+    const keyword = newKwKeyword.trim()
+    const mapped = newKwMapped.trim()
+    if (!keyword || !mapped) { toast.warning("请填写关键词和映射值"); return }
+    if (kwCustom.some((e) => e.keyword === keyword)) { toast.warning("该关键词已存在"); return }
+    const next = [...kwCustom, { keyword, mapped }]
+    const typeCustom = kwTab === "sector" ? keywordMaps!.type_custom : next
+    const sectorCustom = kwTab === "sector" ? next : keywordMaps!.sector_custom
+    setKeywordMaps({ ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next })
+    setNewKwKeyword(""); setNewKwMapped("")
+    try { await api.saveKeywordMaps(JSON.stringify(typeCustom), JSON.stringify(sectorCustom)) } catch {}
+  }
+
+  const deleteCustomKeyword = async (idx: number) => {
+    const next = kwCustom.filter((_, i) => i !== idx)
+    const typeCustom = kwTab === "sector" ? keywordMaps!.type_custom : next
+    const sectorCustom = kwTab === "sector" ? next : keywordMaps!.sector_custom
+    setKeywordMaps({ ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next })
+    try { await api.saveKeywordMaps(JSON.stringify(typeCustom), JSON.stringify(sectorCustom)) } catch {}
+  }
+
+  const moveCustomKeyword = async (idx: number, dir: -1 | 1) => {
+    const next = [...kwCustom]
+    const target = idx + dir
+    if (target < 0 || target >= next.length) return
+    ;[next[idx], next[target]] = [next[target], next[idx]]
+    const typeCustom = kwTab === "sector" ? keywordMaps!.type_custom : next
+    const sectorCustom = kwTab === "sector" ? next : keywordMaps!.sector_custom
+    setKeywordMaps({ ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next })
+    try { await api.saveKeywordMaps(JSON.stringify(typeCustom), JSON.stringify(sectorCustom)) } catch {}
+  }
+
+  const resetCustomKeywords = async () => {
+    const typeCustom = kwTab === "sector" ? keywordMaps!.type_custom : []
+    const sectorCustom = kwTab === "sector" ? [] : keywordMaps!.sector_custom
+    setKeywordMaps({ ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: [] })
+    try { await api.saveKeywordMaps(JSON.stringify(typeCustom), JSON.stringify(sectorCustom)); toast.success("已重置自定义关键词") } catch {}
+  }
+
   const authRequired = authStatus?.required
 
   return (
@@ -263,9 +323,135 @@ export default function Settings() {
                     onClick={() => { clearToken(); window.location.reload() }}>
                     <LogOut className="mr-1.5 h-3.5 w-3.5" /> 退出登录
                   </Button>
+</div>
+            </CardContent>
+          </Card>
+
+          {/* ── 关键词映射 ── */}
+          {keywordMaps && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Search className="h-5 w-5 text-blue-500" />
+                  关键词映射
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">添加自定义关键词，匹配时优先于默认规则</p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Tab: 板块 / 类型 */}
+                <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
+                  {([["sector", "板块关键词"], ["type", "类型关键词"]] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => { setKwTab(key); setKwSearch(""); setKwShowDefaults(false) }}
+                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${kwTab === key ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 添加自定义 */}
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="flex-1 min-w-[120px]">
+                    <Label className="mb-1 block text-xs text-muted-foreground">关键词</Label>
+                    <Input value={newKwKeyword} onChange={(e) => setNewKwKeyword(e.target.value)}
+                      placeholder="如 新能源车" className="h-8 text-xs"
+                      onKeyDown={(e) => { if (e.key === "Enter") addCustomKeyword() }} />
+                  </div>
+                  <div className="flex-1 min-w-[120px]">
+                    <Label className="mb-1 block text-xs text-muted-foreground">映射为</Label>
+                    <select
+                      value={newKwMapped}
+                      onChange={(e) => setNewKwMapped(e.target.value)}
+                      className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      <option value="">选择{kwTab === "sector" ? "板块" : "类型"}</option>
+                      {kwAvailable.map((a) => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                  </div>
+                  <Button size="sm" onClick={addCustomKeyword} className="h-8 shrink-0">
+                    <Plus className="mr-1 h-3.5 w-3.5" /> 添加
+                  </Button>
+                </div>
+
+                {/* 自定义关键词列表 */}
+                {kwCustom.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">自定义关键词（{kwCustom.length} 个）</p>
+                    {kwCustom.map((e, i) => (
+                      <div key={i} className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-1.5">
+                        <button onClick={() => moveCustomKeyword(i, -1)} disabled={i === 0}
+                          className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 disabled:opacity-20">
+                          <ChevronUp className="h-3 w-3" />
+                        </button>
+                        <button onClick={() => moveCustomKeyword(i, 1)} disabled={i === kwCustom.length - 1}
+                          className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 disabled:opacity-20">
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
+                        <span className="text-sm font-medium flex-1">{e.keyword}</span>
+                        <span className="text-xs text-muted-foreground">→</span>
+                        <span className="text-sm font-medium text-blue-600">{e.mapped}</span>
+                        <button onClick={() => deleteCustomKeyword(i)}
+                          className="flex h-5 w-5 items-center justify-center rounded text-slate-300 hover:text-red-500">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 默认关键词 */}
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setKwShowDefaults(!kwShowDefaults)}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {kwShowDefaults ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    {kwShowDefaults ? "收起" : "展开"}默认关键词（{kwDefaults.length} 个）
+                  </button>
+                  {kwShowDefaults && (
+                    <div className="mt-2 space-y-2">
+                      <Input
+                        value={kwSearch}
+                        onChange={(e) => setKwSearch(e.target.value)}
+                        placeholder="搜索关键词..."
+                        className="h-7 text-xs max-w-[200px]"
+                      />
+                      <div className="max-h-48 overflow-y-auto rounded border border-slate-100 divide-y divide-slate-100">
+                        {kwFilteredDefaults.map((e, i) => (
+                          <div key={i} className="flex items-center gap-2 px-3 py-1 text-xs hover:bg-slate-50">
+                            <span className="font-mono">{e.keyword}</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span>{e.mapped}</span>
+                          </div>
+                        ))}
+                        {kwFilteredDefaults.length === 0 && (
+                          <p className="px-3 py-2 text-xs text-muted-foreground">无匹配结果</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 重置 */}
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={async () => {
+                    setKeywordMaps({ ...keywordMaps, type_custom: [], sector_custom: [] })
+                    try { await api.saveKeywordMaps("[]", "[]"); toast.success("已重置所有自定义关键词") } catch {}
+                  }}>
+                    <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> 重置自定义
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleResetSectors} disabled={resettingSectors}>
+                    <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", resettingSectors && "animate-spin")} />
+                    {resettingSectors ? "重置中..." : "重置板块映射"}
+                  </Button>
                 </div>
               </CardContent>
             </Card>
+          )}
           </TabsContent>
         )}
 

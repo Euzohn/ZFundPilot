@@ -625,6 +625,25 @@ class PreferencesBody(BaseModel):
     channels: str = ""
 
 
+class KeywordMapsBody(BaseModel):
+    type_custom: str = "[]"
+    sector_custom: str = "[]"
+
+
+@app.get("/api/keyword-maps")
+def get_keyword_maps() -> dict:
+    """返回默认 + 自定义关键词映射（类型/板块）。"""
+    return fetch_fund.get_keyword_maps()
+
+
+@app.put("/api/keyword-maps")
+def save_keyword_maps(body: KeywordMapsBody) -> dict[str, bool]:
+    """保存自定义关键词映射。"""
+    db.upsert_preference("type_keywords_custom", body.type_custom)
+    db.upsert_preference("sector_keywords_custom", body.sector_custom)
+    return {"ok": True}
+
+
 @app.get("/api/preferences")
 def get_preferences() -> dict[str, str]:
     """返回所有偏好设置。前端负责 JSON 序列化/反序列化。"""

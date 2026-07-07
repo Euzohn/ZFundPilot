@@ -70,7 +70,7 @@ _SECTOR_KEYWORD_MAP = [
     ("芯片", "半导体"),
     ("集成电路", "半导体"),
     ("EDA", "半导体"),
-    ("存储", "半导体"),
+    ("存储芯片", "半导体"),
 
     # ================= 算力 =================
     ("算力", "国产算力"),
@@ -178,13 +178,11 @@ _SECTOR_KEYWORD_MAP = [
     ("500等权重", "标普"),
     ("标普", "标普"),
 
-    ("恒生科技", "港股科技"),
     ("恒生互联网", "港股科技"),
     ("恒生", "港股"),
     ("港股", "港股"),
 
     ("美股", "海外基金"),
-    ("全球", "海外基金"),
     ("海外", "海外基金"),
     ("QDII", "海外基金"),
 
@@ -195,6 +193,49 @@ _SECTOR_KEYWORD_MAP = [
     ("创业板", "创业板"),
     ("创业50", "创业板"),
     ("北证50", "北证50"),
+
+    # ================= 军工 =================
+    ("军工", "军工"),
+    ("国防", "军工"),
+
+    # ================= 地产 =================
+    ("房地产", "房地产"),
+    ("地产", "房地产"),
+
+    # ================= 化工 =================
+    ("化工", "化工"),
+
+    # ================= 传媒 =================
+    ("传媒", "传媒"),
+    ("游戏", "传媒"),
+    ("影视", "传媒"),
+
+    # ================= 农业 =================
+    ("农业", "农业"),
+
+    # ================= 环保 =================
+    ("环保", "环保"),
+    ("碳中和", "环保"),
+    ("低碳", "环保"),
+
+    # ================= 电力 =================
+    ("电力", "电力"),
+
+    # ================= 建筑建材 =================
+    ("建筑", "建筑建材"),
+    ("建材", "建筑建材"),
+
+    # ================= 交运物流 =================
+    ("交通运输", "交运物流"),
+    ("物流", "交运物流"),
+
+    # ================= 石油石化 =================
+    ("石油", "石油石化"),
+    ("石化", "石油石化"),
+
+    # ================= 旅游 =================
+    ("旅游", "旅游"),
+    ("酒店", "旅游"),
 
     # ================= 其它 =================
     ("债券", "其它"),
@@ -239,9 +280,13 @@ def _http_get(url: str, timeout: int = 15) -> str:
 
 
 def _guess_fund_type(raw_type: str, fund_name: str = "") -> str:
-    """根据天天基金类型文本或基金名称推断标准资产类型。"""
+    """根据天天基金类型文本或基金名称推断标准资产类型。
+
+    合并用户自定义 + 默认类型关键词，自定义排前面优先匹配。
+    """
     text = f"{raw_type} {fund_name}"
-    for keyword, mapped in _TYPE_KEYWORD_MAP:
+    merged = _load_custom_keywords("type_keywords_custom") + _TYPE_KEYWORD_MAP
+    for keyword, mapped in merged:
         if keyword in text:
             return mapped
     return "其它"
@@ -268,9 +313,25 @@ def _save_sector_map(mapping: dict[str, str]) -> None:
         json.dump(mapping, f, ensure_ascii=False, indent=2)
 
 
+def _load_custom_keywords(key: str) -> list[tuple[str, str]]:
+    """从数据库读取用户自定义关键词映射（JSON 数组 → 元组列表）。"""
+    raw = db.get_preference(key)
+    if not raw:
+        return []
+    try:
+        arr = json.loads(raw)
+        return [(item["keyword"], item["mapped"]) for item in arr if "keyword" in item and "mapped" in item]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _guess_sector(fund_name: str) -> str:
-    """通过基金名称关键词推断所属板块。"""
-    for keyword, sector in _SECTOR_KEYWORD_MAP:
+    """通过基金名称关键词推断所属板块。
+
+    合并用户自定义 + 默认板块关键词，自定义排前面优先匹配。
+    """
+    merged = _load_custom_keywords("sector_keywords_custom") + _SECTOR_KEYWORD_MAP
+    for keyword, sector in merged:
         if keyword in fund_name:
             return sector
     return "其它"
@@ -290,6 +351,46 @@ def save_sector_mapping(fund_code: str, sector: str) -> None:
     else:
         return
     _save_sector_map(mapping)
+
+
+# ---------------------------------------------------------------------------
+# 关键词映射导出（供 API / 前端展示）
+# ---------------------------------------------------------------------------
+
+def get_available_types() -> list[str]:
+    """返回所有可用资产类型（去重排序）。"""
+    seen = set()
+    for _, mapped in _TYPE_KEYWORD_MAP:
+        seen.add(mapped)
+    custom = _load_custom_keywords("type_keywords_custom")
+    for _, mapped in custom:
+        seen.add(mapped)
+    return sorted(seen)
+
+
+def get_available_sectors() -> list[str]:
+    """返回所有可用板块（去重排序）。"""
+    seen = set()
+    for _, mapped in _SECTOR_KEYWORD_MAP:
+        seen.add(mapped)
+    custom = _load_custom_keywords("sector_keywords_custom")
+    for _, mapped in custom:
+        seen.add(mapped)
+    return sorted(seen)
+
+
+def get_keyword_maps() -> dict:
+    """返回结构化关键词映射（默认 + 自定义），供 API 使用。"""
+    type_custom = _load_custom_keywords("type_keywords_custom")
+    sector_custom = _load_custom_keywords("sector_keywords_custom")
+    return {
+        "type_defaults": [{"keyword": k, "mapped": v} for k, v in _TYPE_KEYWORD_MAP],
+        "sector_defaults": [{"keyword": k, "mapped": v} for k, v in _SECTOR_KEYWORD_MAP],
+        "type_custom": [{"keyword": k, "mapped": v} for k, v in type_custom],
+        "sector_custom": [{"keyword": k, "mapped": v} for k, v in sector_custom],
+        "available_types": get_available_types(),
+        "available_sectors": get_available_sectors(),
+    }
 
 
 # ---------------------------------------------------------------------------

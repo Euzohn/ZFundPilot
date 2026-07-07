@@ -14,6 +14,7 @@ import type {
   AIUsageDaily,
   FeeRatesResponse,
   CalcFeeResponse,
+  KeywordMaps,
 } from "./types"
 import { getToken, clearToken } from "@/lib/auth"
 
@@ -232,5 +233,13 @@ export const api = {
     request<{ ok: boolean }>("/preferences", {
       method: "PUT",
       body: JSON.stringify({ channels }),
+    }),
+
+  // Keyword maps
+  getKeywordMaps: () => request<KeywordMaps>("/keyword-maps"),
+  saveKeywordMaps: (type_custom: string, sector_custom: string) =>
+    request<{ ok: boolean }>("/keyword-maps", {
+      method: "PUT",
+      body: JSON.stringify({ type_custom, sector_custom }),
     }),
 }

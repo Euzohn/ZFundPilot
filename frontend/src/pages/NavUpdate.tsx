@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { FetchResult, LatestNav, Fund } from "@/api/types"
@@ -6,19 +6,50 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 import LogoSpinner from "@/components/LogoSpinner"
-import { RefreshCw, CheckCircle2, XCircle } from "lucide-react"
+import { RefreshCw, CheckCircle2, XCircle, RotateCw, AlertTriangle } from "lucide-react"
 import { navStr } from "@/lib/format"
 
 export default function NavUpdate() {
   const { data: navs, loading, reload } = useApi<LatestNav[]>(() => api.getLatestNavs())
-  const { data: funds } = useApi<Fund[]>(() => api.getFunds(), [])
+  const { data: funds, reload: reloadFunds } = useApi<Fund[]>(() => api.getFunds(), [])
   const [updating, setUpdating] = useState(false)
   const [progress, setProgress] = useState(0)
   const [results, setResults] = useState<FetchResult[] | null>(null)
 
   const fundMap: Record<string, Fund> = {}
   funds?.forEach((f) => { fundMap[f.fund_code] = f })
+
+  const todayStr = new Date().toISOString().slice(0, 10)
+
+  // 需要更新的基金：无净值数据 或 最新净值日期 < 今天
+  const needsUpdate = useMemo(() => {
+    if (!funds) return 0
+    return funds.filter((f) => {
+      const n = navs?.find((n) => n.fund_code === f.fund_code)
+      return !n || n.date < todayStr
+    }).length
+  }, [funds, navs, todayStr])
+
+  // 最近更新日期：所有基金中最新净值日期的最大值
+  const lastUpdateDate = useMemo(() => {
+    if (!navs || navs.length === 0) return ""
+    return navs.reduce((max, n) => n.date > max ? n.date : max, "")
+  }, [navs])
+
+  // 页面获得焦点时自动刷新
+  const handleVisibilityChange = useCallback(() => {
+    if (document.visibilityState === "visible") {
+      reload()
+      reloadFunds()
+    }
+  }, [reload, reloadFunds])
+
+  useEffect(() => {
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
+  }, [handleVisibilityChange])
 
   const handleUpdate = async () => {
     setUpdating(true)
@@ -29,6 +60,7 @@ export default function NavUpdate() {
       setResults(res)
       setProgress(100)
       await reload()
+      await reloadFunds()
     } catch (e) {
       alert(`更新失败: ${e}`)
     } finally {
@@ -39,31 +71,72 @@ export default function NavUpdate() {
   const okCount = results?.filter((r) => r.ok).length ?? 0
   const failCount = results?.filter((r) => !r.ok).length ?? 0
 
-  // 更新后优先用 results 展示（含最新净值），否则用 navs（数据库读取）
-  const rows: { fund_code: string; date: string | null; nav: number | null; ok?: boolean }[] =
-    results
-      ? results.map((r) => ({ fund_code: r.fund_code, date: r.latest_date, nav: r.latest_nav, ok: r.ok }))
-      : (navs ?? []).map((n) => ({ fund_code: n.fund_code, date: n.date, nav: n.nav }))
+  // 合并所有基金 + 净值数据
+  const rows = useMemo(() => {
+    if (!funds) return []
+    return funds.map((f) => {
+      const n = navs?.find((n) => n.fund_code === f.fund_code)
+      const u = results?.find((r) => r.fund_code === f.fund_code)
+      return {
+        fund_code: f.fund_code,
+        fund_name: f.fund_name || f.fund_code,
+        date: n?.date ?? null,
+        nav: n?.nav ?? null,
+        hasResult: !!u,
+        ok: u?.ok,
+        message: u?.message ?? "",
+      }
+    })
+  }, [funds, navs, results])
+
+  // 排序：待更新在前（无净值 > 净值过时），已更新在后
+  const sortedRows = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      const aNeeds = !a.date || a.date < todayStr ? 0 : 1
+      const bNeeds = !b.date || b.date < todayStr ? 0 : 1
+      if (aNeeds !== bNeeds) return aNeeds - bNeeds
+      if (!a.date && !b.date) return a.fund_code.localeCompare(b.fund_code)
+      if (!a.date) return -1
+      if (!b.date) return 1
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1
+      return a.fund_code.localeCompare(b.fund_code)
+    })
+  }, [rows, todayStr])
 
   return (
     <div className="space-y-6">
       <h1 className="text-xl md:text-2xl font-bold">净值更新</h1>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+        <Card>
+          <CardContent className="flex items-center justify-between p-4 md:p-6">
+            <div>
+              <p className="text-sm text-muted-foreground">基金总数</p>
+              <p className="text-xl md:text-2xl font-bold">{funds?.length ?? 0} 只</p>
+            </div>
+            <RefreshCw className="h-8 w-8 text-blue-500" />
+          </CardContent>
+        </Card>
         <Card>
           <CardContent className="flex items-center justify-between p-4 md:p-6">
             <div>
               <p className="text-sm text-muted-foreground">待更新基金数</p>
-              <p className="text-xl md:text-2xl font-bold">{navs?.length ?? 0} 只</p>
+              <p className="text-xl md:text-2xl font-bold">
+                <span className={needsUpdate > 0 ? "text-amber-500" : "text-green-600"}>{needsUpdate}</span>
+                <span className="text-base text-muted-foreground"> / {funds?.length ?? 0}</span>
+              </p>
             </div>
-            <RefreshCw className="h-8 w-8 text-blue-500" />
+            <AlertTriangle className={`h-8 w-8 ${needsUpdate > 0 ? "text-amber-400" : "text-green-400"}`} />
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 md:p-6">
             <p className="text-sm text-muted-foreground">净值最近更新</p>
             <p className="text-xl md:text-2xl font-bold">
-              {navs?.length ? navs[0].date : "未更新"}
+              {lastUpdateDate || "未更新"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {lastUpdateDate === todayStr ? "✅ 已是最新" : lastUpdateDate ? "⚠️ 非最新" : ""}
             </p>
           </CardContent>
         </Card>
@@ -116,16 +189,20 @@ export default function NavUpdate() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">
-            各基金最新净值{results ? "（更新结果）" : ""}
+            各基金最新净值
+            {results && <span className="text-sm text-muted-foreground font-normal ml-2">（更新结果）</span>}
           </CardTitle>
+          <Button variant="outline" size="sm" onClick={() => { reload(); reloadFunds() }} className="h-8">
+            <RotateCw className="mr-1 h-3.5 w-3.5" /> 刷新
+          </Button>
         </CardHeader>
         <CardContent>
-          {loading && !results ? (
+          {loading ? (
             <div className="flex py-8 items-center justify-center"><LogoSpinner className="h-10 w-10" /></div>
-          ) : rows.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">暂无净值数据，请先添加交易记录并点击上方更新</p>
+          ) : sortedRows.length === 0 ? (
+            <p className="py-8 text-center text-muted-foreground">暂无基金数据，请先添加交易记录</p>
           ) : (
             <Table>
               <TableHeader>
@@ -133,33 +210,43 @@ export default function NavUpdate() {
                   <TableHead>基金名称</TableHead>
                   <TableHead>最新日期</TableHead>
                   <TableHead className="text-right">最新净值</TableHead>
-                  {results && <TableHead className="text-center">状态</TableHead>}
+                  <TableHead className="text-center">状态</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r) => {
-                  const fund = fundMap[r.fund_code]
+                {sortedRows.map((r) => {
+                  const outdated = !r.date || r.date < todayStr
                   return (
-                    <TableRow key={r.fund_code}>
+                    <TableRow key={r.fund_code} className={outdated ? "bg-amber-50/40" : ""}>
                       <TableCell>
                         <div className="flex flex-col">
-                          <span className="font-medium max-w-[160px] truncate" title={fund?.fund_name ?? r.fund_code}>
-                            {fund?.fund_name ?? r.fund_code}
+                          <span className="font-medium max-w-[160px] truncate" title={r.fund_name}>
+                            {r.fund_name}
                           </span>
                           <span className="font-mono text-xs text-muted-foreground">{r.fund_code}</span>
                         </div>
                       </TableCell>
                       <TableCell className="tabular-nums">{r.date ?? "—"}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{navStr(r.nav)}</TableCell>
-                      {results && (
-                        <TableCell className="text-center">
-                          {r.ok ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-500 inline" />
+                      <TableCell className="text-center">
+                        {r.hasResult ? (
+                          r.ok ? (
+                            <span title="更新成功"><CheckCircle2 className="h-4 w-4 text-green-500 inline" /></span>
                           ) : (
-                            <XCircle className="h-4 w-4 text-red-500 inline" />
-                          )}
-                        </TableCell>
-                      )}
+                            <span title={r.message}><XCircle className="h-4 w-4 text-red-500 inline" /></span>
+                          )
+                        ) : !r.date ? (
+                          <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50 text-[11px] px-1.5 py-0">
+                            待更新
+                          </Badge>
+                        ) : outdated ? (
+                          <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50 text-[11px] px-1.5 py-0">
+                            过时
+                          </Badge>
+                        ) : (
+                          <span title="已是最新"><CheckCircle2 className="h-4 w-4 text-green-500 inline" /></span>
+                        )}
+                      </TableCell>
                     </TableRow>
                   )
                 })}

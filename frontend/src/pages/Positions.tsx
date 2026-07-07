@@ -6,17 +6,19 @@ import type { Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, pnlColor } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown } from "lucide-react"
+import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search } from "lucide-react"
 
 export default function Positions() {
   const navigate = useNavigate()
   const [showClosed, setShowClosed] = useState(() => localStorage.getItem("zfundpilot_showClosed") === "true")
   const [channelFilter, setChannelFilter] = useState(() => localStorage.getItem("zfundpilot_channelFilter") ?? "")
+  const [searchQuery, setSearchQuery] = useState("")
   const [sortField, setSortField] = useState("value")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [closedSortField, setClosedSortField] = useState("realized")
@@ -63,7 +65,16 @@ export default function Positions() {
   }
 
   const sortedRows = useMemo(() => {
-    return [...mergedRows].sort(([, a], [, b]) => {
+    const q = searchQuery.trim().toLowerCase()
+    const filtered = q
+      ? mergedRows.filter(([code, m]) =>
+          m.name.toLowerCase().includes(q) ||
+          code.toLowerCase().includes(q) ||
+          (m.sector && m.sector.toLowerCase().includes(q)) ||
+          m.type.toLowerCase().includes(q)
+        )
+      : mergedRows
+    return [...filtered].sort(([, a], [, b]) => {
       const getVal = (m: typeof a): number | string => {
         switch (sortField) {
           case "name": return m.name
@@ -83,7 +94,7 @@ export default function Positions() {
         : (va as number) - (vb as number)
       return sortDir === "asc" ? cmp : -cmp
     })
-  }, [mergedRows, sortField, sortDir])
+  }, [mergedRows, sortField, sortDir, searchQuery])
 
   const maxDate = sortedRows.reduce((best, [, m]) =>
     m.latestDate && (!best || m.latestDate > best) ? m.latestDate : best,
@@ -116,6 +127,16 @@ export default function Positions() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl md:text-2xl font-bold">持仓明细</h1>
         <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜索名称/代码/板块"
+              className="h-8 w-44 pl-7 text-xs"
+            />
+          </div>
           <Select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="h-8 text-xs w-32">
             <option value="">全部渠道</option>
             {availableChannels.map((c) => <option key={c} value={c}>{c}</option>)}

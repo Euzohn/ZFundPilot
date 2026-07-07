@@ -177,7 +177,12 @@ export const api = {
 
   // CSV
   downloadTemplate: () => downloadWithAuth("/csv/template", "transactions_template.csv"),
-  exportCsv: () => downloadWithAuth("/csv/export", "my_transactions.csv"),
+  exportCsv: () => {
+    const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, "0")
+    const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`
+    return downloadWithAuth("/csv/export", `transactions_${ts}.csv`)
+  },
   parseCsv: async (file: File): Promise<CSVParseResult> => {
     const form = new FormData()
     form.append("file", file)

@@ -30,6 +30,7 @@ interface ExtractedTx {
   fund_code: string
   action: string
   date: string
+  after_three: boolean
   amount: number | null
   shares: number | null
   nav: number | null
@@ -48,6 +49,7 @@ function extractToolCall(content: string): ExtractedTx | null {
         fund_code: String(p.fund_code ?? ""),
         action: String(p.action ?? "buy"),
         date: String(p.date ?? ""),
+        after_three: Boolean(p.after_three),
         amount: p.amount != null ? Number(p.amount) : null,
         shares: p.shares != null ? Number(p.shares) : null,
         nav: p.nav != null ? Number(p.nav) : null,
@@ -131,6 +133,8 @@ export default function AIChat() {
       toast.error("基金代码和日期不能为空")
       return
     }
+    const baseNote = tx.note.trim()
+    const note = (baseNote ? baseNote + (tx.after_three ? " | " : "") : "") + (tx.after_three ? "T+1确认" : "")
     const payload: Transaction = {
       fund_code: tx.fund_code,
       action: tx.action,
@@ -140,7 +144,7 @@ export default function AIChat() {
       nav: tx.nav,
       fee: tx.fee,
       channel: tx.channel,
-      note: tx.note,
+      note,
     }
     setAdding(msgIndex)
     try {
@@ -299,8 +303,9 @@ function TxConfirmCard({
   onDiscard: () => void
 }) {
   const [editDate, setEditDate] = useState(tx.date)
+  const [afterThree, setAfterThree] = useState(tx.after_three)
 
-  useEffect(() => { setEditDate(tx.date) }, [tx.date])
+  useEffect(() => { setEditDate(tx.date); setAfterThree(tx.after_three) }, [tx.date, tx.after_three])
 
   if (status?.state === "added") {
     return (
@@ -317,7 +322,7 @@ function TxConfirmCard({
     )
   }
 
-  const finalTx: ExtractedTx = { ...tx, date: editDate }
+  const finalTx: ExtractedTx = { ...tx, date: editDate, after_three: afterThree }
   const canConfirm = !!finalTx.fund_code && !!finalTx.date && !adding
 
   return (
@@ -353,6 +358,16 @@ function TxConfirmCard({
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground">渠道</span>
           <span>{tx.channel || "—"}</span>
+        </div>
+        <div className="col-span-2 flex items-center gap-2">
+          <span className="text-muted-foreground">下单时间</span>
+          <button
+            type="button"
+            onClick={() => setAfterThree(!afterThree)}
+            className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${afterThree ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}
+          >
+            {afterThree ? "15:00 后（T+1 确认）" : "15:00 前（当日确认）"}
+          </button>
         </div>
         {tx.amount != null && (
           <div className="flex items-center gap-1.5">

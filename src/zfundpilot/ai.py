@@ -175,6 +175,7 @@ def _build_system_prompt(context: str) -> str:
   "fund_code": "6位基金代码",
   "action": "buy|sell|dividend|reinvest",
   "date": "YYYY-MM-DD",
+  "after_three": false,
   "amount": null,
   "shares": null,
   "nav": null,
@@ -190,6 +191,7 @@ def _build_system_prompt(context: str) -> str:
 - sell：必填 shares（卖出份额）；amount 可由 shares*nav-fee 自动算，留 null 即可
 - dividend：必填 amount（分红金额）；nav/fee/shares 不需要
 - reinvest：必填 shares（红利份额）；fee 不需要
+- after_three：布尔值。true 表示 15:00 后下单（按 T+1 次一交易日净值确认），false 或不确定时填 false（按当日净值确认）。用户提到「下午/晚上/收盘后」下单时设为 true
 - 不确定的字段留 null，切勿编造数值
 - channel 取值：支付宝、理财通、天天基金、基金公司直销、银行、券商、其它
 - fund_code 必须是 6 位数字

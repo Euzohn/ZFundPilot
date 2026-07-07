@@ -25,10 +25,11 @@
 ## 截图
 
 <div align="center">
-  <img src="docs/screenshots/overview.png" alt="组合总览" width="48%">
-  <img src="docs/screenshots/positions.png" alt="持仓明细" width="48%">
+  <img src="docs/screenshots/overview.png" alt="组合总览" width="90%">
+  <p><b>组合总览</b> — 持仓成本、市值、盈亏一览 + 资产/渠道/板块分布图</p>
   <br>
-  <sub>组合总览 · 持仓明细</sub>
+  <img src="docs/screenshots/positions.png" alt="持仓明细" width="90%">
+  <p><b>持仓明细</b> — 按基金合并的跨渠道持仓视图，净值日期标注新鲜度</p>
 </div>
 
 ## 目录

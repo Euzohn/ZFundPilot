@@ -22,19 +22,46 @@
 
 ---
 
+## 截图
+
+<div align="center">
+  <img src="docs/screenshots/overview.png" alt="组合总览" width="48%">
+  <img src="docs/screenshots/positions.png" alt="持仓明细" width="48%">
+  <br>
+  <sub>组合总览 · 持仓明细</sub>
+</div>
+
+## 目录
+
+- [功能](#功能)
+- [截图](#截图)
+- [环境要求](#环境要求)
+- [安装](#安装)
+- [部署](#部署)
+- [环境变量](#环境变量)
+- [使用流程](#使用流程)
+- [CSV 列说明](#csv-列说明交易流水)
+- [技术栈](#技术栈)
+- [项目结构](#项目结构)
+- [数据模型](#数据模型)
+- [风险阈值](#风险阈值)
+- [更新日志](#更新日志)
+- [贡献](#贡献)
+- [License](#license)
+
 ## 功能
 
-- **交易流水管理**：记录每一笔买入/卖出（定投、加仓、减仓、赎回），以及现金分红/红利再投资，表单录入 + CSV 批量导入/导出
-- **多渠道支持**：支付宝、理财通、天天基金等，同一基金不同渠道分开计算成本
-- **持仓自动汇总**：按「基金 + 渠道」用移动加权平均成本法汇总，卖出时结转已实现收益
-- **净值更新**：AkShare 优先，天天基金兜底，输入代码自动获取名称/类型/板块
-- **收益分析**：浮动盈亏、已实现盈亏、组合收益曲线、收益率排序
-- **风险分析**：最大回撤、年化波动率、集中度（HHI）、结构占比、风险提示
-- **结构建议**：基于组合结构给出再平衡建议（非交易指令）
-- **AI 投顾对话**：配置 OpenAI 兼容 API 后，AI 自动联网搜索最新资讯 + 结合持仓数据给出调仓建议（支持智谱 / Kimi / 通义千问 / DeepSeek）
-- **净值走势图标记**：在净值曲线上自动标记买入/卖出点位，悬停显示交易明细
-- **移动端适配**：抽屉式侧边栏导航、响应式网格布局
-- **密码认证**：HMAC 签名 token，支持设置页在线修改密码（SHA-256 哈希存储）
+- 📊 **交易流水管理**：记录每一笔买入/卖出（定投、加仓、减仓、赎回），以及现金分红/红利再投资，表单录入 + CSV 批量导入/导出
+- 🏦 **多渠道支持**：支付宝、理财通、天天基金等，同一基金不同渠道分开计算成本
+- 📈 **持仓自动汇总**：按「基金 + 渠道」用移动加权平均成本法汇总，卖出时结转已实现收益
+- 🔄 **净值更新**：AkShare 优先，天天基金兜底，输入代码自动获取名称/类型/板块
+- 💰 **收益分析**：浮动盈亏、已实现盈亏、组合收益曲线、收益率排序
+- 🛡️ **风险分析**：最大回撤、年化波动率、集中度（HHI）、结构占比、风险提示
+- ⚖️ **结构建议**：基于组合结构给出再平衡建议（非交易指令）
+- 🤖 **AI 投顾对话**：配置 OpenAI 兼容 API 后，AI 自动联网搜索最新资讯 + 结合持仓数据给出调仓建议（支持智谱 / Kimi / 通义千问 / DeepSeek）
+- 📉 **净值走势图标记**：在净值曲线上自动标记买入/卖出点位，悬停显示交易明细
+- 📱 **移动端适配**：抽屉式侧边栏导航、响应式网格布局
+- 🔐 **密码认证**：HMAC 签名 token，支持设置页在线修改密码（SHA-256 哈希存储）
 
 ## 环境要求
 
@@ -64,6 +91,14 @@ pip install akshare -i http://mirrors.aliyun.com/pypi/simple/ --trusted-host=mir
 ## 部署
 
 > 详细部署方式（开发/生产/Docker）见 [DEPLOY.md](DEPLOY.md)
+
+### 方式零：Docker（最快）
+
+```bash
+docker-compose up -d --build
+```
+
+浏览器打开 http://localhost:8000
 
 ### 方式一：React 前端 + FastAPI 后端（推荐）
 
@@ -130,6 +165,16 @@ streamlit run app.py
 
 `amount` / `shares` / `nav` 三列中填写任意两列即可，导入时自动补全第三列。支持中文表头（如「基金代码」「操作」「渠道」）。
 
+## 技术栈
+
+| 层 | 技术 |
+|---|---|
+| 前端 | React 18 + Vite + TypeScript + Tailwind + shadcn/ui |
+| 后端 | FastAPI + SQLite + Pandas |
+| 数据源 | AkShare + 天天基金 |
+| AI | OpenAI 兼容 API（智谱 / Kimi / 通义千问 / DeepSeek） |
+| 部署 | Docker / Uvicorn |
+
 ## 项目结构
 
 ```text
@@ -189,9 +234,23 @@ ZFundPilot/
 | 高风险回撤 | -15% |
 | 高波动率 | 25% |
 
-## 联系我们
+## 更新日志
+
+详见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 贡献
 
 欢迎提交 [Issues](https://github.com/Euzohn/ZFundPilot/issues) 报告问题或提出新需求，
 也欢迎提交 [Pull Requests](https://github.com/Euzohn/ZFundPilot/pulls) 一起改进。
 
 **作者邮箱**：Zongid@outlook.com
+
+## License
+
+[MIT License](LICENSE) © 2025 Euzohn
+
+---
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Euzohn/ZFundPilot&type=Date)](https://star-history.com/#Euzohn/ZFundPilot&Date)

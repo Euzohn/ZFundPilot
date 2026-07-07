@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { Routes, Route } from "react-router-dom"
 import Layout from "@/components/Layout"
+import LogoSpinner from "@/components/LogoSpinner"
 import Overview from "@/pages/Overview"
 import Transactions from "@/pages/Transactions"
 import Positions from "@/pages/Positions"
@@ -21,7 +22,12 @@ export default function App() {
   }, [])
 
   if (authRequired === null) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">加载中...</div>
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3">
+        <LogoSpinner className="h-16 w-16" />
+        <p className="text-sm font-bold tracking-tight text-slate-700">ZFundPilot</p>
+      </div>
+    )
   }
 
   // 需要登录但本地无 token → 展示登录页

@@ -2,6 +2,7 @@ import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { PortfolioSummary, DistributionItem } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import LogoSpinner from "@/components/LogoSpinner"
 import { money, pct, signedMoney, pnlColor } from "@/lib/format"
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
@@ -47,7 +48,7 @@ export default function Overview() {
   const { data: channelDist } = useApi<DistributionItem[]>(() => api.getDistribution("channel"))
   const { data: sectorDist } = useApi<DistributionItem[]>(() => api.getDistribution("sector"))
 
-  if (sl || !summary) return <div className="py-20 text-center text-muted-foreground">加载中...</div>
+  if (sl || !summary) return <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
 
   const noData = summary.holding_count === 0
   if (noData) {

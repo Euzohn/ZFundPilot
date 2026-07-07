@@ -109,3 +109,8 @@ html, body {
 .spinner {
   animation: spin 0.8s linear infinite;
 }
+
+/* logo spinner (罗盘花瓣旋转，Z 固定) */
+@keyframes logo-spin {
+  to { transform: rotate(360deg); }
+}

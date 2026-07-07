@@ -4,6 +4,7 @@ import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import LogoSpinner from "@/components/LogoSpinner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Select } from "@/components/ui/select"
@@ -107,7 +108,7 @@ export default function Positions() {
   return (
     <div className="space-y-6">
       {loading ? (
-        <div className="py-20 text-center text-muted-foreground">加载中...</div>
+        <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
       ) : !positions ? (
         <div className="py-20 text-center text-red-500">加载失败</div>
       ) : (

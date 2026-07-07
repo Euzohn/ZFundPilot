@@ -3,6 +3,7 @@ import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { PortfolioSummary, CurvePoint, Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import LogoSpinner from "@/components/LogoSpinner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, pnlColor } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -47,7 +48,7 @@ export default function Returns() {
     })
   }, [openPositions, sortField, sortDir])
 
-  if (sl || !summary) return <div className="py-20 text-center text-muted-foreground">加载中...</div>
+  if (sl || !summary) return <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
 
   function SortHeader({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) {
     const active = sortField === field

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import LogoSpinner from "@/components/LogoSpinner"
 import { RefreshCw, CheckCircle2, XCircle } from "lucide-react"
 import { navStr } from "@/lib/format"
 
@@ -122,7 +123,7 @@ export default function NavUpdate() {
         </CardHeader>
         <CardContent>
           {loading && !results ? (
-            <p className="py-8 text-center text-muted-foreground">加载中...</p>
+            <div className="flex py-8 items-center justify-center"><LogoSpinner className="h-10 w-10" /></div>
           ) : rows.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">暂无净值数据，请先添加交易记录并点击上方更新</p>
           ) : (

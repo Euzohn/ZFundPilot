@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import LogoSpinner from "@/components/LogoSpinner"
 import { money } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -588,7 +589,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
     )
   }
 
-  if (loading) return <div className="py-8 text-center text-muted-foreground">加载中...</div>
+  if (loading) return <div className="flex py-8 items-center justify-center"><LogoSpinner className="h-10 w-10" /></div>
 
   const handleDelete = async (id: number) => {
     try {

@@ -2,6 +2,7 @@ import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { RiskReport, Advice } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import LogoSpinner from "@/components/LogoSpinner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,7 +35,7 @@ export default function Risk() {
   const { data: report, loading: rl } = useApi<RiskReport>(() => api.getRiskReport())
   const { data: advice, loading: al } = useApi<Advice[]>(() => api.getRebalanceAdvice())
 
-  if (rl || !report) return <div className="py-20 text-center text-muted-foreground">加载中...</div>
+  if (rl || !report) return <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
 
   return (
     <div className="space-y-6">

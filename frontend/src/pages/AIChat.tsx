@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Bot, Send, Search, Plus, Check, X, Loader2 } from "lucide-react"
+import { Bot, Send, Search, Plus, Check, X, Loader2, Trash2 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { toast } from "sonner"
@@ -25,6 +25,23 @@ const QUICK_PROMPTS = [
 ]
 
 const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
+
+const CHAT_STORAGE_KEY = "zfundpilot_chat_messages"
+
+interface PersistedChat {
+  messages: ChatMessage[]
+  txStatus: Record<number, { state: "added"; id: number } | { state: "discarded" }>
+}
+
+function loadChat(): PersistedChat | null {
+  try {
+    const raw = localStorage.getItem(CHAT_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed && Array.isArray(parsed.messages)) return parsed
+  } catch { /* corrupt or unavailable */ }
+  return null
+}
 
 interface ExtractedTx {
   fund_code: string
@@ -67,14 +84,22 @@ function stripJsonBlock(content: string): string {
 }
 
 export default function AIChat() {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [restored] = useState(loadChat)
+  const [messages, setMessages] = useState<ChatMessage[]>(() => restored?.messages ?? [])
   const [input, setInput] = useState("")
   const [streaming, setStreaming] = useState(false)
   const [searching, setSearching] = useState(false)
   const { data: aiConfig } = useApi(() => api.getAIConfig(), [])
   const chatEndRef = useRef<HTMLDivElement>(null)
-  const [txStatus, setTxStatus] = useState<Record<number, { state: "added"; id: number } | { state: "discarded" }>>({})
+  const [txStatus, setTxStatus] = useState<Record<number, { state: "added"; id: number } | { state: "discarded" }>>(() => restored?.txStatus ?? {})
   const [adding, setAdding] = useState<number | null>(null)
+
+  // 持久化对话记录到 localStorage，切页面/刷新后可恢复（含上下文）
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({ messages, txStatus } as PersistedChat))
+    } catch { /* 配额满静默降级，不影响使用 */ }
+  }, [messages, txStatus])
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -162,20 +187,35 @@ export default function AIChat() {
     setTxStatus((prev) => ({ ...prev, [msgIndex]: { state: "discarded" } }))
   }
 
+  const handleClearChat = () => {
+    setMessages([])
+    setTxStatus({})
+    setInput("")
+    try { localStorage.removeItem(CHAT_STORAGE_KEY) } catch {}
+    toast.success("已清空对话")
+  }
+
   const configured = aiConfig?.base_url && aiConfig?.model
 
   return (
     <div className="flex flex-col h-[62vh] md:h-[calc(100vh-8rem)]">
       <h1 className="text-xl md:text-2xl font-bold mb-4">AI 助手</h1>
       <Card className="flex flex-col flex-1 min-h-0">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Bot className="h-5 w-5 text-blue-500" />
-            AI 投顾对话
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            基于实时资讯 + 当前持仓数据，给出风险分析与调仓建议；也可描述交易让 AI 帮你录入
-          </p>
+        <CardHeader className="pb-3 flex-row items-start justify-between gap-2">
+          <div className="space-y-1">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Bot className="h-5 w-5 text-blue-500" />
+              AI 投顾对话
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              基于实时资讯 + 当前持仓数据，给出风险分析与调仓建议；也可描述交易让 AI 帮你录入
+            </p>
+          </div>
+          {messages.length > 0 && (
+            <Button variant="ghost" size="sm" className="h-7 shrink-0 text-muted-foreground hover:text-red-500" onClick={handleClearChat} disabled={streaming} title="清空当前对话">
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="flex flex-col flex-1 min-h-0 gap-3">
           {!configured ? (

@@ -300,7 +300,19 @@ async def chat_stream(
                         break
                     try:
                         chunk = json.loads(data)
-                        choice = chunk["choices"][0]
+
+                        # 捕获 token 用量（可能在单独的 chunk 中，此时 choices 为空数组）
+                        if "usage" in chunk and chunk["usage"]:
+                            u = chunk["usage"]
+                            usage_acc["prompt"] += u.get("prompt_tokens", 0) or 0
+                            usage_acc["completion"] += u.get("completion_tokens", 0) or 0
+                            usage_acc["total"] += u.get("total_tokens", 0) or 0
+
+                        choices = chunk.get("choices") or []
+                        if not choices:
+                            continue  # usage-only chunk 或心跳包
+
+                        choice = choices[0]
                         delta = choice.get("delta", {})
 
                         # 直接流式输出内容
@@ -315,13 +327,6 @@ async def chat_stream(
 
                         if choice.get("finish_reason") == "tool_calls":
                             has_tool_calls = True
-
-                        # 捕获 token 用量（累加，Kimi 两轮合计即总消耗）
-                        if "usage" in chunk and chunk["usage"]:
-                            u = chunk["usage"]
-                            usage_acc["prompt"] += u.get("prompt_tokens", 0) or 0
-                            usage_acc["completion"] += u.get("completion_tokens", 0) or 0
-                            usage_acc["total"] += u.get("total_tokens", 0) or 0
                     except (json.JSONDecodeError, KeyError, IndexError):
                         continue
 
@@ -369,10 +374,6 @@ async def chat_stream(
                             break
                         try:
                             chunk = json.loads(data)
-                            delta = chunk["choices"][0].get("delta", {})
-                            content = delta.get("content")
-                            if content:
-                                yield json.dumps({"content": content}, ensure_ascii=False)
 
                             # 捕获 token 用量（累加至第一轮结果上）
                             if "usage" in chunk and chunk["usage"]:
@@ -380,6 +381,15 @@ async def chat_stream(
                                 usage_acc["prompt"] += u.get("prompt_tokens", 0) or 0
                                 usage_acc["completion"] += u.get("completion_tokens", 0) or 0
                                 usage_acc["total"] += u.get("total_tokens", 0) or 0
+
+                            choices = chunk.get("choices") or []
+                            if not choices:
+                                continue
+
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content")
+                            if content:
+                                yield json.dumps({"content": content}, ensure_ascii=False)
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
 

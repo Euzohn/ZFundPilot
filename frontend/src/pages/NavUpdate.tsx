@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { FetchResult, LatestNav, Fund } from "@/api/types"
+import type { FetchResult, LatestNav } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -12,27 +12,18 @@ import { RefreshCw, CheckCircle2, XCircle, RotateCw, AlertTriangle } from "lucid
 import { navStr } from "@/lib/format"
 
 export default function NavUpdate() {
-  const { data: navs, loading: navsLoading, reload } = useApi<LatestNav[]>(() => api.getLatestNavs())
-  const { data: funds, loading: fundsLoading, reload: reloadFunds } = useApi<Fund[]>(() => api.getFunds(), [])
+  const { data: navs, loading, error, reload } = useApi<LatestNav[]>(() => api.getLatestNavs())
   const [updating, setUpdating] = useState(false)
   const [progress, setProgress] = useState(0)
   const [results, setResults] = useState<FetchResult[] | null>(null)
-
-  const fundMap: Record<string, Fund> = {}
-  funds?.forEach((f) => { fundMap[f.fund_code] = f })
 
   const todayStr = new Date().toISOString().slice(0, 10)
 
   // 需要更新的基金：无净值数据 或 最新净值日期 < 今天
   const needsUpdate = useMemo(() => {
-    if (!funds) return 0
-    return funds.filter((f) => {
-      const n = navs?.find((n) => n.fund_code === f.fund_code)
-      return !n || !n.date || n.date < todayStr
-    }).length
-  }, [funds, navs, todayStr])
-
-  const isLoading = navsLoading || fundsLoading
+    if (!navs) return 0
+    return navs.filter((n) => !n.date || n.date < todayStr).length
+  }, [navs, todayStr])
 
   // 最近更新日期：所有基金中最新净值日期的最大值
   const lastUpdateDate = useMemo(() => {
@@ -48,9 +39,8 @@ export default function NavUpdate() {
   const handleVisibilityChange = useCallback(() => {
     if (document.visibilityState === "visible") {
       reload()
-      reloadFunds()
     }
-  }, [reload, reloadFunds])
+  }, [reload])
 
   useEffect(() => {
     document.addEventListener("visibilitychange", handleVisibilityChange)
@@ -66,7 +56,6 @@ export default function NavUpdate() {
       setResults(res)
       setProgress(100)
       await reload()
-      await reloadFunds()
     } catch (e) {
       alert(`更新失败: ${e}`)
     } finally {
@@ -77,23 +66,22 @@ export default function NavUpdate() {
   const okCount = results?.filter((r) => r.ok).length ?? 0
   const failCount = results?.filter((r) => !r.ok).length ?? 0
 
-  // 合并所有基金 + 净值数据
+  // 合并净值数据 + 更新结果
   const rows = useMemo(() => {
-    if (!funds) return []
-    return funds.map((f) => {
-      const n = navs?.find((n) => n.fund_code === f.fund_code)
-      const u = results?.find((r) => r.fund_code === f.fund_code)
+    if (!navs) return []
+    return navs.map((n) => {
+      const u = results?.find((r) => r.fund_code === n.fund_code)
       return {
-        fund_code: f.fund_code,
-        fund_name: f.fund_name || f.fund_code,
-        date: n?.date ?? null,
-        nav: n?.nav ?? null,
+        fund_code: n.fund_code,
+        fund_name: n.fund_name || n.fund_code,
+        date: n.date,
+        nav: n.nav,
         hasResult: !!u,
         ok: u?.ok,
         message: u?.message ?? "",
       }
     })
-  }, [funds, navs, results])
+  }, [navs, results])
 
   // 排序：待更新在前（无净值 > 净值过时），已更新在后
   const sortedRows = useMemo(() => {
@@ -118,7 +106,7 @@ export default function NavUpdate() {
           <CardContent className="flex items-center justify-between p-4 md:p-6">
             <div>
               <p className="text-sm text-muted-foreground">基金总数</p>
-              <p className="text-xl md:text-2xl font-bold">{funds?.length ?? 0} 只</p>
+              <p className="text-xl md:text-2xl font-bold">{navs?.length ?? 0} 只</p>
             </div>
             <RefreshCw className="h-8 w-8 text-blue-500" />
           </CardContent>
@@ -129,7 +117,7 @@ export default function NavUpdate() {
               <p className="text-sm text-muted-foreground">待更新基金数</p>
               <p className="text-xl md:text-2xl font-bold">
                 <span className={needsUpdate > 0 ? "text-amber-500" : "text-green-600"}>{needsUpdate}</span>
-                <span className="text-base text-muted-foreground"> / {funds?.length ?? 0}</span>
+                <span className="text-base text-muted-foreground"> / {navs?.length ?? 0}</span>
               </p>
             </div>
             <AlertTriangle className={`h-8 w-8 ${needsUpdate > 0 ? "text-amber-400" : "text-green-400"}`} />
@@ -200,13 +188,15 @@ export default function NavUpdate() {
             各基金最新净值
             {results && <span className="text-sm text-muted-foreground font-normal ml-2">（更新结果）</span>}
           </CardTitle>
-          <Button variant="outline" size="sm" onClick={() => { reload(); reloadFunds() }} className="h-8">
+          <Button variant="outline" size="sm" onClick={() => reload()} className="h-8">
             <RotateCw className="mr-1 h-3.5 w-3.5" /> 刷新
           </Button>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {loading ? (
             <div className="flex py-8 items-center justify-center"><LogoSpinner className="h-10 w-10" /></div>
+          ) : error ? (
+            <p className="py-8 text-center text-red-500">加载失败：{error}</p>
           ) : sortedRows.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">暂无基金数据，请先添加交易记录</p>
           ) : (

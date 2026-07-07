@@ -114,6 +114,9 @@ export interface FundMeta {
 
 export interface LatestNav {
   fund_code: string
+  fund_name: string
+  fund_type: string
+  sector: string
   date: string | null
   nav: number | null
 }

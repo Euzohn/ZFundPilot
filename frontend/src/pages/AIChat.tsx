@@ -36,6 +36,7 @@ interface SessionMeta {
   title: string
   messages: ChatMessage[]
   txStatus: TxState
+  systemPrompt: string
   updatedAt: string
 }
 
@@ -43,6 +44,7 @@ interface PersistedSessions {
   activeId: string
   activeMessages: ChatMessage[]
   activeTxStatus: TxState
+  activeSystemPrompt: string
   archive: SessionMeta[]
 }
 
@@ -83,7 +85,7 @@ function formatTokens(n: number): string {
 }
 
 function loadSessions(): PersistedSessions {
-  const empty = (): PersistedSessions => ({ activeId: newId(), activeMessages: [], activeTxStatus: {}, archive: [] })
+  const empty = (): PersistedSessions => ({ activeId: newId(), activeMessages: [], activeTxStatus: {}, activeSystemPrompt: "", archive: [] })
   try {
     const raw = localStorage.getItem(SESSIONS_KEY)
     if (raw) {
@@ -93,7 +95,8 @@ function loadSessions(): PersistedSessions {
           activeId: p.activeId || newId(),
           activeMessages: Array.isArray(p.activeMessages) ? p.activeMessages : [],
           activeTxStatus: p.activeTxStatus ?? {},
-          archive: p.archive,
+          activeSystemPrompt: p.activeSystemPrompt ?? "",
+          archive: p.archive.map((s: SessionMeta) => ({ ...s, systemPrompt: s.systemPrompt ?? "" })),
         }
       }
     }
@@ -105,7 +108,7 @@ function loadSessions(): PersistedSessions {
       const old = JSON.parse(legacy)
       if (old && Array.isArray(old.messages) && old.messages.length > 0) {
         try { localStorage.removeItem(LEGACY_KEY) } catch {}
-        return { activeId: newId(), activeMessages: old.messages, activeTxStatus: old.txStatus ?? {}, archive: [] }
+        return { activeId: newId(), activeMessages: old.messages, activeTxStatus: old.txStatus ?? {}, activeSystemPrompt: "", archive: [] }
       }
     }
   } catch {}
@@ -163,6 +166,7 @@ export default function AIChat() {
   const { data: aiConfig } = useApi(() => api.getAIConfig(), [])
   const chatEndRef = useRef<HTMLDivElement>(null)
   const [txStatus, setTxStatus] = useState<TxState>(() => restored.activeTxStatus)
+  const [systemPrompt, setSystemPrompt] = useState(() => restored.activeSystemPrompt ?? "")
   const [adding, setAdding] = useState<number | null>(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [lastUsage, setLastUsage] = useState<{ prompt: number; completion: number; total: number } | null>(null)
@@ -173,7 +177,8 @@ export default function AIChat() {
   useEffect(() => {
     try {
       localStorage.setItem(SESSIONS_KEY, JSON.stringify({
-        activeId, activeMessages: messages, activeTxStatus: txStatus, archive,
+        activeId, activeMessages: messages, activeTxStatus: txStatus,
+        activeSystemPrompt: systemPrompt, archive,
       } as PersistedSessions))
     } catch { /* 配额满静默降级 */ }
   }, [messages, txStatus, activeId, archive])
@@ -196,8 +201,21 @@ export default function AIChat() {
     const aiIndex = newMessages.length
 
     try {
+      // 新对话首条消息时取一次系统提示（含持仓快照），整个对话复用
+      let sysPrompt = systemPrompt
+      if (!sysPrompt) {
+        try {
+          const res = await api.getSystemPrompt()
+          sysPrompt = res.system_prompt
+          setSystemPrompt(sysPrompt)
+        } catch { /* 取失败则不发 system，后端兜底构建 */ }
+      }
+      const messagesToSend = [
+        ...(sysPrompt ? [{ role: "system", content: sysPrompt }] : []),
+        ...newMessages.map((m) => ({ role: m.role, content: m.content })),
+      ]
       await api.streamChat(
-        newMessages.map((m) => ({ role: m.role, content: m.content })),
+        messagesToSend,
         (chunk) => {
           if (chunk.status === "searching") {
             setSearching(true)
@@ -275,6 +293,7 @@ export default function AIChat() {
       title: deriveTitle(messages),
       messages,
       txStatus,
+      systemPrompt,
       updatedAt: new Date().toISOString(),
     }
     return [session, ...archive]
@@ -285,6 +304,7 @@ export default function AIChat() {
     setActiveId(newId())
     setMessages([])
     setTxStatus({})
+    setSystemPrompt("")
     setInput("")
     setDropdownOpen(false)
   }
@@ -296,6 +316,7 @@ export default function AIChat() {
     setActiveId(target.id)
     setMessages(target.messages)
     setTxStatus(target.txStatus)
+    setSystemPrompt(target.systemPrompt)
     setInput("")
     setDropdownOpen(false)
   }

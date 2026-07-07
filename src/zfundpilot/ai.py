@@ -215,6 +215,14 @@ def _build_system_prompt(context: str, has_search: bool = True) -> str:
 {context}"""
 
 
+def build_system_prompt() -> str:
+    """构建当前配置下的系统提示（含持仓快照 + 搜索能力判断）。供 API 端点调用。"""
+    context = build_portfolio_context()
+    provider = detect_provider(config.AI_BASE_URL) if config.AI_WEB_SEARCH else "none"
+    has_search = provider in ("kimi", "zhipu", "qwen")
+    return _build_system_prompt(context, has_search)
+
+
 # ---------------------------------------------------------------------------
 # 流式 SSE 解析辅助
 # ---------------------------------------------------------------------------
@@ -267,8 +275,13 @@ async def chat_stream(
     tools, extra_params = _build_tools(provider)
     has_search = provider in ("kimi", "zhipu", "qwen")
 
-    system_prompt = _build_system_prompt(context, has_search)
-    full_messages = [{"role": "system", "content": system_prompt}] + messages
+    # 若前端已携带 system 消息（新对话首条已取过），直接用；否则构建并前置（向后兼容）
+    has_system = any(m.get("role") == "system" for m in messages)
+    if has_system:
+        full_messages = messages
+    else:
+        system_prompt = _build_system_prompt(context, has_search)
+        full_messages = [{"role": "system", "content": system_prompt}] + messages
 
     url = f"{config.AI_BASE_URL.rstrip('/')}/chat/completions"
     headers = {

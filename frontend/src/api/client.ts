@@ -78,6 +78,9 @@ export const api = {
   // AI Usage
   getAIUsage: () => request<AIUsageStats>("/ai/usage"),
 
+  // AI System Prompt (build once per conversation, reuse)
+  getSystemPrompt: () => request<{ system_prompt: string }>("/ai/system-prompt"),
+
   // AI Chat (SSE streaming — bypasses standard request() wrapper)
   streamChat: async (
     messages: { role: string; content: string }[],

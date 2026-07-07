@@ -165,10 +165,17 @@ def get_ai_usage() -> dict[str, Any]:
     return db.get_ai_usage_stats()
 
 
+@app.get("/api/ai/system-prompt")
+def get_system_prompt() -> dict[str, Any]:
+    """构建并返回系统提示（含持仓快照）。前端在新对话首条消息时取一次，整个对话复用。"""
+    return {"system_prompt": ai.build_system_prompt()}
+
+
 @app.post("/api/ai/chat")
 async def ai_chat(body: ChatRequest):
-    """AI 投顾对话（SSE 流式）。自动注入持仓上下文 + 联网搜索。"""
-    context = ai.build_portfolio_context()
+    """AI 投顾对话（SSE 流式）。前端已携带 system 消息时跳过重建持仓上下文。"""
+    has_system = any(m.get("role") == "system" for m in body.messages)
+    context = ai.build_portfolio_context() if not has_system else ""
 
     async def generate():
         try:

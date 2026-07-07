@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { FetchResult, LatestNav } from "@/api/types"
+import type { FetchResult, Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -12,28 +12,52 @@ import { RefreshCw, CheckCircle2, XCircle, RotateCw, AlertTriangle } from "lucid
 import { navStr } from "@/lib/format"
 
 export default function NavUpdate() {
-  const { data: navs, loading, error, reload } = useApi<LatestNav[]>(() => api.getLatestNavs())
+  // 和持仓页同源：用 getPositions 取数据（含 latest_date / latest_nav）
+  const { data: positions, loading, error, reload } = useApi<Position[]>(() => api.getPositions(true))
   const [updating, setUpdating] = useState(false)
   const [progress, setProgress] = useState(0)
   const [results, setResults] = useState<FetchResult[] | null>(null)
 
   const todayStr = new Date().toISOString().slice(0, 10)
 
+  // 按基金代码合并（跨渠道），取 latest_date
+  const rows = useMemo(() => {
+    if (!positions) return []
+    const merged: Record<string, { fund_code: string; fund_name: string; date: string | null; nav: number | null }> = {}
+    for (const p of positions) {
+      const m = merged[p.fund_code]
+      if (!m) {
+        merged[p.fund_code] = {
+          fund_code: p.fund_code,
+          fund_name: p.fund_name || p.fund_code,
+          date: p.latest_date,
+          nav: p.latest_nav,
+        }
+      } else {
+        // 取最新的日期
+        if (p.latest_date && (!m.date || p.latest_date > m.date)) {
+          m.date = p.latest_date
+          m.nav = p.latest_nav
+        }
+      }
+    }
+    return Object.values(merged)
+  }, [positions])
+
   // 需要更新的基金：无净值数据 或 最新净值日期 < 今天
   const needsUpdate = useMemo(() => {
-    if (!navs) return 0
-    return navs.filter((n) => !n.date || n.date < todayStr).length
-  }, [navs, todayStr])
+    return rows.filter((r) => !r.date || r.date < todayStr).length
+  }, [rows, todayStr])
 
   // 最近更新日期：所有基金中最新净值日期的最大值
   const lastUpdateDate = useMemo(() => {
-    if (!navs || navs.length === 0) return ""
+    if (rows.length === 0) return ""
     let max = ""
-    for (const n of navs) {
-      if (n.date && n.date > max) max = n.date
+    for (const r of rows) {
+      if (r.date && r.date > max) max = r.date
     }
     return max
-  }, [navs])
+  }, [rows])
 
   // 页面获得焦点时自动刷新
   const handleVisibilityChange = useCallback(() => {
@@ -66,26 +90,20 @@ export default function NavUpdate() {
   const okCount = results?.filter((r) => r.ok).length ?? 0
   const failCount = results?.filter((r) => !r.ok).length ?? 0
 
-  // 合并净值数据 + 更新结果
-  const rows = useMemo(() => {
-    if (!navs) return []
-    return navs.map((n) => {
-      const u = results?.find((r) => r.fund_code === n.fund_code)
-      return {
-        fund_code: n.fund_code,
-        fund_name: n.fund_name || n.fund_code,
-        date: n.date,
-        nav: n.nav,
-        hasResult: !!u,
-        ok: u?.ok,
-        message: u?.message ?? "",
-      }
-    })
-  }, [navs, results])
+  // 合并更新结果
+  const displayRows = useMemo(() => {
+    if (results) {
+      return rows.map((r) => {
+        const u = results.find((r2) => r2.fund_code === r.fund_code)
+        return { ...r, hasResult: !!u, ok: u?.ok, message: u?.message ?? "" }
+      })
+    }
+    return rows.map((r) => ({ ...r, hasResult: false, ok: undefined, message: "" }))
+  }, [rows, results])
 
   // 排序：待更新在前（无净值 > 净值过时），已更新在后
   const sortedRows = useMemo(() => {
-    return [...rows].sort((a, b) => {
+    return [...displayRows].sort((a, b) => {
       const aNeeds = !a.date || a.date < todayStr ? 0 : 1
       const bNeeds = !b.date || b.date < todayStr ? 0 : 1
       if (aNeeds !== bNeeds) return aNeeds - bNeeds
@@ -95,7 +113,7 @@ export default function NavUpdate() {
       if (a.date !== b.date) return a.date < b.date ? -1 : 1
       return a.fund_code.localeCompare(b.fund_code)
     })
-  }, [rows, todayStr])
+  }, [displayRows, todayStr])
 
   return (
     <div className="space-y-6">
@@ -106,7 +124,7 @@ export default function NavUpdate() {
           <CardContent className="flex items-center justify-between p-4 md:p-6">
             <div>
               <p className="text-sm text-muted-foreground">基金总数</p>
-              <p className="text-xl md:text-2xl font-bold">{navs?.length ?? 0} 只</p>
+              <p className="text-xl md:text-2xl font-bold">{rows.length} 只</p>
             </div>
             <RefreshCw className="h-8 w-8 text-blue-500" />
           </CardContent>
@@ -117,7 +135,7 @@ export default function NavUpdate() {
               <p className="text-sm text-muted-foreground">待更新基金数</p>
               <p className="text-xl md:text-2xl font-bold">
                 <span className={needsUpdate > 0 ? "text-amber-500" : "text-green-600"}>{needsUpdate}</span>
-                <span className="text-base text-muted-foreground"> / {navs?.length ?? 0}</span>
+                <span className="text-base text-muted-foreground"> / {rows.length}</span>
               </p>
             </div>
             <AlertTriangle className={`h-8 w-8 ${needsUpdate > 0 ? "text-amber-400" : "text-green-400"}`} />

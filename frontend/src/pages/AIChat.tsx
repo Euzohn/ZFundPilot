@@ -465,7 +465,6 @@ export default function AIChat() {
                       handleSend()
                     }
                   }}
-                  placeholder="输入问题，如「我的科技基金占比太高怎么办？」或「昨天买了1000元005827」"
                   disabled={streaming}
                 />
                 <Button

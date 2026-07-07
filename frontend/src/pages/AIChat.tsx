@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import FeeBreakdownCard from "@/components/FeeBreakdownCard"
-import { Bot, Send, Search, Plus, Check, X, Loader2, ChevronDown, Clock } from "lucide-react"
+import { Bot, Send, Search, Plus, Check, X, Loader2, ChevronDown, Clock, Pencil } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { toast } from "sonner"
@@ -43,6 +43,7 @@ interface SessionMeta {
 
 interface PersistedSessions {
   activeId: string
+  activeTitle: string
   activeMessages: ChatMessage[]
   activeTxStatus: TxState
   activeSystemPrompt: string
@@ -58,9 +59,16 @@ function truncate(s: string, n: number): string {
 }
 
 function deriveTitle(messages: ChatMessage[]): string {
+  // 旧版兼容：无 activeTitle 时用首条消息兜底
   const first = messages.find((m) => m.role === "user")
   if (!first) return "新对话"
   return truncate(first.content.replace(/\s+/g, " ").trim(), 24)
+}
+
+function generateTimeTitle(): string {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`
 }
 
 function formatRelativeTime(iso: string): string {
@@ -88,7 +96,7 @@ function formatTokens(n: number): string {
 }
 
 function loadSessions(): PersistedSessions {
-  const empty = (): PersistedSessions => ({ activeId: newId(), activeMessages: [], activeTxStatus: {}, activeSystemPrompt: "", archive: [] })
+  const empty = (): PersistedSessions => ({ activeId: newId(), activeTitle: "", activeMessages: [], activeTxStatus: {}, activeSystemPrompt: "", archive: [] })
   try {
     const raw = localStorage.getItem(SESSIONS_KEY)
     if (raw) {
@@ -96,6 +104,7 @@ function loadSessions(): PersistedSessions {
       if (p && Array.isArray(p.archive)) {
         return {
           activeId: p.activeId || newId(),
+          activeTitle: p.activeTitle || "",
           activeMessages: Array.isArray(p.activeMessages) ? p.activeMessages : [],
           activeTxStatus: p.activeTxStatus ?? {},
           activeSystemPrompt: p.activeSystemPrompt ?? "",
@@ -111,7 +120,7 @@ function loadSessions(): PersistedSessions {
       const old = JSON.parse(legacy)
       if (old && Array.isArray(old.messages) && old.messages.length > 0) {
         try { localStorage.removeItem(LEGACY_KEY) } catch {}
-        return { activeId: newId(), activeMessages: old.messages, activeTxStatus: old.txStatus ?? {}, activeSystemPrompt: "", archive: [] }
+        return { activeId: newId(), activeTitle: "", activeMessages: old.messages, activeTxStatus: old.txStatus ?? {}, activeSystemPrompt: "", archive: [] }
       }
     }
   } catch {}
@@ -162,6 +171,7 @@ export default function AIChat() {
   const [restored] = useState(loadSessions)
   const [archive, setArchive] = useState<SessionMeta[]>(() => restored.archive)
   const [activeId, setActiveId] = useState(() => restored.activeId)
+  const [currentTitle, setCurrentTitle] = useState(() => restored.activeTitle || deriveTitle(restored.activeMessages))
   const [messages, setMessages] = useState<ChatMessage[]>(() => restored.activeMessages)
   const [input, setInput] = useState("")
   const [streaming, setStreaming] = useState(false)
@@ -175,16 +185,19 @@ export default function AIChat() {
   const [lastUsage, setLastUsage] = useState<{ prompt: number; completion: number; total: number } | null>(null)
   const { data: usageStats, reload: reloadUsage } = useApi<AIUsageStats>(() => api.getAIUsage(), [])
   const [showUsage, setShowUsage] = useState(false)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [editingArchiveId, setEditingArchiveId] = useState<string | null>(null)
+  const [titleInput, setTitleInput] = useState("")
 
   // 持久化：当前会话 + 归档列表，切页面/刷新可恢复（含上下文）
   useEffect(() => {
     try {
       localStorage.setItem(SESSIONS_KEY, JSON.stringify({
-        activeId, activeMessages: messages, activeTxStatus: txStatus,
+        activeId, activeTitle: currentTitle, activeMessages: messages, activeTxStatus: txStatus,
         activeSystemPrompt: systemPrompt, archive,
       } as PersistedSessions))
     } catch { /* 配额满静默降级 */ }
-  }, [messages, txStatus, activeId, archive])
+  }, [messages, txStatus, activeId, archive, currentTitle, systemPrompt])
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -293,7 +306,7 @@ export default function AIChat() {
     if (messages.length === 0) return archive
     const session: SessionMeta = {
       id: activeId,
-      title: deriveTitle(messages),
+      title: currentTitle || deriveTitle(messages),
       messages,
       txStatus,
       systemPrompt,
@@ -305,11 +318,13 @@ export default function AIChat() {
   const handleNewChat = () => {
     setArchive(archiveCurrent())
     setActiveId(newId())
+    setCurrentTitle(generateTimeTitle())
     setMessages([])
     setTxStatus({})
     setSystemPrompt("")
     setInput("")
     setDropdownOpen(false)
+    setEditingTitle(false)
   }
 
   const handleSwitchChat = (id: string) => {
@@ -317,15 +332,36 @@ export default function AIChat() {
     if (!target) return
     setArchive(archiveCurrent().filter((s) => s.id !== id))
     setActiveId(target.id)
+    setCurrentTitle(target.title)
     setMessages(target.messages)
     setTxStatus(target.txStatus)
     setSystemPrompt(target.systemPrompt)
     setInput("")
     setDropdownOpen(false)
+    setEditingTitle(false)
   }
 
   const handleDeleteArchived = (id: string) => {
     setArchive((prev) => prev.filter((s) => s.id !== id))
+  }
+
+  const handleRenameArchived = (id: string, newTitle: string) => {
+    const title = newTitle.trim()
+    if (title) {
+      setArchive((prev) => prev.map((s) => s.id === id ? { ...s, title } : s))
+    }
+    setEditingArchiveId(null)
+  }
+
+  const startEditTitle = () => {
+    setTitleInput(currentTitle)
+    setEditingTitle(true)
+  }
+
+  const saveTitle = () => {
+    const title = titleInput.trim()
+    if (title) setCurrentTitle(title)
+    setEditingTitle(false)
   }
 
   const configured = aiConfig?.base_url && aiConfig?.model
@@ -338,23 +374,45 @@ export default function AIChat() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <Bot className="h-5 w-5 text-blue-500 shrink-0" />
-              {archive.length > 0 ? (
+              {editingTitle ? (
+                <Input
+                  value={titleInput}
+                  onChange={(e) => setTitleInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveTitle()
+                    if (e.key === "Escape") setEditingTitle(false)
+                  }}
+                  onBlur={saveTitle}
+                  autoFocus
+                  className="h-7 text-base font-bold max-w-[200px] sm:max-w-[280px]"
+                />
+              ) : archive.length > 0 ? (
                 <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setDropdownOpen((o) => !o)}
-                    className="flex items-center gap-1 text-base font-bold hover:text-blue-600 transition-colors"
-                  >
-                    <span className="truncate max-w-[140px] sm:max-w-[220px]">{deriveTitle(messages)}</span>
-                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setDropdownOpen((o) => !o)}
+                      className="flex items-center gap-1 text-base font-bold hover:text-blue-600 transition-colors"
+                    >
+                      <span className="truncate max-w-[100px] sm:max-w-[180px]">{currentTitle}</span>
+                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={startEditTitle}
+                      className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-blue-500 transition-colors"
+                      title="重命名"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   {dropdownOpen && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
                       <div className="absolute left-0 top-full mt-1 z-50 w-72 max-w-[80vw] rounded-lg border bg-white shadow-lg">
                         <div className="flex items-center gap-2 px-3 py-2 border-b">
                           <span className="h-2 w-2 rounded-full bg-blue-500 shrink-0" />
-                          <span className="text-sm font-medium truncate flex-1">{deriveTitle(messages)}</span>
+                          <span className="text-sm font-medium truncate flex-1">{currentTitle}</span>
                           <span className="text-[11px] text-muted-foreground shrink-0">当前</span>
                         </div>
                         {archive.length === 0 ? (
@@ -369,17 +427,46 @@ export default function AIChat() {
                               >
                                 <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm truncate">{s.title}</p>
-                                  <p className="text-[11px] text-muted-foreground">{formatRelativeTime(s.updatedAt)}</p>
+                                  {editingArchiveId === s.id ? (
+                                    <Input
+                                      value={titleInput}
+                                      onChange={(e) => setTitleInput(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") handleRenameArchived(s.id, titleInput)
+                                        if (e.key === "Escape") setEditingArchiveId(null)
+                                      }}
+                                      onBlur={() => handleRenameArchived(s.id, titleInput)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      autoFocus
+                                      className="h-6 text-sm"
+                                    />
+                                  ) : (
+                                    <>
+                                      <p className="text-sm truncate">{s.title}</p>
+                                      <p className="text-[11px] text-muted-foreground">{formatRelativeTime(s.updatedAt)}</p>
+                                    </>
+                                  )}
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); handleDeleteArchived(s.id) }}
-                                  className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
-                                  title="删除此对话"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
+                                {editingArchiveId !== s.id && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); setTitleInput(s.title); setEditingArchiveId(s.id) }}
+                                      className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                                      title="重命名"
+                                    >
+                                      <Pencil className="h-3 w-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); handleDeleteArchived(s.id) }}
+                                      className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
+                                      title="删除此对话"
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -389,7 +476,23 @@ export default function AIChat() {
                   )}
                 </div>
               ) : (
-                <span className="text-base font-bold truncate">{deriveTitle(messages)}</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={startEditTitle}
+                    className="text-base font-bold truncate hover:text-blue-600 transition-colors"
+                  >
+                    {currentTitle}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startEditTitle}
+                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-blue-500 transition-colors"
+                    title="重命名"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               )}
             </div>
             <p className="text-sm text-muted-foreground mt-1">

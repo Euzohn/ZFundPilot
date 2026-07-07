@@ -17,7 +17,7 @@ import { money } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2, Receipt, ArrowUpDown } from "lucide-react"
-import { getChannels } from "@/lib/channels"
+import { getChannels, getChannelsAsync } from "@/lib/channels"
 
 const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
 
@@ -126,7 +126,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   const [fetching, setFetching] = useState(false)
   const [action, setAction] = useState("buy")
   const [date, setDate] = useState("")
-  const [channels] = useState<string[]>(() => getChannels())
+  const [channels, setChannels] = useState<string[]>(() => getChannels())
   const [channel, setChannel] = useState(channels[0])
   const [amount, setAmount] = useState("")
   const [shares, setShares] = useState("")
@@ -293,6 +293,14 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
 
     return () => { if (feeCalcTimer.current) clearTimeout(feeCalcTimer.current) }
   }, [code, action, amount, shares, date])
+
+  // 从服务端加载渠道列表（多设备同步）
+  useEffect(() => {
+    getChannelsAsync().then((server) => {
+      setChannels(server)
+      if (!channels.includes(channel)) setChannel(server[0])
+    }).catch(() => {})
+  }, [])
 
   const handleFeeChange = (v: string) => {
     feeManuallyEdited.current = true

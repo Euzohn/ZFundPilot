@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { getChannels, saveChannels, getDefaultChannels } from "@/lib/channels"
+import { getChannels, getChannelsAsync, saveChannels, getDefaultChannels } from "@/lib/channels"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import { clearToken } from "@/lib/auth"
@@ -80,6 +80,11 @@ export default function Settings() {
   const [channels, setChannels] = useState<string[]>(() => getChannels())
   const [newChannel, setNewChannel] = useState("")
 
+  // 页面加载时尝试从服务端同步渠道设置
+  useEffect(() => {
+    getChannelsAsync().then(setChannels).catch(() => {})
+  }, [])
+
   // Auth
   const { data: authStatus } = useApi(() => api.getAuthStatus(), [])
   const [currentPwd, setCurrentPwd] = useState("")
@@ -116,32 +121,32 @@ export default function Settings() {
   useEffect(() => { setTestResult(null) }, [aiBaseUrl, aiApiKey, aiModel, aiWebSearch])
 
   // --- Channels ---
-  const moveUp = (i: number) => {
+  const moveUp = async (i: number) => {
     if (i === 0) return
     const next = [...channels]
     ;[next[i - 1], next[i]] = [next[i], next[i - 1]]
-    setChannels(next); saveChannels(next)
+    setChannels(next); await saveChannels(next)
   }
-  const moveDown = (i: number) => {
+  const moveDown = async (i: number) => {
     if (i === channels.length - 1) return
     const next = [...channels]
     ;[next[i + 1], next[i]] = [next[i], next[i + 1]]
-    setChannels(next); saveChannels(next)
+    setChannels(next); await saveChannels(next)
   }
-  const remove = (i: number) => {
+  const remove = async (i: number) => {
     const next = channels.filter((_, idx) => idx !== i)
-    setChannels(next); saveChannels(next)
+    setChannels(next); await saveChannels(next)
   }
-  const add = () => {
+  const add = async () => {
     const name = newChannel.trim()
     if (!name) return
     if (channels.includes(name)) { toast.warning("该渠道已存在"); return }
     const next = [...channels, name]
-    setChannels(next); setNewChannel(""); saveChannels(next)
+    setChannels(next); setNewChannel(""); await saveChannels(next)
   }
-  const handleReset = () => {
+  const handleReset = async () => {
     const defaults = getDefaultChannels()
-    setChannels(defaults); saveChannels(defaults)
+    setChannels(defaults); await saveChannels(defaults)
     toast.success("已恢复默认渠道顺序")
   }
 

@@ -617,6 +617,27 @@ def _ensure_fund_exists(code: str, name: str = "", ftype: str = "其它",
     db.upsert_fund(Fund(code, name or code, ftype, sector))
 
 
+# ---------------------------------------------------------------------------
+# 偏好设置（多设备同步）
+# ---------------------------------------------------------------------------
+
+class PreferencesBody(BaseModel):
+    channels: str = ""
+
+
+@app.get("/api/preferences")
+def get_preferences() -> dict[str, str]:
+    """返回所有偏好设置。前端负责 JSON 序列化/反序列化。"""
+    return db.get_all_preferences()
+
+
+@app.put("/api/preferences")
+def save_preferences(body: PreferencesBody) -> dict[str, bool]:
+    """保存偏好设置。目前仅同步购买渠道。"""
+    db.upsert_preference("channels", body.channels)
+    return {"ok": True}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("zfundpilot.api:app", host="127.0.0.1", port=8000, reload=True)

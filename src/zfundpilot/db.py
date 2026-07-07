@@ -100,6 +100,11 @@ def init_db() -> None:
                 turns            INTEGER DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS preferences (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL DEFAULT ''
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tx_code ON transactions(fund_code);
             CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
             CREATE INDEX IF NOT EXISTS idx_nav_code_date
@@ -489,6 +494,32 @@ def get_ai_usage_daily(days: int = 7) -> list[dict]:
     today = dt.datetime.now(dt.timezone.utc).date()
     dates = [(today - dt.timedelta(days=days - 1 - i)).isoformat() for i in range(days)]
     return [{"date": d, "tokens": usage_map.get(d, 0)} for d in dates]
+
+
+# ---------------------------------------------------------------------------
+# 偏好设置（key-value 存储）
+# ---------------------------------------------------------------------------
+def upsert_preference(key: str, value: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO preferences(key,value) VALUES(?,?)"
+            " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
+
+
+def get_preference(key: str) -> str | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT value FROM preferences WHERE key=?", (key,)
+        ).fetchone()
+    return row["value"] if row else None
+
+
+def get_all_preferences() -> dict[str, str]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT key, value FROM preferences").fetchall()
+    return {r["key"]: r["value"] for r in rows}
 
 
 if __name__ == "__main__":

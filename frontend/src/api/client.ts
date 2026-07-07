@@ -225,4 +225,12 @@ export const api = {
         fetch_meta: fetchMeta,
       }),
     }),
+
+  // Preferences
+  getPreferences: () => request<Record<string, string>>("/preferences"),
+  savePreferences: (channels: string) =>
+    request<{ ok: boolean }>("/preferences", {
+      method: "PUT",
+      body: JSON.stringify({ channels }),
+    }),
 }

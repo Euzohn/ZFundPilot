@@ -368,6 +368,77 @@ def reset_sectors() -> dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
+# 费率查询
+# ---------------------------------------------------------------------------
+@app.get("/api/funds/{code}/fee-rates")
+def get_fund_fee_rates(code: str) -> dict[str, Any]:
+    """返回基金的申购/赎回费率表。"""
+    rates = fetch_fund.fetch_fund_fee_rates(code)
+    return {
+        "ok": rates.ok,
+        "fund_code": rates.fund_code,
+        "message": rates.message,
+        "purchase": [
+            {"min_amount": t.min_amount, "max_amount": t.max_amount,
+             "rate": t.rate, "is_fixed": t.is_fixed,
+             "fixed_fee": t.fixed_fee, "label": t.label}
+            for t in (rates.purchase or [])
+        ],
+        "redemption": [
+            {"min_days": t.min_days, "max_days": t.max_days, "rate": t.rate}
+            for t in (rates.redemption or [])
+        ],
+        "management_fee": rates.management_fee,
+        "custodian_fee": rates.custodian_fee,
+        "sales_fee": rates.sales_fee,
+    }
+
+
+class CalcFeeQuery(BaseModel):
+    action: str = "buy"
+    amount: float | None = None
+    shares: float | None = None
+    date: str = ""
+
+
+@app.get("/api/funds/{code}/calc-fee")
+def calc_fund_fee(code: str, action: str = "buy",
+                  amount: float | None = None,
+                  shares: float | None = None,
+                  date: str = "") -> dict[str, Any]:
+    """根据交易参数计算手续费。
+
+    - 买入：根据买入金额匹配申购费率
+    - 卖出：FIFO 匹配买入批次计算赎回费率
+    """
+    code = code.strip()
+    if not code:
+        raise HTTPException(400, "基金代码不能为空")
+
+    if action == "buy":
+        amt = amount or 0
+        if amt <= 0:
+            return {"fee": 0, "rate": 0, "label": "金额为空", "lots": None}
+        result = fetch_fund.calc_purchase_fee(code, amt)
+    elif action == "sell":
+        sh = shares or 0
+        if sh <= 0:
+            return {"fee": 0, "rate": 0, "label": "份额为空", "lots": None}
+        if not date:
+            return {"fee": 0, "rate": 0, "label": "日期为空", "lots": None}
+        result = fetch_fund.calc_redemption_fee(code, date, sh)
+    else:
+        return {"fee": 0, "rate": 0, "label": "不支持的操作", "lots": None}
+
+    return {
+        "fee": result.fee,
+        "rate": result.rate,
+        "label": result.label,
+        "lots": result.lots,
+    }
+
+
+# ---------------------------------------------------------------------------
 # 净值
 # ---------------------------------------------------------------------------
 @app.post("/api/nav/update")

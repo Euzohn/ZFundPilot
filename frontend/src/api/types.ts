@@ -143,3 +143,46 @@ export interface AIUsageDaily {
   date: string
   tokens: number
 }
+
+// ── 费率 ──
+export interface PurchaseTier {
+  min_amount: number
+  max_amount: number | null
+  rate: number
+  is_fixed: boolean
+  fixed_fee: number
+  label: string
+}
+
+export interface RedemptionTier {
+  min_days: number
+  max_days: number | null
+  rate: number
+}
+
+export interface FeeRatesResponse {
+  ok: boolean
+  fund_code: string
+  message: string
+  purchase: PurchaseTier[]
+  redemption: RedemptionTier[]
+  management_fee: number | null
+  custodian_fee: number | null
+  sales_fee: number | null
+}
+
+export interface CalcFeeResponse {
+  fee: number
+  rate: number
+  label: string
+  lots: FeeLot[] | null
+}
+
+export interface FeeLot {
+  buy_date: string
+  buy_shares: number
+  used_shares: number
+  days_held: number
+  rate: number
+  fee: number
+}

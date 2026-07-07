@@ -457,11 +457,452 @@ def update_all_holdings_nav(
     return results
 
 
+# ---------------------------------------------------------------------------
+# 费率查询（申购费率 / 赎回费率）
+# ---------------------------------------------------------------------------
+
+_fee_cache: dict[str, dict] = {}
+_FEE_CACHE_TTL = 3600  # 1 小时
+
+
+@dataclass
+class PurchaseTier:
+    min_amount: float = 0
+    max_amount: float | None = None  # None 表示无穷大（'X <= 金额'）
+    rate: float = 0.0                # 小数，如 0.0015 表示 0.15%
+    is_fixed: bool = False           # True 表示固定费用（如 1000元/笔）
+    fixed_fee: float = 0.0           # 固定费用金额
+    label: str = ""                  # 原始描述
+
+
+@dataclass
+class RedemptionTier:
+    min_days: int = 0
+    max_days: int | None = None     # None 表示无穷大
+    rate: float = 0.0               # 小数
+
+
+@dataclass
+class FeeRates:
+    fund_code: str
+    purchase: list[PurchaseTier] = None
+    redemption: list[RedemptionTier] = None
+    management_fee: float | None = None   # 管理费（年化）
+    custodian_fee: float | None = None    # 托管费（年化）
+    sales_fee: float | None = None        # 销售服务费（年化）
+    ok: bool = False
+    message: str = ""
+
+
+@dataclass
+class FeeLot:
+    """FIFO 赎回批次明细。"""
+    buy_date: str
+    buy_shares: float
+    used_shares: float
+    days_held: int
+    rate: float
+    fee: float
+    nav: float = 0.0
+
+
+@dataclass
+class CalcFeeResult:
+    fee: float = 0.0
+    rate: float = 0.0
+    label: str = ""
+    lots: list[dict] | None = None  # 仅卖出时有批次明细
+
+
+def _parse_pct(text: str) -> float:
+    """解析百分比字符串，如 '1.50%' → 0.015。"""
+    text = text.strip().replace(",", "").replace("，", "")
+    if text.endswith("%"):
+        return float(text[:-1].strip()) / 100
+    return 0.0
+
+
+def _parse_fixed_fee(text: str) -> float | None:
+    """解析固定手续费，如 '1000元/笔' → 1000.0。"""
+    m = re.search(r"([\d,.]+)\s*元", text)
+    if m:
+        return float(m.group(1).replace(",", ""))
+    return None
+
+
+def _parse_amount_range(text: str) -> tuple[float, float | None]:
+    """解析金额范围如 '0 <= 金额 < 100万' 或 '小于100万元' → (0, 1_000_000)。返回 (min, max)。"""
+    text = text.strip()
+
+    def _to_val(t: str) -> float:
+        yi = re.search(r"([\d.]+)\s*亿", t)
+        wan = re.search(r"([\d.]+)\s*万", t)
+        num = re.search(r"([\d.]+)", t)
+        if yi:
+            return float(yi.group(1)) * 100_000_000
+        if wan:
+            return float(wan.group(1)) * 10_000
+        if num:
+            return float(num.group(1))
+        return 0
+
+    # "大于等于X,小于Y" (必须在前，防止'小于'先匹配到后半段)
+    m = re.search(r"大于等于\s*([\d.]+)\s*(亿|万|元)?", text)
+    if m:
+        min_v = _to_val(m.group(0))
+        m2 = re.search(r"小于\s*([\d.]+)\s*(亿|万|元)?", text)
+        if m2:
+            max_v = _to_val(m2.group(0))
+            return (min_v, max_v)
+        return (min_v, None)
+
+    # "小于X万元" / "小于X元"
+    m = re.search(r"小于\s*([\d.]+)\s*(亿|万|元)?", text)
+    if m:
+        return (0, _to_val(m.group(0)))
+
+    # "X <= 金额 < Y"
+    m = re.search(r"([\d.]+)\s*(亿|万)?\s*<\s*=\s*金额\s*<\s*([\d.]+)\s*(亿|万)?", text)
+    if m:
+        min_v = _to_val(f"{m.group(1)}{m.group(2) or ''}")
+        max_v = _to_val(f"{m.group(3)}{m.group(4) or ''}")
+        return (min_v, max_v)
+
+    # "金额 < X"
+    m = re.search(r"金额\s*<\s*([\d.]+)\s*(亿|万|元)?", text)
+    if m:
+        return (0, _to_val(m.group(0)))
+
+    # "金额 >= X"
+    m = re.search(r"金额\s*>=\s*([\d.]+)\s*(亿|万|元)?", text)
+    if m:
+        return (_to_val(m.group(0)), None)
+
+    return (0, None)
+
+
+def _parse_holding_period(text: str) -> tuple[int, int | None]:
+    """解析持有期限如 '小于7天' → (0, 6)，'大于等于7天' → (7, None)。"""
+    text = text.strip()
+
+    # "小于X天"
+    m = re.search(r"小于\s*([\d.]+)\s*天", text)
+    if m:
+        return (0, int(float(m.group(1))) - 1)
+
+    # "大于等于X天" (单独)
+    m = re.search(r"大于等于\s*([\d.]+)\s*天$", text)
+    if m:
+        return (int(float(m.group(1))), None)
+
+    # "大于等于X天,小于Y天" 或 "大于等于X天，小于Y天"
+    m = re.search(r"大于等于\s*([\d.]+)\s*天.*?小于\s*([\d.]+)\s*天", text)
+    if m:
+        return (int(float(m.group(1))), int(float(m.group(2))) - 1)
+
+    # "大于等于X年,小于Y年" 或 "大于等于X年，小于Y年"
+    m = re.search(r"大于等于\s*([\d.]+)\s*年.*?小于\s*([\d.]+)\s*年", text)
+    if m:
+        return (int(float(m.group(1))) * 365, int(float(m.group(2))) * 365 - 1)
+
+    # "大于等于X年" (单独)
+    m = re.search(r"大于等于\s*([\d.]+)\s*年$", text)
+    if m:
+        return (int(float(m.group(1))) * 365, None)
+
+    return (0, None)
+
+
+def _fetch_fee_rates_from_akshare(fund_code: str) -> FeeRates:
+    """从 AkShare 获取基金费率。失败抛异常。"""
+    import akshare as ak
+
+    result = FeeRates(fund_code=fund_code, ok=True, message="成功")
+
+    # 申购费率（前端）
+    try:
+        df_p = ak.fund_fee_em(symbol=fund_code, indicator="申购费率（前端）")
+        if df_p is not None and not df_p.empty:
+            result.purchase = _parse_purchase_tiers(df_p)
+    except Exception:
+        result.purchase = []
+
+    # 赎回费率
+    try:
+        df_r = ak.fund_fee_em(symbol=fund_code, indicator="赎回费率")
+        if df_r is not None and not df_r.empty:
+            result.redemption = _parse_redemption_tiers(df_r)
+    except Exception:
+        result.redemption = []
+
+    # 运作费用
+    try:
+        df_op = ak.fund_fee_em(symbol=fund_code, indicator="运作费用")
+        if df_op is not None and not df_op.empty:
+            for _, row in df_op.iterrows():
+                for col in df_op.columns:
+                    val = str(row[col])
+                    if "管理" in str(col) and "%" in val:
+                        result.management_fee = _parse_pct(val)
+                    elif "托管" in str(col) and "%" in val:
+                        result.custodian_fee = _parse_pct(val)
+                    elif "销售" in str(col) and "%" in val:
+                        result.sales_fee = _parse_pct(val)
+    except Exception:
+        pass
+
+    return result
+
+
+def _parse_purchase_tiers(df) -> list[PurchaseTier]:
+    """解析申购费率 DataFrame → PurchaseTier 列表。"""
+    tiers: list[PurchaseTier] = []
+
+    cols = list(df.columns)
+    amount_col = _match_col(cols, ["适用金额", "金额", "档次"])
+    if not amount_col:
+        return []
+
+    rate_col = _match_col(cols, ["原费率|天天基金优惠费率", "原费率|优惠费率"])
+    use_discounted = rate_col is not None
+    if not rate_col:
+        rate_col = _match_col(cols, ["天天基金优惠费率", "优惠费率", "原费率", "申购费率", "费率"])
+    if not rate_col:
+        for c in cols:
+            if c != amount_col:
+                rate_col = c
+                break
+
+    for _, row in df.iterrows():
+        amount_text = str(row[amount_col]).strip()
+        rate_text = str(row[rate_col]).strip()
+        if not amount_text or amount_text == "nan":
+            continue
+
+        tier = PurchaseTier(label=amount_text)
+        min_a, max_a = _parse_amount_range(amount_text)
+        tier.min_amount = min_a
+        tier.max_amount = max_a
+
+        # 处理 "原费率|天天基金优惠费率" 列
+        if use_discounted and "|" in rate_text:
+            parts = [p.strip() for p in rate_text.split("|")]
+            if len(parts) >= 2:
+                rate_text = parts[1]  # 取优惠费率
+
+        # 检查是否为固定费用
+        fixed = _parse_fixed_fee(rate_text)
+        if fixed is not None:
+            tier.is_fixed = True
+            tier.fixed_fee = fixed
+            tier.rate = 0
+        else:
+            tier.rate = _parse_pct(rate_text)
+
+        tiers.append(tier)
+
+    return tiers
+
+
+def _parse_redemption_tiers(df) -> list[RedemptionTier]:
+    """解析赎回费率 DataFrame → RedemptionTier 列表。"""
+    tiers: list[RedemptionTier] = []
+    cols = list(df.columns)
+    period_col = _match_col(cols, ["适用期限", "期限", "持有期", "持有期限"])
+    rate_col = _match_col(cols, ["赎回费率", "费率"])
+
+    if not period_col or not rate_col:
+        return []
+
+    for _, row in df.iterrows():
+        period_text = str(row[period_col]).strip()
+        rate_text = str(row[rate_col]).strip()
+        if not period_text or period_text == "nan":
+            continue
+
+        min_d, max_d = _parse_holding_period(period_text)
+        tier = RedemptionTier(min_days=min_d, max_days=max_d, rate=_parse_pct(rate_text))
+        tiers.append(tier)
+
+    # 按最小天数排序
+    tiers.sort(key=lambda t: t.min_days)
+    return tiers
+
+
+def fetch_fund_fee_rates(fund_code: str) -> FeeRates:
+    """获取基金费率表（带内存缓存）。不抛异常。"""
+    fund_code = fund_code.strip()
+    now = time.time()
+
+    cached = _fee_cache.get(fund_code)
+    if cached and now - cached["ts"] < _FEE_CACHE_TTL:
+        return cached["data"]
+
+    try:
+        rates = _fetch_fee_rates_from_akshare(fund_code)
+    except Exception as exc:
+        rates = FeeRates(fund_code=fund_code, ok=False, message=str(exc))
+
+    _fee_cache[fund_code] = {"ts": now, "data": rates}
+    return rates
+
+
+def calc_purchase_fee(fund_code: str, amount: float) -> CalcFeeResult:
+    """计算买入手续费。"""
+    rates = fetch_fund_fee_rates(fund_code)
+    if not rates.ok or not rates.purchase:
+        return CalcFeeResult(fee=0, rate=0, label="费率未知")
+
+    # 按金额匹配分档
+    for tier in rates.purchase:
+        if amount < tier.min_amount:
+            continue
+        if tier.max_amount is not None and amount >= tier.max_amount:
+            continue
+        if tier.is_fixed:
+            fee = tier.fixed_fee
+            label = tier.label
+            return CalcFeeResult(fee=fee, rate=0, label=label)
+        fee = round(amount * tier.rate, 2)
+        pct = f"{tier.rate * 100:.2f}%"
+        label = f"申购费率 {pct}"
+        return CalcFeeResult(fee=fee, rate=tier.rate, label=label)
+
+    # 超出最大档：用最后一档
+    last = rates.purchase[-1]
+    if last.is_fixed:
+        return CalcFeeResult(fee=last.fixed_fee, rate=0, label=last.label)
+    fee = round(amount * last.rate, 2)
+    pct = f"{last.rate * 100:.2f}%"
+    return CalcFeeResult(fee=fee, rate=last.rate, label=f"申购费率 {pct}")
+
+
+def calc_redemption_fee(
+    fund_code: str,
+    sell_date: str,
+    sell_shares: float,
+) -> CalcFeeResult:
+    """计算赎回手续费（FIFO 先进先出）。"""
+    rates = fetch_fund_fee_rates(fund_code)
+    if not rates.ok or not rates.redemption:
+        return CalcFeeResult(fee=0, rate=0, label="费率未知")
+
+    # 获取该基金所有买入记录（按日期升序）
+    buy_txs = db.get_transactions(fund_code)
+    buy_lots = [t for t in buy_txs if t.action == "buy" and t.date and t.shares]
+
+    if not buy_lots:
+        return CalcFeeResult(fee=0, rate=0, label="无买入记录，无法计算持有期")
+
+    sell_dt = _parse_date(sell_date)
+    remaining = sell_shares
+    total_fee = 0.0
+    lots_detail: list[FeeLot] = []
+
+    for lot in buy_lots:
+        if remaining <= 0:
+            break
+        lot_shares = lot.shares or 0
+        lot_nav = lot.nav or 0
+        used = min(lot_shares, remaining)
+        days = (sell_dt - _parse_date(lot.date)).days
+        if days < 0:
+            days = 0
+
+        # 按持有天数匹配费率
+        rate = 0.0
+        for tier in rates.redemption:
+            if days >= tier.min_days:
+                if tier.max_days is None or days <= tier.max_days:
+                    rate = tier.rate
+                    break
+
+        lot_amount = used * lot_nav
+        fee = round(lot_amount * rate, 2)
+        total_fee += fee
+        remaining -= used
+
+        lots_detail.append(FeeLot(
+            buy_date=lot.date,
+            buy_shares=lot_shares,
+            used_shares=used,
+            days_held=days,
+            rate=rate,
+            fee=fee,
+            nav=lot_nav,
+        ))
+
+    # 如果还有剩余份额无法匹配（超出买入总量），按最低费率
+    if remaining > 0 and buy_lots:
+        lowest_rate = rates.redemption[-1].rate if rates.redemption else 0
+        latest = db.get_latest_nav(fund_code)
+        extra_nav = float(latest["nav"]) if latest else 1.0
+        extra_fee = round(remaining * extra_nav * lowest_rate, 2)
+        total_fee += extra_fee
+        lots_detail.append(FeeLot(
+            buy_date="",
+            buy_shares=0,
+            used_shares=remaining,
+            days_held=0,
+            rate=lowest_rate,
+            fee=extra_fee,
+            nav=extra_nav,
+        ))
+
+    total_fee = round(total_fee, 2)
+
+    # 有效费率 = 总费用 / 总卖出金额
+    total_sold_amount = sum(l.used_shares * l.nav for l in lots_detail)
+    effective_rate = total_fee / total_sold_amount if total_sold_amount > 0 else 0
+
+    label = f"赎回费率 {effective_rate * 100:.2f}%"
+    return CalcFeeResult(
+        fee=total_fee,
+        rate=effective_rate,
+        label=label,
+        lots=[{"buy_date": l.buy_date, "buy_shares": l.buy_shares,
+               "used_shares": l.used_shares, "days_held": l.days_held,
+               "rate": l.rate, "fee": l.fee} for l in lots_detail],
+    )
+
+
+def _parse_date(date_str: str):
+    """解析 YYYY-MM-DD 字符串为 datetime.date。"""
+    import datetime as dt
+    parts = date_str.split("-")
+    return dt.date(int(parts[0]), int(parts[1]), int(parts[2]))
+
+
+def clear_fee_cache() -> None:
+    """清空费率缓存（调试/测试用）。"""
+    _fee_cache.clear()
+
+
+def get_fee_cache_info() -> int:
+    """返回缓存中的基金数量。"""
+    return len(_fee_cache)
+
+
 if __name__ == "__main__":
     import sys
 
     db.init_db()
     code = sys.argv[1] if len(sys.argv) > 1 else "013093"
-    print(f"抓取基金 {code} ...")
-    res = update_fund_nav(code)
-    print(res)
+    if len(sys.argv) > 2 and sys.argv[2] == "fee":
+        print(f"查询费率 {code} ...")
+        rates = fetch_fund_fee_rates(code)
+        print(f"申购: {rates.purchase}")
+        print(f"赎回: {rates.redemption}")
+        print(f"管理费: {rates.management_fee}")
+        print(f"托管费: {rates.custodian_fee}")
+        print(f"销售服务费: {rates.sales_fee}")
+        if rates.purchase:
+            res = calc_purchase_fee(code, 10000)
+            print(f"买入 ¥10000 手续费: {res}")
+        if rates.redemption:
+            res = calc_redemption_fee(code, "2026-07-07", 100)
+            print(f"卖出 100 份手续费: {res}")
+    else:
+        print(f"抓取基金 {code} ...")
+        res = update_fund_nav(code)
+        print(res)

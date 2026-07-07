@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react"
 import { useSearchParams, useLocation, useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { Transaction, CSVParseResult, FundMeta, Fund, Position } from "@/api/types"
+import type { Transaction, CSVParseResult, FundMeta, Fund, Position, CalcFeeResponse } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import LogoSpinner from "@/components/LogoSpinner"
+import FeeBreakdownCard from "@/components/FeeBreakdownCard"
 import { money } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -137,6 +138,10 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   const [afterThree, setAfterThree] = useState(false)
   const [navLoading, setNavLoading] = useState(false)
   const [navNotFound, setNavNotFound] = useState(false)
+  const [feeCalcResult, setFeeCalcResult] = useState<CalcFeeResponse | null>(null)
+  const [feeCalcLoading, setFeeCalcLoading] = useState(false)
+  const feeManuallyEdited = useRef(false)
+  const feeCalcTimer = useRef<ReturnType<typeof setTimeout>>()
 
   const isEditing = !!editingTx
 
@@ -169,6 +174,8 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     setShares(editingTx.shares?.toString() ?? "")
     setNav(editingTx.nav?.toString() ?? "")
     setFee(editingTx.fee?.toString() ?? "0")
+    feeManuallyEdited.current = false
+    setFeeCalcResult(null)
 
     // 渠道：预设值走 select，非预设值走 customChannel
     if (editingTx.channel && channels.includes(editingTx.channel)) {
@@ -203,6 +210,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     setAmount(""); setShares(""); setNav(""); setFee("0")
     setNote(""); setAfterThree(false); setCustomChannel("")
     setMeta(null)
+    setFeeCalcResult(null); feeManuallyEdited.current = false
     // 渠道预填：预设渠道走 select，自定义渠道走 customChannel
     if (prefill.channel) {
       if (channels.includes(prefill.channel)) {
@@ -247,6 +255,50 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
       .finally(() => setNavLoading(false))
   }, [code, effectiveNavDate])
 
+  // 自动计算手续费（防抖 500ms）
+  useEffect(() => {
+    if (feeCalcTimer.current) clearTimeout(feeCalcTimer.current)
+    if (!code.trim()) { setFeeCalcResult(null); return }
+
+    const amt = parseFloat(amount) || 0
+    const sh = parseFloat(shares) || 0
+
+    if (action === "buy" && amt > 0) {
+      setFeeCalcLoading(true)
+      feeCalcTimer.current = setTimeout(async () => {
+        try {
+          const res = await api.calcFundFee(code.trim(), { action: "buy", amount: amt })
+          setFeeCalcResult(res)
+          if (!feeManuallyEdited.current && res.fee > 0) {
+            setFee(res.fee.toFixed(2))
+          }
+        } catch { /* ignore */ }
+        finally { setFeeCalcLoading(false) }
+      }, 500)
+    } else if (action === "sell" && sh > 0 && date) {
+      setFeeCalcLoading(true)
+      feeCalcTimer.current = setTimeout(async () => {
+        try {
+          const res = await api.calcFundFee(code.trim(), { action: "sell", shares: sh, date })
+          setFeeCalcResult(res)
+          if (!feeManuallyEdited.current && res.fee > 0) {
+            setFee(res.fee.toFixed(2))
+          }
+        } catch { /* ignore */ }
+        finally { setFeeCalcLoading(false) }
+      }, 500)
+    } else {
+      setFeeCalcResult(null)
+    }
+
+    return () => { if (feeCalcTimer.current) clearTimeout(feeCalcTimer.current) }
+  }, [code, action, amount, shares, date])
+
+  const handleFeeChange = (v: string) => {
+    feeManuallyEdited.current = true
+    setFee(v)
+  }
+
   // 买入：金额 - 手续费 → 份额；卖出：份额 × 净值 - 手续费 → 金额
   const a = parseFloat(amount) || 0
   const f = parseFloat(fee) || 0
@@ -284,6 +336,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     setCode(""); setMeta(null); setAction("buy"); setDate("")
     setAmount(""); setShares(""); setNav(""); setFee("0")
     setCustomChannel(""); setNote(""); setAfterThree(false)
+    setFeeCalcResult(null); feeManuallyEdited.current = false
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -496,8 +549,14 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             {/* 手续费：买入/卖出需要，分红/再投资不需要 */}
             {action !== "dividend" && action !== "reinvest" && (
               <div>
-                <Label className="mb-1.5 block text-xs text-muted-foreground">手续费（元）</Label>
-                <Input type="number" step="0.01" min="0" value={fee} onChange={(e) => setFee(e.target.value)} className="h-9" />
+                <Label className="mb-1.5 block text-xs text-muted-foreground">
+                  手续费（元）
+                  {feeCalcLoading && <Loader2 className="inline ml-1 h-3 w-3 animate-spin" />}
+                </Label>
+                <Input type="number" step="0.01" min="0" value={fee} onChange={(e) => handleFeeChange(e.target.value)} className="h-9" />
+                {feeCalcResult && (
+                  <FeeBreakdownCard result={feeCalcResult} action={action === "sell" ? "sell" : "buy"} />
+                )}
               </div>
             )}
           </div>

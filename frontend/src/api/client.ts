@@ -12,6 +12,8 @@ import type {
   CSVParseResult,
   AIUsageStats,
   AIUsageDaily,
+  FeeRatesResponse,
+  CalcFeeResponse,
 } from "./types"
 import { getToken, clearToken } from "@/lib/auth"
 
@@ -170,6 +172,18 @@ export const api = {
   getFund: (code: string) => request<FundMeta>(`/funds/${encodeURIComponent(code)}`),
   fetchFundMeta: (code: string) =>
     request<FundMeta>(`/funds/${code}/fetch`, { method: "POST" }),
+
+  // Fee rates
+  getFundFeeRates: (code: string) =>
+    request<FeeRatesResponse>(`/funds/${encodeURIComponent(code)}/fee-rates`),
+  calcFundFee: (code: string, params: { action: string; amount?: number; shares?: number; date?: string }) => {
+    const q = new URLSearchParams()
+    q.set("action", params.action)
+    if (params.amount != null) q.set("amount", String(params.amount))
+    if (params.shares != null) q.set("shares", String(params.shares))
+    if (params.date) q.set("date", params.date)
+    return request<CalcFeeResponse>(`/funds/${encodeURIComponent(code)}/calc-fee?${q.toString()}`)
+  },
 
   // NAV
   updateNav: () => request<FetchResult[]>("/nav/update", { method: "POST" }),

@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { Transaction, AIUsageStats } from "@/api/types"
+import type { Transaction, AIUsageStats, CalcFeeResponse } from "@/api/types"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import FeeBreakdownCard from "@/components/FeeBreakdownCard"
 import { Bot, Send, Search, Plus, Check, X, Loader2, ChevronDown, Clock } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -576,8 +577,45 @@ function TxConfirmCard({
 }) {
   const [editDate, setEditDate] = useState(tx.date)
   const [afterThree, setAfterThree] = useState(tx.after_three)
+  const [editFee, setEditFee] = useState(() => tx.fee ? String(tx.fee) : "")
+  const [feeCalcResult, setFeeCalcResult] = useState<CalcFeeResponse | null>(null)
+  const [feeCalcLoading, setFeeCalcLoading] = useState(false)
 
-  useEffect(() => { setEditDate(tx.date); setAfterThree(tx.after_three) }, [tx.date, tx.after_three])
+  useEffect(() => {
+    setEditDate(tx.date)
+    setAfterThree(tx.after_three)
+  }, [tx.date, tx.after_three])
+
+  // 自动查费率
+  useEffect(() => {
+    if (!tx.fund_code) return
+    const amt = tx.amount ?? 0
+    const sh = tx.shares ?? 0
+    const dt = tx.date
+    if (tx.action === "buy" && amt > 0) {
+      setFeeCalcLoading(true)
+      api.calcFundFee(tx.fund_code, { action: "buy", amount: amt })
+        .then((res) => {
+          setFeeCalcResult(res)
+          if (!tx.fee && res.fee > 0) {
+            setEditFee(res.fee.toFixed(2))
+          }
+        })
+        .catch(() => {})
+        .finally(() => setFeeCalcLoading(false))
+    } else if (tx.action === "sell" && sh > 0 && dt) {
+      setFeeCalcLoading(true)
+      api.calcFundFee(tx.fund_code, { action: "sell", shares: sh, date: dt })
+        .then((res) => {
+          setFeeCalcResult(res)
+          if (!tx.fee && res.fee > 0) {
+            setEditFee(res.fee.toFixed(2))
+          }
+        })
+        .catch(() => {})
+        .finally(() => setFeeCalcLoading(false))
+    }
+  }, [tx.fund_code, tx.action, tx.amount, tx.shares, tx.date])
 
   if (status?.state === "added") {
     return (
@@ -594,7 +632,10 @@ function TxConfirmCard({
     )
   }
 
-  const finalTx: ExtractedTx = { ...tx, date: editDate, after_three: afterThree }
+  const finalTx: ExtractedTx = {
+    ...tx, date: editDate, after_three: afterThree,
+    fee: parseFloat(editFee) || 0,
+  }
   const canConfirm = !!finalTx.fund_code && !!finalTx.date && !adding
 
   return (
@@ -659,19 +700,31 @@ function TxConfirmCard({
             <span className="tabular-nums">{tx.nav.toFixed(4)}</span>
           </div>
         )}
-        {tx.fee ? (
-          <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground">手续费</span>
-            <span className="tabular-nums">{money(tx.fee)}</span>
-          </div>
-        ) : null}
-        {tx.note && (
-          <div className="col-span-2 flex items-center gap-1.5">
-            <span className="text-muted-foreground">备注</span>
-            <span>{tx.note}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground">手续费</span>
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
+            value={editFee}
+            onChange={(e) => setEditFee(e.target.value)}
+            className="h-7 w-24 text-xs tabular-nums"
+            placeholder="0"
+          />
+          {feeCalcLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+        </div>
       </div>
+      {feeCalcResult && (
+        <div className="mt-1.5">
+          <FeeBreakdownCard result={feeCalcResult} action={tx.action === "sell" ? "sell" : "buy"} />
+        </div>
+      )}
+      {tx.note && (
+        <div className="mt-1.5 flex items-center gap-1.5 text-sm">
+          <span className="text-muted-foreground">备注</span>
+          <span>{tx.note}</span>
+        </div>
+      )}
       <div className="flex gap-2 mt-3">
         <Button size="sm" className="h-7" onClick={() => onConfirm(finalTx)} disabled={!canConfirm}>
           {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Check className="h-3.5 w-3.5 mr-1" />}

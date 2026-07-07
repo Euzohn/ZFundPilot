@@ -206,7 +206,7 @@ export default function Settings() {
   const [keywordMaps, setKeywordMaps] = useState<KeywordMaps | null>(null)
   const [kwTab, setKwTab] = useState("sector")
   const [kwSearch, setKwSearch] = useState("")
-  const [kwShowDefaults, setKwShowDefaults] = useState(true)
+  const [kwShowDefaults, setKwShowDefaults] = useState(false)
   const [newKwKeyword, setNewKwKeyword] = useState("")
   const [newKwMapped, setNewKwMapped] = useState("")
   const [kwSaving, setKwSaving] = useState(false)

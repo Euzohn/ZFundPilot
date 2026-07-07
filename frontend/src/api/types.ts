@@ -114,8 +114,8 @@ export interface FundMeta {
 
 export interface LatestNav {
   fund_code: string
-  date: string
-  nav: number
+  date: string | null
+  nav: number | null
 }
 
 export interface CSVParseResult {

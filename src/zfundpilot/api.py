@@ -490,16 +490,16 @@ def get_nav_history(code: str, date: str | None = None) -> list[dict[str, Any]]:
 
 @app.get("/api/nav/latest")
 def get_latest_navs() -> list[dict[str, Any]]:
-    codes = db.get_distinct_fund_codes()
+    """返回所有基金的最新净值（含无净值数据的基金）。"""
+    funds = db.get_funds()
     result = []
-    for code in codes:
-        latest = db.get_latest_nav(code)
-        if latest:
-            result.append({
-                "fund_code": code,
-                "date": latest["date"],
-                "nav": float(latest["nav"]),
-            })
+    for f in funds:
+        latest = db.get_latest_nav(f.fund_code)
+        result.append({
+            "fund_code": f.fund_code,
+            "date": latest["date"] if latest else None,
+            "nav": float(latest["nav"]) if latest else None,
+        })
     return result
 
 

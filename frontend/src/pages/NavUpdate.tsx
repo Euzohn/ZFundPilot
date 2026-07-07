@@ -28,7 +28,7 @@ export default function NavUpdate() {
     if (!funds) return 0
     return funds.filter((f) => {
       const n = navs?.find((n) => n.fund_code === f.fund_code)
-      return !n || n.date < todayStr
+      return !n || !n.date || n.date < todayStr
     }).length
   }, [funds, navs, todayStr])
 
@@ -37,7 +37,11 @@ export default function NavUpdate() {
   // 最近更新日期：所有基金中最新净值日期的最大值
   const lastUpdateDate = useMemo(() => {
     if (!navs || navs.length === 0) return ""
-    return navs.reduce((max, n) => n.date > max ? n.date : max, "")
+    let max = ""
+    for (const n of navs) {
+      if (n.date && n.date > max) max = n.date
+    }
+    return max
   }, [navs])
 
   // 页面获得焦点时自动刷新

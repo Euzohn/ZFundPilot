@@ -36,15 +36,16 @@ export default function Transactions() {
   const [activeTab, setActiveTab] = useState("form")
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [listReloadKey, setListReloadKey] = useState(0)
-  const [prefill, setPrefill] = useState<{ code: string; action: string } | null>(null)
+  const [prefill, setPrefill] = useState<{ code: string; action: string; channel?: string } | null>(null)
   const consumedEditTx = useRef(false)
 
   // 从 URL 参数消费预填数据（从持仓页跳转过来）
   useEffect(() => {
     const code = searchParams.get("code")
     const action = searchParams.get("action")
+    const channel = searchParams.get("channel")
     if (code) {
-      setPrefill({ code, action: action || "buy" })
+      setPrefill({ code, action: action || "buy", channel: channel || undefined })
       setActiveTab("form")
       setSearchParams({}, { replace: true })
     }
@@ -108,7 +109,7 @@ export default function Transactions() {
 // ---------------------------------------------------------------------------
 function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   editingTx: Transaction | null
-  prefill: { code: string; action: string } | null
+  prefill: { code: string; action: string; channel?: string } | null
   onPrefillConsumed: () => void
   onDone: (fundCode?: string) => void
 }) {
@@ -187,7 +188,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     }
   }, [editingTx])
 
-  // 预填模式：从持仓页跳转过来，只回填代码 + 操作方向
+  // 预填模式：从持仓页跳转过来，回填代码 + 操作方向 + 渠道
   useEffect(() => {
     if (!prefill) return
     setCode(prefill.code)
@@ -195,6 +196,15 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     setAmount(""); setShares(""); setNav(""); setFee("0")
     setNote(""); setAfterThree(false); setCustomChannel("")
     setMeta(null)
+    // 渠道预填：预设渠道走 select，自定义渠道走 customChannel
+    if (prefill.channel) {
+      if (channels.includes(prefill.channel)) {
+        setChannel(prefill.channel)
+      } else {
+        setChannel("其它")
+        setCustomChannel(prefill.channel)
+      }
+    }
     if (prefill.code.trim()) {
       setFetching(true)
       api.fetchFundMeta(prefill.code.trim())

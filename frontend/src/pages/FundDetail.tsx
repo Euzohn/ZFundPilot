@@ -115,7 +115,10 @@ const handleDelete = async (txId: number) => {
               size="sm"
               variant="outline"
               className="text-loss border-loss/30 hover:bg-loss/5"
-              onClick={() => navigate(`/transactions?code=${code}&action=sell`)}
+              onClick={() => {
+                const ch = openPositions.length === 1 ? `&channel=${encodeURIComponent(openPositions[0].channel)}` : ""
+                navigate(`/transactions?code=${code}&action=sell${ch}`)
+              }}
             >
               <TrendingDown className="h-4 w-4" /> 卖出
             </Button>
@@ -149,6 +152,7 @@ const handleDelete = async (txId: number) => {
                   <TableHead className="text-right">均价</TableHead>
                   <TableHead className="text-right">市值</TableHead>
                   <TableHead className="text-right">浮动盈亏</TableHead>
+                  <TableHead className="w-20">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -160,6 +164,16 @@ const handleDelete = async (txId: number) => {
                     <TableCell className="text-right tabular-nums">{navStr(p.avg_cost_nav)}</TableCell>
                     <TableCell className="text-right tabular-nums">{money(p.market_value)}</TableCell>
                     <TableCell className={`text-right tabular-nums ${pnlColor(p.unrealized_pnl)}`}>{money(p.unrealized_pnl)}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs text-loss border-loss/30 hover:bg-loss/5"
+                        onClick={() => navigate(`/transactions?code=${code}&action=sell&channel=${encodeURIComponent(p.channel)}`)}
+                      >
+                        <TrendingDown className="h-3 w-3" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

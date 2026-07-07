@@ -39,14 +39,15 @@ export default function Positions() {
     : []
 
   // 按基金合并（跨渠道）
-  const merged: Record<string, { name: string; type: string; sector: string; value: number; cost: number; pnl: number; channels: number; latestDate: string | null }> = {}
+  const merged: Record<string, { name: string; type: string; sector: string; value: number; cost: number; pnl: number; channels: number; latestDate: string | null; channel: string | null }> = {}
   for (const p of view.filter((p) => p.is_open)) {
-    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, value: 0, cost: 0, pnl: 0, channels: 0, latestDate: p.latest_date }
+    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, value: 0, cost: 0, pnl: 0, channels: 0, latestDate: p.latest_date, channel: p.channel }
     m.value += p.market_value
     m.cost += p.total_cost
     m.pnl += p.unrealized_pnl
     m.channels += 1
     m.latestDate = p.latest_date
+    if (m.channel !== p.channel) m.channel = null  // 多渠道时置空
     merged[p.fund_code] = m
   }
   const mergedRows = Object.entries(merged).sort((a, b) => b[1].value - a[1].value)
@@ -192,7 +193,7 @@ export default function Positions() {
                             size="sm"
                             variant="outline"
                             className="h-7 px-2 text-xs text-loss border-loss/30 hover:bg-loss/5"
-                            onClick={() => navigate(`/transactions?code=${code}&action=sell`)}
+                            onClick={() => navigate(`/transactions?code=${code}&action=sell${m.channel ? `&channel=${encodeURIComponent(m.channel)}` : ""}`)}
                           >
                             <TrendingDown className="h-3 w-3" />
                           </Button>

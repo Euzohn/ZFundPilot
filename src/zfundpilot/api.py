@@ -171,6 +171,18 @@ def get_system_prompt() -> dict[str, Any]:
     return {"system_prompt": ai.build_system_prompt()}
 
 
+@app.post("/api/ai/test")
+def test_ai_connection() -> dict[str, Any]:
+    """测试当前 AI 配置是否可用。"""
+    return ai.test_connection()
+
+
+@app.get("/api/ai/usage/daily")
+def get_ai_usage_daily(days: int = 7) -> list[dict[str, Any]]:
+    """返回最近 N 天每日 token 用量。"""
+    return db.get_ai_usage_daily(days)
+
+
 @app.post("/api/ai/chat")
 async def ai_chat(body: ChatRequest):
     """AI 投顾对话（SSE 流式）。前端已携带 system 消息时跳过重建持仓上下文。"""

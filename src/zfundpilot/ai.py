@@ -223,6 +223,36 @@ def build_system_prompt() -> str:
     return _build_system_prompt(context, has_search)
 
 
+def test_connection() -> dict:
+    """测试当前 AI 配置是否可用（发最小非流式请求）。"""
+    if not config.AI_BASE_URL or not config.AI_API_KEY or not config.AI_MODEL:
+        return {"ok": False, "error": "配置不完整（Base URL / API Key / Model）"}
+    try:
+        url = f"{config.AI_BASE_URL.rstrip('/')}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {config.AI_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "model": config.AI_MODEL,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 1,
+            "stream": False,
+        }
+        resp = httpx.post(url, headers=headers, json=body, timeout=15)
+        if resp.status_code == 200:
+            provider = detect_provider(config.AI_BASE_URL)
+            has_search = config.AI_WEB_SEARCH and provider in ("kimi", "zhipu", "qwen")
+            return {"ok": True, "provider": provider, "model": config.AI_MODEL, "has_search": has_search}
+        return {"ok": False, "error": f"API 返回 {resp.status_code}: {resp.text[:300]}"}
+    except httpx.ConnectError as e:
+        return {"ok": False, "error": f"连接失败: {e}"}
+    except httpx.TimeoutException:
+        return {"ok": False, "error": "请求超时（15s）"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 # ---------------------------------------------------------------------------
 # 流式 SSE 解析辅助
 # ---------------------------------------------------------------------------

@@ -3,14 +3,20 @@ import { getChannels, saveChannels, getDefaultChannels } from "@/lib/channels"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import { clearToken } from "@/lib/auth"
-import { Card, CardContent, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import LogoSpinner from "@/components/LogoSpinner"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
+import type { AIUsageStats, AIUsageDaily } from "@/api/types"
 import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
+  SlidersHorizontal, LogOut, Loader2, CheckCircle2, XCircle, Zap,
 } from "lucide-react"
 
 function detectProvider(baseUrl: string): string {
@@ -22,17 +28,50 @@ function detectProvider(baseUrl: string): string {
   return "通用 OpenAI 兼容"
 }
 
-function SectionHeader({ icon: Icon, title, desc }: { icon: any; title: string; desc?: string }) {
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1000000) return (n / 1000).toFixed(n < 10000 ? 1 : 0) + "k"
+  return (n / 1000000).toFixed(1) + "m"
+}
+
+function formatRelativeTime(iso: string): string {
+  const t = new Date(iso).getTime()
+  if (isNaN(t)) return ""
+  const diff = Date.now() - t
+  const min = Math.floor(diff / 60000)
+  if (min < 1) return "刚刚"
+  if (min < 60) return `${min} 分钟前`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr} 小时前`
+  const day = Math.floor(hr / 24)
+  if (day === 1) return "昨天"
+  return `${day} 天前`
+}
+
+function Sparkline({ data }: { data: number[] }) {
+  if (!data || data.length < 2) return null
+  const w = 200, h = 40
+  const max = Math.max(...data, 1)
+  const min = Math.min(...data, 0)
+  const range = max - min || 1
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * w
+    const y = h - 2 - ((v - min) / range) * (h - 4)
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(" ")
   return (
-    <div className="border-l-2 border-l-blue-500 pl-4">
-      <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-blue-600 shrink-0" />
-        <CardTitle className="text-sm font-semibold tracking-tight">{title}</CardTitle>
-      </div>
-      {desc && <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>}
-    </div>
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-10" preserveAspectRatio="none">
+      <polyline points={pts} fill="none" stroke="#3b82f6" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+    </svg>
   )
 }
+
+const PROVIDER_PRESETS = [
+  { name: "智谱 GLM", baseUrl: "https://open.bigmodel.cn/v1", model: "glm-4-plus" },
+  { name: "Kimi", baseUrl: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
+  { name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  { name: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
+]
 
 export default function Settings() {
   // Channels
@@ -55,6 +94,14 @@ export default function Settings() {
   const [savingAI, setSavingAI] = useState(false)
   const [resettingSectors, setResettingSectors] = useState(false)
 
+  // AI test connection
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; provider?: string; model?: string; has_search?: boolean; error?: string } | null>(null)
+
+  // AI usage
+  const { data: usageStats } = useApi<AIUsageStats>(() => api.getAIUsage(), [])
+  const { data: usageDaily } = useApi<AIUsageDaily[]>(() => api.getAIUsageDaily(7), [])
+
   useEffect(() => {
     if (aiConfig) {
       setAiBaseUrl(aiConfig.base_url)
@@ -63,43 +110,36 @@ export default function Settings() {
     }
   }, [aiConfig])
 
+  // Clear test result when config changes
+  useEffect(() => { setTestResult(null) }, [aiBaseUrl, aiApiKey, aiModel, aiWebSearch])
+
   // --- Channels ---
   const moveUp = (i: number) => {
     if (i === 0) return
     const next = [...channels]
     ;[next[i - 1], next[i]] = [next[i], next[i - 1]]
-    setChannels(next)
-    saveChannels(next)
+    setChannels(next); saveChannels(next)
   }
-
   const moveDown = (i: number) => {
     if (i === channels.length - 1) return
     const next = [...channels]
     ;[next[i + 1], next[i]] = [next[i], next[i + 1]]
-    setChannels(next)
-    saveChannels(next)
+    setChannels(next); saveChannels(next)
   }
-
   const remove = (i: number) => {
     const next = channels.filter((_, idx) => idx !== i)
-    setChannels(next)
-    saveChannels(next)
+    setChannels(next); saveChannels(next)
   }
-
   const add = () => {
     const name = newChannel.trim()
     if (!name) return
     if (channels.includes(name)) { toast.warning("该渠道已存在"); return }
     const next = [...channels, name]
-    setChannels(next)
-    setNewChannel("")
-    saveChannels(next)
+    setChannels(next); setNewChannel(""); saveChannels(next)
   }
-
   const handleReset = () => {
     const defaults = getDefaultChannels()
-    setChannels(defaults)
-    saveChannels(defaults)
+    setChannels(defaults); saveChannels(defaults)
     toast.success("已恢复默认渠道顺序")
   }
 
@@ -130,6 +170,21 @@ export default function Settings() {
     finally { setSavingAI(false) }
   }
 
+  const handleTestConnection = async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await api.testAIConnection()
+      setTestResult(res)
+      if (res.ok) toast.success(`连接成功 · ${res.provider} · ${res.model}`)
+      else toast.error(`连接失败: ${res.error}`)
+    } catch (e) {
+      toast.error(`测试失败: ${e}`)
+    } finally {
+      setTesting(false)
+    }
+  }
+
   const handleResetSectors = async () => {
     setResettingSectors(true)
     try {
@@ -139,139 +194,305 @@ export default function Settings() {
     finally { setResettingSectors(false) }
   }
 
+  const authRequired = authStatus?.required
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl md:text-2xl font-bold tracking-tight">设置</h1>
 
-      <Card className="overflow-hidden">
-        <div className="divide-y divide-slate-100">
-          {/* ── 购买渠道 ── */}
-          <div className="px-5 py-5 space-y-3">
-            <SectionHeader icon={ShoppingCart} title="购买渠道顺序" desc="排在前面的渠道作为交易表单的默认选项，上下箭头调整顺序，自动保存" />
+      <Tabs defaultValue="ai">
+        <TabsList className={cn("grid w-full sm:inline-flex sm:w-auto", authRequired ? "grid-cols-3" : "grid-cols-2")}>
+          {authRequired && (
+            <TabsTrigger value="account" className="gap-1.5">
+              <ShieldCheck className="h-4 w-4" />
+              <span className="hidden sm:inline">账户与安全</span><span className="sm:hidden">账户</span>
+            </TabsTrigger>
+          )}
+          <TabsTrigger value="ai" className="gap-1.5">
+            <Bot className="h-4 w-4" />
+            <span className="hidden sm:inline">AI 投顾</span><span className="sm:hidden">AI</span>
+          </TabsTrigger>
+          <TabsTrigger value="prefs" className="gap-1.5">
+            <SlidersHorizontal className="h-4 w-4" />
+            <span className="hidden sm:inline">偏好设置</span><span className="sm:hidden">偏好</span>
+          </TabsTrigger>
+        </TabsList>
 
-            <div className="space-y-1">
-              {channels.map((ch, i) => (
-                <div key={ch} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-white px-3 py-2 transition-colors hover:border-slate-200">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-slate-100 text-xs font-medium text-slate-500">
-                    {i + 1}
-                  </span>
-                  <button onClick={() => moveUp(i)} disabled={i === 0}
-                    className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed">
-                    <ChevronUp className="h-3.5 w-3.5" />
-                  </button>
-                  <button onClick={() => moveDown(i)} disabled={i === channels.length - 1}
-                    className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed">
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  </button>
-                  <span className="flex-1 text-sm font-medium">{ch}</span>
-                  <span className="hidden sm:inline text-xs text-slate-400">{i === 0 ? "默认" : ""}</span>
-                  <button onClick={() => remove(i)}
-                    className="flex h-6 w-6 items-center justify-center rounded text-slate-300 transition-colors hover:bg-red-50 hover:text-red-500">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+        {/* ── 账户与安全 ── */}
+        {authRequired && (
+          <TabsContent value="account">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ShieldCheck className="h-5 w-5 text-blue-500" />
+                  账户与安全
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">修改密码后所有设备需重新登录</p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <Label className="mb-1 block text-xs text-slate-500">当前密码</Label>
+                    <Input type="password" value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)}
+                      className="h-8 text-xs" placeholder="输入当前密码" autoFocus />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-slate-500">新密码</Label>
+                    <Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)}
+                      className="h-8 text-xs" placeholder="至少 6 位" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-slate-500">确认新密码</Label>
+                    <Input type="password" value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)}
+                      className="h-8 text-xs" placeholder="再次输入新密码"
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleChangePassword() } }} />
+                  </div>
                 </div>
-              ))}
-            </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" onClick={handleChangePassword} disabled={changingPwd} variant="outline">
+                    <KeyRound className="mr-1.5 h-3.5 w-3.5" /> {changingPwd ? "修改中..." : "修改密码"}
+                  </Button>
+                  <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-50 hover:text-red-600"
+                    onClick={() => { clearToken(); window.location.reload() }}>
+                    <LogOut className="mr-1.5 h-3.5 w-3.5" /> 退出登录
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
 
-            <div className="flex flex-wrap gap-2">
-              <div className="flex flex-1 gap-2 min-w-0">
-                <Input
-                  value={newChannel}
-                  onChange={(e) => setNewChannel(e.target.value)}
-                  placeholder="新增渠道名称"
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add() } }}
-                  className="h-8 text-xs max-w-[180px]"
-                />
-                <Button variant="outline" size="sm" onClick={add} className="h-8 shrink-0">
-                  <Plus className="mr-1 h-3.5 w-3.5" /> 添加
+        {/* ── AI 投顾 ── */}
+        <TabsContent value="ai">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Bot className="h-5 w-5 text-blue-500" />
+                AI 投顾配置
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">配置 OpenAI 兼容 API 后，可在「AI 助手」页面对话并录入交易</p>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* API 配置 */}
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <Label className="mb-1 block text-xs text-slate-500">API Base URL</Label>
+                    <Input value={aiBaseUrl} onChange={(e) => setAiBaseUrl(e.target.value)}
+                      className="h-8 text-xs" placeholder="https://api.moonshot.cn/v1" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-slate-500">API Key</Label>
+                    <Input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)}
+                      className="h-8 text-xs"
+                      placeholder={aiConfig?.has_key ? "已配置，输入新值覆盖" : "sk-..."} />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-slate-500">模型 ID</Label>
+                    <Input value={aiModel} onChange={(e) => setAiModel(e.target.value)}
+                      className="h-8 text-xs" placeholder="glm-4-plus / moonshot-v1-8k / deepseek-chat" />
+                  </div>
+                </div>
+
+                {/* 平台快捷预设 */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">快捷填充：</span>
+                  {PROVIDER_PRESETS.map((p) => (
+                    <button
+                      key={p.name}
+                      type="button"
+                      onClick={() => { setAiBaseUrl(p.baseUrl); setAiModel(p.model) }}
+                      className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600"
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 联网搜索 */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+                    <input type="checkbox" checked={aiWebSearch} onChange={(e) => setAiWebSearch(e.target.checked)} className="rounded" />
+                    启用联网搜索
+                  </label>
+                  {aiWebSearch && aiBaseUrl && (
+                    <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                      {detectProvider(aiBaseUrl)}
+                    </span>
+                  )}
+                </div>
+
+                {/* 操作按钮 */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" onClick={handleSaveAI} disabled={savingAI}>
+                    <Save className="mr-1.5 h-3.5 w-3.5" /> {savingAI ? "保存中..." : "保存配置"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleTestConnection} disabled={testing}>
+                    {testing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Zap className="mr-1.5 h-3.5 w-3.5" />}
+                    {testing ? "测试中..." : "测试连接"}
+                  </Button>
+                </div>
+
+                {/* 测试结果 */}
+                {testResult && (
+                  <div className={cn(
+                    "flex items-center gap-1.5 rounded-md px-3 py-2 text-xs",
+                    testResult.ok ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-600 border border-red-200"
+                  )}>
+                    {testResult.ok
+                      ? <><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> 连接成功 · {testResult.provider} · {testResult.model}{testResult.has_search ? " · 联网搜索已启用" : ""}</>
+                      : <><XCircle className="h-3.5 w-3.5 shrink-0" /> {testResult.error}</>
+                    }
+                  </div>
+                )}
+              </div>
+
+              {/* 分隔线 */}
+              <div className="border-t border-slate-100" />
+
+              {/* Token 用量 */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Token 用量</p>
+                  {usageStats && (
+                    <p className="text-xs text-muted-foreground">
+                      今日 <span className="font-medium text-foreground">{formatTokens(usageStats.today)}</span>
+                      {" · "}累计 <span className="font-medium text-foreground">{formatTokens(usageStats.total)}</span>
+                    </p>
+                  )}
+                </div>
+
+                {/* 7 天趋势 sparkline */}
+                {usageDaily && usageDaily.length >= 2 ? (
+                  <div className="rounded-lg border bg-slate-50/50 px-3 py-2">
+                    <Sparkline data={usageDaily.map((d) => d.tokens)} />
+                    <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
+                      <span>{usageDaily[0].date.slice(5)}</span>
+                      <span>近 7 天</span>
+                      <span>{usageDaily[usageDaily.length - 1].date.slice(5)}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground py-2">暂无用量数据</p>
+                )}
+
+                {/* 最近调用表格 */}
+                {usageStats && usageStats.recent.length > 0 ? (
+                  <div className="overflow-x-auto rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">时间</TableHead>
+                          <TableHead className="text-xs">模型</TableHead>
+                          <TableHead className="text-xs text-right">入</TableHead>
+                          <TableHead className="text-xs text-right">出</TableHead>
+                          <TableHead className="text-xs text-right">总</TableHead>
+                          <TableHead className="text-xs text-right">轮数</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {usageStats.recent.slice(0, 10).map((r) => (
+                          <TableRow key={r.id}>
+                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatRelativeTime(r.created_at)}</TableCell>
+                            <TableCell className="text-xs font-mono whitespace-nowrap">{r.model || "—"}</TableCell>
+                            <TableCell className="text-xs text-right tabular-nums">{formatTokens(r.prompt_tokens)}</TableCell>
+                            <TableCell className="text-xs text-right tabular-nums">{formatTokens(r.completion_tokens)}</TableCell>
+                            <TableCell className="text-xs text-right tabular-nums font-medium">{formatTokens(r.total_tokens)}</TableCell>
+                            <TableCell className="text-xs text-right tabular-nums">{r.turns}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  !usageStats && <div className="flex justify-center py-4"><LogoSpinner className="h-8 w-8" /></div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── 偏好设置 ── */}
+        <TabsContent value="prefs">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <SlidersHorizontal className="h-5 w-5 text-blue-500" />
+                偏好设置
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">购买渠道顺序与板块映射</p>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* 购买渠道 */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-sm font-medium">购买渠道顺序</p>
+                  <span className="text-xs text-muted-foreground">排在前面的为默认选项</span>
+                </div>
+
+                <div className="space-y-1">
+                  {channels.map((ch, i) => (
+                    <div key={ch} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-white px-3 py-2 transition-colors hover:border-slate-200">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-slate-100 text-xs font-medium text-slate-500">
+                        {i + 1}
+                      </span>
+                      <button onClick={() => moveUp(i)} disabled={i === 0}
+                        className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed">
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button onClick={() => moveDown(i)} disabled={i === channels.length - 1}
+                        className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed">
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="flex-1 text-sm font-medium">{ch}</span>
+                      <span className="hidden sm:inline text-xs text-slate-400">{i === 0 ? "默认" : ""}</span>
+                      <button onClick={() => remove(i)}
+                        className="flex h-6 w-6 items-center justify-center rounded text-slate-300 transition-colors hover:bg-red-50 hover:text-red-500">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-1 gap-2 min-w-0">
+                    <Input
+                      value={newChannel}
+                      onChange={(e) => setNewChannel(e.target.value)}
+                      placeholder="新增渠道名称"
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add() } }}
+                      className="h-8 text-xs max-w-[180px]"
+                    />
+                    <Button variant="outline" size="sm" onClick={add} className="h-8 shrink-0">
+                      <Plus className="mr-1 h-3.5 w-3.5" /> 添加
+                    </Button>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleReset} className="h-8 shrink-0">
+                    <RotateCcw className="mr-1 h-3.5 w-3.5" /> 恢复默认
+                  </Button>
+                </div>
+              </div>
+
+              {/* 分隔线 */}
+              <div className="border-t border-slate-100" />
+
+              {/* 板块映射 */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-sm font-medium">板块映射</p>
+                  <span className="text-xs text-muted-foreground">修改板块关键词后重新计算分类</span>
+                </div>
+                <Button size="sm" variant="outline" onClick={handleResetSectors} disabled={resettingSectors}>
+                  <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", resettingSectors && "animate-spin")} />
+                  {resettingSectors ? "重置中..." : "重置板块映射"}
                 </Button>
               </div>
-              <Button variant="outline" size="sm" onClick={handleReset} className="h-8 shrink-0">
-                <RotateCcw className="mr-1 h-3.5 w-3.5" /> 恢复默认
-              </Button>
-            </div>
-
-          {/* ── 板块映射重置 ── */}
-          <div className="px-5 py-5 space-y-3">
-            <SectionHeader icon={RefreshCw} title="板块映射" desc="修改了板块关键词后，点击下方按钮重新计算所有基金的板块分类" />
-            <Button size="sm" variant="outline" onClick={handleResetSectors} disabled={resettingSectors}>
-              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${resettingSectors ? "animate-spin" : ""}`} />
-              {resettingSectors ? "重置中..." : "重置板块映射"}
-            </Button>
-          </div>
-        </div>
-
-          {/* ── 安全 ── */}
-          {authStatus?.required && (
-            <div className="px-5 py-5 space-y-3">
-              <SectionHeader icon={ShieldCheck} title="安全" desc="修改密码后所有设备需重新登录" />
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <Label className="mb-1 block text-xs text-slate-500">当前密码</Label>
-                  <Input type="password" value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)}
-                    className="h-8 text-xs" placeholder="输入当前密码" autoFocus />
-                </div>
-                <div>
-                  <Label className="mb-1 block text-xs text-slate-500">新密码</Label>
-                  <Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)}
-                    className="h-8 text-xs" placeholder="至少 6 位" />
-                </div>
-                <div>
-                  <Label className="mb-1 block text-xs text-slate-500">确认新密码</Label>
-                  <Input type="password" value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)}
-                    className="h-8 text-xs" placeholder="再次输入新密码"
-                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleChangePassword() } }} />
-                </div>
-              </div>
-
-              <Button size="sm" onClick={handleChangePassword} disabled={changingPwd} variant="outline">
-                <KeyRound className="mr-1.5 h-3.5 w-3.5" /> {changingPwd ? "修改中..." : "修改密码"}
-              </Button>
-            </div>
-          )}
-
-          {/* ── AI 投顾 ── */}
-          <div className="px-5 py-5 space-y-3">
-            <SectionHeader icon={Bot} title="AI 投顾配置" desc="配置 OpenAI 兼容 API 后，可在「AI 助手」页面对话并录入交易" />
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <Label className="mb-1 block text-xs text-slate-500">API Base URL</Label>
-                <Input value={aiBaseUrl} onChange={(e) => setAiBaseUrl(e.target.value)}
-                  className="h-8 text-xs" placeholder="https://api.moonshot.cn/v1" />
-              </div>
-              <div>
-                <Label className="mb-1 block text-xs text-slate-500">API Key</Label>
-                <Input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)}
-                  className="h-8 text-xs"
-                  placeholder={aiConfig?.has_key ? "已配置，输入新值覆盖" : "sk-..."} />
-              </div>
-              <div>
-                <Label className="mb-1 block text-xs text-slate-500">模型 ID</Label>
-                <Input value={aiModel} onChange={(e) => setAiModel(e.target.value)}
-                  className="h-8 text-xs" placeholder="kimi-k2.6 / glm-4-plus / qwen-plus" />
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
-                <input type="checkbox" checked={aiWebSearch} onChange={(e) => setAiWebSearch(e.target.checked)} className="rounded" />
-                启用联网搜索
-              </label>
-              {aiWebSearch && aiBaseUrl && (
-                <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                  {detectProvider(aiBaseUrl)}
-                </span>
-              )}
-            </div>
-
-            <Button size="sm" onClick={handleSaveAI} disabled={savingAI}>
-              <Save className="mr-1.5 h-3.5 w-3.5" /> {savingAI ? "保存中..." : "保存配置"}
-            </Button>
-          </div>
-        </div>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

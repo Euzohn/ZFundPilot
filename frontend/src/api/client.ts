@@ -11,6 +11,7 @@ import type {
   Transaction,
   CSVParseResult,
   AIUsageStats,
+  AIUsageDaily,
 } from "./types"
 import { getToken, clearToken } from "@/lib/auth"
 
@@ -80,6 +81,13 @@ export const api = {
 
   // AI System Prompt (build once per conversation, reuse)
   getSystemPrompt: () => request<{ system_prompt: string }>("/ai/system-prompt"),
+
+  // AI Connection Test
+  testAIConnection: () =>
+    request<{ ok: boolean; provider?: string; model?: string; has_search?: boolean; error?: string }>("/ai/test", { method: "POST" }),
+
+  // AI Usage Daily (for sparkline)
+  getAIUsageDaily: (days = 7) => request<AIUsageDaily[]>(`/ai/usage/daily?days=${days}`),
 
   // AI Chat (SSE streaming — bypasses standard request() wrapper)
   streamChat: async (

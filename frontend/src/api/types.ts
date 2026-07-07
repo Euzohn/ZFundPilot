@@ -138,3 +138,8 @@ export interface AIUsageStats {
   total: number
   recent: AIUsageRow[]
 }
+
+export interface AIUsageDaily {
+  date: string
+  tokens: number
+}

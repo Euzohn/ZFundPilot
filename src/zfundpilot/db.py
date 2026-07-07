@@ -474,6 +474,23 @@ def get_ai_usage_stats() -> dict:
     return {"today": today, "total": total, "recent": recent}
 
 
+def get_ai_usage_daily(days: int = 7) -> list[dict]:
+    """返回最近 N 天每日 token 用量（无记录的天补 0）。"""
+    import datetime as dt
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT date(created_at) AS d, COALESCE(SUM(total_tokens),0) AS t"
+            " FROM ai_usage"
+            " WHERE created_at >= date('now','localtime', ?)"
+            " GROUP BY date(created_at) ORDER BY d ASC",
+            (f"-{days} days",),
+        ).fetchall()
+    usage_map = {r["d"]: r["t"] for r in rows}
+    today = dt.date.today()
+    dates = [(today - dt.timedelta(days=days - 1 - i)).isoformat() for i in range(days)]
+    return [{"date": d, "tokens": usage_map.get(d, 0)} for d in dates]
+
+
 if __name__ == "__main__":
     init_db()
     print(f"数据库已初始化：{config.DB_PATH}")

@@ -15,7 +15,7 @@ import LogoSpinner from "@/components/LogoSpinner"
 import { money } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2 } from "lucide-react"
+import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2, Receipt, ArrowUpDown } from "lucide-react"
 import { getChannels } from "@/lib/channels"
 
 const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
@@ -84,9 +84,15 @@ export default function Transactions() {
       <h1 className="text-xl md:text-2xl font-bold">交易管理</h1>
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-3 sm:inline-flex sm:w-auto">
-          <TabsTrigger value="form">单笔录入</TabsTrigger>
-          <TabsTrigger value="list">交易流水</TabsTrigger>
-          <TabsTrigger value="csv">CSV 导入/导出</TabsTrigger>
+          <TabsTrigger value="form" className="gap-1.5">
+            <Plus className="h-4 w-4" /> <span className="hidden sm:inline">单笔录入</span><span className="sm:hidden">录入</span>
+          </TabsTrigger>
+          <TabsTrigger value="list" className="gap-1.5">
+            <Receipt className="h-4 w-4" /> <span className="hidden sm:inline">交易流水</span><span className="sm:hidden">流水</span>
+          </TabsTrigger>
+          <TabsTrigger value="csv" className="gap-1.5">
+            <ArrowUpDown className="h-4 w-4" /> <span className="hidden sm:inline">CSV 导入/导出</span><span className="sm:hidden">CSV</span>
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="form">
           <TransactionForm
@@ -538,6 +544,19 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [sortField, setSortField] = useState("date")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+  const [searchQuery, setSearchQuery] = useState("")
+  const [actionFilter, setActionFilter] = useState("")
+  const [dateRange, setDateRange] = useState(() => localStorage.getItem("zfundpilot_tx_dateRange") || "30d")
+  const [customStart, setCustomStart] = useState(() => localStorage.getItem("zfundpilot_tx_customStart") || "")
+  const [customEnd, setCustomEnd] = useState(() => localStorage.getItem("zfundpilot_tx_customEnd") || "")
+  const [visibleCount, setVisibleCount] = useState(50)
+
+  // 持久化筛选范围
+  useEffect(() => { localStorage.setItem("zfundpilot_tx_dateRange", dateRange) }, [dateRange])
+  useEffect(() => { localStorage.setItem("zfundpilot_tx_customStart", customStart) }, [customStart])
+  useEffect(() => { localStorage.setItem("zfundpilot_tx_customEnd", customEnd) }, [customEnd])
+  // 切换筛选条件时重置分页
+  useEffect(() => { setVisibleCount(50) }, [searchQuery, actionFilter, dateRange, customStart, customEnd])
 
   // Load fund names
   useApi(() => api.getFunds(), []).data?.forEach((f: Fund) => {
@@ -553,9 +572,45 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
     }
   }
 
-  const sortedTxs = useMemo(() => {
+  const filteredTxs = useMemo(() => {
     if (!txs) return txs
-    return [...txs].sort((a, b) => {
+    const q = searchQuery.trim().toLowerCase()
+    let startDate = ""
+    let endDate = ""
+    if (dateRange !== "all") {
+      const today = new Date()
+      const todayStr = today.toISOString().slice(0, 10)
+      if (dateRange === "30d") {
+        const d = new Date(today)
+        d.setDate(d.getDate() - 30)
+        startDate = d.toISOString().slice(0, 10)
+        endDate = todayStr
+      } else if (dateRange === "month") {
+        startDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`
+        endDate = todayStr
+      } else if (dateRange === "year") {
+        startDate = `${today.getFullYear()}-01-01`
+        endDate = todayStr
+      } else if (dateRange === "custom") {
+        startDate = customStart
+        endDate = customEnd
+      }
+    }
+    return txs.filter((t) => {
+      if (q) {
+        const name = funds[t.fund_code]?.fund_name?.toLowerCase() ?? ""
+        if (!t.fund_code.toLowerCase().includes(q) && !name.includes(q)) return false
+      }
+      if (actionFilter && t.action !== actionFilter) return false
+      if (startDate && t.date < startDate) return false
+      if (endDate && t.date > endDate) return false
+      return true
+    })
+  }, [txs, searchQuery, actionFilter, dateRange, customStart, customEnd, funds])
+
+  const sortedTxs = useMemo(() => {
+    if (!filteredTxs) return filteredTxs
+    return [...filteredTxs].sort((a, b) => {
       const getVal = (t: Transaction): string | number => {
         if (sortField === "date") return t.date
         if (sortField === "fund_code") return t.fund_code
@@ -572,7 +627,12 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
         : (va as number) - (vb as number)
       return sortDir === "asc" ? cmp : -cmp
     })
-  }, [txs, sortField, sortDir])
+  }, [filteredTxs, sortField, sortDir])
+
+  const visibleTxs = useMemo(() => {
+    if (!sortedTxs) return sortedTxs
+    return sortedTxs.slice(0, visibleCount)
+  }, [sortedTxs, visibleCount])
 
   function SortHeader({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) {
     const active = sortField === field
@@ -623,8 +683,47 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
         </div>
       </CardHeader>
       <CardContent>
+        {/* 筛选工具栏 */}
+        {txs && txs.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜索代码/名称"
+                className="h-8 w-40 pl-7 text-xs"
+              />
+            </div>
+            <Select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className="h-8 text-xs w-28">
+              <option value="">全部操作</option>
+              <option value="buy">买入</option>
+              <option value="sell">卖出</option>
+              <option value="dividend">分红</option>
+              <option value="reinvest">再投资</option>
+            </Select>
+            <div className="flex items-center gap-1 ml-auto">
+              {([["month", "本月"], ["30d", "近30天"], ["year", "本年"], ["all", "全部"], ["custom", "自定义"]] as const).map(([key, label]) => (
+                <Button key={key} size="sm" variant={dateRange === key ? "default" : "outline"} className="h-8 text-xs px-2.5" onClick={() => setDateRange(key)}>
+                  {label}
+                </Button>
+              ))}
+            </div>
+            {dateRange === "custom" && (
+              <div className="flex items-center gap-1.5 w-full sm:w-auto">
+                <Input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="h-8 text-xs w-40" />
+                <span className="text-muted-foreground text-xs">至</span>
+                <Input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="h-8 text-xs w-40" />
+              </div>
+            )}
+          </div>
+        )}
+
         {!txs || txs.length === 0 ? (
           <p className="py-8 text-center text-muted-foreground">暂无交易流水</p>
+        ) : filteredTxs && filteredTxs.length === 0 ? (
+          <p className="py-8 text-center text-muted-foreground">当前筛选范围无交易记录</p>
         ) : (
 <Table>
               <TableHeader>
@@ -644,7 +743,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedTxs?.map((t) => {
+                {visibleTxs?.map((t) => {
                 const fund = funds[t.fund_code]
                 return (
                   <TableRow key={t.id}>
@@ -684,7 +783,18 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
             </TableBody>
           </Table>
         )}
-        {txs && txs.length > 0 && <p className="mt-3 text-sm text-muted-foreground">共 {txs.length} 笔交易</p>}
+        {txs && txs.length > 0 && (
+          <div className="mt-3 flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              共 {filteredTxs?.length ?? 0} 笔（筛选自 {txs.length} 笔）
+            </p>
+            {filteredTxs && filteredTxs.length > visibleCount && (
+              <Button variant="outline" size="sm" className="h-8" onClick={() => setVisibleCount((c) => c + 50)}>
+                加载更多
+              </Button>
+            )}
+          </div>
+        )}
       </CardContent>
 
       {/* 删除单条确认弹窗 */}

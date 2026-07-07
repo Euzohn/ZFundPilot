@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react"
 import { useSearchParams, useLocation, useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { Transaction, CSVParseResult, FundMeta, Fund } from "@/api/types"
+import type { Transaction, CSVParseResult, FundMeta, Fund, Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -131,6 +131,25 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   const [navNotFound, setNavNotFound] = useState(false)
 
   const isEditing = !!editingTx
+
+  // 持仓数据（用于卖出时校验 + 快捷填入）
+  const { data: positions } = useApi<Position[]>(() => api.getPositions(false), [])
+
+  // 当前基金+渠道的持有份额（编辑卖出时加回原份额）
+  const heldShares = useMemo(() => {
+    if (!positions || !code.trim() || action !== "sell") return 0
+    const effectiveChannel = customChannel.trim() || channel
+    const matching = positions.filter(p =>
+      p.fund_code === code.trim() &&
+      p.channel === effectiveChannel &&
+      p.is_open
+    )
+    let total = matching.reduce((s, p) => s + p.held_shares, 0)
+    if (isEditing && editingTx?.action === "sell" && editingTx.shares) {
+      total += editingTx.shares
+    }
+    return total
+  }, [positions, code, action, channel, customChannel, isEditing, editingTx])
 
   // 编辑模式：回填表单
   useEffect(() => {
@@ -273,6 +292,12 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
       return
     }
 
+    // 卖出不能超过持有份额
+    if (action === "sell" && heldShares > 0 && finalShares && finalShares > heldShares) {
+      toast.error(`卖出份额不能超过持有份额（${heldShares.toFixed(2)} 份）`)
+      return
+    }
+
     const payload = {
       fund_code: code.trim(), action, date,
       amount: finalAmount,
@@ -389,8 +414,18 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             {action === "sell" && (
               <>
                 <div>
-                  <Label className="mb-1.5 block text-xs text-muted-foreground">份额（份）</Label>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">
+                    份额（份）{heldShares > 0 && <span className="text-muted-foreground/70 ml-1">持有 {heldShares.toFixed(2)}</span>}
+                  </Label>
                   <Input type="number" step="0.01" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="0.00" className="h-9" autoFocus={!isEditing} />
+                  {heldShares > 0 && (
+                    <div className="mt-1.5 flex gap-1.5">
+                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.25).toFixed(2))}>1/4</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.5).toFixed(2))}>1/2</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.75).toFixed(2))}>3/4</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares(heldShares.toFixed(2))}>全部</Button>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">

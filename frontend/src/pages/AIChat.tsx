@@ -2,11 +2,11 @@ import { useState, useEffect, useRef } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { Transaction } from "@/api/types"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Bot, Send, Search, Plus, Check, X, Loader2, Trash2 } from "lucide-react"
+import { Bot, Send, Search, Plus, Check, X, Loader2, ChevronDown, Clock } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { toast } from "sonner"
@@ -26,21 +26,84 @@ const QUICK_PROMPTS = [
 
 const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
 
-const CHAT_STORAGE_KEY = "zfundpilot_chat_messages"
+const SESSIONS_KEY = "zfundpilot_chat_sessions"
+const LEGACY_KEY = "zfundpilot_chat_messages"
 
-interface PersistedChat {
+type TxState = Record<number, { state: "added"; id: number } | { state: "discarded" }>
+
+interface SessionMeta {
+  id: string
+  title: string
   messages: ChatMessage[]
-  txStatus: Record<number, { state: "added"; id: number } | { state: "discarded" }>
+  txStatus: TxState
+  updatedAt: string
 }
 
-function loadChat(): PersistedChat | null {
+interface PersistedSessions {
+  activeId: string
+  activeMessages: ChatMessage[]
+  activeTxStatus: TxState
+  archive: SessionMeta[]
+}
+
+function newId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n) + "…" : s
+}
+
+function deriveTitle(messages: ChatMessage[]): string {
+  const first = messages.find((m) => m.role === "user")
+  if (!first) return "新对话"
+  return truncate(first.content.replace(/\s+/g, " ").trim(), 24)
+}
+
+function formatRelativeTime(iso: string): string {
+  const t = new Date(iso).getTime()
+  if (isNaN(t)) return ""
+  const diff = Date.now() - t
+  const min = Math.floor(diff / 60000)
+  if (min < 1) return "刚刚"
+  if (min < 60) return `${min} 分钟前`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr} 小时前`
+  const day = Math.floor(hr / 24)
+  if (day === 1) return "昨天"
+  if (day < 30) return `${day} 天前`
+  const d = new Date(iso)
+  return `${d.getMonth() + 1} 月 ${d.getDate()} 日`
+}
+
+function loadSessions(): PersistedSessions {
+  const empty = (): PersistedSessions => ({ activeId: newId(), activeMessages: [], activeTxStatus: {}, archive: [] })
   try {
-    const raw = localStorage.getItem(CHAT_STORAGE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (parsed && Array.isArray(parsed.messages)) return parsed
-  } catch { /* corrupt or unavailable */ }
-  return null
+    const raw = localStorage.getItem(SESSIONS_KEY)
+    if (raw) {
+      const p = JSON.parse(raw)
+      if (p && Array.isArray(p.archive)) {
+        return {
+          activeId: p.activeId || newId(),
+          activeMessages: Array.isArray(p.activeMessages) ? p.activeMessages : [],
+          activeTxStatus: p.activeTxStatus ?? {},
+          archive: p.archive,
+        }
+      }
+    }
+  } catch { /* corrupt */ }
+  // 迁移旧的单对话键
+  try {
+    const legacy = localStorage.getItem(LEGACY_KEY)
+    if (legacy) {
+      const old = JSON.parse(legacy)
+      if (old && Array.isArray(old.messages) && old.messages.length > 0) {
+        try { localStorage.removeItem(LEGACY_KEY) } catch {}
+        return { activeId: newId(), activeMessages: old.messages, activeTxStatus: old.txStatus ?? {}, archive: [] }
+      }
+    }
+  } catch {}
+  return empty()
 }
 
 interface ExtractedTx {
@@ -84,22 +147,27 @@ function stripJsonBlock(content: string): string {
 }
 
 export default function AIChat() {
-  const [restored] = useState(loadChat)
-  const [messages, setMessages] = useState<ChatMessage[]>(() => restored?.messages ?? [])
+  const [restored] = useState(loadSessions)
+  const [archive, setArchive] = useState<SessionMeta[]>(() => restored.archive)
+  const [activeId, setActiveId] = useState(() => restored.activeId)
+  const [messages, setMessages] = useState<ChatMessage[]>(() => restored.activeMessages)
   const [input, setInput] = useState("")
   const [streaming, setStreaming] = useState(false)
   const [searching, setSearching] = useState(false)
   const { data: aiConfig } = useApi(() => api.getAIConfig(), [])
   const chatEndRef = useRef<HTMLDivElement>(null)
-  const [txStatus, setTxStatus] = useState<Record<number, { state: "added"; id: number } | { state: "discarded" }>>(() => restored?.txStatus ?? {})
+  const [txStatus, setTxStatus] = useState<TxState>(() => restored.activeTxStatus)
   const [adding, setAdding] = useState<number | null>(null)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
 
-  // 持久化对话记录到 localStorage，切页面/刷新后可恢复（含上下文）
+  // 持久化：当前会话 + 归档列表，切页面/刷新可恢复（含上下文）
   useEffect(() => {
     try {
-      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify({ messages, txStatus } as PersistedChat))
-    } catch { /* 配额满静默降级，不影响使用 */ }
-  }, [messages, txStatus])
+      localStorage.setItem(SESSIONS_KEY, JSON.stringify({
+        activeId, activeMessages: messages, activeTxStatus: txStatus, archive,
+      } as PersistedSessions))
+    } catch { /* 配额满静默降级 */ }
+  }, [messages, txStatus, activeId, archive])
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -187,12 +255,41 @@ export default function AIChat() {
     setTxStatus((prev) => ({ ...prev, [msgIndex]: { state: "discarded" } }))
   }
 
-  const handleClearChat = () => {
+  // 把当前会话归档（仅当有内容），返回新 archive
+  const archiveCurrent = (): SessionMeta[] => {
+    if (messages.length === 0) return archive
+    const session: SessionMeta = {
+      id: activeId,
+      title: deriveTitle(messages),
+      messages,
+      txStatus,
+      updatedAt: new Date().toISOString(),
+    }
+    return [session, ...archive]
+  }
+
+  const handleNewChat = () => {
+    setArchive(archiveCurrent())
+    setActiveId(newId())
     setMessages([])
     setTxStatus({})
     setInput("")
-    try { localStorage.removeItem(CHAT_STORAGE_KEY) } catch {}
-    toast.success("已清空对话")
+    setDropdownOpen(false)
+  }
+
+  const handleSwitchChat = (id: string) => {
+    const target = archive.find((s) => s.id === id)
+    if (!target) return
+    setArchive(archiveCurrent().filter((s) => s.id !== id))
+    setActiveId(target.id)
+    setMessages(target.messages)
+    setTxStatus(target.txStatus)
+    setInput("")
+    setDropdownOpen(false)
+  }
+
+  const handleDeleteArchived = (id: string) => {
+    setArchive((prev) => prev.filter((s) => s.id !== id))
   }
 
   const configured = aiConfig?.base_url && aiConfig?.model
@@ -201,21 +298,71 @@ export default function AIChat() {
     <div className="flex flex-col h-[62vh] md:h-[calc(100vh-8rem)]">
       <h1 className="text-xl md:text-2xl font-bold mb-4">AI 助手</h1>
       <Card className="flex flex-col flex-1 min-h-0">
-        <CardHeader className="pb-3 flex-row items-start justify-between gap-2">
-          <div className="space-y-1">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Bot className="h-5 w-5 text-blue-500" />
-              AI 投顾对话
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
+        <CardHeader className="pb-3 flex-row items-center justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <Bot className="h-5 w-5 text-blue-500 shrink-0" />
+              {archive.length > 0 ? (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setDropdownOpen((o) => !o)}
+                    className="flex items-center gap-1 text-base font-bold hover:text-blue-600 transition-colors"
+                  >
+                    <span className="truncate max-w-[140px] sm:max-w-[220px]">{deriveTitle(messages)}</span>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
+                  </button>
+                  {dropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
+                      <div className="absolute left-0 top-full mt-1 z-50 w-72 max-w-[80vw] rounded-lg border bg-white shadow-lg">
+                        <div className="flex items-center gap-2 px-3 py-2 border-b">
+                          <span className="h-2 w-2 rounded-full bg-blue-500 shrink-0" />
+                          <span className="text-sm font-medium truncate flex-1">{deriveTitle(messages)}</span>
+                          <span className="text-[11px] text-muted-foreground shrink-0">当前</span>
+                        </div>
+                        {archive.length === 0 ? (
+                          <p className="px-3 py-3 text-center text-xs text-muted-foreground">暂无历史对话</p>
+                        ) : (
+                          <div className="max-h-64 overflow-y-auto py-1">
+                            {archive.map((s) => (
+                              <div
+                                key={s.id}
+                                className="group flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer"
+                                onClick={() => handleSwitchChat(s.id)}
+                              >
+                                <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm truncate">{s.title}</p>
+                                  <p className="text-[11px] text-muted-foreground">{formatRelativeTime(s.updatedAt)}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteArchived(s.id) }}
+                                  className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
+                                  title="删除此对话"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <span className="text-base font-bold truncate">{deriveTitle(messages)}</span>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
               基于实时资讯 + 当前持仓数据，给出风险分析与调仓建议；也可描述交易让 AI 帮你录入
             </p>
           </div>
-          {messages.length > 0 && (
-            <Button variant="ghost" size="sm" className="h-7 shrink-0 text-muted-foreground hover:text-red-500" onClick={handleClearChat} disabled={streaming} title="清空当前对话">
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          )}
+          <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={handleNewChat} disabled={streaming} title="开始新对话">
+            <Plus className="h-3.5 w-3.5 mr-1" /> 新对话
+          </Button>
         </CardHeader>
         <CardContent className="flex flex-col flex-1 min-h-0 gap-3">
           {!configured ? (

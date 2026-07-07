@@ -1,8 +1,26 @@
+<div align="center">
+
+<img src="frontend/public/favicon.svg" width="120" alt="ZFundPilot Logo">
+
 # ZFundPilot
 
-个人基金分析与风险管理系统。本地运行，自动更新净值、计算收益与风险、给出组合结构优化建议。
+**个人基金分析与风险管理系统**
+
+本地运行 · 自动更新净值 · 计算收益与风险 · 组合结构优化建议
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![React + Vite](https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61DAFB.svg?logo=react&logoColor=white)](https://react.dev/)
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Last Commit](https://img.shields.io/github/last-commit/Euzohn/ZFundPilot)](https://github.com/Euzohn/ZFundPilot/commits)
+
+</div>
 
 > ⚠️ 仅用于数据分析与风险管理，不做自动交易、不预测涨跌、不构成任何投资建议。
+>
+> 🚧 本项目处于活跃开发阶段。功能可能会发生变化，某些功能也可能会失效。如果您遇到问题或有好的想法，请[提交 Issue](https://github.com/Euzohn/ZFundPilot/issues)。欢迎贡献代码！
+
+---
 
 ## 功能
 

@@ -356,7 +356,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     const manualShares = parseFloat(shares) || null
     const finalShares = action === "buy" ? (manualShares || parseFloat(autoShares) || null) : (manualShares || null)
     const finalAmount = action === "sell" || action === "reinvest"
-      ? (parseFloat(autoAmount) || parseFloat(amount) || null)
+      ? (parseFloat(amount) || parseFloat(autoAmount) || null)
       : (parseFloat(amount) || null)
     const finalNav = action === "dividend" ? null : (parseFloat(nav) || null)
 
@@ -483,9 +483,9 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
-                    份额 <span className="text-blue-500">可修改</span>
+                    金额 <span className="text-blue-500">可修改</span>
                   </Label>
-                  <Input type="number" step="0.01" value={shares || autoShares} onChange={(e) => setShares(e.target.value)} className="h-9" placeholder={autoShares || "—"} />
+                  <Input type="number" step="0.01" value={amount || autoAmount} onChange={(e) => setAmount(e.target.value)} className="h-9" placeholder={autoAmount || "—"} />
                 </div>
               </>
             )}

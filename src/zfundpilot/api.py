@@ -443,7 +443,9 @@ def calc_fund_fee(code: str, action: str = "buy",
 # ---------------------------------------------------------------------------
 @app.post("/api/nav/update")
 def update_nav() -> list[dict[str, Any]]:
-    results = fetch_fund.update_all_holdings_nav()
+    positions = analysis.calculate_positions()
+    codes = [p.fund_code for p in positions if p.is_open]
+    results = fetch_fund.update_all_holdings_nav(codes=codes)
     _backfill_transaction_navs()
     return [r.__dict__ for r in results]
 

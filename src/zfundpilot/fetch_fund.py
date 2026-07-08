@@ -542,18 +542,21 @@ def update_fund_nav(fund_code: str) -> FetchResult:
 
 def update_all_holdings_nav(
     progress: Callable[[int, int, str], None] | None = None,
+    codes: list[str] | None = None,
 ) -> list[FetchResult]:
-    """更新所有基金的净值（从 funds 表取，不依赖 transactions）。
+    """更新基金净值。
 
+    codes: 指定基金代码列表（如当前持仓中的基金）。None 则取 funds 表全部。
     progress: 可选回调 (当前序号, 总数, 基金代码)，供 UI 显示进度。
     """
-    funds = db.get_funds()
+    if codes is None:
+        codes = [f.fund_code for f in db.get_funds()]
     results: list[FetchResult] = []
-    total = len(funds)
-    for i, f in enumerate(funds, start=1):
+    total = len(codes)
+    for i, code in enumerate(codes, start=1):
         if progress:
-            progress(i, total, f.fund_code)
-        results.append(update_fund_nav(f.fund_code))
+            progress(i, total, code)
+        results.append(update_fund_nav(code))
         time.sleep(0.3)  # 轻微限速，避免被数据源限流
     return results
 

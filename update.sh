@@ -33,7 +33,9 @@ echo ""
 
 # 5. 构建并重启
 echo "🔨 构建并启动容器..."
-docker compose up -d --build
+docker compose build --no-cache
+docker compose up -d
+docker image prune -f
 echo ""
 
 # 6. 检查状态

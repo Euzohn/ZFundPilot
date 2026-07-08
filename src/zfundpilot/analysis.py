@@ -79,14 +79,14 @@ def _build_positions_from_transactions(
         if tx.action == ACTION_BUY:
             if tx.shares:
                 pos.held_shares += tx.shares
-            pos.total_cost += tx.amount + (tx.fee or 0.0)
+            pos.total_cost += tx.amount
             pos.buy_count += 1
         elif tx.action == ACTION_SELL:
             # 结转成本按当前均价
             avg = (pos.total_cost / pos.held_shares) if pos.held_shares > 1e-9 else 0.0
             sell_shares = min(tx.shares, pos.held_shares)  # 防止卖超
             cost_out = sell_shares * avg
-            pos.realized_pnl += tx.amount - cost_out - (tx.fee or 0.0)
+            pos.realized_pnl += tx.amount - cost_out
             pos.held_shares -= sell_shares
             pos.total_cost -= cost_out
             pos.sell_count += 1

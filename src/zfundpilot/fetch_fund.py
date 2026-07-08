@@ -683,10 +683,28 @@ def _parse_amount_range(text: str) -> tuple[float, float | None]:
 
 
 def _parse_holding_period(text: str) -> tuple[int, int | None]:
-    """解析持有期限如 '小于7天' → (0, 6)，'大于等于7天' → (7, None)。"""
+    """解析持有期限如 '小于7天' → (0, 6)，'大于等于7天' → (7, None)，
+    '大于等于7天，小于等于29天' → (7, 29)。"""
     text = text.strip()
 
-    # "小于X天"
+    # "大于等于X天,小于(等于)Y天" (必须在前，防止'小于'先匹配到后半段)
+    # group1=min天数, group2="等于"或None, group3=max天数
+    m = re.search(r"大于等于\s*([\d.]+)\s*天.*?小于(等于)?\s*([\d.]+)\s*天", text)
+    if m:
+        min_val = int(float(m.group(1)))
+        inclusive = m.group(2) == "等于"
+        max_val = int(float(m.group(3)))
+        return (min_val, max_val if inclusive else max_val - 1)
+
+    # "大于等于X年,小于(等于)Y年"
+    m = re.search(r"大于等于\s*([\d.]+)\s*年.*?小于(等于)?\s*([\d.]+)\s*年", text)
+    if m:
+        min_val = int(float(m.group(1))) * 365
+        inclusive = m.group(2) == "等于"
+        max_val = int(float(m.group(3))) * 365
+        return (min_val, max_val if inclusive else max_val - 1)
+
+    # "小于X天" (单独)
     m = re.search(r"小于\s*([\d.]+)\s*天", text)
     if m:
         return (0, int(float(m.group(1))) - 1)
@@ -696,16 +714,6 @@ def _parse_holding_period(text: str) -> tuple[int, int | None]:
     if m:
         return (int(float(m.group(1))), None)
 
-    # "大于等于X天,小于Y天" 或 "大于等于X天，小于Y天"
-    m = re.search(r"大于等于\s*([\d.]+)\s*天.*?小于\s*([\d.]+)\s*天", text)
-    if m:
-        return (int(float(m.group(1))), int(float(m.group(2))) - 1)
-
-    # "大于等于X年,小于Y年" 或 "大于等于X年，小于Y年"
-    m = re.search(r"大于等于\s*([\d.]+)\s*年.*?小于\s*([\d.]+)\s*年", text)
-    if m:
-        return (int(float(m.group(1))) * 365, int(float(m.group(2))) * 365 - 1)
-
     # "大于等于X年" (单独)
     m = re.search(r"大于等于\s*([\d.]+)\s*年$", text)
     if m:
@@ -714,45 +722,139 @@ def _parse_holding_period(text: str) -> tuple[int, int | None]:
     return (0, None)
 
 
-def _fetch_fee_rates_from_akshare(fund_code: str) -> FeeRates:
-    """从 AkShare 获取基金费率。失败抛异常。"""
-    import akshare as ak
-
+def _fetch_fee_rates_from_html(fund_code: str) -> FeeRates:
+    """直接抓取天天基金费率页面 HTML 解析。比 AkShare 更可靠。"""
     result = FeeRates(fund_code=fund_code, ok=True, message="成功")
 
-    # 申购费率（前端）
-    try:
-        df_p = ak.fund_fee_em(symbol=fund_code, indicator="申购费率（前端）")
-        if df_p is not None and not df_p.empty:
-            result.purchase = _parse_purchase_tiers(df_p)
-    except Exception:
-        result.purchase = []
+    url = f"https://fundf10.eastmoney.com/jjfl_{fund_code}.html"
+    html = _http_get(url)
 
-    # 赎回费率
-    try:
-        df_r = ak.fund_fee_em(symbol=fund_code, indicator="赎回费率")
-        if df_r is not None and not df_r.empty:
-            result.redemption = _parse_redemption_tiers(df_r)
-    except Exception:
-        result.redemption = []
+    # 解析申购费率表
+    purchase_rows = _extract_fee_table_rows(html, "申购费率")
+    if purchase_rows:
+        result.purchase = _parse_purchase_rows(purchase_rows)
 
-    # 运作费用
-    try:
-        df_op = ak.fund_fee_em(symbol=fund_code, indicator="运作费用")
-        if df_op is not None and not df_op.empty:
-            for _, row in df_op.iterrows():
-                for col in df_op.columns:
-                    val = str(row[col])
-                    if "管理" in str(col) and "%" in val:
-                        result.management_fee = _parse_pct(val)
-                    elif "托管" in str(col) and "%" in val:
-                        result.custodian_fee = _parse_pct(val)
-                    elif "销售" in str(col) and "%" in val:
-                        result.sales_fee = _parse_pct(val)
-    except Exception:
-        pass
+    # 解析赎回费率表
+    redemption_rows = _extract_fee_table_rows(html, "赎回费率")
+    if redemption_rows:
+        result.redemption = _parse_redemption_rows(redemption_rows)
+
+    # 解析运作费用
+    op_rows = _extract_fee_table_rows(html, "运作费用")
+    if op_rows:
+        for row in op_rows:
+            label = row[0] if len(row) > 0 else ""
+            val = row[1] if len(row) > 1 else ""
+            if "管理" in label and "%" in val:
+                result.management_fee = _parse_pct(val)
+            elif "托管" in label and "%" in val:
+                result.custodian_fee = _parse_pct(val)
+            elif "销售" in label and "%" in val:
+                result.sales_fee = _parse_pct(val)
 
     return result
+
+
+def _extract_fee_table_rows(html: str, section_title: str) -> list[list[str]]:
+    """从 HTML 中提取指定费率区块的表格行数据。"""
+    # 找到 <h4> 或 <label> 中包含 section_title 的位置
+    idx = html.find(section_title)
+    if idx < 0:
+        return []
+
+    # 从该位置往后找第一个 <table>
+    table_start = html.find("<table", idx)
+    if table_start < 0:
+        return []
+    table_end = html.find("</table>", table_start)
+    if table_end < 0:
+        return []
+    table_html = html[table_start:table_end]
+
+    # 提取所有 <tr>
+    tr_pattern = re.compile(r"<tr[^>]*>(.*?)</tr>", re.DOTALL)
+    td_pattern = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.DOTALL)
+
+    rows: list[list[str]] = []
+    for tr_match in tr_pattern.finditer(table_html):
+        row_html = tr_match.group(1)
+        cells = []
+        for td_match in td_pattern.finditer(row_html):
+            cell_text = td_match.group(1)
+            # 清理 HTML 标签和实体
+            cell_text = re.sub(r"<[^>]+>", "", cell_text)
+            cell_text = cell_text.replace("&nbsp;", " ").replace("&amp;", "&")
+            cell_text = re.sub(r"\s+", " ", cell_text).strip()
+            cells.append(cell_text)
+        if cells:
+            rows.append(cells)
+    return rows
+
+
+def _parse_purchase_rows(rows: list[list[str]]) -> list[PurchaseTier]:
+    """解析申购费率表格行 → PurchaseTier 列表。"""
+    if not rows:
+        return []
+
+    # 找数据列（跳过表头行）
+    tiers: list[PurchaseTier] = []
+    for row in rows:
+        if len(row) < 2:
+            continue
+        amount_text = row[0]
+        rate_text = row[1]
+
+        # 跳过表头
+        if "适用金额" in amount_text or "金额" == amount_text.strip():
+            continue
+
+        tier = PurchaseTier(label=amount_text)
+        min_a, max_a = _parse_amount_range(amount_text)
+        tier.min_amount = min_a
+        tier.max_amount = max_a
+
+        # 处理 "原费率 | 优惠费率" 格式，取优惠费率
+        if "|" in rate_text:
+            parts = [p.strip() for p in rate_text.split("|")]
+            if len(parts) >= 2:
+                rate_text = parts[1]
+
+        # 固定费用
+        fixed = _parse_fixed_fee(rate_text)
+        if fixed is not None:
+            tier.is_fixed = True
+            tier.fixed_fee = fixed
+            tier.rate = 0
+        else:
+            tier.rate = _parse_pct(rate_text)
+
+        tiers.append(tier)
+    return tiers
+
+
+def _parse_redemption_rows(rows: list[list[str]]) -> list[RedemptionTier]:
+    """解析赎回费率表格行 → RedemptionTier 列表。"""
+    if not rows:
+        return []
+
+    tiers: list[RedemptionTier] = []
+    for row in rows:
+        if len(row) < 2:
+            continue
+        period_text = row[0]
+        rate_text = row[1]
+
+        # 跳过表头
+        if "适用期限" in period_text or "期限" == period_text.strip():
+            continue
+
+        min_d, max_d = _parse_holding_period(period_text)
+        tier = RedemptionTier(min_days=min_d, max_days=max_d, rate=_parse_pct(rate_text))
+        tiers.append(tier)
+
+    # 按最小天数排序
+    tiers.sort(key=lambda t: t.min_days)
+    return tiers
 
 
 def _parse_purchase_tiers(df) -> list[PurchaseTier]:
@@ -840,7 +942,7 @@ def fetch_fund_fee_rates(fund_code: str) -> FeeRates:
         return cached["data"]
 
     try:
-        rates = _fetch_fee_rates_from_akshare(fund_code)
+        rates = _fetch_fee_rates_from_html(fund_code)
     except Exception as exc:
         rates = FeeRates(fund_code=fund_code, ok=False, message=str(exc))
 

@@ -22,25 +22,33 @@ fi
 echo "📌 当前版本：$(git log --oneline -1)"
 echo ""
 
-# 3. 拉取最新代码
+# 3. 记录拉取前的 HEAD
+BEFORE=$(git rev-parse HEAD)
+
+# 4. 拉取最新代码
 echo "📥 拉取最新代码..."
 git pull
 echo ""
 
-# 4. 显示更新后的版本
-echo "📌 更新后版本：$(git log --oneline -1)"
-echo ""
+# 5. 判断 HEAD 是否变化
+AFTER=$(git rev-parse HEAD)
 
-# 5. 构建并重启
-echo "🔨 构建并启动容器..."
-docker compose up -d --build
-docker image prune -f
-docker builder prune -f
+if [ "$BEFORE" = "$AFTER" ]; then
+  echo "✅ 已是最新，无需构建，仅确保容器运行"
+  docker compose up -d
+else
+  echo "📌 更新后版本：$(git log --oneline -1)"
+  echo ""
+  echo "🔨 检测到更新，构建并启动容器..."
+  docker compose up -d --build
+  docker image prune -f
+  docker builder prune -f
+fi
 echo ""
 
 # 6. 检查状态
 if [ "$(docker compose ps --status running -q | wc -l)" -gt 0 ]; then
-  echo "✅ 更新完成！容器运行中"
+  echo "✅ 容器运行中"
   echo ""
   docker compose ps
 else

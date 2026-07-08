@@ -25,7 +25,7 @@ function detectProvider(baseUrl: string): string {
   if (url.includes("moonshot") || url.includes("kimi")) return "Kimi (月之暗面)"
   if (url.includes("bigmodel") || url.includes("zhipu") || url.includes("glm")) return "智谱 GLM"
   if (url.includes("dashscope") || url.includes("aliyun") || url.includes("aliyuncs") || url.includes("maas")) return "通义千问 (百炼)"
-  if (url.includes("deepseek")) return "DeepSeek（不支持联网搜索）"
+  if (url.includes("deepseek")) return "DeepSeek"
   return "通用 OpenAI 兼容"
 }
 

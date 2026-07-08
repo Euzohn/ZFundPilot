@@ -151,7 +151,12 @@ def _build_tools(provider: str) -> tuple[list | None, dict[str, Any]]:
             "enable_search": True,
             "search_options": {"forced_search": True},
         }
-    # deepseek / default / none: 不启用联网搜索
+    if provider == "deepseek":
+        return (
+            [{"type": "web_search"}],
+            {},
+        )
+    # default / none: 不启用联网搜索
     return None, {}
 
 
@@ -219,7 +224,7 @@ def build_system_prompt() -> str:
     """构建当前配置下的系统提示（含持仓快照 + 搜索能力判断）。供 API 端点调用。"""
     context = build_portfolio_context()
     provider = detect_provider(config.AI_BASE_URL) if config.AI_WEB_SEARCH else "none"
-    has_search = provider in ("kimi", "zhipu", "qwen")
+    has_search = provider in ("kimi", "zhipu", "qwen", "deepseek")
     return _build_system_prompt(context, has_search)
 
 
@@ -242,7 +247,7 @@ def test_connection() -> dict:
         resp = httpx.post(url, headers=headers, json=body, timeout=15)
         if resp.status_code == 200:
             provider = detect_provider(config.AI_BASE_URL)
-            has_search = config.AI_WEB_SEARCH and provider in ("kimi", "zhipu", "qwen")
+            has_search = config.AI_WEB_SEARCH and provider in ("kimi", "zhipu", "qwen", "deepseek")
             return {"ok": True, "provider": provider, "model": config.AI_MODEL, "has_search": has_search}
         return {"ok": False, "error": f"API 返回 {resp.status_code}: {resp.text[:300]}"}
     except httpx.ConnectError as e:
@@ -303,7 +308,7 @@ async def chat_stream(
 
     provider = detect_provider(config.AI_BASE_URL) if config.AI_WEB_SEARCH else "none"
     tools, extra_params = _build_tools(provider)
-    has_search = provider in ("kimi", "zhipu", "qwen")
+    has_search = provider in ("kimi", "zhipu", "qwen", "deepseek")
 
     # 若前端已携带 system 消息（新对话首条已取过），直接用；否则构建并前置（向后兼容）
     has_system = any(m.get("role") == "system" for m in messages)

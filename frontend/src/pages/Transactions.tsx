@@ -483,9 +483,9 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
-                    金额 <span className="text-blue-500">可修改</span>
+                    份额 <span className="text-blue-500">可修改</span>
                   </Label>
-                  <Input type="number" step="0.01" value={amount || autoAmount} onChange={(e) => setAmount(e.target.value)} className="h-9" placeholder={autoAmount || "—"} />
+                  <Input type="number" step="0.01" value={shares || autoShares} onChange={(e) => setShares(e.target.value)} className="h-9" placeholder={autoShares || "—"} />
                 </div>
               </>
             )}
@@ -507,9 +507,9 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
-                    金额 <span className="text-blue-500">自动</span>
+                    金额 <span className="text-blue-500">可修改</span>
                   </Label>
-                  <Input type="number" step="0.01" value={autoAmount} readOnly className="h-9 bg-muted/50" placeholder="—" />
+                  <Input type="number" step="0.01" value={amount || autoAmount} onChange={(e) => setAmount(e.target.value)} className="h-9" placeholder={autoAmount || "—"} />
                 </div>
               </>
             )}

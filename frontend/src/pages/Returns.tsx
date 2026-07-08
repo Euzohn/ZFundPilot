@@ -58,7 +58,8 @@ export default function Returns() {
     if (!curve || curve.length < 2) return []
     const data: { date: string; pnl: number }[] = []
     for (let i = 1; i < curve.length; i++) {
-      const diff = curve[i].total_value - curve[i - 1].total_value
+      const diff = (curve[i].total_value - curve[i - 1].total_value)
+                 - (curve[i].invested_cost - curve[i - 1].invested_cost)
       data.push({ date: curve[i].date, pnl: Math.round(diff * 100) / 100 })
     }
     return data

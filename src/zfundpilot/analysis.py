@@ -219,21 +219,24 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
     summary.daily_pnl = round(daily_pnl, 2)
     summary.daily_return = (daily_pnl / prev_value) if prev_value > 0 else 0.0
 
-    # 周/月/年收益 = 从 curve 找起点 total_value，与当前市值对比
+    # 周/月/年收益 = (Δ市值 - Δ投入成本)，扣除期间资金流入流出
     try:
         import datetime as dt
         curve = build_portfolio_curve()
         if len(curve) >= 2 and summary.total_value > 0:
             dates = curve["date"].tolist()
             values = curve["total_value"].tolist()
+            costs = curve["invested_cost"].tolist()
 
-            def _find_start(target_date: str) -> float | None:
-                """找曲线中 <= target_date 的最近一个点的 total_value。"""
+            def _find_start_idx(target_date: str) -> int | None:
+                """找曲线中 <= target_date 的最近一个点的索引。"""
                 for i in range(len(dates) - 1, -1, -1):
                     if dates[i] <= target_date:
-                        return float(values[i])
+                        return i
                 return None
 
+            end_val = values[-1]
+            end_cost = costs[-1]
             today = dt.date.today()
             week_start = (today - dt.timedelta(days=today.weekday() + 7)).isoformat()
             month_start = today.replace(day=1).isoformat()
@@ -244,11 +247,14 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
                 (month_start, "month_pnl", "month_return"),
                 (year_start, "year_pnl", "year_return"),
             ]:
-                start_val = _find_start(start_date)
-                if start_val and start_val > 0:
-                    pnl = summary.total_value - start_val
-                    setattr(summary, pnl_attr, round(pnl, 2))
-                    setattr(summary, ret_attr, pnl / start_val)
+                idx = _find_start_idx(start_date)
+                if idx is not None:
+                    start_val = values[idx]
+                    start_cost = costs[idx]
+                    if start_val > 0:
+                        pnl = (end_val - start_val) - (end_cost - start_cost)
+                        setattr(summary, pnl_attr, round(pnl, 2))
+                        setattr(summary, ret_attr, pnl / start_val)
     except Exception:  # noqa: BLE001
         pass
 

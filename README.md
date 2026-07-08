@@ -1,5 +1,7 @@
 <div align="center">
 
+> 🌐 **简体中文** | [English](README_EN.md)
+
 <img src="frontend/public/favicon.svg" width="120" alt="ZFundPilot Logo">
 
 # ZFundPilot

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { getChannels, getChannelsAsync, saveChannels, getDefaultChannels } from "@/lib/channels"
+import { getChannelColors, getChannelColorsAsync, saveChannelColors, getDefaultChannelColors, getPalette } from "@/lib/channelColors"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import { clearToken } from "@/lib/auth"
@@ -17,7 +18,7 @@ import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
   SlidersHorizontal, LogOut, Loader2, CheckCircle2, XCircle, Zap,
-  Search, X,
+  Search, X, Palette,
 } from "lucide-react"
 
 function detectProvider(baseUrl: string): string {
@@ -80,10 +81,14 @@ export default function Settings() {
   // Channels
   const [channels, setChannels] = useState<string[]>(() => getChannels())
   const [newChannel, setNewChannel] = useState("")
+  // Channel colors
+  const [channelColors, setChannelColors] = useState<Record<string, string>>(() => getChannelColors())
+  const palette = getPalette()
 
   // 页面加载时尝试从服务端同步渠道设置
   useEffect(() => {
     getChannelsAsync().then(setChannels).catch(() => {})
+    getChannelColorsAsync().then(setChannelColors).catch(() => {})
   }, [])
 
   // Auth
@@ -149,6 +154,19 @@ export default function Settings() {
     const defaults = getDefaultChannels()
     setChannels(defaults); await saveChannels(defaults)
     toast.success("已恢复默认渠道顺序")
+  }
+
+  // --- Channel colors ---
+  const handleColorChange = async (channel: string, color: string) => {
+    const next = { ...channelColors, [channel]: color }
+    setChannelColors(next)
+    await saveChannelColors(next)
+  }
+  const handleColorsReset = async () => {
+    const defaults = getDefaultChannelColors()
+    setChannelColors(defaults)
+    await saveChannelColors(defaults)
+    toast.success("已恢复默认渠道颜色")
   }
 
   // --- Password ---
@@ -538,6 +556,36 @@ export default function Settings() {
                   <Button variant="outline" size="sm" onClick={handleReset} className="h-8 shrink-0">
                     <RotateCcw className="mr-1 h-3.5 w-3.5" /> 恢复默认
                   </Button>
+                </div>
+              </div>
+
+              {/* 渠道颜色 */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Palette className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-sm font-medium">渠道颜色</p>
+                  <span className="text-xs text-muted-foreground">收益波动堆叠柱状图中各渠道的展示颜色</span>
+                  <Button variant="ghost" size="sm" onClick={handleColorsReset} className="h-6 px-2 text-xs ml-auto shrink-0">
+                    <RotateCcw className="mr-1 h-3 w-3" /> 恢复默认
+                  </Button>
+                </div>
+                <div className="space-y-1">
+                  {channels.map((ch) => (
+                    <div key={ch} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-white px-3 py-2">
+                      <span className="flex-1 text-sm font-medium">{ch}</span>
+                      <div className="flex items-center gap-1">
+                        {palette.map(color => (
+                          <button key={color} onClick={() => handleColorChange(ch, color)}
+                            className={cn("h-5 w-5 rounded-full border-2 transition-transform hover:scale-110",
+                              channelColors[ch] === color ? "border-slate-400" : "border-transparent")}
+                            style={{ background: color }} />
+                        ))}
+                      </div>
+                      <input type="color" value={channelColors[ch] ?? "#3b82f6"}
+                        onChange={(e) => handleColorChange(ch, e.target.value)}
+                        className="h-6 w-6 rounded cursor-pointer border border-slate-200" />
+                    </div>
+                  ))}
                 </div>
               </div>
 

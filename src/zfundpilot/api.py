@@ -630,6 +630,7 @@ def _ensure_fund_exists(code: str, name: str = "", ftype: str = "其它",
 
 class PreferencesBody(BaseModel):
     channels: str = ""
+    channel_colors: str = ""
 
 
 class KeywordMapsBody(BaseModel):
@@ -659,8 +660,11 @@ def get_preferences() -> dict[str, str]:
 
 @app.put("/api/preferences")
 def save_preferences(body: PreferencesBody) -> dict[str, bool]:
-    """保存偏好设置。目前仅同步购买渠道。"""
-    db.upsert_preference("channels", body.channels)
+    """保存偏好设置（购买渠道 + 渠道颜色）。空值不覆盖。"""
+    if body.channels:
+        db.upsert_preference("channels", body.channels)
+    if body.channel_colors:
+        db.upsert_preference("channel_colors", body.channel_colors)
     return {"ok": True}
 
 

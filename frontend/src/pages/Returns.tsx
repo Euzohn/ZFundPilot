@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { PortfolioSummary, CurvePoint, ChannelPnLPoint, Position } from "@/api/types"
@@ -11,8 +11,9 @@ import { cn } from "@/lib/utils"
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart, Cell, ReferenceLine } from "recharts"
 import PnLCalendar from "@/components/PnLCalendar"
 import { ChevronUp, ChevronDown, BarChart3, CalendarDays } from "lucide-react"
+import { getChannelColors, getChannelColorsAsync, getPalette } from "@/lib/channelColors"
 
-const CHANNEL_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f43f5e", "#84cc16"]
+const PALETTE = getPalette()
 const CURVE_RANGE_DAYS: Record<string, number> = { "1m": 30, "3m": 90, "6m": 180, "1y": 365 }
 const CURVE_RANGE_LABELS: Record<string, string> = { "1m": "1月", "3m": "3月", "6m": "6月", "1y": "1年", "all": "全部" }
 
@@ -48,6 +49,11 @@ export default function Returns() {
   const [pnlDays, setPnlDays] = useState(30)
   const [chartView, setChartView] = useState<"bar" | "calendar">("bar")
   const [curveRange, setCurveRange] = useState<"1m" | "3m" | "6m" | "1y" | "all">("1y")
+  const [channelColors, setChannelColors] = useState<Record<string, string>>(() => getChannelColors())
+
+  useEffect(() => {
+    getChannelColorsAsync().then(setChannelColors).catch(() => {})
+  }, [])
 
   const openPositions = positions?.filter((p) => p.is_open) ?? []
 
@@ -267,7 +273,7 @@ export default function Returns() {
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <ReferenceLine y={0} stroke="#cbd5e1" />
                   {channels.map((ch, i) => (
-                    <Bar key={ch} dataKey={ch} stackId="a" fill={CHANNEL_COLORS[i % CHANNEL_COLORS.length]} radius={i === channels.length - 1 ? [3, 3, 0, 0] : undefined} />
+                    <Bar key={ch} dataKey={ch} stackId="a" fill={channelColors[ch] ?? PALETTE[i % PALETTE.length]} radius={i === channels.length - 1 ? [3, 3, 0, 0] : undefined} />
                   ))}
                 </BarChart>
               </ResponsiveContainer>

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { money, pct, signedMoney, navStr, pnlColor } from "@/lib/format"
 import { toast } from "sonner"
 import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
+import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
 
 const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
 
@@ -31,6 +31,7 @@ export default function FundDetail() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const [navRange, setNavRange] = useState<"1m" | "3m" | "6m" | "1y" | "hold">("1y")
 
   const { data: fund, loading: fundLoading } = useApi<Fund>(() => api.getFund(code!), [code])
   const { data: positions } = useApi<Position[]>(() => api.getPositions(true), [])
@@ -79,13 +80,63 @@ const handleDelete = async (txId: number) => {
     } catch (e) { toast.error(`删除失败: ${e}`) }
   }
 
-  // 净值图表数据（最近 180 天），带上交易标记
-  const chartData = navHistory
-    ? [...navHistory]
-        .sort((a, b) => a.date.localeCompare(b.date))
-        .slice(-180)
-        .map(d => ({ ...d, _tx: txMap[d.date] || null }))
-    : []
+  // 净值图表数据：时间区间过滤 + 每日收益计算
+  const RANGE_DAYS: Record<string, number> = { "1m": 30, "3m": 90, "6m": 180, "1y": 365 }
+  const RANGE_LABELS: Record<string, string> = { "1m": "1月", "3m": "3月", "6m": "6月", "1y": "1年", "hold": "持仓至今" }
+
+  const chartData = useMemo(() => {
+    if (!navHistory?.length) return []
+    const sorted = [...navHistory].sort((a, b) => a.date.localeCompare(b.date))
+
+    // 时间区间过滤
+    let cutoff: string | null = null
+    if (navRange === "hold") {
+      // 从第一笔交易日期开始
+      if (txs?.length) {
+        cutoff = [...txs].map(t => t.date).sort()[0]
+      }
+    } else {
+      const days = RANGE_DAYS[navRange]
+      const d = new Date()
+      d.setDate(d.getDate() - days)
+      cutoff = d.toISOString().slice(0, 10)
+    }
+    const filtered = cutoff ? sorted.filter(d => d.date >= cutoff) : sorted
+
+    // 从全部交易计算每日累计份额（不受时间区间限制）
+    const sortedTxs = txs ? [...txs].sort((a, b) => a.date.localeCompare(b.date)) : []
+    let cumShares = 0
+    const cumByDate: { date: string; shares: number }[] = []
+    for (const t of sortedTxs) {
+      if (t.action === "buy" || t.action === "reinvest") {
+        cumShares += t.shares || 0
+      } else if (t.action === "sell") {
+        cumShares -= t.shares || 0
+      }
+      cumByDate.push({ date: t.date, shares: cumShares })
+    }
+
+    // 二分查找：日期 < target 时的累计份额
+    function sharesBefore(target: string): number {
+      let result = 0
+      for (const c of cumByDate) {
+        if (c.date < target) result = c.shares
+        else break
+      }
+      return result
+    }
+
+    // 计算每日收益：pnl = (nav[t] - nav[t-1]) * 日期 < t 的累计份额
+    return filtered.map((d, i) => {
+      const prevNav = i > 0 ? filtered[i - 1].nav : null
+      let pnl = 0
+      if (prevNav != null) {
+        const shares = sharesBefore(d.date)
+        pnl = Math.round((d.nav - prevNav) * shares * 100) / 100
+      }
+      return { ...d, pnl, _tx: txMap[d.date] || null }
+    })
+  }, [navHistory, navRange, txs])
 
   return (
     <div className="space-y-6">
@@ -185,14 +236,25 @@ const handleDelete = async (txId: number) => {
 
       {/* NAV history chart */}
       <Card className="card-hover">
-        <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">净值走势</CardTitle></CardHeader>
+        <CardHeader className="pb-2 flex-row items-center justify-between flex-wrap gap-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">净值走势</CardTitle>
+          <div className="flex items-center gap-1">
+            {(["1m", "3m", "6m", "1y", "hold"] as const).map(r => (
+              <Button key={r} size="sm" variant={navRange === r ? "default" : "outline"} className="h-6 px-2 text-[11px]"
+                onClick={() => setNavRange(r)}>
+                {RANGE_LABELS[r]}
+              </Button>
+            ))}
+          </div>
+        </CardHeader>
         <CardContent>
           {chartData.length >= 2 ? (
             <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={chartData} margin={{ left: 10, right: 10, top: 5 }}>
+              <ComposedChart data={chartData} margin={{ left: 10, right: 10, top: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="date" fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                <YAxis yAxisId="nav" fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                <YAxis yAxisId="pnl" orientation="right" fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${(v / 1000).toFixed(1)}k`} />
                 <Tooltip
                   content={({ active, payload, label }) => {
                     if (!active || !payload?.length) return null
@@ -202,6 +264,11 @@ const handleDelete = async (txId: number) => {
                       <div className="rounded-lg border bg-white px-3 py-2 shadow-lg">
                         <p className="text-xs font-medium text-muted-foreground">{label}</p>
                         <p className="text-sm font-bold tabular-nums text-primary">{navStr(d.nav)}</p>
+                        {d.pnl != null && d.pnl !== 0 && (
+                          <p className={`text-xs tabular-nums ${d.pnl >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                            当日收益 {signedMoney(d.pnl)}
+                          </p>
+                        )}
                         {txInfo && txInfo.length > 0 && (
                           <div className="mt-1 space-y-0.5 border-t pt-1">
                             {txInfo.map((t, i) => (
@@ -217,8 +284,14 @@ const handleDelete = async (txId: number) => {
                     )
                   }}
                 />
-                {avgCost && <ReferenceLine y={avgCost} stroke="#94a3b8" strokeDasharray="5 5" label={{ value: `均价 ${navStr(avgCost)}`, fontSize: 11, fill: '#94a3b8' }} />}
+                {avgCost && <ReferenceLine yAxisId="nav" y={avgCost} stroke="#94a3b8" strokeDasharray="5 5" label={{ value: `均价 ${navStr(avgCost)}`, fontSize: 11, fill: '#94a3b8' }} />}
+                <Bar yAxisId="pnl" dataKey="pnl" radius={[2, 2, 0, 0]}>
+                  {chartData.map((row, i) => (
+                    <Cell key={i} fill={row.pnl >= 0 ? "#10b981" : "#ef4444"} fillOpacity={0.5} />
+                  ))}
+                </Bar>
                 <Line
+                  yAxisId="nav"
                   type="monotone"
                   dataKey="nav"
                   stroke="#3B82F6"
@@ -243,7 +316,7 @@ const handleDelete = async (txId: number) => {
                     )
                   }}
                 />
-              </LineChart>
+              </ComposedChart>
             </ResponsiveContainer>
           ) : (
             <p className="py-12 text-center text-sm text-muted-foreground">净值历史不足，先到「净值更新」抓取数据。</p>

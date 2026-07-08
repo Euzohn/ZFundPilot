@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button"
 import { money, pct, signedMoney, pnlColor } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart, Cell, ReferenceLine } from "recharts"
-import { ChevronUp, ChevronDown } from "lucide-react"
+import PnLCalendar from "@/components/PnLCalendar"
+import { ChevronUp, ChevronDown, BarChart3, CalendarDays } from "lucide-react"
 
 export default function Returns() {
   const { data: summary, loading: sl } = useApi<PortfolioSummary>(() => api.getSummary())
@@ -19,6 +20,7 @@ export default function Returns() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [pnlMode, setPnlMode] = useState<"day" | "week" | "month" | "year">("day")
   const [pnlDays, setPnlDays] = useState(30)
+  const [chartView, setChartView] = useState<"bar" | "calendar">("bar")
 
   const openPositions = positions?.filter((p) => p.is_open) ?? []
 
@@ -166,16 +168,16 @@ export default function Returns() {
       {/* P&L fluctuation chart — 日/周/月/年收益波动 */}
       {pnlData.length > 0 && (
         <Card className="card-hover">
-          <CardHeader className="pb-2 flex-row items-center justify-between">
+          <CardHeader className="pb-2 flex-row items-center justify-between flex-wrap gap-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">收益波动</CardTitle>
-            <div className="flex gap-1">
+            <div className="flex flex-wrap items-center gap-1">
               {([["day", "日"], ["week", "周"], ["month", "月"], ["year", "年"]] as const).map(([key, label]) => (
                 <Button key={key} size="sm" variant={pnlMode === key ? "default" : "outline"} className="h-6 px-2 text-[11px]"
-                  onClick={() => setPnlMode(key)}>
+                  onClick={() => { setPnlMode(key); if (key !== "day") setChartView("bar") }}>
                   {label}
                 </Button>
               ))}
-              {pnlMode === "day" && (
+              {pnlMode === "day" && chartView === "bar" && (
                 <>
                   <span className="text-muted-foreground mx-0.5">|</span>
                   {([7, 30, 90] as const).map((d) => (
@@ -186,23 +188,40 @@ export default function Returns() {
                   ))}
                 </>
               )}
+              {pnlMode === "day" && (
+                <>
+                  <span className="text-muted-foreground mx-0.5">|</span>
+                  <Button size="sm" variant={chartView === "bar" ? "default" : "outline"} className="h-6 px-2 text-[11px]"
+                    onClick={() => setChartView("bar")}>
+                    <BarChart3 className="h-3 w-3" />
+                  </Button>
+                  <Button size="sm" variant={chartView === "calendar" ? "default" : "outline"} className="h-6 px-2 text-[11px]"
+                    onClick={() => setChartView("calendar")}>
+                    <CalendarDays className="h-3 w-3" />
+                  </Button>
+                </>
+              )}
             </div>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={pnlMode === "day" ? 200 : 240}>
-              <BarChart data={pnlData} margin={{ left: 10, right: 10, top: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="date" fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${(v / 1000).toFixed(1)}k`} fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(v: number) => signedMoney(v)} labelStyle={{ color: '#1e293b' }} contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }} />
-                <ReferenceLine y={0} stroke="#cbd5e1" />
-                <Bar dataKey="pnl" radius={[3, 3, 0, 0]}>
-                  {pnlData.map((row, i) => (
-                    <Cell key={i} fill={row.pnl >= 0 ? "#10b981" : "#ef4444"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            {pnlMode === "day" && chartView === "calendar" ? (
+              <PnLCalendar data={dailyDiffs} />
+            ) : (
+              <ResponsiveContainer width="100%" height={pnlMode === "day" ? 200 : 240}>
+                <BarChart data={pnlData} margin={{ left: 10, right: 10, top: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="date" fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <YAxis tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${(v / 1000).toFixed(1)}k`} fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <Tooltip formatter={(v: number) => signedMoney(v)} labelStyle={{ color: '#1e293b' }} contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                  <ReferenceLine y={0} stroke="#cbd5e1" />
+                  <Bar dataKey="pnl" radius={[3, 3, 0, 0]}>
+                    {pnlData.map((row, i) => (
+                      <Cell key={i} fill={row.pnl >= 0 ? "#10b981" : "#ef4444"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       )}

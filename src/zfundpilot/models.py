@@ -77,15 +77,37 @@ class Transaction:
     id: int | None = None
 
     def normalize(self) -> Transaction:
-        """根据已知字段补全 amount / shares / nav。就地修改并返回自身。"""
+        """根据已知字段补全 amount / shares / nav，按 action 类型处理手续费。
+
+        买入：amount = shares × nav + fee（用户付份额价值 + 手续费）
+        卖出：amount = shares × nav - fee（用户收份额价值 - 手续费）
+        分红/再投资：无手续费
+        三者都有时不覆盖。
+        """
         a, s, n = self.amount, self.shares, self.nav
-        if a and s and not n:
-            self.nav = a / s if s else None
-        elif a and n and not s:
-            self.shares = a / n if n else None
-        elif s and n and not a:
-            self.amount = s * n
-        # 三者都有则以给定值为准，不覆盖
+        fee = self.fee or 0.0
+        if self.action == ACTION_BUY:
+            if a and s and not n:
+                self.nav = (a - fee) / s if s else None
+            elif a and n and not s:
+                self.shares = (a - fee) / n if n else None
+            elif s and n and not a:
+                self.amount = s * n + fee
+        elif self.action == ACTION_SELL:
+            if a and s and not n:
+                self.nav = (a + fee) / s if s else None
+            elif a and n and not s:
+                self.shares = (a + fee) / n if n else None
+            elif s and n and not a:
+                self.amount = s * n - fee
+        else:
+            # dividend / reinvest：无手续费
+            if a and s and not n:
+                self.nav = a / s if s else None
+            elif a and n and not s:
+                self.shares = a / n if n else None
+            elif s and n and not a:
+                self.amount = s * n
         return self
 
     def is_valid(self) -> bool:

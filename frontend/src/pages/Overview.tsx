@@ -8,7 +8,7 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts"
-import { Wallet, TrendingUp, DollarSign, PiggyBank, ArrowUpFromLine, Calendar } from "lucide-react"
+import { Wallet, TrendingUp, DollarSign, ArrowUpFromLine, Calendar, Activity } from "lucide-react"
 import type { ElementType } from "react"
 
 const PIE_COLORS = ["#1E40AF", "#3B82F6", "#60A5FA", "#93C5FD", "#D97706", "#F59E0B", "#6366F1"]
@@ -78,18 +78,18 @@ export default function Overview() {
 
       {/* Metrics row 1 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <MetricCard icon={Wallet} label="当前持仓成本" value={money(summary.total_cost)} />
+        <MetricCard icon={Activity} label="今日收益" value={signedMoney(summary.daily_pnl)} sub={pct(summary.daily_return)} color={pnlColor(summary.daily_pnl)} />
         <MetricCard icon={DollarSign} label="当前市值" value={money(summary.total_value)} />
-        <MetricCard icon={TrendingUp} label="浮动盈亏" value={signedMoney(summary.unrealized_pnl)} sub={pct(summary.total_return)} color={pnlColor(summary.unrealized_pnl)} />
-        <MetricCard icon={TrendingUp} label="已实现盈亏" value={signedMoney(summary.realized_pnl)} color={pnlColor(summary.realized_pnl)} />
+        <MetricCard icon={TrendingUp} label="总盈亏" value={signedMoney(summary.total_pnl)} sub={`浮动 ${signedMoney(summary.unrealized_pnl)} · 已实现 ${signedMoney(summary.realized_pnl)}`} color={pnlColor(summary.total_pnl)} />
+        <MetricCard icon={TrendingUp} label="总收益率" value={pct(summary.total_return)} color={pnlColor(summary.total_return)} />
       </div>
 
       {/* Metrics row 2 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <MetricCard icon={PiggyBank} label="总盈亏（浮动+已实现）" value={signedMoney(summary.total_pnl)} color={pnlColor(summary.total_pnl)} />
+        <MetricCard icon={Wallet} label="持仓成本" value={money(summary.total_cost)} />
         <MetricCard icon={ArrowUpFromLine} label="累计买入 / 卖出" value={`${money(summary.total_buy)} / ${money(summary.total_sell)}`} />
-        <MetricCard icon={Wallet} label="持仓数量" value={`${summary.holding_count} 个`} />
-        <MetricCard icon={Calendar} label="净值日期" value={summary.as_of_date ?? "未更新"} />
+        <MetricCard icon={Wallet} label="持仓基金数" value={`${summary.holding_count} 只`} sub={`净值日期 ${summary.as_of_date ?? "未更新"}`} />
+        <MetricCard icon={Calendar} label="最大单基金占比" value={pct(summary.max_single_weight)} sub={summary.max_single_name || undefined} />
       </div>
 
       {/* Charts */}

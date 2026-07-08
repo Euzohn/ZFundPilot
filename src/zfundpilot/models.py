@@ -165,6 +165,8 @@ class PortfolioSummary:
     max_single_weight: float = 0.0
     max_single_name: str = ""
     as_of_date: str | None = None
+    daily_pnl: float = 0.0          # 今日收益金额
+    daily_return: float = 0.0       # 今日收益率
 
     def to_dict(self) -> dict:
         return asdict(self)

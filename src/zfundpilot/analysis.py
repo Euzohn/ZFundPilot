@@ -204,6 +204,18 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
         summary.max_single_name = top.fund_name
         summary.as_of_date = max(
             (p.latest_date for p in open_positions if p.latest_date), default=None)
+
+    # 今日收益 = curve 最后两行 total_value diff
+    try:
+        curve = build_portfolio_curve()
+        if len(curve) >= 2:
+            today_val = float(curve.iloc[-1]["total_value"])
+            prev_val = float(curve.iloc[-2]["total_value"])
+            summary.daily_pnl = round(today_val - prev_val, 2)
+            summary.daily_return = (summary.daily_pnl / prev_val) if prev_val > 0 else 0.0
+    except Exception:  # noqa: BLE001
+        pass
+
     return summary
 
 

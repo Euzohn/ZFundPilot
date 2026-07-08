@@ -5,6 +5,7 @@ import type { PortfolioSummary, CurvePoint, Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Button } from "@/components/ui/button"
 import { money, pct, signedMoney, pnlColor } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart, Cell, ReferenceLine } from "recharts"
@@ -16,6 +17,7 @@ export default function Returns() {
   const { data: positions } = useApi<Position[]>(() => api.getPositions())
   const [sortField, setSortField] = useState("return_rate")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+  const [pnlDays, setPnlDays] = useState(7)
 
   const openPositions = positions?.filter((p) => p.is_open) ?? []
 
@@ -47,6 +49,17 @@ export default function Returns() {
       return sortDir === "asc" ? cmp : -cmp
     })
   }, [openPositions, sortField, sortDir])
+
+  // 日收益波动数据（从 curve diff 计算）
+  const dailyPnlData = useMemo(() => {
+    if (!curve || curve.length < 2) return []
+    const data: { date: string; pnl: number }[] = []
+    for (let i = 1; i < curve.length; i++) {
+      const diff = curve[i].total_value - curve[i - 1].total_value
+      data.push({ date: curve[i].date, pnl: Math.round(diff * 100) / 100 })
+    }
+    return data.slice(-pnlDays)
+  }, [curve, pnlDays])
 
   if (sl || !summary) return <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
 
@@ -82,35 +95,64 @@ export default function Returns() {
     <div className="space-y-6">
       <h1 className="text-xl md:text-2xl font-bold">收益分析</h1>
 
-      {/* Metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-        <Card className="card-hover"><CardContent className="p-4 md:p-5">
-          <p className="text-xs font-medium text-muted-foreground">当前市值</p>
-          <p className="mt-1 text-lg md:text-xl font-bold tabular-nums">{money(summary.total_value)}</p>
-        </CardContent></Card>
+      {/* Metrics — 详细指标，不与总览重复 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
           <p className="text-xs font-medium text-muted-foreground">持仓成本</p>
           <p className="mt-1 text-lg md:text-xl font-bold tabular-nums">{money(summary.total_cost)}</p>
         </CardContent></Card>
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
-          <p className="text-xs font-medium text-muted-foreground">总盈亏</p>
-          <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${pnlColor(summary.total_pnl)}`}>{signedMoney(summary.total_pnl)}</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">浮动 {signedMoney(summary.unrealized_pnl)} · 已实现 {signedMoney(summary.realized_pnl)}</p>
+          <p className="text-xs font-medium text-muted-foreground">浮动盈亏</p>
+          <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${pnlColor(summary.unrealized_pnl)}`}>{signedMoney(summary.unrealized_pnl)}</p>
         </CardContent></Card>
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
-          <p className="text-xs font-medium text-muted-foreground">总收益率</p>
-          <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${pnlColor(summary.total_return)}`}>{pct(summary.total_return)}</p>
+          <p className="text-xs font-medium text-muted-foreground">已实现盈亏</p>
+          <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${pnlColor(summary.realized_pnl)}`}>{signedMoney(summary.realized_pnl)}</p>
         </CardContent></Card>
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
-          <p className="text-xs font-medium text-muted-foreground">持仓基金数</p>
-          <p className="mt-1 text-lg md:text-xl font-bold tabular-nums">{summary.holding_count} 只</p>
-        </CardContent></Card>
-        <Card className="card-hover"><CardContent className="p-4 md:p-5">
-          <p className="text-xs font-medium text-muted-foreground">最大单基金占比</p>
-          <p className="mt-1 text-lg md:text-xl font-bold tabular-nums">{pct(summary.max_single_weight)}</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground truncate">{summary.max_single_name}</p>
+          <p className="text-xs font-medium text-muted-foreground">累计买入 / 卖出 / 分红</p>
+          <p className="mt-1 text-sm md:text-base font-bold tabular-nums">
+            <span className="text-blue-600">{money(summary.total_buy)}</span>
+            <span className="text-muted-foreground mx-1">/</span>
+            <span className="text-amber-600">{money(summary.total_sell)}</span>
+            <span className="text-muted-foreground mx-1">/</span>
+            <span className="text-purple-600">{money(summary.total_dividend)}</span>
+          </p>
         </CardContent></Card>
       </div>
+
+      {/* Daily P&L chart — 日收益波动 */}
+      {dailyPnlData.length > 0 && (
+        <Card className="card-hover">
+          <CardHeader className="pb-2 flex-row items-center justify-between">
+            <CardTitle className="text-sm font-medium text-muted-foreground">日收益波动</CardTitle>
+            <div className="flex gap-1">
+              {([7, 30] as const).map((d) => (
+                <Button key={d} size="sm" variant={pnlDays === d ? "default" : "outline"} className="h-6 px-2 text-[11px]"
+                  onClick={() => setPnlDays(d)}>
+                  {d} 天
+                </Button>
+              ))}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={dailyPnlData} margin={{ left: 10, right: 10, top: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="date" fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v: string) => v.slice(5)} />
+                <YAxis tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${(v / 1000).toFixed(1)}k`} fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(v: number) => signedMoney(v)} labelStyle={{ color: '#1e293b' }} contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                <ReferenceLine y={0} stroke="#cbd5e1" />
+                <Bar dataKey="pnl" radius={[3, 3, 0, 0]}>
+                  {dailyPnlData.map((row, i) => (
+                    <Cell key={i} fill={row.pnl >= 0 ? "#10b981" : "#ef4444"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Portfolio curve */}
       <Card className="card-hover">

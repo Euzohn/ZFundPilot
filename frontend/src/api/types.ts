@@ -56,6 +56,8 @@ export interface PortfolioSummary {
   max_single_weight: number
   max_single_name: string
   as_of_date: string | null
+  daily_pnl: number
+  daily_return: number
 }
 
 export interface CurvePoint {

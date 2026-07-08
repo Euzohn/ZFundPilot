@@ -13,6 +13,8 @@ import PnLCalendar from "@/components/PnLCalendar"
 import { ChevronUp, ChevronDown, BarChart3, CalendarDays } from "lucide-react"
 
 const CHANNEL_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f43f5e", "#84cc16"]
+const CURVE_RANGE_DAYS: Record<string, number> = { "1m": 30, "3m": 90, "6m": 180, "1y": 365 }
+const CURVE_RANGE_LABELS: Record<string, string> = { "1m": "1月", "3m": "3月", "6m": "6月", "1y": "1年", "all": "全部" }
 
 function ChannelTooltip({ active, payload, label }: { active?: boolean; payload?: { dataKey: string; value: number; color: string }[]; label?: string }) {
   if (!active || !payload?.length) return null
@@ -45,6 +47,7 @@ export default function Returns() {
   const [pnlMode, setPnlMode] = useState<"day" | "week" | "month" | "year">("day")
   const [pnlDays, setPnlDays] = useState(30)
   const [chartView, setChartView] = useState<"bar" | "calendar">("bar")
+  const [curveRange, setCurveRange] = useState<"1m" | "3m" | "6m" | "1y" | "all">("1y")
 
   const openPositions = positions?.filter((p) => p.is_open) ?? []
 
@@ -88,6 +91,17 @@ export default function Returns() {
     }
     return data
   }, [curve])
+
+  // 按时间区间过滤组合曲线
+  const filteredCurve = useMemo(() => {
+    if (!curve?.length) return []
+    if (curveRange === "all") return curve
+    const days = CURVE_RANGE_DAYS[curveRange]
+    const d = new Date()
+    d.setDate(d.getDate() - days)
+    const cutoff = d.toISOString().slice(0, 10)
+    return curve.filter(p => p.date >= cutoff)
+  }, [curve, curveRange])
 
   const channels = useMemo(() => {
     if (!channelPnl?.length) return []
@@ -264,11 +278,21 @@ export default function Returns() {
 
       {/* Portfolio curve */}
       <Card className="card-hover">
-        <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">组合收益曲线</CardTitle></CardHeader>
+        <CardHeader className="pb-2 flex-row items-center justify-between flex-wrap gap-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">组合收益曲线</CardTitle>
+          <div className="flex items-center gap-1">
+            {(["1m", "3m", "6m", "1y", "all"] as const).map(r => (
+              <Button key={r} size="sm" variant={curveRange === r ? "default" : "outline"} className="h-6 px-2 text-[11px]"
+                onClick={() => setCurveRange(r)}>
+                {CURVE_RANGE_LABELS[r]}
+              </Button>
+            ))}
+          </div>
+        </CardHeader>
         <CardContent>
-          {curve && curve.length >= 2 ? (
+          {filteredCurve.length >= 2 ? (
             <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={curve} margin={{ left: 10, right: 10, top: 5 }}>
+              <AreaChart data={filteredCurve} margin={{ left: 10, right: 10, top: 5 }}>
                 <defs>
                   <linearGradient id="valueGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.15} />

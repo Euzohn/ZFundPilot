@@ -32,6 +32,9 @@ docker-compose.override.yml
 .idea/
 .vscode/
 
+# opencode 本地配置
+.opencode/
+
 # 前端
 frontend/node_modules/
 frontend/dist/

@@ -167,6 +167,12 @@ class PortfolioSummary:
     as_of_date: str | None = None
     daily_pnl: float = 0.0          # 今日收益金额
     daily_return: float = 0.0       # 今日收益率
+    week_pnl: float = 0.0           # 本周收益
+    week_return: float = 0.0        # 本周收益率
+    month_pnl: float = 0.0          # 本月收益
+    month_return: float = 0.0       # 本月收益率
+    year_pnl: float = 0.0           # 今年收益
+    year_return: float = 0.0        # 今年收益率
 
     def to_dict(self) -> dict:
         return asdict(self)

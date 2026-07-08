@@ -76,17 +76,24 @@ export default function Overview() {
         )}
       </div>
 
-      {/* Metrics row 1 */}
+      {/* Period returns — 今日/本周/本月/今年 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <MetricCard icon={Activity} label="今日收益" value={signedMoney(summary.daily_pnl)} sub={pct(summary.daily_return)} color={pnlColor(summary.daily_pnl)} />
+        <MetricCard icon={TrendingUp} label="本周收益" value={signedMoney(summary.week_pnl)} sub={pct(summary.week_return)} color={pnlColor(summary.week_pnl)} />
+        <MetricCard icon={TrendingUp} label="本月收益" value={signedMoney(summary.month_pnl)} sub={pct(summary.month_return)} color={pnlColor(summary.month_pnl)} />
+        <MetricCard icon={TrendingUp} label="今年收益" value={signedMoney(summary.year_pnl)} sub={pct(summary.year_return)} color={pnlColor(summary.year_pnl)} />
+      </div>
+
+      {/* Metrics row 1 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <MetricCard icon={DollarSign} label="当前市值" value={money(summary.total_value)} />
         <MetricCard icon={TrendingUp} label="总盈亏" value={signedMoney(summary.total_pnl)} sub={`浮动 ${signedMoney(summary.unrealized_pnl)} · 已实现 ${signedMoney(summary.realized_pnl)}`} color={pnlColor(summary.total_pnl)} />
         <MetricCard icon={TrendingUp} label="总收益率" value={pct(summary.total_return)} color={pnlColor(summary.total_return)} />
+        <MetricCard icon={Wallet} label="持仓成本" value={money(summary.total_cost)} />
       </div>
 
       {/* Metrics row 2 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <MetricCard icon={Wallet} label="持仓成本" value={money(summary.total_cost)} />
         <MetricCard icon={ArrowUpFromLine} label="累计买入 / 卖出" value={`${money(summary.total_buy)} / ${money(summary.total_sell)}`} />
         <MetricCard icon={Wallet} label="持仓基金数" value={`${summary.holding_count} 只`} sub={`净值日期 ${summary.as_of_date ?? "未更新"}`} />
         <MetricCard icon={Calendar} label="最大单基金占比" value={pct(summary.max_single_weight)} sub={summary.max_single_name || undefined} />

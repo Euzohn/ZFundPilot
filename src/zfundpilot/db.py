@@ -387,6 +387,15 @@ def get_latest_nav(fund_code: str) -> sqlite3.Row | None:
         ).fetchone()
 
 
+def get_prev_nav(fund_code: str) -> sqlite3.Row | None:
+    """返回倒数第二条 NAV 记录（用于计算今日收益）。"""
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM nav_history WHERE fund_code=? ORDER BY date DESC LIMIT 1 OFFSET 1",
+            (fund_code,),
+        ).fetchone()
+
+
 def get_nav_history(fund_code: str) -> list[sqlite3.Row]:
     with get_connection() as conn:
         return conn.execute(

@@ -58,6 +58,12 @@ export interface PortfolioSummary {
   as_of_date: string | null
   daily_pnl: number
   daily_return: number
+  week_pnl: number
+  week_return: number
+  month_pnl: number
+  month_return: number
+  year_pnl: number
+  year_return: number
 }
 
 export interface CurvePoint {

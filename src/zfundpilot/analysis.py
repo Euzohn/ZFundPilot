@@ -205,14 +205,50 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
         summary.as_of_date = max(
             (p.latest_date for p in open_positions if p.latest_date), default=None)
 
-    # 今日收益 = curve 最后两行 total_value diff
+    # 今日收益 = 每只基金 (latest_nav - prev_nav) × held_shares 直接算
+    daily_pnl = 0.0
+    prev_value = 0.0
+    for p in open_positions:
+        if not p.held_shares or not p.latest_nav:
+            continue
+        prev = db.get_prev_nav(p.fund_code)
+        if prev:
+            prev_nav = float(prev["nav"])
+            daily_pnl += p.held_shares * (p.latest_nav - prev_nav)
+            prev_value += p.held_shares * prev_nav
+    summary.daily_pnl = round(daily_pnl, 2)
+    summary.daily_return = (daily_pnl / prev_value) if prev_value > 0 else 0.0
+
+    # 周/月/年收益 = 从 curve 找起点 total_value，与当前市值对比
     try:
+        import datetime as dt
         curve = build_portfolio_curve()
-        if len(curve) >= 2:
-            today_val = float(curve.iloc[-1]["total_value"])
-            prev_val = float(curve.iloc[-2]["total_value"])
-            summary.daily_pnl = round(today_val - prev_val, 2)
-            summary.daily_return = (summary.daily_pnl / prev_val) if prev_val > 0 else 0.0
+        if len(curve) >= 2 and summary.total_value > 0:
+            dates = curve["date"].tolist()
+            values = curve["total_value"].tolist()
+
+            def _find_start(target_date: str) -> float | None:
+                """找曲线中 <= target_date 的最近一个点的 total_value。"""
+                for i in range(len(dates) - 1, -1, -1):
+                    if dates[i] <= target_date:
+                        return float(values[i])
+                return None
+
+            today = dt.date.today()
+            week_start = (today - dt.timedelta(days=today.weekday() + 7)).isoformat()
+            month_start = today.replace(day=1).isoformat()
+            year_start = today.replace(month=1, day=1).isoformat()
+
+            for start_date, pnl_attr, ret_attr in [
+                (week_start, "week_pnl", "week_return"),
+                (month_start, "month_pnl", "month_return"),
+                (year_start, "year_pnl", "year_return"),
+            ]:
+                start_val = _find_start(start_date)
+                if start_val and start_val > 0:
+                    pnl = summary.total_value - start_val
+                    setattr(summary, pnl_attr, round(pnl, 2))
+                    setattr(summary, ret_attr, pnl / start_val)
     except Exception:  # noqa: BLE001
         pass
 

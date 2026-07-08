@@ -17,7 +17,8 @@ export default function Returns() {
   const { data: positions } = useApi<Position[]>(() => api.getPositions())
   const [sortField, setSortField] = useState("return_rate")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
-  const [pnlDays, setPnlDays] = useState(7)
+  const [pnlMode, setPnlMode] = useState<"day" | "week" | "month" | "year">("day")
+  const [pnlDays, setPnlDays] = useState(30)
 
   const openPositions = positions?.filter((p) => p.is_open) ?? []
 
@@ -50,16 +51,57 @@ export default function Returns() {
     })
   }, [openPositions, sortField, sortDir])
 
-  // 日收益波动数据（从 curve diff 计算）
-  const dailyPnlData = useMemo(() => {
+  // 从 curve 计算每日 diff（基础数据）
+  const dailyDiffs = useMemo(() => {
     if (!curve || curve.length < 2) return []
     const data: { date: string; pnl: number }[] = []
     for (let i = 1; i < curve.length; i++) {
       const diff = curve[i].total_value - curve[i - 1].total_value
       data.push({ date: curve[i].date, pnl: Math.round(diff * 100) / 100 })
     }
-    return data.slice(-pnlDays)
-  }, [curve, pnlDays])
+    return data
+  }, [curve])
+
+  // 按模式聚合收益波动数据
+  const pnlData = useMemo(() => {
+    if (dailyDiffs.length === 0) return []
+
+    if (pnlMode === "day") {
+      return dailyDiffs.slice(-pnlDays)
+    }
+
+    // 周/月/年聚合
+    const buckets: Record<string, { label: string; pnl: number; sortKey: string }> = {}
+    for (const d of dailyDiffs) {
+      const dt = new Date(d.date + "T00:00:00")
+      let key: string, label: string, sortKey: string
+
+      if (pnlMode === "week") {
+        // ISO 周一为起点
+        const day = dt.getDay() || 7
+        const monday = new Date(dt)
+        monday.setDate(dt.getDate() - day + 1)
+        key = monday.toISOString().slice(0, 10)
+        label = `${monday.getMonth() + 1}/${monday.getDate()}`
+        sortKey = key
+      } else if (pnlMode === "month") {
+        key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`
+        label = `${dt.getFullYear()}/${dt.getMonth() + 1}`
+        sortKey = key
+      } else {
+        key = String(dt.getFullYear())
+        label = String(dt.getFullYear())
+        sortKey = key
+      }
+
+      if (!buckets[key]) buckets[key] = { label, pnl: 0, sortKey }
+      buckets[key].pnl = Math.round((buckets[key].pnl + d.pnl) * 100) / 100
+    }
+
+    return Object.values(buckets)
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+      .map(b => ({ date: b.label, pnl: b.pnl }))
+  }, [dailyDiffs, pnlMode, pnlDays])
 
   if (sl || !summary) return <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
 
@@ -121,30 +163,41 @@ export default function Returns() {
         </CardContent></Card>
       </div>
 
-      {/* Daily P&L chart — 日收益波动 */}
-      {dailyPnlData.length > 0 && (
+      {/* P&L fluctuation chart — 日/周/月/年收益波动 */}
+      {pnlData.length > 0 && (
         <Card className="card-hover">
           <CardHeader className="pb-2 flex-row items-center justify-between">
-            <CardTitle className="text-sm font-medium text-muted-foreground">日收益波动</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">收益波动</CardTitle>
             <div className="flex gap-1">
-              {([7, 30] as const).map((d) => (
-                <Button key={d} size="sm" variant={pnlDays === d ? "default" : "outline"} className="h-6 px-2 text-[11px]"
-                  onClick={() => setPnlDays(d)}>
-                  {d} 天
+              {([["day", "日"], ["week", "周"], ["month", "月"], ["year", "年"]] as const).map(([key, label]) => (
+                <Button key={key} size="sm" variant={pnlMode === key ? "default" : "outline"} className="h-6 px-2 text-[11px]"
+                  onClick={() => setPnlMode(key)}>
+                  {label}
                 </Button>
               ))}
+              {pnlMode === "day" && (
+                <>
+                  <span className="text-muted-foreground mx-0.5">|</span>
+                  {([7, 30, 90] as const).map((d) => (
+                    <Button key={d} size="sm" variant={pnlDays === d ? "default" : "outline"} className="h-6 px-2 text-[11px]"
+                      onClick={() => setPnlDays(d)}>
+                      {d}天
+                    </Button>
+                  ))}
+                </>
+              )}
             </div>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={dailyPnlData} margin={{ left: 10, right: 10, top: 5 }}>
+            <ResponsiveContainer width="100%" height={pnlMode === "day" ? 200 : 240}>
+              <BarChart data={pnlData} margin={{ left: 10, right: 10, top: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="date" fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v: string) => v.slice(5)} />
+                <XAxis dataKey="date" fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <YAxis tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${(v / 1000).toFixed(1)}k`} fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <Tooltip formatter={(v: number) => signedMoney(v)} labelStyle={{ color: '#1e293b' }} contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }} />
                 <ReferenceLine y={0} stroke="#cbd5e1" />
                 <Bar dataKey="pnl" radius={[3, 3, 0, 0]}>
-                  {dailyPnlData.map((row, i) => (
+                  {pnlData.map((row, i) => (
                     <Cell key={i} fill={row.pnl >= 0 ? "#10b981" : "#ef4444"} />
                   ))}
                 </Bar>

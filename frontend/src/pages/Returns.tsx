@@ -16,6 +16,8 @@ import { getChannelColors, getChannelColorsAsync, getPalette } from "@/lib/chann
 const PALETTE = getPalette()
 const CURVE_RANGE_DAYS: Record<string, number> = { "1m": 30, "3m": 90, "6m": 180, "1y": 365 }
 const CURVE_RANGE_LABELS: Record<string, string> = { "1m": "1月", "3m": "3月", "6m": "6月", "1y": "1年", "all": "全部" }
+const AGG_RANGE_DAYS: Record<string, number> = { "3m": 90, "6m": 180, "1y": 365 }
+const AGG_RANGE_LABELS: Record<string, string> = { "3m": "3月", "6m": "6月", "1y": "1年", "all": "全部" }
 
 function ChannelTooltip({ active, payload, label }: { active?: boolean; payload?: { dataKey: string; value: number; color: string }[]; label?: string }) {
   if (!active || !payload?.length) return null
@@ -47,6 +49,7 @@ export default function Returns() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [pnlMode, setPnlMode] = useState<"day" | "week" | "month" | "year">("day")
   const [pnlDays, setPnlDays] = useState(30)
+  const [pnlAggRange, setPnlAggRange] = useState<"3m" | "6m" | "1y" | "all">("1y")
   const [chartView, setChartView] = useState<"bar" | "calendar">("bar")
   const [curveRange, setCurveRange] = useState<"1m" | "3m" | "6m" | "1y" | "all">("1y")
   const [channelColors, setChannelColors] = useState<Record<string, string>>(() => getChannelColors())
@@ -128,9 +131,18 @@ export default function Returns() {
       return channelPnl.slice(-pnlDays)
     }
 
-    // 周/月/年聚合
+    // 周/月/年聚合 — 先按区间过滤
+    let filtered = channelPnl
+    if (pnlAggRange !== "all") {
+      const days = AGG_RANGE_DAYS[pnlAggRange]
+      const d = new Date()
+      d.setDate(d.getDate() - days)
+      const cutoff = d.toISOString().slice(0, 10)
+      filtered = channelPnl.filter(p => p.date >= cutoff)
+    }
+
     const buckets: Record<string, Record<string, string | number>> = {}
-    for (const d of channelPnl) {
+    for (const d of filtered) {
       const dt = new Date(d.date + "T00:00:00")
       let key: string, label: string
 
@@ -160,7 +172,7 @@ export default function Returns() {
     return Object.values(buckets)
       .sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey)))
       .map(({ label, sortKey, ...rest }) => ({ date: String(label), ...rest }))
-  }, [channelPnl, channels, pnlMode, pnlDays])
+  }, [channelPnl, channels, pnlMode, pnlDays, pnlAggRange])
 
   if (sl || !summary) return <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
 
@@ -241,6 +253,17 @@ export default function Returns() {
                     <Button key={d} size="sm" variant={pnlDays === d ? "default" : "outline"} className="h-6 px-2 text-[11px]"
                       onClick={() => setPnlDays(d)}>
                       {d}天
+                    </Button>
+                  ))}
+                </>
+              )}
+              {pnlMode !== "day" && (
+                <>
+                  <span className="text-muted-foreground mx-0.5">|</span>
+                  {(["3m", "6m", "1y", "all"] as const).map(r => (
+                    <Button key={r} size="sm" variant={pnlAggRange === r ? "default" : "outline"} className="h-6 px-2 text-[11px]"
+                      onClick={() => setPnlAggRange(r)}>
+                      {AGG_RANGE_LABELS[r]}
                     </Button>
                   ))}
                 </>

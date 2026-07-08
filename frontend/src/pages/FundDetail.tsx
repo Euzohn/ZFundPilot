@@ -14,6 +14,8 @@ import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-reac
 import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
 
 const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
+const RANGE_DAYS: Record<string, number> = { "1m": 30, "3m": 90, "6m": 180, "1y": 365 }
+const RANGE_LABELS: Record<string, string> = { "1m": "1月", "3m": "3月", "6m": "6月", "1y": "1年", "hold": "持仓至今" }
 
 function MetricCard({ label, value, color, sub }: { label: string; value: string; color?: string; sub?: string }) {
   return (
@@ -44,6 +46,65 @@ export default function FundDetail() {
     [code],
   )
 
+  // 净值图表数据：时间区间过滤 + 每日收益计算（必须在 early return 之前）
+  const chartData = useMemo(() => {
+    if (!navHistory?.length) return []
+    const sorted = [...navHistory].sort((a, b) => a.date.localeCompare(b.date))
+
+    // 时间区间过滤
+    let cutoff: string | null = null
+    if (navRange === "hold") {
+      if (txs?.length) {
+        cutoff = [...txs].map(t => t.date).sort()[0]
+      }
+    } else {
+      const days = RANGE_DAYS[navRange]
+      const d = new Date()
+      d.setDate(d.getDate() - days)
+      cutoff = d.toISOString().slice(0, 10)
+    }
+    const filtered = cutoff ? sorted.filter(d => d.date >= cutoff) : sorted
+
+    // 交易日期查找表
+    const txMap: Record<string, Transaction[]> = {}
+    txs?.forEach(t => {
+      if (!txMap[t.date]) txMap[t.date] = []
+      txMap[t.date].push(t)
+    })
+
+    // 从全部交易计算每日累计份额（不受时间区间限制）
+    const sortedTxs = txs ? [...txs].sort((a, b) => a.date.localeCompare(b.date)) : []
+    let cumShares = 0
+    const cumByDate: { date: string; shares: number }[] = []
+    for (const t of sortedTxs) {
+      if (t.action === "buy" || t.action === "reinvest") {
+        cumShares += t.shares || 0
+      } else if (t.action === "sell") {
+        cumShares -= t.shares || 0
+      }
+      cumByDate.push({ date: t.date, shares: cumShares })
+    }
+
+    function sharesBefore(target: string): number {
+      let result = 0
+      for (const c of cumByDate) {
+        if (c.date < target) result = c.shares
+        else break
+      }
+      return result
+    }
+
+    return filtered.map((d, i) => {
+      const prevNav = i > 0 ? filtered[i - 1].nav : null
+      let pnl = 0
+      if (prevNav != null) {
+        const shares = sharesBefore(d.date)
+        pnl = Math.round((d.nav - prevNav) * shares * 100) / 100
+      }
+      return { ...d, pnl, _tx: txMap[d.date] || null }
+    })
+  }, [navHistory, navRange, txs])
+
   if (fundLoading) return <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
 
   // 筛选该基金的所有持仓（跨渠道）
@@ -61,13 +122,6 @@ export default function FundDetail() {
   const latestDate = openPositions[0]?.latest_date ?? null
   const returnRate = totalCost > 0 ? totalValue / totalCost - 1 : null
 
-  // 交易日期查找表
-  const txMap: Record<string, Transaction[]> = {}
-  txs?.forEach(t => {
-    if (!txMap[t.date]) txMap[t.date] = []
-    txMap[t.date].push(t)
-  })
-
   const handleEdit = (tx: Transaction) => {
     navigate("/transactions", { state: { editTx: tx } })
   }
@@ -79,64 +133,6 @@ const handleDelete = async (txId: number) => {
       reloadTxs()
     } catch (e) { toast.error(`删除失败: ${e}`) }
   }
-
-  // 净值图表数据：时间区间过滤 + 每日收益计算
-  const RANGE_DAYS: Record<string, number> = { "1m": 30, "3m": 90, "6m": 180, "1y": 365 }
-  const RANGE_LABELS: Record<string, string> = { "1m": "1月", "3m": "3月", "6m": "6月", "1y": "1年", "hold": "持仓至今" }
-
-  const chartData = useMemo(() => {
-    if (!navHistory?.length) return []
-    const sorted = [...navHistory].sort((a, b) => a.date.localeCompare(b.date))
-
-    // 时间区间过滤
-    let cutoff: string | null = null
-    if (navRange === "hold") {
-      // 从第一笔交易日期开始
-      if (txs?.length) {
-        cutoff = [...txs].map(t => t.date).sort()[0]
-      }
-    } else {
-      const days = RANGE_DAYS[navRange]
-      const d = new Date()
-      d.setDate(d.getDate() - days)
-      cutoff = d.toISOString().slice(0, 10)
-    }
-    const filtered = cutoff ? sorted.filter(d => d.date >= cutoff) : sorted
-
-    // 从全部交易计算每日累计份额（不受时间区间限制）
-    const sortedTxs = txs ? [...txs].sort((a, b) => a.date.localeCompare(b.date)) : []
-    let cumShares = 0
-    const cumByDate: { date: string; shares: number }[] = []
-    for (const t of sortedTxs) {
-      if (t.action === "buy" || t.action === "reinvest") {
-        cumShares += t.shares || 0
-      } else if (t.action === "sell") {
-        cumShares -= t.shares || 0
-      }
-      cumByDate.push({ date: t.date, shares: cumShares })
-    }
-
-    // 二分查找：日期 < target 时的累计份额
-    function sharesBefore(target: string): number {
-      let result = 0
-      for (const c of cumByDate) {
-        if (c.date < target) result = c.shares
-        else break
-      }
-      return result
-    }
-
-    // 计算每日收益：pnl = (nav[t] - nav[t-1]) * 日期 < t 的累计份额
-    return filtered.map((d, i) => {
-      const prevNav = i > 0 ? filtered[i - 1].nav : null
-      let pnl = 0
-      if (prevNav != null) {
-        const shares = sharesBefore(d.date)
-        pnl = Math.round((d.nav - prevNav) * shares * 100) / 100
-      }
-      return { ...d, pnl, _tx: txMap[d.date] || null }
-    })
-  }, [navHistory, navRange, txs])
 
   return (
     <div className="space-y-6">

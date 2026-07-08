@@ -1,5 +1,6 @@
 import type {
   Advice,
+  ChannelPnLPoint,
   CurvePoint,
   DistributionItem,
   FetchResult,
@@ -196,6 +197,7 @@ export const api = {
 
   // Portfolio curve
   getPortfolioCurve: () => request<CurvePoint[]>("/portfolio/curve"),
+  getChannelPnl: () => request<ChannelPnLPoint[]>("/portfolio/channel-pnl"),
 
   // Risk & Rebalance
   getRiskReport: () => request<RiskReport>("/risk"),

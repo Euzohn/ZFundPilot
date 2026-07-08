@@ -519,6 +519,11 @@ def get_portfolio_curve() -> list[dict[str, Any]]:
     return curve.to_dict(orient="records")
 
 
+@app.get("/api/portfolio/channel-pnl")
+def get_channel_pnl() -> list[dict[str, Any]]:
+    return analysis.build_channel_daily_pnl()
+
+
 @app.get("/api/risk")
 def get_risk_report() -> dict[str, Any]:
     report = risk.build_risk_report()

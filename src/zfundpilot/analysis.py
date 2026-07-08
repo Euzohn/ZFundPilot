@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from typing import Any
 
 import pandas as pd
 
@@ -377,6 +378,97 @@ def build_portfolio_curve() -> pd.DataFrame:
         return curve
     curve["total_return"] = curve["total_value"] / curve["invested_cost"] - 1
     return curve
+
+
+def build_channel_daily_pnl() -> list[dict[str, Any]]:
+    """按渠道拆分的每日收益，用于堆叠柱状图。
+
+    对每个 (基金, 渠道) 持仓独立累积份额和成本，
+    每日 P&L = Δ市值 - Δ成本，按渠道分别计算。
+    返回 [{date, "支付宝": 120.5, "理财通": -30.2, ...}, ...]
+    """
+    transactions = db.get_transactions()
+    if not transactions:
+        return []
+
+    for t in transactions:
+        t.normalize()
+    tx_sorted = sorted(transactions, key=lambda t: (t.date or "", t.id or 0))
+    start_date = tx_sorted[0].date
+
+    keys = sorted({(t.fund_code, t.channel or "") for t in transactions})
+    codes = sorted({k[0] for k in keys})
+
+    nav_map: dict[str, pd.Series] = {}
+    all_dates: set[str] = set()
+    for code in codes:
+        rows = db.get_nav_history(code)
+        if not rows:
+            continue
+        s = pd.Series({r["date"]: float(r["nav"]) for r in rows})
+        nav_map[code] = s
+        all_dates.update(s.index)
+
+    if not all_dates:
+        return []
+
+    timeline = sorted(d for d in all_dates if d >= start_date)
+    if not timeline:
+        return []
+
+    channel_values: dict[str, pd.Series] = {}
+    channel_costs: dict[str, pd.Series] = {}
+
+    for code, channel in keys:
+        if code not in nav_map:
+            continue
+        navs = nav_map[code].reindex(timeline).ffill()
+
+        share_delta = pd.Series(0.0, index=timeline)
+        cost_delta = pd.Series(0.0, index=timeline)
+        for t in tx_sorted:
+            if t.fund_code != code or (t.channel or "") != channel:
+                continue
+            if not t.shares:
+                if t.action == ACTION_BUY and t.amount:
+                    d = t.date if t.date >= start_date else start_date
+                    idx = _first_ge(timeline, d)
+                    if idx is not None:
+                        cost_delta.iloc[idx] += t.amount
+                continue
+            if t.action == ACTION_DIVIDEND:
+                continue
+            d = t.date if t.date >= start_date else start_date
+            idx = _first_ge(timeline, d)
+            if idx is None:
+                continue
+            sign = -1.0 if t.action == ACTION_SELL else 1.0
+            share_delta.iloc[idx] += sign * t.shares
+            cost_delta.iloc[idx] += sign * (t.amount or 0.0)
+
+        held = share_delta.cumsum().clip(lower=0)
+        invested = cost_delta.cumsum().clip(lower=0)
+        value_series = held * navs
+
+        ch = channel or "其它"
+        if ch not in channel_values:
+            channel_values[ch] = pd.Series(0.0, index=timeline)
+            channel_costs[ch] = pd.Series(0.0, index=timeline)
+        channel_values[ch] = channel_values[ch].add(value_series, fill_value=0.0)
+        channel_costs[ch] = channel_costs[ch].add(invested, fill_value=0.0)
+
+    channels = sorted(channel_values.keys())
+
+    result: list[dict[str, Any]] = []
+    for i in range(1, len(timeline)):
+        row: dict[str, Any] = {"date": timeline[i]}
+        for ch in channels:
+            dv = channel_values[ch].iloc[i] - channel_values[ch].iloc[i - 1]
+            dc = channel_costs[ch].iloc[i] - channel_costs[ch].iloc[i - 1]
+            row[ch] = round(float(dv - dc), 2)
+        result.append(row)
+
+    return result
 
 
 def _first_ge(sorted_list: list[str], value: str) -> int | None:

@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { PortfolioSummary, CurvePoint, Position } from "@/api/types"
+import type { PortfolioSummary, CurvePoint, ChannelPnLPoint, Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -12,9 +12,33 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, R
 import PnLCalendar from "@/components/PnLCalendar"
 import { ChevronUp, ChevronDown, BarChart3, CalendarDays } from "lucide-react"
 
+const CHANNEL_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f43f5e", "#84cc16"]
+
+function ChannelTooltip({ active, payload, label }: { active?: boolean; payload?: { dataKey: string; value: number; color: string }[]; label?: string }) {
+  if (!active || !payload?.length) return null
+  const total = payload.reduce((s, p) => s + p.value, 0)
+  return (
+    <div className="bg-white rounded-lg border border-slate-200 p-2 text-xs shadow-sm">
+      <p className="font-medium text-slate-700 mb-1">{label}</p>
+      {payload.map((p) => (
+        <div key={p.dataKey} className="flex items-center gap-1.5">
+          <span className="inline-block w-2 h-2 rounded-full" style={{ background: p.color }} />
+          <span className="text-slate-600">{p.dataKey}:</span>
+          <span className={`font-medium tabular-nums ${p.value >= 0 ? "text-emerald-600" : "text-red-500"}`}>{signedMoney(p.value)}</span>
+        </div>
+      ))}
+      <div className="mt-1 pt-1 border-t border-slate-100 flex justify-between">
+        <span className="text-slate-500">合计</span>
+        <span className={`font-bold tabular-nums ${total >= 0 ? "text-emerald-600" : "text-red-500"}`}>{signedMoney(total)}</span>
+      </div>
+    </div>
+  )
+}
+
 export default function Returns() {
   const { data: summary, loading: sl } = useApi<PortfolioSummary>(() => api.getSummary())
   const { data: curve } = useApi<CurvePoint[]>(() => api.getPortfolioCurve())
+  const { data: channelPnl } = useApi<ChannelPnLPoint[]>(() => api.getChannelPnl())
   const { data: positions } = useApi<Position[]>(() => api.getPositions())
   const [sortField, setSortField] = useState("return_rate")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
@@ -53,7 +77,7 @@ export default function Returns() {
     })
   }, [openPositions, sortField, sortDir])
 
-  // 从 curve 计算每日 diff（基础数据）
+  // 从 curve 计算每日 diff（供日历视图用）
   const dailyDiffs = useMemo(() => {
     if (!curve || curve.length < 2) return []
     const data: { date: string; pnl: number }[] = []
@@ -65,46 +89,58 @@ export default function Returns() {
     return data
   }, [curve])
 
-  // 按模式聚合收益波动数据
+  const channels = useMemo(() => {
+    if (!channelPnl?.length) return []
+    const set = new Set<string>()
+    for (const d of channelPnl) {
+      for (const k of Object.keys(d)) {
+        if (k !== "date") set.add(k)
+      }
+    }
+    return [...set].sort()
+  }, [channelPnl])
+
+  // 按模式聚合收益波动数据（按渠道拆分，用于堆叠柱状图）
   const pnlData = useMemo(() => {
-    if (dailyDiffs.length === 0) return []
+    if (!channelPnl?.length || channels.length === 0) return []
 
     if (pnlMode === "day") {
-      return dailyDiffs.slice(-pnlDays)
+      return channelPnl.slice(-pnlDays)
     }
 
     // 周/月/年聚合
-    const buckets: Record<string, { label: string; pnl: number; sortKey: string }> = {}
-    for (const d of dailyDiffs) {
+    const buckets: Record<string, Record<string, string | number>> = {}
+    for (const d of channelPnl) {
       const dt = new Date(d.date + "T00:00:00")
-      let key: string, label: string, sortKey: string
+      let key: string, label: string
 
       if (pnlMode === "week") {
-        // ISO 周一为起点
         const day = dt.getDay() || 7
         const monday = new Date(dt)
         monday.setDate(dt.getDate() - day + 1)
         key = monday.toISOString().slice(0, 10)
         label = `${monday.getMonth() + 1}/${monday.getDate()}`
-        sortKey = key
       } else if (pnlMode === "month") {
         key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`
         label = `${dt.getFullYear()}/${dt.getMonth() + 1}`
-        sortKey = key
       } else {
         key = String(dt.getFullYear())
         label = String(dt.getFullYear())
-        sortKey = key
       }
 
-      if (!buckets[key]) buckets[key] = { label, pnl: 0, sortKey }
-      buckets[key].pnl = Math.round((buckets[key].pnl + d.pnl) * 100) / 100
+      if (!buckets[key]) {
+        buckets[key] = { label, sortKey: key }
+        for (const ch of channels) buckets[key][ch] = 0
+      }
+      for (const ch of channels) {
+        buckets[key][ch] = Math.round((Number(buckets[key][ch]) + Number(d[ch] || 0)) * 100) / 100
+      }
     }
 
     return Object.values(buckets)
-      .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
-      .map(b => ({ date: b.label, pnl: b.pnl }))
-  }, [dailyDiffs, pnlMode, pnlDays])
+      .sort((a, b) => String(a.sortKey).localeCompare(String(b.sortKey)))
+      .map(({ label, sortKey, ...rest }) => ({ date: String(label), ...rest }))
+  }, [channelPnl, channels, pnlMode, pnlDays])
 
   if (sl || !summary) return <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
 
@@ -213,13 +249,12 @@ export default function Returns() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="date" fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                   <YAxis tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${(v / 1000).toFixed(1)}k`} fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <Tooltip formatter={(v: number) => signedMoney(v)} labelStyle={{ color: '#1e293b' }} contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                  <Tooltip content={<ChannelTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
                   <ReferenceLine y={0} stroke="#cbd5e1" />
-                  <Bar dataKey="pnl" radius={[3, 3, 0, 0]}>
-                    {pnlData.map((row, i) => (
-                      <Cell key={i} fill={row.pnl >= 0 ? "#10b981" : "#ef4444"} />
-                    ))}
-                  </Bar>
+                  {channels.map((ch, i) => (
+                    <Bar key={ch} dataKey={ch} stackId="a" fill={CHANNEL_COLORS[i % CHANNEL_COLORS.length]} radius={i === channels.length - 1 ? [3, 3, 0, 0] : undefined} />
+                  ))}
                 </BarChart>
               </ResponsiveContainer>
             )}

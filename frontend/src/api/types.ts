@@ -73,6 +73,11 @@ export interface CurvePoint {
   total_return: number
 }
 
+export interface ChannelPnLPoint {
+  date: string
+  [channel: string]: string | number
+}
+
 export interface DistributionItem {
   [key: string]: string | number
   market_value: number

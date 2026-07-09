@@ -340,16 +340,18 @@ def build_portfolio_curve() -> pd.DataFrame:
         # 构造每日累计份额
         share_delta = pd.Series(0.0, index=timeline)
         cost_delta = pd.Series(0.0, index=timeline)
+        pending_value_delta = pd.Series(0.0, index=timeline)
         for t in tx_sorted:
             if t.fund_code != code:
                 continue
             if not t.shares:
-                # 待确认交易：只影响成本，不影响份额
+                # 待确认买入：占位金额，避免 P&L 出现虚假亏损
                 if t.action == ACTION_BUY and t.amount:
                     d = t.date if t.date >= start_date else start_date
                     idx = _first_ge(timeline, d)
                     if idx is not None:
                         cost_delta.iloc[idx] += t.amount
+                        pending_value_delta.iloc[idx] += t.amount
                 continue
             if t.action == ACTION_DIVIDEND:
                 continue  # 现金分红不改变份额
@@ -358,6 +360,11 @@ def build_portfolio_curve() -> pd.DataFrame:
             idx = _first_ge(timeline, d)
             if idx is None:
                 continue
+            # 待确认卖出：份额已知、金额未知，用净值估算占位
+            if t.action == ACTION_SELL and not t.amount:
+                nav_at_idx = navs.iloc[idx] if idx < len(navs) else 0.0
+                if nav_at_idx and pd.notna(nav_at_idx):
+                    pending_value_delta.iloc[idx] += t.shares * nav_at_idx
             # 买入/再投资 = +份额, 卖出 = -份额
             sign = -1.0 if t.action == ACTION_SELL else 1.0
             share_delta.iloc[idx] += sign * t.shares
@@ -365,7 +372,8 @@ def build_portfolio_curve() -> pd.DataFrame:
 
         held = share_delta.cumsum().clip(lower=0)
         invested_code = cost_delta.cumsum().clip(lower=0)
-        total_value = total_value.add(held * navs, fill_value=0.0)
+        pending_cum = pending_value_delta.cumsum()
+        total_value = total_value.add(held * navs + pending_cum, fill_value=0.0)
         invested = invested.add(invested_code, fill_value=0.0)
 
     curve = pd.DataFrame({
@@ -426,6 +434,7 @@ def build_channel_daily_pnl() -> list[dict[str, Any]]:
 
         share_delta = pd.Series(0.0, index=timeline)
         cost_delta = pd.Series(0.0, index=timeline)
+        pending_value_delta = pd.Series(0.0, index=timeline)
         for t in tx_sorted:
             if t.fund_code != code or (t.channel or "") != channel:
                 continue
@@ -435,6 +444,7 @@ def build_channel_daily_pnl() -> list[dict[str, Any]]:
                     idx = _first_ge(timeline, d)
                     if idx is not None:
                         cost_delta.iloc[idx] += t.amount
+                        pending_value_delta.iloc[idx] += t.amount
                 continue
             if t.action == ACTION_DIVIDEND:
                 continue
@@ -442,13 +452,18 @@ def build_channel_daily_pnl() -> list[dict[str, Any]]:
             idx = _first_ge(timeline, d)
             if idx is None:
                 continue
+            if t.action == ACTION_SELL and not t.amount:
+                nav_at_idx = navs.iloc[idx] if idx < len(navs) else 0.0
+                if nav_at_idx and pd.notna(nav_at_idx):
+                    pending_value_delta.iloc[idx] += t.shares * nav_at_idx
             sign = -1.0 if t.action == ACTION_SELL else 1.0
             share_delta.iloc[idx] += sign * t.shares
             cost_delta.iloc[idx] += sign * (t.amount or 0.0)
 
         held = share_delta.cumsum().clip(lower=0)
         invested = cost_delta.cumsum().clip(lower=0)
-        value_series = held * navs
+        pending_cum = pending_value_delta.cumsum()
+        value_series = held * navs + pending_cum
 
         ch = channel or "其它"
         if ch not in channel_values:

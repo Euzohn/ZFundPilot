@@ -166,9 +166,9 @@ def get_ai_usage() -> dict[str, Any]:
 
 
 @app.get("/api/ai/system-prompt")
-def get_system_prompt() -> dict[str, Any]:
-    """构建并返回系统提示（含持仓快照）。前端在新对话首条消息时取一次，整个对话复用。"""
-    return {"system_prompt": ai.build_system_prompt()}
+def get_system_prompt(include_context: bool = True) -> dict[str, Any]:
+    """构建并返回系统提示。前端在新对话首条消息时取一次，整个对话复用。"""
+    return {"system_prompt": ai.build_system_prompt(include_context=include_context)}
 
 
 @app.post("/api/ai/test")

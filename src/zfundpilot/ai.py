@@ -220,9 +220,9 @@ def _build_system_prompt(context: str, has_search: bool = True) -> str:
 {context}"""
 
 
-def build_system_prompt() -> str:
+def build_system_prompt(include_context: bool = True) -> str:
     """构建当前配置下的系统提示（含持仓快照 + 搜索能力判断）。供 API 端点调用。"""
-    context = build_portfolio_context()
+    context = build_portfolio_context() if include_context else ""
     provider = detect_provider(config.AI_BASE_URL) if config.AI_WEB_SEARCH else "none"
     has_search = provider in ("kimi", "zhipu", "qwen", "deepseek")
     return _build_system_prompt(context, has_search)

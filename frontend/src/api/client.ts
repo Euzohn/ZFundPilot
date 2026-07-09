@@ -84,7 +84,8 @@ export const api = {
   getAIUsage: () => request<AIUsageStats>("/ai/usage"),
 
   // AI System Prompt (build once per conversation, reuse)
-  getSystemPrompt: () => request<{ system_prompt: string }>("/ai/system-prompt"),
+  getSystemPrompt: (includeContext?: boolean) =>
+    request<{ system_prompt: string }>(`/ai/system-prompt?include_context=${includeContext ?? true}`),
 
   // AI Connection Test
   testAIConnection: () =>

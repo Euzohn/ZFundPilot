@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import FeeBreakdownCard from "@/components/FeeBreakdownCard"
-import { Bot, Send, Search, Plus, Check, X, Loader2, ChevronDown, Clock, Pencil } from "lucide-react"
+import { ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react"
+import { Bot, Send, Search, Plus, Check, X, Loader2, Clock, Pencil } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { toast } from "sonner"
@@ -47,6 +48,7 @@ interface PersistedSessions {
   activeMessages: ChatMessage[]
   activeTxStatus: TxState
   activeSystemPrompt: string
+  includeContext: boolean
   archive: SessionMeta[]
 }
 
@@ -96,7 +98,7 @@ function formatTokens(n: number): string {
 }
 
 function loadSessions(): PersistedSessions {
-  const empty = (): PersistedSessions => ({ activeId: newId(), activeTitle: "", activeMessages: [], activeTxStatus: {}, activeSystemPrompt: "", archive: [] })
+  const empty = (): PersistedSessions => ({ activeId: newId(), activeTitle: "", activeMessages: [], activeTxStatus: {}, activeSystemPrompt: "", includeContext: true, archive: [] })
   try {
     const raw = localStorage.getItem(SESSIONS_KEY)
     if (raw) {
@@ -108,6 +110,7 @@ function loadSessions(): PersistedSessions {
           activeMessages: Array.isArray(p.activeMessages) ? p.activeMessages : [],
           activeTxStatus: p.activeTxStatus ?? {},
           activeSystemPrompt: p.activeSystemPrompt ?? "",
+          includeContext: p.includeContext !== false,
           archive: p.archive.map((s: SessionMeta) => ({ ...s, systemPrompt: s.systemPrompt ?? "" })),
         }
       }
@@ -120,7 +123,7 @@ function loadSessions(): PersistedSessions {
       const old = JSON.parse(legacy)
       if (old && Array.isArray(old.messages) && old.messages.length > 0) {
         try { localStorage.removeItem(LEGACY_KEY) } catch {}
-        return { activeId: newId(), activeTitle: "", activeMessages: old.messages, activeTxStatus: old.txStatus ?? {}, activeSystemPrompt: "", archive: [] }
+        return { activeId: newId(), activeTitle: "", activeMessages: old.messages, activeTxStatus: old.txStatus ?? {}, activeSystemPrompt: "", includeContext: true, archive: [] }
       }
     }
   } catch {}
@@ -180,6 +183,8 @@ export default function AIChat() {
   const chatEndRef = useRef<HTMLDivElement>(null)
   const [txStatus, setTxStatus] = useState<TxState>(() => restored.activeTxStatus)
   const [systemPrompt, setSystemPrompt] = useState(() => restored.activeSystemPrompt ?? "")
+  const [includeContext, setIncludeContext] = useState(() => restored.includeContext)
+  const [showSysPrompt, setShowSysPrompt] = useState(false)
   const [adding, setAdding] = useState<number | null>(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [lastUsage, setLastUsage] = useState<{ prompt: number; completion: number; total: number } | null>(null)
@@ -194,14 +199,21 @@ export default function AIChat() {
     try {
       localStorage.setItem(SESSIONS_KEY, JSON.stringify({
         activeId, activeTitle: currentTitle, activeMessages: messages, activeTxStatus: txStatus,
-        activeSystemPrompt: systemPrompt, archive,
+        activeSystemPrompt: systemPrompt, includeContext, archive,
       } as PersistedSessions))
     } catch { /* 配额满静默降级 */ }
-  }, [messages, txStatus, activeId, archive, currentTitle, systemPrompt])
+  }, [messages, txStatus, activeId, archive, currentTitle, systemPrompt, includeContext])
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, searching])
+
+  // 切换 includeContext 时重新取 system prompt
+  useEffect(() => {
+    api.getSystemPrompt(includeContext).then((res) => {
+      setSystemPrompt(res.system_prompt)
+    }).catch(() => {})
+  }, [includeContext])
 
   const handleSend = async (text?: string) => {
     const content = (text ?? input).trim()
@@ -221,7 +233,7 @@ export default function AIChat() {
       let sysPrompt = systemPrompt
       if (!sysPrompt) {
         try {
-          const res = await api.getSystemPrompt()
+          const res = await api.getSystemPrompt(includeContext)
           sysPrompt = res.system_prompt
           setSystemPrompt(sysPrompt)
         } catch { /* 取失败则不发 system，后端兜底构建 */ }
@@ -499,9 +511,21 @@ export default function AIChat() {
               基于实时资讯 + 当前持仓数据，给出风险分析与调仓建议；也可描述交易让 AI 帮你录入
             </p>
           </div>
-          <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={handleNewChat} disabled={streaming} title="开始新对话">
-            <Plus className="h-3.5 w-3.5 mr-1" /> 新对话
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIncludeContext(!includeContext)}
+              disabled={streaming}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${includeContext ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-400"}`}
+              title={includeContext ? "当前携带持仓明细" : "不携带持仓明细"}
+            >
+              {includeContext ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+              <span>持仓明细</span>
+            </button>
+            <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={handleNewChat} disabled={streaming} title="开始新对话">
+              <Plus className="h-3.5 w-3.5 mr-1" /> 新对话
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="flex flex-col flex-1 min-h-0 gap-3">
           {!configured ? (
@@ -510,6 +534,27 @@ export default function AIChat() {
             </p>
           ) : (
             <>
+              {/* 系统提示词折叠面板 */}
+              {systemPrompt && (
+                <div className="shrink-0 rounded-lg border border-slate-200 bg-slate-50/30">
+                  <button
+                    type="button"
+                    onClick={() => setShowSysPrompt(!showSysPrompt)}
+                    className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showSysPrompt ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                    <span>系统提示词</span>
+                    <span className="text-[10px] text-muted-foreground/50">
+                      （{includeContext ? "含持仓明细" : "不含持仓明细"} · {systemPrompt.length} 字符）
+                    </span>
+                  </button>
+                  {showSysPrompt && (
+                    <pre className="max-h-48 overflow-y-auto px-3 pb-2 text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap font-mono">
+                      {systemPrompt}
+                    </pre>
+                  )}
+                </div>
+              )}
               {/* 消息列表 */}
               <div className="flex-1 overflow-y-auto space-y-3 rounded-lg border bg-slate-50/50 p-4 min-h-0">
                 {messages.length === 0 && (

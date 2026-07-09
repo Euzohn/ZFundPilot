@@ -53,6 +53,17 @@ export default function Returns() {
   const [chartView, setChartView] = useState<"bar" | "calendar">("bar")
   const [curveRange, setCurveRange] = useState<"1m" | "3m" | "6m" | "1y" | "all">("1y")
   const [channelColors, setChannelColors] = useState<Record<string, string>>(() => getChannelColors())
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
+
+  const toggleLegend = (e: any) => {
+    const key = e.dataKey || e.value
+    setHiddenKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   useEffect(() => {
     getChannelColorsAsync().then(setChannelColors).catch(() => {})
@@ -339,11 +350,11 @@ export default function Returns() {
                   if (name === "累计收益率") return [`${(value * 100).toFixed(2)}%`, name]
                   return [money(value), name]
                 }} labelStyle={{ color: '#1e293b' }} contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area yAxisId="value" type="monotone" dataKey="total_value" name="组合市值" stroke="#3B82F6" strokeWidth={2} fill="url(#valueGradient)" />
-                <Line yAxisId="value" type="monotone" dataKey="invested_cost" name="累计净投入" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                <Line yAxisId="value" type="monotone" dataKey="profit" name="累计收益" stroke="#10b981" strokeWidth={2} dot={false} />
-                <Line yAxisId="return" type="monotone" dataKey="total_return" name="累计收益率" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                <Legend wrapperStyle={{ fontSize: 12 }} onClick={toggleLegend} />
+                <Area yAxisId="value" type="monotone" dataKey="total_value" name="组合市值" stroke="#3B82F6" strokeWidth={2} fill="url(#valueGradient)" hide={hiddenKeys.has("total_value")} />
+                <Line yAxisId="value" type="monotone" dataKey="invested_cost" name="累计净投入" stroke="#f59e0b" strokeWidth={2} dot={false} hide={hiddenKeys.has("invested_cost")} />
+                <Line yAxisId="value" type="monotone" dataKey="profit" name="累计收益" stroke="#10b981" strokeWidth={2} dot={false} hide={hiddenKeys.has("profit")} />
+                <Line yAxisId="return" type="monotone" dataKey="total_return" name="累计收益率" stroke="#8b5cf6" strokeWidth={2} dot={false} hide={hiddenKeys.has("total_return")} />
               </ComposedChart>
             </ResponsiveContainer>
           ) : (

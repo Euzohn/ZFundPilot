@@ -105,7 +105,7 @@ export default function FundDetail() {
     })
   }, [navHistory, navRange, txs])
 
-  if (fundLoading) return <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
+  if (fundLoading) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
 
   // 筛选该基金的所有持仓（跨渠道）
   const fundPositions = positions?.filter((p) => p.fund_code === code) ?? []

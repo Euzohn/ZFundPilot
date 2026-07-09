@@ -119,7 +119,7 @@ export default function Positions() {
   return (
     <div className="space-y-6">
       {loading ? (
-        <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
+        <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
       ) : !positions ? (
         <div className="py-20 text-center text-red-500">加载失败</div>
       ) : (

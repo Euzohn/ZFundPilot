@@ -174,7 +174,7 @@ export default function Returns() {
       .map(({ label, sortKey, ...rest }) => ({ date: String(label), ...rest }))
   }, [channelPnl, channels, pnlMode, pnlDays, pnlAggRange])
 
-  if (sl || !summary) return <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
+  if (sl || !summary) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
 
   function SortHeader({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) {
     const active = sortField === field

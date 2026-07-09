@@ -48,7 +48,7 @@ export default function Overview() {
   const { data: channelDist } = useApi<DistributionItem[]>(() => api.getDistribution("channel"))
   const { data: sectorDist } = useApi<DistributionItem[]>(() => api.getDistribution("sector"))
 
-  if (sl || !summary) return <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
+  if (sl || !summary) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
 
   const noData = summary.holding_count === 0
   if (noData) {

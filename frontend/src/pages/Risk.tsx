@@ -30,7 +30,7 @@ export default function Risk() {
   const { data: report, loading: rl } = useApi<RiskReport>(() => api.getRiskReport())
   const { data: advice, loading: al } = useApi<Advice[]>(() => api.getRebalanceAdvice())
 
-  if (rl || !report) return <div className="flex py-20 items-center justify-center"><LogoSpinner className="h-12 w-12" /></div>
+  if (rl || !report) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
 
   return (
     <div className="space-y-6">

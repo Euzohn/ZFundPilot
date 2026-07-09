@@ -988,10 +988,21 @@ def calc_redemption_fee(
     sell_date: str,
     sell_shares: float,
 ) -> CalcFeeResult:
-    """计算赎回手续费（FIFO 先进先出）。"""
+    """计算赎回手续费（FIFO 先进先出）。
+
+    赎回手续费 = 卖出份额 × 卖出确认净值 × 赎回费率
+    卖出净值从 nav_history 中按卖出日期查找（T+1 则可能尚未确认）。
+    """
     rates = fetch_fund_fee_rates(fund_code)
     if not rates.ok or not rates.redemption:
         return CalcFeeResult(fee=0, rate=0, label="费率未知")
+
+    # 查找卖出确认净值（卖出日期当天或之后最近的一条）
+    sell_nav_row = db.get_nav_on_or_after(fund_code, sell_date)
+    if not sell_nav_row:
+        # T+1 待确认：净值尚未公布，无法计算手续费
+        return CalcFeeResult(fee=0, rate=0, label="待确认净值后计算手续费")
+    sell_nav = float(sell_nav_row["nav"])
 
     # 获取该基金所有买入记录（按日期升序）
     buy_txs = db.get_transactions(fund_code)
@@ -1009,7 +1020,7 @@ def calc_redemption_fee(
         if remaining <= 0:
             break
         lot_shares = lot.shares or 0
-        lot_nav = lot.nav or 0
+        lot_nav = lot.nav or 0  # 买入净值（仅展示参考）
         used = min(lot_shares, remaining)
         days = (sell_dt - _parse_date(lot.date)).days
         if days < 0:
@@ -1023,7 +1034,7 @@ def calc_redemption_fee(
                     rate = tier.rate
                     break
 
-        lot_amount = used * lot_nav
+        lot_amount = used * sell_nav
         fee = round(lot_amount * rate, 2)
         total_fee += fee
         remaining -= used
@@ -1035,15 +1046,13 @@ def calc_redemption_fee(
             days_held=days,
             rate=rate,
             fee=fee,
-            nav=lot_nav,
+            nav=sell_nav,
         ))
 
     # 如果还有剩余份额无法匹配（超出买入总量），按最低费率
     if remaining > 0 and buy_lots:
         lowest_rate = rates.redemption[-1].rate if rates.redemption else 0
-        latest = db.get_latest_nav(fund_code)
-        extra_nav = float(latest["nav"]) if latest else 1.0
-        extra_fee = round(remaining * extra_nav * lowest_rate, 2)
+        extra_fee = round(remaining * sell_nav * lowest_rate, 2)
         total_fee += extra_fee
         lots_detail.append(FeeLot(
             buy_date="",
@@ -1052,13 +1061,13 @@ def calc_redemption_fee(
             days_held=0,
             rate=lowest_rate,
             fee=extra_fee,
-            nav=extra_nav,
+            nav=sell_nav,
         ))
 
     total_fee = round(total_fee, 2)
 
     # 有效费率 = 总费用 / 总卖出金额
-    total_sold_amount = sum(l.used_shares * l.nav for l in lots_detail)
+    total_sold_amount = sum(l.used_shares * sell_nav for l in lots_detail)
     effective_rate = total_fee / total_sold_amount if total_sold_amount > 0 else 0
 
     label = f"赎回费率 {effective_rate * 100:.2f}%"

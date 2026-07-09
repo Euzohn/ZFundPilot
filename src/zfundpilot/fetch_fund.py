@@ -615,6 +615,8 @@ class CalcFeeResult:
     fee: float = 0.0
     rate: float = 0.0
     label: str = ""
+    amount: float = 0.0           # 预估交易金额（卖出时 = shares × nav - fee）
+    nav: float | None = None      # 计算使用的净值
     lots: list[dict] | None = None  # 仅卖出时有批次明细
 
 
@@ -957,7 +959,7 @@ def calc_purchase_fee(fund_code: str, amount: float) -> CalcFeeResult:
     """计算买入手续费。"""
     rates = fetch_fund_fee_rates(fund_code)
     if not rates.ok or not rates.purchase:
-        return CalcFeeResult(fee=0, rate=0, label="费率未知")
+        return CalcFeeResult(fee=0, rate=0, label="费率未知", amount=amount)
 
     # 按金额匹配分档
     for tier in rates.purchase:
@@ -968,19 +970,19 @@ def calc_purchase_fee(fund_code: str, amount: float) -> CalcFeeResult:
         if tier.is_fixed:
             fee = tier.fixed_fee
             label = tier.label
-            return CalcFeeResult(fee=fee, rate=0, label=label)
+            return CalcFeeResult(fee=fee, rate=0, label=label, amount=amount)
         fee = round(amount * tier.rate, 2)
         pct = f"{tier.rate * 100:.2f}%"
         label = f"申购费率 {pct}"
-        return CalcFeeResult(fee=fee, rate=tier.rate, label=label)
+        return CalcFeeResult(fee=fee, rate=tier.rate, label=label, amount=amount)
 
     # 超出最大档：用最后一档
     last = rates.purchase[-1]
     if last.is_fixed:
-        return CalcFeeResult(fee=last.fixed_fee, rate=0, label=last.label)
+        return CalcFeeResult(fee=last.fixed_fee, rate=0, label=last.label, amount=amount)
     fee = round(amount * last.rate, 2)
     pct = f"{last.rate * 100:.2f}%"
-    return CalcFeeResult(fee=fee, rate=last.rate, label=f"申购费率 {pct}")
+    return CalcFeeResult(fee=fee, rate=last.rate, label=f"申购费率 {pct}", amount=amount)
 
 
 def calc_redemption_fee(
@@ -1009,7 +1011,8 @@ def calc_redemption_fee(
     buy_lots = [t for t in buy_txs if t.action == "buy" and t.date and t.shares]
 
     if not buy_lots:
-        return CalcFeeResult(fee=0, rate=0, label="无买入记录，无法计算持有期")
+        return CalcFeeResult(fee=0, rate=0, label="无买入记录，无法计算持有期",
+                             amount=round(sell_shares * sell_nav, 2), nav=sell_nav)
 
     sell_dt = _parse_date(sell_date)
     remaining = sell_shares
@@ -1071,10 +1074,13 @@ def calc_redemption_fee(
     effective_rate = total_fee / total_sold_amount if total_sold_amount > 0 else 0
 
     label = f"赎回费率 {effective_rate * 100:.2f}%"
+    total_amount = round(sell_shares * sell_nav - total_fee, 2)
     return CalcFeeResult(
         fee=total_fee,
         rate=effective_rate,
         label=label,
+        amount=total_amount,
+        nav=sell_nav,
         lots=[{"buy_date": l.buy_date, "buy_shares": l.buy_shares,
                "used_shares": l.used_shares, "days_held": l.days_held,
                "rate": l.rate, "fee": l.fee} for l in lots_detail],

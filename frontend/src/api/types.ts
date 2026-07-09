@@ -191,6 +191,8 @@ export interface CalcFeeResponse {
   fee: number
   rate: number
   label: string
+  amount: number
+  nav: number | null
   lots: FeeLot[] | null
 }
 

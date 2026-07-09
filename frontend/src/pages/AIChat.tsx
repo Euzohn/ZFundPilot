@@ -683,6 +683,8 @@ function TxConfirmCard({
   const [editFee, setEditFee] = useState(() => tx.fee ? String(tx.fee) : "")
   const [feeCalcResult, setFeeCalcResult] = useState<CalcFeeResponse | null>(null)
   const [feeCalcLoading, setFeeCalcLoading] = useState(false)
+  const [estimatedAmount, setEstimatedAmount] = useState<number | null>(null)
+  const [estimatedNav, setEstimatedNav] = useState<number | null>(null)
 
   useEffect(() => {
     setEditDate(tx.date)
@@ -714,6 +716,8 @@ function TxConfirmCard({
           if (!tx.fee && res.fee > 0) {
             setEditFee(res.fee.toFixed(2))
           }
+          if (res.nav) setEstimatedNav(res.nav)
+          if (res.amount > 0) setEstimatedAmount(res.amount)
         })
         .catch(() => {})
         .finally(() => setFeeCalcLoading(false))
@@ -738,6 +742,8 @@ function TxConfirmCard({
   const finalTx: ExtractedTx = {
     ...tx, date: editDate, after_three: afterThree,
     fee: parseFloat(editFee) || 0,
+    amount: tx.amount ?? estimatedAmount ?? null,
+    nav: tx.nav ?? estimatedNav ?? null,
   }
   const canConfirm = !!finalTx.fund_code && !!finalTx.date && !adding
 
@@ -785,10 +791,11 @@ function TxConfirmCard({
             {afterThree ? "15:00 后（T+1 确认）" : "15:00 前（当日确认）"}
           </button>
         </div>
-        {tx.amount != null && (
+        {finalTx.amount != null && (
           <div className="flex items-center gap-1.5">
             <span className="text-muted-foreground">金额</span>
-            <span className="tabular-nums">{money(tx.amount)}</span>
+            <span className="tabular-nums">{money(finalTx.amount)}</span>
+            {estimatedAmount != null && tx.action === "sell" && <span className="text-[10px] text-muted-foreground">（估算）</span>}
           </div>
         )}
         {tx.shares != null && (

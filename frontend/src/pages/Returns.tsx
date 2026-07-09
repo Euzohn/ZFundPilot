@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { money, pct, signedMoney, pnlColor } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, AreaChart, Cell, ReferenceLine } from "recharts"
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart, Cell, ReferenceLine } from "recharts"
 import PnLCalendar from "@/components/PnLCalendar"
 import { ChevronUp, ChevronDown, BarChart3, CalendarDays } from "lucide-react"
 import { getChannelColors, getChannelColorsAsync, getPalette } from "@/lib/channelColors"
@@ -324,7 +324,7 @@ export default function Returns() {
         <CardContent>
           {filteredCurve.length >= 2 ? (
             <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={filteredCurve} margin={{ left: 10, right: 5, top: 5 }}>
+              <ComposedChart data={filteredCurve} margin={{ left: 10, right: 5, top: 5 }}>
                 <defs>
                   <linearGradient id="valueGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.15} />
@@ -344,7 +344,7 @@ export default function Returns() {
                 <Line yAxisId="value" type="monotone" dataKey="invested_cost" name="累计净投入" stroke="#f59e0b" strokeWidth={2} dot={false} />
                 <Line yAxisId="value" type="monotone" dataKey="profit" name="累计收益" stroke="#10b981" strokeWidth={2} dot={false} />
                 <Line yAxisId="return" type="monotone" dataKey="total_return" name="累计收益率" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-              </AreaChart>
+              </ComposedChart>
             </ResponsiveContainer>
           ) : (
             <p className="py-12 text-center text-sm text-muted-foreground">

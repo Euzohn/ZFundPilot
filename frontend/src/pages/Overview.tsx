@@ -35,9 +35,10 @@ function MetricCard({ icon: Icon, label, value, sub, color }: {
 
 function ChartTooltip({ active, payload, nameKey }: any) {
   if (!active || !payload?.length) return null
+  const label = nameKey ? payload[0].payload?.[nameKey] : payload[0].name
   return (
     <div className="rounded-lg border bg-white px-3 py-2 shadow-lg">
-      <p className="text-xs font-medium text-foreground">{payload[0].name}</p>
+      <p className="text-xs font-medium text-foreground">{label ?? payload[0].name}</p>
       <p className="text-sm font-bold tabular-nums text-primary">{money(payload[0].value as number)}</p>
     </div>
   )
@@ -121,7 +122,7 @@ export default function Overview() {
                   <Pie data={typeDist} dataKey="market_value" nameKey="fund_type" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
                     {typeDist.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke="none" />)}
                   </Pie>
-                  <Tooltip content={<ChartTooltip />} />
+                  <Tooltip content={<ChartTooltip nameKey="fund_type" />} />
                 </PieChart>
               </ResponsiveContainer>
             ) : <p className="py-12 text-center text-sm text-muted-foreground">暂无数据</p>}
@@ -137,7 +138,7 @@ export default function Overview() {
                   <Pie data={channelDist.map(d => ({ ...d, channel: d.channel || "未标注" }))} dataKey="market_value" nameKey="channel" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
                     {channelDist.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke="none" />)}
                   </Pie>
-                  <Tooltip content={<ChartTooltip />} />
+                  <Tooltip content={<ChartTooltip nameKey="channel" />} />
                 </PieChart>
               </ResponsiveContainer>
             ) : <p className="py-12 text-center text-sm text-muted-foreground">暂无数据</p>}
@@ -154,7 +155,7 @@ export default function Overview() {
                   <XAxis type="number" tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                   <YAxis type="category" dataKey="sector" width={65} fontSize={11} tick={{ fill: '#64748b' }} axisLine={false} tickLine={false} />
                   <Bar dataKey="market_value" fill="#1E40AF" radius={[0, 4, 4, 0]} barSize={14} />
-                  <Tooltip content={<ChartTooltip />} cursor={{ fill: '#3B82F6', opacity: 0.08 }} />
+                  <Tooltip content={<ChartTooltip nameKey="sector" />} cursor={{ fill: '#3B82F6', opacity: 0.08 }} />
                 </BarChart>
               </ResponsiveContainer>
             ) : <p className="py-12 text-center text-sm text-muted-foreground">暂无数据</p>}

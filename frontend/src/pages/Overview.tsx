@@ -1,4 +1,5 @@
 import { useApi } from "@/lib/useApi"
+import { useMemo } from "react"
 import { api } from "@/api/client"
 import type { PortfolioSummary, DistributionItem } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -44,6 +45,16 @@ function ChartTooltip({ active, payload, nameKey }: any) {
 
 export default function Overview() {
   const { data: summary, loading: sl } = useApi<PortfolioSummary>(() => api.getSummary())
+
+  const dailyLabel = useMemo(() => {
+    if (!summary?.as_of_date) return "今日收益"
+    const today = new Date().toISOString().slice(0, 10)
+    if (summary.as_of_date === today) return "今日收益"
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+    if (summary.as_of_date === yesterday) return "昨日收益"
+    const d = new Date(summary.as_of_date + "T00:00:00")
+    return `${d.getMonth() + 1}/${d.getDate()}收益`
+  }, [summary])
   const { data: typeDist } = useApi<DistributionItem[]>(() => api.getDistribution("fund_type"))
   const { data: channelDist } = useApi<DistributionItem[]>(() => api.getDistribution("channel"))
   const { data: sectorDist } = useApi<DistributionItem[]>(() => api.getDistribution("sector"))
@@ -78,7 +89,7 @@ export default function Overview() {
 
       {/* Period returns — 今日/本周/本月/今年 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <MetricCard icon={Activity} label="今日收益" value={signedMoney(summary.daily_pnl)} sub={pct(summary.daily_return)} color={pnlColor(summary.daily_pnl)} />
+        <MetricCard icon={Activity} label={dailyLabel} value={signedMoney(summary.daily_pnl)} sub={pct(summary.daily_return)} color={pnlColor(summary.daily_pnl)} />
         <MetricCard icon={TrendingUp} label="本周收益" value={signedMoney(summary.week_pnl)} sub={pct(summary.week_return)} color={pnlColor(summary.week_pnl)} />
         <MetricCard icon={TrendingUp} label="本月收益" value={signedMoney(summary.month_pnl)} sub={pct(summary.month_return)} color={pnlColor(summary.month_pnl)} />
         <MetricCard icon={TrendingUp} label="今年收益" value={signedMoney(summary.year_pnl)} sub={pct(summary.year_return)} color={pnlColor(summary.year_pnl)} />

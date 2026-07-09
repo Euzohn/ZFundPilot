@@ -125,7 +125,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   const [meta, setMeta] = useState<FundMeta | null>(null)
   const [fetching, setFetching] = useState(false)
   const [action, setAction] = useState("buy")
-  const [date, setDate] = useState("")
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [channels, setChannels] = useState<string[]>(() => getChannels())
   const [channel, setChannel] = useState(channels[0])
   const [amount, setAmount] = useState("")
@@ -341,7 +341,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   }
 
   const resetForm = () => {
-    setCode(""); setMeta(null); setAction("buy"); setDate("")
+    setCode(""); setMeta(null); setAction("buy"); setDate(new Date().toISOString().slice(0, 10))
     setAmount(""); setShares(""); setNav(""); setFee("0")
     setCustomChannel(""); setNote(""); setAfterThree(false)
     setFeeCalcResult(null); feeManuallyEdited.current = false

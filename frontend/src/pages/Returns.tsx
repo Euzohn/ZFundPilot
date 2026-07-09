@@ -101,15 +101,18 @@ export default function Returns() {
     return data
   }, [curve])
 
-  // 按时间区间过滤组合曲线
+  // 按时间区间过滤组合曲线 + 计算累计收益
   const filteredCurve = useMemo(() => {
     if (!curve?.length) return []
-    if (curveRange === "all") return curve
-    const days = CURVE_RANGE_DAYS[curveRange]
-    const d = new Date()
-    d.setDate(d.getDate() - days)
-    const cutoff = d.toISOString().slice(0, 10)
-    return curve.filter(p => p.date >= cutoff)
+    let data = curve
+    if (curveRange !== "all") {
+      const days = CURVE_RANGE_DAYS[curveRange]
+      const d = new Date()
+      d.setDate(d.getDate() - days)
+      const cutoff = d.toISOString().slice(0, 10)
+      data = curve.filter(p => p.date >= cutoff)
+    }
+    return data.map(p => ({ ...p, profit: Math.round((p.total_value - p.invested_cost) * 100) / 100 }))
   }, [curve, curveRange])
 
   const channels = useMemo(() => {
@@ -321,7 +324,7 @@ export default function Returns() {
         <CardContent>
           {filteredCurve.length >= 2 ? (
             <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={filteredCurve} margin={{ left: 10, right: 10, top: 5 }}>
+              <AreaChart data={filteredCurve} margin={{ left: 10, right: 5, top: 5 }}>
                 <defs>
                   <linearGradient id="valueGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.15} />
@@ -330,11 +333,17 @@ export default function Returns() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="date" fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tickFormatter={(v: number) => `¥${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(v: number) => money(v)} labelStyle={{ color: '#1e293b' }} contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                <YAxis yAxisId="value" tickFormatter={(v: number) => `¥${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="return" orientation="right" tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`} fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                <Tooltip formatter={(value: number, name: string) => {
+                  if (name === "累计收益率") return [`${(value * 100).toFixed(2)}%`, name]
+                  return [money(value), name]
+                }} labelStyle={{ color: '#1e293b' }} contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area type="monotone" dataKey="total_value" name="组合市值" stroke="#3B82F6" strokeWidth={2} fill="url(#valueGradient)" />
-                <Line type="monotone" dataKey="invested_cost" name="累计净投入" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
+                <Area yAxisId="value" type="monotone" dataKey="total_value" name="组合市值" stroke="#3B82F6" strokeWidth={2} fill="url(#valueGradient)" />
+                <Line yAxisId="value" type="monotone" dataKey="invested_cost" name="累计净投入" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                <Line yAxisId="value" type="monotone" dataKey="profit" name="累计收益" stroke="#10b981" strokeWidth={2} dot={false} />
+                <Line yAxisId="return" type="monotone" dataKey="total_return" name="累计收益率" stroke="#8b5cf6" strokeWidth={2} dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           ) : (

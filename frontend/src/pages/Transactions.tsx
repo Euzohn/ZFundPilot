@@ -269,19 +269,19 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
         try {
           const res = await api.calcFundFee(code.trim(), { action: "buy", amount: amt })
           setFeeCalcResult(res)
-          if (!feeManuallyEdited.current && res.fee > 0) {
+          if (!feeManuallyEdited.current) {
             setFee(res.fee.toFixed(2))
           }
         } catch { /* ignore */ }
         finally { setFeeCalcLoading(false) }
       }, 500)
-    } else if (action === "sell" && sh > 0 && date) {
+    } else if (action === "sell" && sh > 0 && effectiveNavDate) {
       setFeeCalcLoading(true)
       feeCalcTimer.current = setTimeout(async () => {
         try {
-          const res = await api.calcFundFee(code.trim(), { action: "sell", shares: sh, date })
+          const res = await api.calcFundFee(code.trim(), { action: "sell", shares: sh, date: effectiveNavDate })
           setFeeCalcResult(res)
-          if (!feeManuallyEdited.current && res.fee > 0) {
+          if (!feeManuallyEdited.current) {
             setFee(res.fee.toFixed(2))
           }
         } catch { /* ignore */ }
@@ -292,7 +292,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     }
 
     return () => { if (feeCalcTimer.current) clearTimeout(feeCalcTimer.current) }
-  }, [code, action, amount, shares, date])
+  }, [code, action, amount, shares, effectiveNavDate])
 
   // 从服务端加载渠道列表（多设备同步）
   useEffect(() => {

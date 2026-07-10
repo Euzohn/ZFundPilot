@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import { Routes, Route } from "react-router-dom"
 import Layout from "@/components/Layout"
-import LogoSpinner from "@/components/LogoSpinner"
+import LogoSplash from "@/components/LogoSplash"
 import Overview from "@/pages/Overview"
 import Transactions from "@/pages/Transactions"
 import Positions from "@/pages/Positions"
@@ -25,7 +25,7 @@ export default function App() {
   if (authRequired === null) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3">
-        <LogoSpinner className="h-16 w-16" />
+        <LogoSplash className="h-20 w-20" />
         <p className="text-sm font-bold tracking-tight text-slate-700">ZFundPilot</p>
       </div>
     )

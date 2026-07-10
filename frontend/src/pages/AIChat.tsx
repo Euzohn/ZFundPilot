@@ -13,6 +13,7 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { toast } from "sonner"
 import { money } from "@/lib/format"
+import LogoTyping from "@/components/LogoTyping"
 
 interface ChatMessage {
   role: "user" | "assistant"
@@ -583,7 +584,10 @@ export default function AIChat() {
                               <ReactMarkdown remarkPlugins={[remarkGfm]}>{display}</ReactMarkdown>
                             </div>
                           ) : streaming && i === messages.length - 1 ? (
-                            <span className="text-muted-foreground">正在思考...</span>
+                            <span className="inline-flex items-center gap-2 text-muted-foreground">
+                              <LogoTyping className="h-5 w-5" />
+                              正在思考...
+                            </span>
                           ) : null
                         ) : (
                           msg.content

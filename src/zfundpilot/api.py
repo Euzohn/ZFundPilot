@@ -281,6 +281,7 @@ def add_transaction(body: TransactionCreate) -> dict[str, Any]:
     tx_id = db.add_transaction(tx)
     if not db.get_latest_nav(body.fund_code):
         fetch_fund.update_fund_nav(body.fund_code)
+    analysis.clear_analysis_cache()
     return {"id": tx_id, **tx.to_dict()}
 
 
@@ -305,18 +306,21 @@ def update_transaction(tx_id: int, body: TransactionCreate) -> dict[str, Any]:
     db.update_transaction(tx)
     if not db.get_latest_nav(body.fund_code):
         fetch_fund.update_fund_nav(body.fund_code)
+    analysis.clear_analysis_cache()
     return {"ok": True, **tx.to_dict()}
 
 
 @app.delete("/api/transactions/{tx_id}")
 def delete_transaction(tx_id: int) -> dict[str, bool]:
     db.delete_transaction(tx_id)
+    analysis.clear_analysis_cache()
     return {"ok": True}
 
 
 @app.delete("/api/transactions")
 def delete_all_transactions() -> dict[str, bool]:
     db.delete_all_transactions()
+    analysis.clear_analysis_cache()
     return {"ok": True}
 
 
@@ -349,6 +353,7 @@ def fetch_meta(code: str) -> dict[str, Any]:
 def update_sector(code: str, body: SectorUpdate) -> dict[str, bool]:
     db.update_fund_sector(code, body.sector)
     fetch_fund.save_sector_mapping(code, body.sector)
+    analysis.clear_analysis_cache()
     return {"ok": True}
 
 
@@ -364,6 +369,7 @@ def reset_sectors() -> dict[str, int]:
             db.update_fund_sector(f.fund_code, new_sector)
             fetch_fund.save_sector_mapping(f.fund_code, new_sector)
             count += 1
+    analysis.clear_analysis_cache()
     return {"reset": count}
 
 
@@ -447,6 +453,7 @@ def update_nav() -> list[dict[str, Any]]:
     codes = [p.fund_code for p in positions if p.is_open]
     results = fetch_fund.update_all_holdings_nav(codes=codes)
     _backfill_transaction_navs()
+    analysis.clear_analysis_cache()
     return [r.__dict__ for r in results]
 
 
@@ -606,6 +613,7 @@ def confirm_import(body: CSVImportConfirm) -> dict[str, Any]:
     for code in new_codes:
         if not db.get_latest_nav(code):
             fetch_fund.update_fund_nav(code)
+    analysis.clear_analysis_cache()
     return {"imported": count}
 
 

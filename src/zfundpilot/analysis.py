@@ -18,10 +18,31 @@
 
 from __future__ import annotations
 
+import time
 from collections import OrderedDict
 from typing import Any
 
 import pandas as pd
+
+_cache: dict[str, tuple[float, Any]] = {}
+_CACHE_TTL = 60  # 秒
+
+
+def clear_analysis_cache() -> None:
+    _cache.clear()
+
+
+def _cache_get(key: str) -> Any | None:
+    if key in _cache:
+        ts, val = _cache[key]
+        if time.time() - ts < _CACHE_TTL:
+            return val
+        del _cache[key]
+    return None
+
+
+def _cache_set(key: str, val: Any) -> None:
+    _cache[key] = (time.time(), val)
 
 from . import db
 from .models import (
@@ -140,6 +161,10 @@ def calculate_positions(include_closed: bool = False) -> list[Position]:
 
     include_closed=True 时也返回已清仓持仓（用于查看历史已实现收益）。
     """
+    ck = f"positions:{include_closed}"
+    cached = _cache_get(ck)
+    if cached is not None:
+        return cached
     transactions = db.get_transactions()
     funds = {f.fund_code: f for f in db.get_funds()}
     pos_map = _build_positions_from_transactions(transactions, funds)
@@ -158,12 +183,17 @@ def calculate_positions(include_closed: bool = False) -> list[Position]:
             p.weight = p.market_value / total_value if p.is_open else 0.0
 
     positions.sort(key=lambda p: p.market_value, reverse=True)
+    _cache_set(ck, positions)
     return positions
 
 
 def calculate_summary(positions: list[Position] | None = None) -> PortfolioSummary:
     """组合汇总。含浮动 + 已实现盈亏、累计买卖金额。"""
+    positions_provided = positions is not None
     if positions is None:
+        cached = _cache_get("summary")
+        if cached is not None:
+            return cached
         positions = calculate_positions(include_closed=True)
 
     open_positions = [p for p in positions if p.is_open]
@@ -259,6 +289,8 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
     except Exception:  # noqa: BLE001
         pass
 
+    if not positions_provided:
+        _cache_set("summary", summary)
     return summary
 
 
@@ -298,6 +330,9 @@ def build_portfolio_curve() -> pd.DataFrame:
     返回列：date, total_value, invested_cost, total_return
     起点取最早一笔交易日期。
     """
+    cached = _cache_get("portfolio_curve")
+    if cached is not None:
+        return cached
     transactions = db.get_transactions()
     if not transactions:
         return pd.DataFrame(columns=["date", "total_value", "invested_cost", "total_return"])
@@ -385,6 +420,7 @@ def build_portfolio_curve() -> pd.DataFrame:
     if curve.empty:
         return curve
     curve["total_return"] = curve["total_value"] / curve["invested_cost"] - 1
+    _cache_set("portfolio_curve", curve)
     return curve
 
 
@@ -395,6 +431,9 @@ def build_channel_daily_pnl() -> list[dict[str, Any]]:
     每日 P&L = Δ市值 - Δ成本，按渠道分别计算。
     返回 [{date, "支付宝": 120.5, "理财通": -30.2, ...}, ...]
     """
+    cached = _cache_get("channel_daily_pnl")
+    if cached is not None:
+        return cached
     transactions = db.get_transactions()
     if not transactions:
         return []
@@ -483,6 +522,7 @@ def build_channel_daily_pnl() -> list[dict[str, Any]]:
             row[ch] = round(float(dv - dc), 2)
         result.append(row)
 
+    _cache_set("channel_daily_pnl", result)
     return result
 
 

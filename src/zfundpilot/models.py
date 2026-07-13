@@ -88,26 +88,26 @@ class Transaction:
         fee = self.fee or 0.0
         if self.action == ACTION_BUY:
             if a and s and not n:
-                self.nav = (a - fee) / s if s else None
+                self.nav = round((a - fee) / s, 4) if s else None
             elif a and n and not s:
-                self.shares = (a - fee) / n if n else None
+                self.shares = round((a - fee) / n, 2) if n else None
             elif s and n and not a:
-                self.amount = s * n + fee
+                self.amount = round(s * n + fee, 2)
         elif self.action == ACTION_SELL:
             if a and s and not n:
-                self.nav = (a + fee) / s if s else None
+                self.nav = round((a + fee) / s, 4) if s else None
             elif a and n and not s:
-                self.shares = (a + fee) / n if n else None
+                self.shares = round((a + fee) / n, 2) if n else None
             elif s and n and not a:
-                self.amount = s * n - fee
+                self.amount = round(s * n - fee, 2)
         else:
             # dividend / reinvest：无手续费
             if a and s and not n:
-                self.nav = a / s if s else None
+                self.nav = round(a / s, 4) if s else None
             elif a and n and not s:
-                self.shares = a / n if n else None
+                self.shares = round(a / n, 2) if n else None
             elif s and n and not a:
-                self.amount = s * n
+                self.amount = round(s * n, 2)
         return self
 
     def is_valid(self) -> bool:

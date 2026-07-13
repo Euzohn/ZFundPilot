@@ -59,7 +59,7 @@ export async function saveChannelColors(colors: Record<string, string>): Promise
   serverColors = colors
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(colors)) } catch {}
   try {
-    await api.savePreferences("", JSON.stringify(colors))
+    await api.savePreferences({ channel_colors: JSON.stringify(colors) })
   } catch { /* server unavailable */ }
 }
 

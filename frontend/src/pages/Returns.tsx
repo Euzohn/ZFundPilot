@@ -29,12 +29,12 @@ function ChannelTooltip({ active, payload, label }: { active?: boolean; payload?
         <div key={p.dataKey} className="flex items-center gap-1.5">
           <span className="inline-block w-2 h-2 rounded-full" style={{ background: p.color }} />
           <span className="text-slate-600">{p.dataKey}:</span>
-          <span className={`font-medium tabular-nums ${p.value >= 0 ? "text-emerald-600" : "text-red-500"}`}>{signedMoney(p.value)}</span>
+          <span className={`font-medium tabular-nums ${p.value >= 0 ? "text-gain" : "text-loss"}`}>{signedMoney(p.value)}</span>
         </div>
       ))}
       <div className="mt-1 pt-1 border-t border-slate-100 flex justify-between">
         <span className="text-slate-500">合计</span>
-        <span className={`font-bold tabular-nums ${total >= 0 ? "text-emerald-600" : "text-red-500"}`}>{signedMoney(total)}</span>
+        <span className={`font-bold tabular-nums ${total >= 0 ? "text-gain" : "text-loss"}`}>{signedMoney(total)}</span>
       </div>
     </div>
   )

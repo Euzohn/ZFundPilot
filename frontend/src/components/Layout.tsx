@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { clearToken } from "@/lib/auth"
+import { getColorTheme, getColorThemeAsync, applyColorTheme } from "@/lib/colorTheme"
 
 const STORAGE_KEY = "zfundpilot_sidebar_collapsed"
 const navItems = [
@@ -68,6 +69,12 @@ export default function Layout() {
 
   // Route change closes mobile drawer
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
+
+  // Apply color theme on mount
+  useEffect(() => {
+    applyColorTheme(getColorTheme())
+    getColorThemeAsync().then(applyColorTheme).catch(() => {})
+  }, [])
 
   const toggle = () => {
     const next = !collapsed

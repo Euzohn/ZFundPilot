@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { getChannels, getChannelsAsync, saveChannels, getDefaultChannels } from "@/lib/channels"
 import { getChannelColors, getChannelColorsAsync, saveChannelColors, getDefaultChannelColors, getPalette } from "@/lib/channelColors"
+import { getColorTheme, getColorThemeAsync, saveColorTheme, applyColorTheme, type ColorTheme } from "@/lib/colorTheme"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import { clearToken } from "@/lib/auth"
@@ -84,11 +85,15 @@ export default function Settings() {
   // Channel colors
   const [channelColors, setChannelColors] = useState<Record<string, string>>(() => getChannelColors())
   const palette = getPalette()
+  // Color theme
+  const [colorTheme, setColorTheme] = useState<ColorTheme>(() => getColorTheme())
+  const [colorThemeLoading, setColorThemeLoading] = useState(false)
 
   // 页面加载时尝试从服务端同步渠道设置
   useEffect(() => {
     getChannelsAsync().then(setChannels).catch(() => {})
     getChannelColorsAsync().then(setChannelColors).catch(() => {})
+    getColorThemeAsync().then((t) => { setColorTheme(t); applyColorTheme(t) }).catch(() => {})
   }, [])
 
   // Auth
@@ -167,6 +172,17 @@ export default function Settings() {
     setChannelColors(defaults)
     await saveChannelColors(defaults)
     toast.success("已恢复默认渠道颜色")
+  }
+
+  // --- Color theme ---
+  const handleThemeChange = async (theme: ColorTheme) => {
+    setColorTheme(theme)
+    applyColorTheme(theme)
+    setColorThemeLoading(true)
+    try {
+      await saveColorTheme(theme)
+    } catch { /* server unavailable */ }
+    finally { setColorThemeLoading(false) }
   }
 
   // --- Password ---
@@ -591,6 +607,44 @@ export default function Settings() {
 
               {/* 分隔线 */}
               <div className="border-t border-slate-100" />
+
+              {/* 涨跌颜色 */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Palette className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-sm font-medium">涨跌颜色</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleThemeChange("international")}
+                    disabled={colorThemeLoading}
+                    className={cn(
+                      "flex-1 rounded-lg border px-3 py-2 text-sm transition-colors disabled:opacity-50",
+                      colorTheme === "international"
+                        ? "border-blue-300 bg-blue-50 text-blue-700"
+                        : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                    )}
+                  >
+                    <span className="text-gain font-medium">▲</span> 绿涨
+                    <span className="text-loss font-medium ml-2">▼</span> 红跌
+                    <span className="block text-[11px] text-muted-foreground mt-0.5">国际惯例</span>
+                  </button>
+                  <button
+                    onClick={() => handleThemeChange("china")}
+                    disabled={colorThemeLoading}
+                    className={cn(
+                      "flex-1 rounded-lg border px-3 py-2 text-sm transition-colors disabled:opacity-50",
+                      colorTheme === "china"
+                        ? "border-blue-300 bg-blue-50 text-blue-700"
+                        : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                    )}
+                  >
+                    <span className="text-gain font-medium">▲</span> 红涨
+                    <span className="text-loss font-medium ml-2">▼</span> 绿跌
+                    <span className="block text-[11px] text-muted-foreground mt-0.5">国内 A 股惯例</span>
+                  </button>
+                </div>
+              </div>
             </CardContent>
           </Card>
 

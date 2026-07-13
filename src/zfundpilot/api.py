@@ -639,6 +639,7 @@ def _ensure_fund_exists(code: str, name: str = "", ftype: str = "其它",
 class PreferencesBody(BaseModel):
     channels: str = ""
     channel_colors: str = ""
+    color_theme: str = ""
 
 
 class KeywordMapsBody(BaseModel):
@@ -673,6 +674,9 @@ def save_preferences(body: PreferencesBody) -> dict[str, bool]:
         db.upsert_preference("channels", body.channels)
     if body.channel_colors:
         db.upsert_preference("channel_colors", body.channel_colors)
+    if body.color_theme:
+        db.upsert_preference("color_theme", body.color_theme)
+    analysis.clear_analysis_cache()
     return {"ok": True}
 
 

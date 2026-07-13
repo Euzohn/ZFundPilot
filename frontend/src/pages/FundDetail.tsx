@@ -261,7 +261,7 @@ const handleDelete = async (txId: number) => {
                         <p className="text-xs font-medium text-muted-foreground">{label}</p>
                         <p className="text-sm font-bold tabular-nums text-primary">{navStr(d.nav)}</p>
                         {d.pnl != null && d.pnl !== 0 && (
-                          <p className={`text-xs tabular-nums ${d.pnl >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                          <p className={`text-xs tabular-nums ${d.pnl >= 0 ? "text-gain" : "text-loss"}`}>
                             当日收益 {signedMoney(d.pnl)}
                           </p>
                         )}

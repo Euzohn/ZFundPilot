@@ -24,6 +24,28 @@
     --input: 214 32% 91%;
     --ring: 221 83% 33%;
     --radius: 0.5rem;
+
+    /* 涨跌颜色（国际惯例：gain=绿, loss=红） */
+    --gain-50: #f0fdf4; --gain-100: #dcfce7; --gain-200: #bbf7d0;
+    --gain-300: #86efac; --gain-400: #4ade80; --gain-500: #22c55e;
+    --gain-600: #16a34a; --gain-700: #15803d; --gain-800: #166534;
+    --gain-900: #14532d; --gain-950: #052e16;
+    --loss-50: #fef2f2; --loss-100: #fee2e2; --loss-200: #fecaca;
+    --loss-300: #fca5a5; --loss-400: #f87171; --loss-500: #ef4444;
+    --loss-600: #dc2626; --loss-700: #b91c1c; --loss-800: #991b1b;
+    --loss-900: #7f1d1d; --loss-950: #450a0a;
+  }
+
+  /* 国内惯例：gain=红, loss=绿 */
+  .color-theme-cn {
+    --gain-50: #fef2f2; --gain-100: #fee2e2; --gain-200: #fecaca;
+    --gain-300: #fca5a5; --gain-400: #f87171; --gain-500: #ef4444;
+    --gain-600: #dc2626; --gain-700: #b91c1c; --gain-800: #991b1b;
+    --gain-900: #7f1d1d; --gain-950: #450a0a;
+    --loss-50: #f0fdf4; --loss-100: #dcfce7; --loss-200: #bbf7d0;
+    --loss-300: #86efac; --loss-400: #4ade80; --loss-500: #22c55e;
+    --loss-600: #16a34a; --loss-700: #15803d; --loss-800: #166534;
+    --loss-900: #14532d; --loss-950: #052e16;
   }
 
   .dark {

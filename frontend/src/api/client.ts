@@ -232,10 +232,14 @@ export const api = {
 
   // Preferences
   getPreferences: () => request<Record<string, string>>("/preferences"),
-  savePreferences: (channels: string, channelColors?: string) =>
+  savePreferences: (body: { channels?: string; channel_colors?: string; color_theme?: string }) =>
     request<{ ok: boolean }>("/preferences", {
       method: "PUT",
-      body: JSON.stringify({ channels, channel_colors: channelColors ?? "" }),
+      body: JSON.stringify({
+        channels: body.channels ?? "",
+        channel_colors: body.channel_colors ?? "",
+        color_theme: body.color_theme ?? "",
+      }),
     }),
 
   // Keyword maps

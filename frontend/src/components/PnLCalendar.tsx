@@ -18,17 +18,17 @@ function getPnlBg(pnl: number | null, maxAbs: number): string {
   if (pnl === null || pnl === 0) return "bg-slate-50/60"
   const intensity = Math.min(Math.abs(pnl) / maxAbs, 1)
   if (pnl > 0) {
-    if (intensity > 0.8) return "bg-green-400 text-green-950"
-    if (intensity > 0.6) return "bg-green-300 text-green-900"
-    if (intensity > 0.4) return "bg-green-200 text-green-800"
-    if (intensity > 0.2) return "bg-green-100 text-green-700"
-    return "bg-green-50 text-green-600"
+    if (intensity > 0.8) return "bg-gain-400 text-gain-950"
+    if (intensity > 0.6) return "bg-gain-300 text-gain-900"
+    if (intensity > 0.4) return "bg-gain-200 text-gain-800"
+    if (intensity > 0.2) return "bg-gain-100 text-gain-700"
+    return "bg-gain-50 text-gain-600"
   } else {
-    if (intensity > 0.8) return "bg-red-400 text-red-950"
-    if (intensity > 0.6) return "bg-red-300 text-red-900"
-    if (intensity > 0.4) return "bg-red-200 text-red-800"
-    if (intensity > 0.2) return "bg-red-100 text-red-700"
-    return "bg-red-50 text-red-600"
+    if (intensity > 0.8) return "bg-loss-400 text-loss-950"
+    if (intensity > 0.6) return "bg-loss-300 text-loss-900"
+    if (intensity > 0.4) return "bg-loss-200 text-loss-800"
+    if (intensity > 0.2) return "bg-loss-100 text-loss-700"
+    return "bg-loss-50 text-loss-600"
   }
 }
 
@@ -104,7 +104,7 @@ export default function PnLCalendar({ data }: Props) {
           <span className="text-sm font-medium">{monthLabel}</span>
           {monthDays > 0 && (
             <span className="ml-2 text-xs text-muted-foreground">
-              <span className={monthSum >= 0 ? "text-green-600" : "text-red-600"}>{money(monthSum)}</span>
+              <span className={monthSum >= 0 ? "text-gain" : "text-loss"}>{money(monthSum)}</span>
               {" · "}盈{winDays}天 亏{monthDays - winDays}天
             </span>
           )}

@@ -53,7 +53,7 @@ export async function saveChannels(channels: string[]): Promise<void> {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(channels)) } catch {}
   // 同步到服务端（静默降级）
   try {
-    await api.savePreferences(JSON.stringify(channels))
+    await api.savePreferences({ channels: JSON.stringify(channels) })
   } catch { /* server unavailable */ }
 }
 

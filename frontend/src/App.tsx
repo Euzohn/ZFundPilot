@@ -39,8 +39,8 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/" element={<Layout />}>
-        <Route index element={<Home />} />
+      <Route path="/" element={<Home />} />
+      <Route element={<Layout />}>
         <Route path="overview" element={<Overview />} />
         <Route path="transactions" element={<Transactions />} />
         <Route path="positions" element={<Positions />} />

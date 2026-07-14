@@ -3,10 +3,9 @@ import { useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { PortfolioSummary } from "@/api/types"
-import { money, pct, signedMoney, pnlColor } from "@/lib/format"
+import { money, pct, signedMoney } from "@/lib/format"
 import Logo from "@/components/Logo"
 import LogoSpinner from "@/components/LogoSpinner"
-import { Card, CardContent } from "@/components/ui/card"
 import { getColorTheme, getColorThemeAsync, applyColorTheme } from "@/lib/colorTheme"
 import {
   ArrowLeftRight, RefreshCw, Briefcase, TrendingUp,
@@ -43,6 +42,12 @@ function formatDate() {
   return `${y}年${m}月${day}日 星期${w}`
 }
 
+function pnlColorDark(v: number | null | undefined): string {
+  if (v == null || v === 0) return "text-slate-300"
+  if (v > 0) return "text-gain-400"
+  return "text-loss-400"
+}
+
 export default function Home() {
   const navigate = useNavigate()
   const { data: summary, loading } = useApi<PortfolioSummary>(() => api.getSummary())
@@ -53,22 +58,22 @@ export default function Home() {
   }, [])
 
   return (
-    <div className="min-h-[100dvh] bg-slate-50">
+    <div className="min-h-[100dvh] bg-slate-900">
       {/* Top bar */}
-      <header className="border-b border-slate-200 bg-white">
+      <header className="border-b border-white/10">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2.5">
             <Logo className="h-8 w-8" />
-            <span className="text-lg font-bold tracking-tight text-slate-900">ZFundPilot</span>
+            <span className="text-lg font-bold tracking-tight text-white">ZFundPilot</span>
           </div>
           <a
             href={GITHUB_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-white"
           >
             <Github className="h-3.5 w-3.5" />
-            开源项目
+            GitHub
             <ExternalLink className="h-3 w-3" />
           </a>
         </div>
@@ -77,11 +82,11 @@ export default function Home() {
       {/* Main content */}
       <main className="mx-auto max-w-5xl px-6 py-12 md:py-16">
         {/* Hero */}
-        <div className="mb-12">
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
+        <section className="mb-12">
+          <h1 className="text-3xl font-bold tracking-tight text-white md:text-4xl">
             个人基金分析与风险管理系统
           </h1>
-          <p className="mt-2 text-sm text-slate-500">{formatDate()} · {greeting()}</p>
+          <p className="mt-2 text-sm text-slate-400">{formatDate()} · {greeting()}</p>
 
           {/* Metrics */}
           <div className="mt-8">
@@ -92,10 +97,10 @@ export default function Home() {
               </div>
             ) : summary && summary.holding_count === 0 ? (
               <div className="flex items-center gap-3">
-                <p className="text-sm text-slate-500">还没有交易记录</p>
+                <p className="text-sm text-slate-400">还没有交易记录</p>
                 <button
                   onClick={() => navigate("/transactions")}
-                  className="text-sm font-medium text-blue-600 hover:text-blue-700"
+                  className="text-sm font-medium text-blue-400 transition-colors hover:text-blue-300"
                 >
                   开始录入第一笔交易 →
                 </button>
@@ -104,47 +109,48 @@ export default function Home() {
               <div className="flex flex-col gap-6 sm:flex-row sm:items-end">
                 <div className="sm:pr-8">
                   <p className="text-xs text-slate-400">当前市值</p>
-                  <p className="text-2xl font-bold tabular-nums text-slate-900">{money(summary.total_value)}</p>
+                  <p className="text-2xl font-bold tabular-nums text-white">{money(summary.total_value)}</p>
                 </div>
-                <div className="sm:border-l sm:border-slate-200 sm:px-8">
+                <div className="sm:border-l sm:border-white/10 sm:px-8">
                   <p className="text-xs text-slate-400">总盈亏</p>
-                  <p className={`text-2xl font-bold tabular-nums ${pnlColor(summary.total_pnl)}`}>
+                  <p className={`text-2xl font-bold tabular-nums ${pnlColorDark(summary.total_pnl)}`}>
                     {signedMoney(summary.total_pnl)}
                     <span className="ml-1.5 text-sm font-normal text-slate-400">({pct(summary.total_return)})</span>
                   </p>
                 </div>
-                <div className="sm:border-l sm:border-slate-200 sm:pl-8">
+                <div className="sm:border-l sm:border-white/10 sm:pl-8">
                   <p className="text-xs text-slate-400">持仓基金</p>
-                  <p className="text-2xl font-bold tabular-nums text-slate-900">{summary.holding_count} 只</p>
+                  <p className="text-2xl font-bold tabular-nums text-white">{summary.holding_count} 只</p>
                 </div>
               </div>
             ) : null}
           </div>
-        </div>
+        </section>
 
         {/* Quick actions */}
-        <div>
-          <h2 className="mb-4 text-sm font-medium text-slate-500">快捷入口</h2>
+        <section>
+          <h2 className="mb-4 text-sm font-medium text-slate-400">快捷入口</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {quickActions.map(({ to, label, desc, icon: Icon }) => (
-              <Card
+              <div
                 key={to}
-                className="cursor-pointer rounded-xl transition-all hover:-translate-y-0.5 hover:shadow-md"
+                role="button"
+                tabIndex={0}
                 onClick={() => navigate(to)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(to) } }}
+                className="flex cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-5 transition-all hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/10 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               >
-                <CardContent className="flex items-center gap-3 p-5">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-900">{label}</p>
-                    <p className="truncate text-xs text-slate-400">{desc}</p>
-                  </div>
-                </CardContent>
-              </Card>
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-white">{label}</p>
+                  <p className="truncate text-xs text-slate-400">{desc}</p>
+                </div>
+              </div>
             ))}
           </div>
-        </div>
+        </section>
       </main>
     </div>
   )

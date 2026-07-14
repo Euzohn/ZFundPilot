@@ -59,16 +59,21 @@ async function downloadWithAuth(url: string, filename: string) {
 
 export const api = {
   // Auth
-  getAuthStatus: () => request<{ required: boolean }>("/auth/status"),
-  login: (password: string) =>
+  getAuthStatus: () => request<{ required: boolean; username: string }>("/auth/status"),
+  login: (username: string, password: string) =>
     request<{ ok: boolean; token: string; message: string }>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ username, password }),
     }),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: boolean; message: string }>("/auth/change-password", {
       method: "POST",
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+  changeUsername: (currentPassword: string, newUsername: string) =>
+    request<{ ok: boolean; message: string }>("/auth/change-username", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_username: newUsername }),
     }),
 
   // AI Config

@@ -19,7 +19,7 @@ import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
   SlidersHorizontal, LogOut, Loader2, CheckCircle2, XCircle, Zap,
-  Search, X, Palette,
+  Search, X, Palette, UserCircle,
 } from "lucide-react"
 
 function detectProvider(baseUrl: string): string {
@@ -102,6 +102,9 @@ export default function Settings() {
   const [newPwd, setNewPwd] = useState("")
   const [confirmPwd, setConfirmPwd] = useState("")
   const [changingPwd, setChangingPwd] = useState(false)
+  const [newUsername, setNewUsername] = useState("")
+  const [usernamePwd, setUsernamePwd] = useState("")
+  const [changingUsername, setChangingUsername] = useState(false)
 
   // AI config
   const { data: aiConfig, reload: reloadAIConfig } = useApi(() => api.getAIConfig(), [])
@@ -197,6 +200,18 @@ export default function Settings() {
       setTimeout(() => { clearToken(); window.location.reload() }, 1500)
     } catch (e) { toast.error(`修改失败: ${e}`) }
     finally { setChangingPwd(false) }
+  }
+
+  const handleChangeUsername = async () => {
+    if (newUsername.trim().length < 2) { toast.error("用户名至少 2 位"); return }
+    if (!usernamePwd) { toast.error("请输入当前密码"); return }
+    setChangingUsername(true)
+    try {
+      await api.changeUsername(usernamePwd, newUsername.trim())
+      toast.success("用户名已修改，请重新登录")
+      setTimeout(() => { clearToken(); window.location.reload() }, 1500)
+    } catch (e) { toast.error(`修改失败: ${e}`) }
+    finally { setChangingUsername(false) }
   }
 
   // --- AI config ---
@@ -328,38 +343,61 @@ export default function Settings() {
                   <ShieldCheck className="h-5 w-5 text-blue-500" />
                   账户与安全
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">修改密码后所有设备需重新登录</p>
+                <p className="text-sm text-muted-foreground">
+                  当前用户名：<span className="font-medium text-slate-700">{authStatus?.username || "—"}</span>
+                </p>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <Label className="mb-1 block text-xs text-slate-500">当前密码</Label>
-                    <Input type="password" value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)}
-                      className="h-8 text-xs" placeholder="输入当前密码" autoFocus />
+              <CardContent className="space-y-5">
+                {/* 修改用户名 */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-slate-600">修改用户名</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value)}
+                      className="h-8 text-xs" placeholder="新用户名（至少 2 位）" />
+                    <Input type="password" value={usernamePwd} onChange={(e) => setUsernamePwd(e.target.value)}
+                      className="h-8 text-xs" placeholder="当前密码"
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleChangeUsername() } }} />
                   </div>
-                  <div>
-                    <Label className="mb-1 block text-xs text-slate-500">新密码</Label>
-                    <Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)}
-                      className="h-8 text-xs" placeholder="至少 6 位" />
+                  <Button size="sm" onClick={handleChangeUsername} disabled={changingUsername} variant="outline">
+                    <UserCircle className="mr-1.5 h-3.5 w-3.5" /> {changingUsername ? "修改中..." : "修改用户名"}
+                  </Button>
+                </div>
+
+                <div className="border-t pt-4" />
+
+                {/* 修改密码 */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-slate-600">修改密码</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <Label className="mb-1 block text-xs text-slate-500">当前密码</Label>
+                      <Input type="password" value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)}
+                        className="h-8 text-xs" placeholder="输入当前密码" />
+                    </div>
+                    <div>
+                      <Label className="mb-1 block text-xs text-slate-500">新密码</Label>
+                      <Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)}
+                        className="h-8 text-xs" placeholder="至少 6 位" />
+                    </div>
+                    <div>
+                      <Label className="mb-1 block text-xs text-slate-500">确认新密码</Label>
+                      <Input type="password" value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)}
+                        className="h-8 text-xs" placeholder="再次输入新密码"
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleChangePassword() } }} />
+                    </div>
                   </div>
-                  <div>
-                    <Label className="mb-1 block text-xs text-slate-500">确认新密码</Label>
-                    <Input type="password" value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)}
-                      className="h-8 text-xs" placeholder="再次输入新密码"
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleChangePassword() } }} />
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" onClick={handleChangePassword} disabled={changingPwd} variant="outline">
+                      <KeyRound className="mr-1.5 h-3.5 w-3.5" /> {changingPwd ? "修改中..." : "修改密码"}
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-50 hover:text-red-600"
+                      onClick={() => { clearToken(); window.location.reload() }}>
+                      <LogOut className="mr-1.5 h-3.5 w-3.5" /> 退出登录
+                    </Button>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" onClick={handleChangePassword} disabled={changingPwd} variant="outline">
-                    <KeyRound className="mr-1.5 h-3.5 w-3.5" /> {changingPwd ? "修改中..." : "修改密码"}
-                  </Button>
-                  <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-50 hover:text-red-600"
-                    onClick={() => { clearToken(); window.location.reload() }}>
-                    <LogOut className="mr-1.5 h-3.5 w-3.5" /> 退出登录
-                  </Button>
-</div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
           </TabsContent>
         )}
 

@@ -100,9 +100,10 @@ FETCH_MAX_RETRIES = 2
 # ---------------------------------------------------------------------------
 # 认证配置
 # ---------------------------------------------------------------------------
-# 密码以 SHA-256 哈希存储在 data/auth.json 中，不以明文保存。
+# 用户名 + 密码存储在 data/auth.json 中。密码以 SHA-256 哈希保存，用户名明文。
 # 首次启动时，若设置了 ZFUNDPILOT_PASSWORD 环境变量，则自动迁移到 auth.json。
-# 之后密码管理通过 API /api/auth/change-password 进行，无需修改环境变量。
+# ZFUNDPILOT_USERNAME 环境变量可同时设置用户名（默认 "admin"）。
+# 之后账户管理通过 API /api/auth/change-password、/api/auth/change-username 进行。
 # 不设置密码时（默认），应用为开放访问（适合纯本地使用）。
 
 AUTH_DATA_PATH = os.path.join(DATA_DIR, "auth.json")
@@ -140,24 +141,39 @@ def update_password(new_password: str) -> None:
     global AUTH_PASSWORD_HASH, AUTH_SECRET
     AUTH_PASSWORD_HASH = _hash_password(new_password)
     AUTH_SECRET = _secrets.token_hex(32)
-    _save_auth_data({"password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
+    _save_auth_data({"username": AUTH_USERNAME, "password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
+
+
+def update_username(new_username: str) -> None:
+    """更新用户名并刷新 token 签名密钥（使所有已有 token 立即失效）。"""
+    global AUTH_USERNAME, AUTH_SECRET
+    AUTH_USERNAME = new_username
+    AUTH_SECRET = _secrets.token_hex(32)
+    _save_auth_data({"username": AUTH_USERNAME, "password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
 
 
 # 初始化：优先从 auth.json 读取，回退到环境变量（首次迁移）
 _auth_data = _load_auth_data()
 _env_password = os.environ.get("ZFUNDPILOT_PASSWORD", "")
+_env_username = os.environ.get("ZFUNDPILOT_USERNAME", "")
 _env_secret = os.environ.get("ZFUNDPILOT_SECRET", "")
 
 if _auth_data and _auth_data.get("password_hash"):
     AUTH_PASSWORD_HASH: str = _auth_data["password_hash"]
     AUTH_SECRET: str = _auth_data.get("secret", "") or _env_secret or _env_password
+    # 迁移：已有 auth.json 但无 username → 默认 "admin"
+    AUTH_USERNAME: str = _auth_data.get("username", "") or _env_username or "admin"
+    if "username" not in _auth_data:
+        _save_auth_data({"username": AUTH_USERNAME, "password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
 elif _env_password:
     AUTH_PASSWORD_HASH = _hash_password(_env_password)
     AUTH_SECRET = _env_secret or _secrets.token_hex(32)
-    _save_auth_data({"password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
+    AUTH_USERNAME = _env_username or "admin"
+    _save_auth_data({"username": AUTH_USERNAME, "password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
 else:
     AUTH_PASSWORD_HASH = ""
     AUTH_SECRET = ""
+    AUTH_USERNAME = ""
 
 # 是否启用认证
 AUTH_ENABLED = bool(AUTH_PASSWORD_HASH)

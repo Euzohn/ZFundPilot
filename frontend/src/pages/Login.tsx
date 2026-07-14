@@ -5,19 +5,21 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Package, Lock } from "lucide-react"
+import { Package, Lock, User } from "lucide-react"
 import { toast } from "sonner"
 
 export default function Login({ onSuccess }: { onSuccess: () => void }) {
+  const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!username) { toast.warning("请输入用户名"); return }
     if (!password) { toast.warning("请输入密码"); return }
     setLoading(true)
     try {
-      const res = await api.login(password)
+      const res = await api.login(username, password)
       if (res.token) setToken(res.token)
       toast.success("登录成功")
       onSuccess()
@@ -39,6 +41,20 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
+              <Label className="mb-1.5 block">用户名</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="请输入用户名"
+                  className="pl-9"
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div>
               <Label className="mb-1.5 block">密码</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -48,7 +64,6 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="请输入访问密码"
                   className="pl-9"
-                  autoFocus
                 />
               </div>
             </div>

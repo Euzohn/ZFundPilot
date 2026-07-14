@@ -61,12 +61,18 @@ def _verify_token(token: str) -> bool:
 
 
 class LoginRequest(BaseModel):
+    username: str
     password: str
 
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+
+
+class ChangeUsernameRequest(BaseModel):
+    current_password: str
+    new_username: str
 
 
 @app.middleware("http")
@@ -99,17 +105,19 @@ def _startup() -> None:
 # ---------------------------------------------------------------------------
 @app.get("/api/auth/status")
 def auth_status() -> dict[str, Any]:
-    """返回是否需要登录。前端据此决定是否展示登录页。"""
-    return {"required": config.AUTH_ENABLED}
+    """返回是否需要登录及当前用户名。前端据此决定是否展示登录页。"""
+    return {"required": config.AUTH_ENABLED, "username": config.AUTH_USERNAME}
 
 
 @app.post("/api/auth/login")
 def auth_login(body: LoginRequest) -> dict[str, Any]:
-    """验证密码，返回 token。"""
+    """验证用户名 + 密码，返回 token。"""
     if not config.AUTH_ENABLED:
         return {"ok": True, "token": "", "message": "未设置密码，无需登录"}
+    if body.username != config.AUTH_USERNAME:
+        raise HTTPException(401, "用户名或密码错误")
     if not config.verify_password(body.password, config.AUTH_PASSWORD_HASH):
-        raise HTTPException(401, "密码错误")
+        raise HTTPException(401, "用户名或密码错误")
     return {"ok": True, "token": _create_token(), "message": "登录成功"}
 
 
@@ -124,6 +132,20 @@ def change_password(body: ChangePasswordRequest) -> dict[str, Any]:
         raise HTTPException(400, "新密码至少 6 位")
     config.update_password(body.new_password)
     return {"ok": True, "message": "密码已修改，所有设备需要重新登录"}
+
+
+@app.post("/api/auth/change-username")
+def change_username(body: ChangeUsernameRequest) -> dict[str, Any]:
+    """修改用户名（需已登录 + 当前密码验证）。"""
+    if not config.AUTH_ENABLED:
+        raise HTTPException(400, "未启用密码认证")
+    if not config.verify_password(body.current_password, config.AUTH_PASSWORD_HASH):
+        raise HTTPException(401, "当前密码错误")
+    new_username = body.new_username.strip()
+    if len(new_username) < 2:
+        raise HTTPException(400, "用户名至少 2 位")
+    config.update_username(new_username)
+    return {"ok": True, "message": "用户名已修改，所有设备需要重新登录"}
 
 
 # ---------------------------------------------------------------------------

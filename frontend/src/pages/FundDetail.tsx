@@ -283,7 +283,7 @@ const handleDelete = async (txId: number) => {
                 {avgCost && <ReferenceLine yAxisId="nav" y={avgCost} stroke="#94a3b8" strokeDasharray="5 5" label={{ value: `均价 ${navStr(avgCost)}`, fontSize: 11, fill: '#94a3b8' }} />}
                 <Bar yAxisId="pnl" dataKey="pnl" radius={[2, 2, 0, 0]}>
                   {chartData.map((row, i) => (
-                    <Cell key={i} fill={row.pnl >= 0 ? "#10b981" : "#ef4444"} fillOpacity={0.5} />
+                    <Cell key={i} fill={row.pnl >= 0 ? "var(--gain-500)" : "var(--loss-500)"} fillOpacity={0.5} />
                   ))}
                 </Bar>
                 <Line
@@ -303,10 +303,10 @@ const handleDelete = async (txId: number) => {
                     return (
                       <g>
                         {hasBuy && (
-                          <circle cx={both ? cx - 3 : cx} cy={cy} r={4} fill="#16a34a" stroke="#fff" strokeWidth={2} />
+                          <circle cx={both ? cx - 3 : cx} cy={cy} r={4} fill="var(--gain-600)" stroke="#fff" strokeWidth={2} />
                         )}
                         {hasSell && (
-                          <circle cx={both ? cx + 3 : cx} cy={cy} r={4} fill="#dc2626" stroke="#fff" strokeWidth={2} />
+                          <circle cx={both ? cx + 3 : cx} cy={cy} r={4} fill="var(--loss-600)" stroke="#fff" strokeWidth={2} />
                         )}
                       </g>
                     )

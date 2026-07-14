@@ -353,7 +353,7 @@ export default function Returns() {
                 <Legend wrapperStyle={{ fontSize: 12 }} onClick={toggleLegend} />
                 <Area yAxisId="value" type="monotone" dataKey="total_value" name="组合市值" stroke="#3B82F6" strokeWidth={2} fill="url(#valueGradient)" hide={hiddenKeys.has("total_value")} />
                 <Line yAxisId="value" type="monotone" dataKey="invested_cost" name="累计净投入" stroke="#f59e0b" strokeWidth={2} dot={false} hide={hiddenKeys.has("invested_cost")} />
-                <Line yAxisId="value" type="monotone" dataKey="profit" name="累计收益" stroke="#10b981" strokeWidth={2} dot={false} hide={hiddenKeys.has("profit")} />
+                <Line yAxisId="value" type="monotone" dataKey="profit" name="累计收益" stroke="var(--gain-500)" strokeWidth={2} dot={false} hide={hiddenKeys.has("profit")} />
                 <Line yAxisId="return" type="monotone" dataKey="total_return" name="累计收益率" stroke="#8b5cf6" strokeWidth={2} dot={false} hide={hiddenKeys.has("total_return")} />
               </ComposedChart>
             </ResponsiveContainer>
@@ -433,7 +433,7 @@ export default function Returns() {
                 <ReferenceLine x={0} stroke="#cbd5e1" />
                 <Bar dataKey="rate" radius={[0, 4, 4, 0]}>
                   {chartRows.map((row, i) => (
-                    <Cell key={i} fill={row.rate >= 0 ? "#10b981" : "#ef4444"} />
+                    <Cell key={i} fill={row.rate >= 0 ? "var(--gain-500)" : "var(--loss-500)"} />
                   ))}
                 </Bar>
               </BarChart>

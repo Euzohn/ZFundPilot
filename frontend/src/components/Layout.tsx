@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Menu,
   X,
+  House,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { clearToken } from "@/lib/auth"
@@ -22,7 +23,8 @@ import { getColorTheme, getColorThemeAsync, applyColorTheme } from "@/lib/colorT
 
 const STORAGE_KEY = "zfundpilot_sidebar_collapsed"
 const navItems = [
-  { to: "/", label: "组合总览", icon: LayoutDashboard },
+  { to: "/", label: "首页", icon: House },
+  { to: "/overview", label: "组合总览", icon: LayoutDashboard },
   { to: "/transactions", label: "交易管理", icon: ArrowLeftRight },
   { to: "/positions", label: "持仓明细", icon: Briefcase },
   { to: "/nav", label: "净值更新", icon: RefreshCw },

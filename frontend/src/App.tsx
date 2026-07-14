@@ -3,6 +3,7 @@ import { Routes, Route } from "react-router-dom"
 import Layout from "@/components/Layout"
 import LogoSplash from "@/components/LogoSplash"
 import Overview from "@/pages/Overview"
+import Home from "@/pages/Home"
 import Transactions from "@/pages/Transactions"
 import Positions from "@/pages/Positions"
 import FundDetail from "@/pages/FundDetail"
@@ -39,7 +40,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Layout />}>
-        <Route index element={<Overview />} />
+        <Route index element={<Home />} />
+        <Route path="overview" element={<Overview />} />
         <Route path="transactions" element={<Transactions />} />
         <Route path="positions" element={<Positions />} />
         <Route path="fund/:code" element={<FundDetail />} />

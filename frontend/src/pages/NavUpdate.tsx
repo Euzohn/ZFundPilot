@@ -13,7 +13,7 @@ import { navStr } from "@/lib/format"
 
 export default function NavUpdate() {
   // 和持仓页同源：用 getPositions 取数据（含 latest_date / latest_nav）
-  const { data: positions, loading, error, reload } = useApi<Position[]>(() => api.getPositions(true))
+  const { data: positions, loading, error, reload } = useApi<Position[]>(() => api.getPositions())
   const [updating, setUpdating] = useState(false)
   const [progress, setProgress] = useState(0)
   const [results, setResults] = useState<FetchResult[] | null>(null)

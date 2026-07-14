@@ -68,6 +68,7 @@ Local-first · Auto NAV updates · Return & risk analytics · Portfolio rebalanc
 - 🔑 **Custom Keyword Mapping**: Sector/type classification rules are user-editable. Custom keywords take priority. Synced across devices
 - ⚙️ **Preference Sync**: Channel order, keyword mappings, and other preferences stored server-side for multi-device consistency
 - 📱 **Mobile Responsive**: Drawer-style sidebar navigation, responsive grid layout
+- 🎨 **Color Theme Switch**: Toggle between "Green-up/Red-down (International)" and "Red-up/Green-down (A-share)". Synced server-side
 - 🔐 **Password Auth**: Username + password login, HMAC-signed token. In-app username and password changes (SHA-256 hashed storage)
 
 ## Requirements

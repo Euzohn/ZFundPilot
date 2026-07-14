@@ -65,11 +65,21 @@ export default function FundDetail() {
     }
     const filtered = cutoff ? sorted.filter(d => d.date >= cutoff) : sorted
 
-    // 交易日期查找表
+    // 交易日期查找表：精确匹配净值日，非净值日（周末/筹备期）挂到最近净值日
+    const navDateList = filtered.map(d => d.date)
+    function findNearestNavDate(txDate: string): string | null {
+      if (navDateList.includes(txDate)) return txDate
+      const next = navDateList.find(d => d > txDate)
+      if (next) return next
+      if (navDateList.length > 0) return navDateList[0]
+      return null
+    }
     const txMap: Record<string, Transaction[]> = {}
     txs?.forEach(t => {
-      if (!txMap[t.date]) txMap[t.date] = []
-      txMap[t.date].push(t)
+      const navDate = findNearestNavDate(t.date)
+      if (!navDate) return
+      if (!txMap[navDate]) txMap[navDate] = []
+      txMap[navDate].push(t)
     })
 
     // 从全部交易计算每日累计份额（不受时间区间限制）
@@ -270,6 +280,7 @@ const handleDelete = async (txId: number) => {
                             {txInfo.map((t, i) => (
                               <p key={i} className={`text-xs tabular-nums ${t.action === 'buy' ? 'text-gain' : t.action === 'sell' ? 'text-loss' : t.action === 'dividend' ? 'text-blue-500' : 'text-purple-500'}`}>
                                 {ACTION_LABELS[t.action] ?? t.action}
+                                {t.date !== label && <span className="text-muted-foreground"> ({t.date})</span>}
                                 {t.amount ? ` ${money(t.amount)}` : ''}
                                 {t.shares ? ` ${t.shares.toFixed(2)} 份` : ''}
                               </p>

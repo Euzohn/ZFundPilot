@@ -625,8 +625,8 @@ export default function Settings() {
                         : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
                     )}
                   >
-                    <span className="text-gain font-medium">▲</span> 绿涨
-                    <span className="text-loss font-medium ml-2">▼</span> 红跌
+                    <span className="text-green-600 font-medium">▲</span> 绿涨
+                    <span className="text-red-600 font-medium ml-2">▼</span> 红跌
                     <span className="block text-[11px] text-muted-foreground mt-0.5">国际惯例</span>
                   </button>
                   <button
@@ -639,8 +639,8 @@ export default function Settings() {
                         : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
                     )}
                   >
-                    <span className="text-gain font-medium">▲</span> 红涨
-                    <span className="text-loss font-medium ml-2">▼</span> 绿跌
+                    <span className="text-red-600 font-medium">▲</span> 红涨
+                    <span className="text-green-600 font-medium ml-2">▼</span> 绿跌
                     <span className="block text-[11px] text-muted-foreground mt-0.5">国内 A 股惯例</span>
                   </button>
                 </div>

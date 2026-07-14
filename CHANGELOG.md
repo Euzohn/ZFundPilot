@@ -4,6 +4,17 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.0] - 2026-07-14
+
+### Added
+- 登录页增加用户名输入框，支持用户名 + 密码双因素登录
+- `POST /api/auth/change-username` 修改用户名端点（需当前密码验证，改后 token 失效）
+- `ZFUNDPILOT_USERNAME` 环境变量，首次部署时可自定义用户名（默认 `admin`）
+- 设置页「账户与安全」显示当前用户名 + 修改用户名区域
+
+### Changed
+- 旧 `auth.json` 升级时自动补填 `username: "admin"`，登录不受影响
+
 ## [0.4.0] - 2026-07-07
 
 ### Added

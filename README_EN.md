@@ -68,7 +68,7 @@ Local-first · Auto NAV updates · Return & risk analytics · Portfolio rebalanc
 - 🔑 **Custom Keyword Mapping**: Sector/type classification rules are user-editable. Custom keywords take priority. Synced across devices
 - ⚙️ **Preference Sync**: Channel order, keyword mappings, and other preferences stored server-side for multi-device consistency
 - 📱 **Mobile Responsive**: Drawer-style sidebar navigation, responsive grid layout
-- 🔐 **Password Auth**: HMAC-signed token, in-app password change (SHA-256 hashed storage)
+- 🔐 **Password Auth**: Username + password login, HMAC-signed token. In-app username and password changes (SHA-256 hashed storage)
 
 ## Requirements
 
@@ -140,6 +140,7 @@ Open http://localhost:8501
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `ZFUNDPILOT_USERNAME` | `admin` | Used **only on first launch** to initialize login username. Afterwards stored in `data/auth.json`, changeable via Settings page |
 | `ZFUNDPILOT_PASSWORD` | empty | Used **only on first launch** to initialize password hash. Afterwards stored in `data/auth.json`, changeable via Settings page |
 | `ZFUNDPILOT_SECRET` | auto-generated | Used **only on first launch** to initialize token signing key. Afterwards stored in `data/auth.json` |
 | `ZFUNDPILOT_HOME` | project root | Location of the `data/` directory |

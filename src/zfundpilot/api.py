@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from . import ai, analysis, config, data_io, db, fetch_fund, rebalance, risk
 from .models import Fund, Transaction
 
-app = FastAPI(title="ZFundPilot API", version="0.1.0")
+app = FastAPI(title="ZFundPilot API", version="0.5.0")
 
 app.add_middleware(
     CORSMiddleware,

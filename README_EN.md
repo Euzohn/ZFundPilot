@@ -60,13 +60,15 @@ Local-first · Auto NAV updates · Return & risk analytics · Portfolio rebalanc
 - 💸 **Auto Fee Lookup**: Automatically fetches purchase/redemption fee rates from Tiantian Fund when entering transactions. Matches fee tiers by amount (discounted rates), uses FIFO to match buy lots for redemption fees. Manual override supported
 - 📈 **Auto Portfolio Aggregation**: Aggregates by fund + channel using moving weighted average cost. Realized P&L transferred on sell
 - 🔄 **NAV Updates**: AkShare primary, Tiantian Fund fallback. Auto-fetch fund name/type/sector on code entry
-- 💰 **Return Analysis**: Unrealized/realized P&L, portfolio return curve, return rate ranking
+- 💰 **Return Analysis**: Unrealized/realized P&L, portfolio return curve (cumulative profit + return rate + legend toggle), return rate ranking, calendar view, stacked bar by channel
 - 🛡️ **Risk Analysis**: Max drawdown, annualized volatility, concentration (HHI), structure breakdown, risk flags
 - ⚖️ **Rebalancing Advice**: Structure-based optimization suggestions (not trading signals)
-- 🤖 **AI Advisor Chat**: Configure any OpenAI-compatible API for AI-powered advice with web search + portfolio context (supports Zhipu / Kimi / Qwen / DeepSeek). Multi-conversation management, date-time naming + custom rename, AI-assisted transaction entry (with auto fee calculation)
+- 🤖 **AI Advisor Chat**: Configure any OpenAI-compatible API for AI-powered advice with web search + portfolio context (supports Zhipu / Kimi / Qwen / DeepSeek). Multi-conversation management, date-time naming + custom rename, AI-assisted transaction entry (with auto fee calculation), token usage tracking
 - 📉 **NAV Chart Markers**: Buy/sell points auto-marked on NAV curve, hover for transaction details
+- 🎨 **Channel Color Customization**: Preset palette + custom color picker, synced server-side
 - 🔑 **Custom Keyword Mapping**: Sector/type classification rules are user-editable. Custom keywords take priority. Synced across devices
-- ⚙️ **Preference Sync**: Channel order, keyword mappings, and other preferences stored server-side for multi-device consistency
+- ⚙️ **Preference Sync**: Channel order, keyword mappings, channel colors, and other preferences stored server-side for multi-device consistency
+- 🏠 **Home Portal**: Dark-themed full-screen portal page with branding, key metrics, quick actions, and GitHub link
 - 📱 **Mobile Responsive**: Drawer-style sidebar navigation, responsive grid layout
 - 🎨 **Color Theme Switch**: Toggle between "Green-up/Red-down (International)" and "Red-up/Green-down (A-share)". Synced server-side
 - 🔐 **Password Auth**: Username + password login, HMAC-signed token. In-app username and password changes (SHA-256 hashed storage)
@@ -214,10 +216,10 @@ ZFundPilot/
 │   └── sector_map.json   # Fund code → sector mapping (auto-maintained)
 ├── frontend/             # React + Vite + TypeScript + Tailwind + shadcn/ui
 │   ├── src/
-│   │   ├── pages/        # 9 pages (Overview / Transactions / Positions / FundDetail / NavUpdate / Returns / Risk / Settings / Login)
-│   │   ├── components/   # Layout + shadcn/ui + FeeBreakdownCard + LogoSpinner
+│   │   ├── pages/        # 10 pages (Home / Overview / Transactions / Positions / FundDetail / NavUpdate / Returns / Risk / AIChat / Settings / Login)
+│   │   ├── components/   # Layout + shadcn/ui + Logo + LogoSpinner + PnLCalendar + FeeBreakdownCard
 │   │   ├── api/          # Typed API client + streamChat (SSE)
-│   │   └── lib/          # Utilities (format / auth / channels / useApi)
+│   │   └── lib/          # Utilities (format / auth / channels / channelColors / colorTheme / useApi)
 │   └── dist/             # Build output (production mode)
 └── .env.example           # Environment variable template
 ```
@@ -230,7 +232,7 @@ ZFundPilot/
   - Dividend reinvestment increases shares and cost basis, also counts as realized P&L; total P&L unchanged
 - **nav_history**: Fund NAV history
 - **ai_usage**: AI chat token usage records (model/input tokens/output tokens/turns)
-- **preferences**: User preferences (channel order, custom keyword mappings), multi-device synced
+- **preferences**: User preferences (channel order, custom keyword mappings, channel colors, color theme), multi-device synced
 - Positions are not stored separately — aggregated from transactions in real-time by fund + channel (moving weighted average cost)
 - Legacy holdings table is auto-migrated to transactions on first launch
 

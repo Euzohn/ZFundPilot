@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { PortfolioSummary } from "@/api/types"
-import { money, pct, signedMoney } from "@/lib/format"
+import { money, pct, signedMoney, localDateStr } from "@/lib/format"
 import { getColorTheme, getColorThemeAsync, applyColorTheme } from "@/lib/colorTheme"
 
 const GITHUB_URL = "https://github.com/Euzohn/ZFundPilot"
@@ -188,10 +188,7 @@ export default function Home() {
   }, [lang])
 
   const mkt = useMemo(() => marketStatus(now), [now])
-  const todayStr = useMemo(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-  }, [])
+  const todayStr = useMemo(() => localDateStr(), [])
   const navStatus = summary?.as_of_date
     ? summary.as_of_date === todayStr
       ? tr.navLatest

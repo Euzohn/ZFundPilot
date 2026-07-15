@@ -5,7 +5,7 @@ import type { PortfolioSummary, DistributionItem } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
-import { money, pct, signedMoney, pnlColor } from "@/lib/format"
+import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -50,9 +50,9 @@ export default function Overview() {
 
   const dailyLabel = useMemo(() => {
     if (!summary?.as_of_date) return "今日收益"
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDateStr()
     if (summary.as_of_date === today) return "今日收益"
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+    const yesterday = localDateStr(new Date(Date.now() - 86400000))
     if (summary.as_of_date === yesterday) return "昨日收益"
     const d = new Date(summary.as_of_date + "T00:00:00")
     return `${d.getMonth() + 1}/${d.getDate()}收益`

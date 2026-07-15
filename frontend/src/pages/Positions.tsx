@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { money, pct, pnlColor } from "@/lib/format"
+import { money, pct, pnlColor, localDateStr } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search } from "lucide-react"
 
@@ -35,7 +35,7 @@ export default function Positions() {
   useEffect(() => { localStorage.setItem("zfundpilot_showClosed", String(showClosed)) }, [showClosed])
   useEffect(() => { localStorage.setItem("zfundpilot_channelFilter", channelFilter) }, [channelFilter])
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = localDateStr()
 
   const view = positions
     ? (showClosed ? positions : positions.filter((p) => p.is_open)).filter((p) => !channelFilter || p.channel === channelFilter)

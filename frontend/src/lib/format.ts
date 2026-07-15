@@ -25,3 +25,7 @@ export function pnlColor(v: number | null | undefined): string {
   if (v < 0) return "text-loss"
   return ""
 }
+
+export function localDateStr(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}

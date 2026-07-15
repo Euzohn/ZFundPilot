@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import FeeBreakdownCard from "@/components/FeeBreakdownCard"
-import { money } from "@/lib/format"
+import { money, localDateStr } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2, Receipt, ArrowUpDown } from "lucide-react"
@@ -126,7 +126,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   const [meta, setMeta] = useState<FundMeta | null>(null)
   const [fetching, setFetching] = useState(false)
   const [action, setAction] = useState("buy")
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(() => localDateStr())
   const [channels, setChannels] = useState<string[]>(() => getChannels())
   const [channel, setChannel] = useState(channels[0])
   const [amount, setAmount] = useState("")
@@ -236,7 +236,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     if (!afterThree) return date
     const d = new Date(date)
     d.setDate(d.getDate() + 1)
-    return d.toISOString().slice(0, 10)
+    return localDateStr(d)
   }, [date, afterThree])
 
   useEffect(() => {
@@ -342,7 +342,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   }
 
   const resetForm = () => {
-    setCode(""); setMeta(null); setAction("buy"); setDate(new Date().toISOString().slice(0, 10))
+    setCode(""); setMeta(null); setAction("buy"); setDate(localDateStr())
     setAmount(""); setShares(""); setNav(""); setFee("0")
     setCustomChannel(""); setNote(""); setAfterThree(false)
     setFeeCalcResult(null); feeManuallyEdited.current = false
@@ -647,11 +647,11 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
     let endDate = ""
     if (dateRange !== "all") {
       const today = new Date()
-      const todayStr = today.toISOString().slice(0, 10)
+      const todayStr = localDateStr(today)
       if (dateRange === "30d") {
         const d = new Date(today)
         d.setDate(d.getDate() - 30)
-        startDate = d.toISOString().slice(0, 10)
+        startDate = localDateStr(d)
         endDate = todayStr
       } else if (dateRange === "month") {
         startDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`

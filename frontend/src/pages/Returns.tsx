@@ -7,7 +7,7 @@ import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { money, pct, signedMoney, pnlColor } from "@/lib/format"
+import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart, Cell, ReferenceLine } from "recharts"
 import PnLCalendar from "@/components/PnLCalendar"
@@ -121,7 +121,7 @@ export default function Returns() {
       const days = CURVE_RANGE_DAYS[curveRange]
       const d = new Date()
       d.setDate(d.getDate() - days)
-      const cutoff = d.toISOString().slice(0, 10)
+      const cutoff = localDateStr(d)
       data = curve.filter(p => p.date >= cutoff)
     }
     return data.map(p => ({ ...p, profit: Math.round((p.total_value - p.invested_cost) * 100) / 100 }))
@@ -152,7 +152,7 @@ export default function Returns() {
       const days = AGG_RANGE_DAYS[pnlAggRange]
       const d = new Date()
       d.setDate(d.getDate() - days)
-      const cutoff = d.toISOString().slice(0, 10)
+      const cutoff = localDateStr(d)
       filtered = channelPnl.filter(p => p.date >= cutoff)
     }
 
@@ -165,7 +165,7 @@ export default function Returns() {
         const day = dt.getDay() || 7
         const monday = new Date(dt)
         monday.setDate(dt.getDate() - day + 1)
-        key = monday.toISOString().slice(0, 10)
+        key = localDateStr(monday)
         label = `${monday.getMonth() + 1}/${monday.getDate()}`
       } else if (pnlMode === "month") {
         key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`

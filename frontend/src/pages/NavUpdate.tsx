@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import { RefreshCw, CheckCircle2, XCircle, RotateCw, AlertTriangle } from "lucide-react"
-import { navStr } from "@/lib/format"
+import { navStr, localDateStr } from "@/lib/format"
 
 export default function NavUpdate() {
   // 和持仓页同源：用 getPositions 取数据（含 latest_date / latest_nav）
@@ -19,7 +19,7 @@ export default function NavUpdate() {
   const [progress, setProgress] = useState(0)
   const [results, setResults] = useState<FetchResult[] | null>(null)
 
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayStr = localDateStr()
 
   // 按基金代码合并（跨渠道），取 latest_date
   const rows = useMemo(() => {

@@ -9,7 +9,7 @@ import ErrorState from "@/components/ErrorState"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { money, pct, signedMoney, navStr, pnlColor } from "@/lib/format"
+import { money, pct, signedMoney, navStr, pnlColor, localDateStr } from "@/lib/format"
 import { toast } from "sonner"
 import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
 import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
@@ -62,7 +62,7 @@ export default function FundDetail() {
       const days = RANGE_DAYS[navRange]
       const d = new Date()
       d.setDate(d.getDate() - days)
-      cutoff = d.toISOString().slice(0, 10)
+      cutoff = localDateStr(d)
     }
     const filtered = cutoff ? sorted.filter(d => d.date >= cutoff) : sorted
 

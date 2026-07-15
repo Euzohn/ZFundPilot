@@ -259,17 +259,17 @@ const handleDelete = async (txId: number) => {
           {chartData.length >= 2 ? (
             <ResponsiveContainer width="100%" height={280}>
               <ComposedChart data={chartData} margin={{ left: 10, right: 10, top: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="date" fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis yAxisId="nav" fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
-                <YAxis yAxisId="pnl" orientation="right" fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${(v / 1000).toFixed(1)}k`} />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="nav" fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                <YAxis yAxisId="pnl" orientation="right" fontSize={10} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${(v / 1000).toFixed(1)}k`} />
                 <Tooltip
                   content={({ active, payload, label }) => {
                     if (!active || !payload?.length) return null
                     const d = payload[0].payload
                     const txInfo = d._tx as Transaction[] | null
                     return (
-                      <div className="rounded-lg border bg-white px-3 py-2 shadow-lg">
+                      <div className="rounded-lg border bg-card px-3 py-2 shadow-lg">
                         <p className="text-xs font-medium text-muted-foreground">{label}</p>
                         <p className="text-sm font-bold tabular-nums text-primary">{navStr(d.nav)}</p>
                         {d.pnl != null && d.pnl !== 0 && (
@@ -293,7 +293,7 @@ const handleDelete = async (txId: number) => {
                     )
                   }}
                 />
-                {avgCost && <ReferenceLine yAxisId="nav" y={avgCost} stroke="#94a3b8" strokeDasharray="5 5" label={{ value: `均价 ${navStr(avgCost)}`, fontSize: 11, fill: '#94a3b8' }} />}
+                {avgCost && <ReferenceLine yAxisId="nav" y={avgCost} stroke="hsl(var(--muted-foreground))" strokeDasharray="5 5" label={{ value: `均价 ${navStr(avgCost)}`, fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} />}
                 <Bar yAxisId="pnl" dataKey="pnl" radius={[2, 2, 0, 0]}>
                   {chartData.map((row, i) => (
                     <Cell key={i} fill={row.pnl >= 0 ? "var(--gain-500)" : "var(--loss-500)"} fillOpacity={0.5} />
@@ -303,7 +303,7 @@ const handleDelete = async (txId: number) => {
                   yAxisId="nav"
                   type="monotone"
                   dataKey="nav"
-                  stroke="#3B82F6"
+                  stroke="hsl(var(--primary))"
                   strokeWidth={2}
                   dot={(props: any) => {
                     const { cx, cy, payload } = props

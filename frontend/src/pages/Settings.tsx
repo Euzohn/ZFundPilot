@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { LineChart, Line, ResponsiveContainer } from "recharts"
 import { getChannels, getChannelsAsync, saveChannels, getDefaultChannels } from "@/lib/channels"
 import { getChannelColors, getChannelColorsAsync, saveChannelColors, getDefaultChannelColors, getPalette } from "@/lib/channelColors"
 import { getColorTheme, getColorThemeAsync, saveColorTheme, applyColorTheme, type ColorTheme } from "@/lib/colorTheme"
@@ -56,19 +57,13 @@ function formatRelativeTime(iso: string): string {
 
 function Sparkline({ data }: { data: number[] }) {
   if (!data || data.length < 2) return null
-  const w = 200, h = 40
-  const max = Math.max(...data, 1)
-  const min = Math.min(...data, 0)
-  const range = max - min || 1
-  const pts = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * w
-    const y = h - 2 - ((v - min) / range) * (h - 4)
-    return `${x.toFixed(1)},${y.toFixed(1)}`
-  }).join(" ")
+  const chartData = data.map((v, i) => ({ i, v }))
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-10" preserveAspectRatio="none">
-      <polyline points={pts} fill="none" stroke="#3b82f6" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-    </svg>
+    <ResponsiveContainer width="100%" height={40}>
+      <LineChart data={chartData}>
+        <Line type="monotone" dataKey="v" stroke="hsl(var(--primary))" strokeWidth={1.5} dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
   )
 }
 

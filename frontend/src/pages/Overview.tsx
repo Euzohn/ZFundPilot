@@ -38,7 +38,7 @@ function ChartTooltip({ active, payload, nameKey }: any) {
   if (!active || !payload?.length) return null
   const label = nameKey ? payload[0].payload?.[nameKey] : payload[0].name
   return (
-    <div className="rounded-lg border bg-white px-3 py-2 shadow-lg">
+    <div className="rounded-lg border bg-card px-3 py-2 shadow-lg">
       <p className="text-xs font-medium text-foreground">{label ?? payload[0].name}</p>
       <p className="text-sm font-bold tabular-nums text-primary">{money(payload[0].value as number)}</p>
     </div>
@@ -107,7 +107,7 @@ export default function Overview() {
       </div>
 
       {/* Metrics row 2 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
         <MetricCard icon={ArrowUpFromLine} label="累计买入 / 卖出" value={`${money(summary.total_buy)} / ${money(summary.total_sell)}`} />
         <MetricCard icon={Wallet} label="持仓基金数" value={`${summary.holding_count} 只`} sub={`净值日期 ${summary.as_of_date ?? "未更新"}`} />
         <MetricCard icon={Calendar} label="最大单基金占比" value={pct(summary.max_single_weight)} sub={summary.max_single_name || undefined} />
@@ -153,11 +153,11 @@ export default function Overview() {
             {sectorDist && sectorDist.length > 0 ? (
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={sectorDist.slice(0, 12)} layout="vertical" margin={{ left: 10, right: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                  <XAxis type="number" tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis type="category" dataKey="sector" width={65} fontSize={11} tick={{ fill: '#64748b' }} axisLine={false} tickLine={false} />
-                  <Bar dataKey="market_value" fill="#1E40AF" radius={[0, 4, 4, 0]} barSize={14} />
-                  <Tooltip content={<ChartTooltip nameKey="sector" />} cursor={{ fill: '#3B82F6', opacity: 0.08 }} />
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
+                  <XAxis type="number" tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="sector" width={65} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <Bar dataKey="market_value" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} barSize={14} />
+                  <Tooltip content={<ChartTooltip nameKey="sector" />} cursor={{ fill: 'hsl(var(--primary))', opacity: 0.08 }} />
                 </BarChart>
               </ResponsiveContainer>
             ) : <p className="py-12 text-center text-sm text-muted-foreground">暂无数据</p>}

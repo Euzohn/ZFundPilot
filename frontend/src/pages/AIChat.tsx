@@ -424,7 +424,6 @@ export default function AIChat() {
                       <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
                       <div className="absolute left-0 top-full mt-1 z-50 w-72 max-w-[80vw] rounded-lg border bg-white shadow-lg">
                         <div className="flex items-center gap-2 px-3 py-2 border-b">
-                          <span className="h-2 w-2 rounded-full bg-blue-500 shrink-0" />
                           <span className="text-sm font-medium truncate flex-1">{currentTitle}</span>
                           <span className="text-[11px] text-muted-foreground shrink-0">当前</span>
                         </div>

@@ -24,17 +24,17 @@ function ChannelTooltip({ active, payload, label }: { active?: boolean; payload?
   if (!active || !payload?.length) return null
   const total = payload.reduce((s, p) => s + p.value, 0)
   return (
-    <div className="bg-white rounded-lg border border-slate-200 p-2 text-xs shadow-sm">
-      <p className="font-medium text-slate-700 mb-1">{label}</p>
+    <div className="bg-card rounded-lg border border-border p-2 text-xs shadow-sm">
+      <p className="font-medium text-foreground mb-1">{label}</p>
       {payload.map((p) => (
         <div key={p.dataKey} className="flex items-center gap-1.5">
           <span className="inline-block w-2 h-2 rounded-full" style={{ background: p.color }} />
-          <span className="text-slate-600">{p.dataKey}:</span>
+          <span className="text-muted-foreground">{p.dataKey}:</span>
           <span className={`font-medium tabular-nums ${p.value >= 0 ? "text-gain" : "text-loss"}`}>{signedMoney(p.value)}</span>
         </div>
       ))}
-      <div className="mt-1 pt-1 border-t border-slate-100 flex justify-between">
-        <span className="text-slate-500">合计</span>
+      <div className="mt-1 pt-1 border-t border-border flex justify-between">
+        <span className="text-muted-foreground">合计</span>
         <span className={`font-bold tabular-nums ${total >= 0 ? "text-gain" : "text-loss"}`}>{signedMoney(total)}</span>
       </div>
     </div>
@@ -305,12 +305,12 @@ export default function Returns() {
             ) : (
               <ResponsiveContainer width="100%" height={pnlMode === "day" ? 200 : 240}>
                 <BarChart data={pnlData} margin={{ left: 10, right: 10, top: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="date" fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${(v / 1000).toFixed(1)}k`} fontSize={10} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="date" fontSize={10} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <YAxis tickFormatter={(v: number) => `${v >= 0 ? '+' : ''}${(v / 1000).toFixed(1)}k`} fontSize={10} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
                   <Tooltip content={<ChannelTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <ReferenceLine y={0} stroke="#cbd5e1" />
+                  <ReferenceLine y={0} stroke="hsl(var(--border))" />
                   {channels.map((ch, i) => (
                     <Bar key={ch} dataKey={ch} stackId="a" fill={channelColors[ch] ?? PALETTE[i % PALETTE.length]} radius={i === channels.length - 1 ? [3, 3, 0, 0] : undefined} />
                   ))}
@@ -340,20 +340,20 @@ export default function Returns() {
               <ComposedChart data={filteredCurve} margin={{ left: 10, right: 5, top: 5 }}>
                 <defs>
                   <linearGradient id="valueGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.15} />
+                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="date" fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis yAxisId="value" tickFormatter={(v: number) => `¥${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis yAxisId="return" orientation="right" tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`} fontSize={11} tick={{ fill: '#94a3b8' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="value" tickFormatter={(v: number) => `¥${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="return" orientation="right" tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
                 <Tooltip formatter={(value: number, name: string) => {
                   if (name === "累计收益率") return [`${(value * 100).toFixed(2)}%`, name]
                   return [money(value), name]
-                }} labelStyle={{ color: '#1e293b' }} contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                }} labelStyle={{ color: 'hsl(var(--foreground))' }} contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} onClick={toggleLegend} />
-                <Area yAxisId="value" type="monotone" dataKey="total_value" name="组合市值" stroke="#3B82F6" strokeWidth={2} fill="url(#valueGradient)" hide={hiddenKeys.has("total_value")} />
+                <Area yAxisId="value" type="monotone" dataKey="total_value" name="组合市值" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#valueGradient)" hide={hiddenKeys.has("total_value")} />
                 <Line yAxisId="value" type="monotone" dataKey="invested_cost" name="累计净投入" stroke="#f59e0b" strokeWidth={2} dot={false} hide={hiddenKeys.has("invested_cost")} />
                 <Line yAxisId="value" type="monotone" dataKey="profit" name="累计收益" stroke="var(--gain-500)" strokeWidth={2} dot={false} hide={hiddenKeys.has("profit")} />
                 <Line yAxisId="return" type="monotone" dataKey="total_return" name="累计收益率" stroke="#8b5cf6" strokeWidth={2} dot={false} hide={hiddenKeys.has("total_return")} />
@@ -428,11 +428,11 @@ export default function Returns() {
           <CardContent>
             <ResponsiveContainer width="100%" height={Math.max(200, chartRows.length * 36)}>
               <BarChart data={chartRows} layout="vertical" margin={{ left: 10, right: 40, top: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                <XAxis type="number" tickFormatter={(v: number) => `${(v * 100).toFixed(1)}%`} fontSize={11} tick={{ fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" width={120} fontSize={11} tick={{ fill: "#64748b" }} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(v: number) => pct(v)} contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0' }} />
-                <ReferenceLine x={0} stroke="#cbd5e1" />
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
+                <XAxis type="number" tickFormatter={(v: number) => `${(v * 100).toFixed(1)}%`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={120} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(v: number) => pct(v)} contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
+                <ReferenceLine x={0} stroke="hsl(var(--border))" />
                 <Bar dataKey="rate" radius={[0, 4, 4, 0]}>
                   {chartRows.map((row, i) => (
                     <Cell key={i} fill={row.rate >= 0 ? "var(--gain-500)" : "var(--loss-500)"} />

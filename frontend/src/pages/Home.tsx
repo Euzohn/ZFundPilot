@@ -9,12 +9,12 @@ import { getColorTheme, getColorThemeAsync, applyColorTheme } from "@/lib/colorT
 const GITHUB_URL = "https://github.com/Euzohn/ZFundPilot"
 
 const quickActions = [
-  { to: "/transactions", code: "TX", label: "TRANSACTIONS", desc: "BUY / SELL / DIVIDEND FLOW" },
-  { to: "/nav", code: "NV", label: "NAV UPDATE", desc: "FETCH NET VALUE DATA" },
-  { to: "/positions", code: "PS", label: "POSITIONS", desc: "HOLDINGS AND COST BASIS" },
-  { to: "/returns", code: "RT", label: "RETURNS", desc: "CURVE AND RANKING" },
-  { to: "/risk", code: "RK", label: "RISK ASSESS", desc: "DRAWDOWN / VOLATILITY / HHI" },
-  { to: "/ai", code: "AI", label: "AI ADVISOR", desc: "LLM POWERED ANALYSIS" },
+  { to: "/transactions", code: "TX", label: "交易记录", labelEn: "TRANSACTIONS", desc: "买入 / 卖出 / 分红" },
+  { to: "/nav", code: "NV", label: "净值更新", labelEn: "NAV UPDATE", desc: "获取最新净值数据" },
+  { to: "/positions", code: "PS", label: "持仓明细", labelEn: "POSITIONS", desc: "持仓与成本" },
+  { to: "/returns", code: "RT", label: "收益分析", labelEn: "RETURNS", desc: "曲线与排名" },
+  { to: "/risk", code: "RK", label: "风险评估", labelEn: "RISK ASSESS", desc: "回撤 / 波动率 / HHI" },
+  { to: "/ai", code: "AI", label: "AI 顾问", labelEn: "AI ADVISOR", desc: "大模型分析" },
 ]
 
 function greeting() {
@@ -38,7 +38,7 @@ function formatDateTime(d: Date) {
   return `${y}.${m}.${day} / ${w} / ${h}:${min}:${s}`
 }
 
-function marketStatus(d: Date): string {
+function marketStatus(d: Date): "OPEN" | "CLOSED" {
   const day = d.getDay()
   if (day === 0 || day === 6) return "CLOSED"
   const t = d.getHours() * 60 + d.getMinutes()
@@ -48,9 +48,9 @@ function marketStatus(d: Date): string {
 
 function concentrationLevel(w: number | undefined): string {
   if (w == null) return "---"
-  if (w > 0.5) return "HIGH"
-  if (w > 0.3) return "MODERATE"
-  return "LOW"
+  if (w > 0.5) return "高"
+  if (w > 0.3) return "中"
+  return "低"
 }
 
 function pnlColorDark(v: number | null | undefined): string {
@@ -78,7 +78,7 @@ export default function Home() {
   const todayStr = new Date().toISOString().slice(0, 10)
   const navStatus = summary?.as_of_date
     ? summary.as_of_date === todayStr
-      ? "CURRENT"
+      ? "最新"
       : summary.as_of_date
     : "---"
 
@@ -95,40 +95,70 @@ export default function Home() {
 
       {/* Main content — no header, content-first */}
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-6 py-16 md:py-20">
-        {/* Hero */}
+        {/* Logo — tactical reticle */}
+        <section className="mb-8">
+          <svg viewBox="0 0 64 64" className="h-14 w-14" fill="none" aria-label="ZFundPilot">
+            {/* Corner brackets */}
+            <path d="M2 10 L2 2 L10 2" stroke="#FF2A2A" strokeWidth="1" />
+            <path d="M54 2 L62 2 L62 10" stroke="#FF2A2A" strokeWidth="1" />
+            <path d="M62 54 L62 62 L54 62" stroke="#FF2A2A" strokeWidth="1" />
+            <path d="M10 62 L2 62 L2 54" stroke="#FF2A2A" strokeWidth="1" />
+            {/* Crosshair lines */}
+            <line x1="32" y1="6" x2="32" y2="20" stroke="#FF2A2A" strokeWidth="1" />
+            <line x1="32" y1="44" x2="32" y2="58" stroke="#FF2A2A" strokeWidth="1" />
+            <line x1="6" y1="32" x2="20" y2="32" stroke="#FF2A2A" strokeWidth="1" />
+            <line x1="44" y1="32" x2="58" y2="32" stroke="#FF2A2A" strokeWidth="1" />
+            {/* Center circle */}
+            <circle cx="32" cy="32" r="10" stroke="#EAEAEA" strokeWidth="1" />
+            {/* Z path */}
+            <path
+              d="M27 28 L37 28 L27 36 L37 36"
+              stroke="#FF2A2A"
+              strokeWidth="2"
+              strokeLinecap="square"
+              strokeLinejoin="miter"
+              fill="none"
+            />
+          </svg>
+        </section>
+
+        {/* Hero — bilingual title */}
         <section className="mb-12">
           <h1
-            className="text-5xl font-bold uppercase tracking-tighter leading-none md:text-6xl lg:text-7xl"
+            className="text-5xl font-bold tracking-tighter leading-none md:text-6xl lg:text-7xl"
             style={{ textShadow: "0 0 30px rgba(234,234,234,0.08)" }}
           >
-            PORTFOLIO<br />
-            TERMINAL
+            投资组合<br />终端
           </h1>
-          <p className="mt-4 font-mono text-xs uppercase tracking-wider text-white/40">
+          <p className="mt-3 font-mono text-xs uppercase tracking-wider text-white/40">
+            PORTFOLIO TERMINAL
+          </p>
+          <p className="mt-4 font-mono text-xs tracking-wider text-white/40">
             {formatDateTime(now)} · {greeting()}
           </p>
         </section>
 
-        {/* Metrics */}
+        {/* Metrics — bilingual labels */}
         <section className="mb-6">
           {loading ? (
-            <p className="font-mono text-sm uppercase tracking-wider text-white/40 animate-pulse">
-              [ FETCHING DATA... ]
+            <p className="font-mono text-sm tracking-wider text-white/40 animate-pulse">
+              [ 加载数据中... ]
             </p>
           ) : summary && summary.holding_count === 0 ? (
-            <div className="font-mono">
-              <p className="text-lg uppercase tracking-wider text-white/60">[ NO DATA ]</p>
+            <div>
+              <p className="font-sans text-lg tracking-wider text-white/60">[ 暂无数据 ]</p>
               <button
                 onClick={() => navigate("/transactions")}
-                className="mt-2 text-sm uppercase tracking-wider text-[#FF2A2A] transition-colors hover:text-white"
+                className="mt-2 font-mono text-sm tracking-wider text-[#FF2A2A] transition-colors hover:text-white"
               >
-                {">>> INITIATE FIRST TRANSACTION"}
+                {">>> 添加第一笔交易"}
               </button>
             </div>
           ) : summary ? (
             <div className="grid grid-cols-1 gap-px border border-white/10 bg-white/10 sm:grid-cols-3">
               <div className="bg-[#0A0A0A] p-6">
-                <p className="font-mono text-xs uppercase tracking-wider text-white/40">[ CURRENT VALUE ]</p>
+                <p className="font-sans text-sm tracking-wider text-white/40">当前市值</p>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-white/30">CURRENT VALUE</p>
                 <output
                   className="mt-2 block font-mono text-2xl font-bold tabular-nums"
                   style={{ textShadow: "0 0 15px rgba(234,234,234,0.1)" }}
@@ -137,7 +167,8 @@ export default function Home() {
                 </output>
               </div>
               <div className="bg-[#0A0A0A] p-6">
-                <p className="font-mono text-xs uppercase tracking-wider text-white/40">[ TOTAL P&L ]</p>
+                <p className="font-sans text-sm tracking-wider text-white/40">累计盈亏</p>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-white/30">TOTAL P&amp;L</p>
                 <output
                   className={`mt-2 block font-mono text-2xl font-bold tabular-nums ${pnlColorDark(summary.total_pnl)}`}
                   style={{ textShadow: "0 0 15px rgba(234,234,234,0.1)" }}
@@ -147,31 +178,37 @@ export default function Home() {
                 </output>
               </div>
               <div className="bg-[#0A0A0A] p-6">
-                <p className="font-mono text-xs uppercase tracking-wider text-white/40">[ HOLDINGS ]</p>
+                <p className="font-sans text-sm tracking-wider text-white/40">持仓数量</p>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-white/30">HOLDINGS</p>
                 <output
                   className="mt-2 block font-mono text-2xl font-bold tabular-nums"
                   style={{ textShadow: "0 0 15px rgba(234,234,234,0.1)" }}
                 >
-                  {summary.holding_count} UNITS
+                  {summary.holding_count} 只
                 </output>
               </div>
             </div>
           ) : null}
         </section>
 
-        {/* System status */}
+        {/* System status — bilingual */}
         {summary && summary.holding_count > 0 && (
           <section className="mb-12">
             <div className="border border-white/10 bg-[#0A0A0A] p-4">
-              <p className="font-mono text-xs uppercase tracking-wider text-white/40">[ SYSTEM STATUS ]</p>
-              <p className="mt-2 font-mono text-xs uppercase tracking-wider">
-                <span className="text-white/60">MARKET:</span>{" "}
-                <span className={mkt === "OPEN" ? "text-gain-400" : "text-[#FF2A2A]"}>{mkt}</span>
+              <div className="flex items-baseline gap-2">
+                <p className="font-sans text-sm tracking-wider text-white/40">系统状态</p>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-white/30">SYSTEM STATUS</p>
+              </div>
+              <p className="mt-2 font-mono text-xs tracking-wider">
+                <span className="text-white/60">市场:</span>{" "}
+                <span className={mkt === "OPEN" ? "text-gain-400" : "text-[#FF2A2A]"}>
+                  {mkt === "OPEN" ? "开市" : "闭市"}
+                </span>
                 <span className="mx-3 text-white/20">///</span>
-                <span className="text-white/60">NAV:</span>{" "}
+                <span className="text-white/60">净值:</span>{" "}
                 <span className="text-white/80">{navStatus}</span>
                 <span className="mx-3 text-white/20">///</span>
-                <span className="text-white/60">CONCENTRATION:</span>{" "}
+                <span className="text-white/60">集中度:</span>{" "}
                 <span className="text-white/80">
                   {concentrationLevel(summary.max_single_weight)}
                   {summary.max_single_weight ? ` ${(summary.max_single_weight * 100).toFixed(1)}%` : ""}
@@ -181,19 +218,25 @@ export default function Home() {
           </section>
         )}
 
-        {/* Navigation */}
+        {/* Navigation — bilingual */}
         <section>
-          <p className="mb-4 font-mono text-xs uppercase tracking-wider text-white/40">[ NAVIGATION ]</p>
+          <div className="mb-4 flex items-baseline gap-2">
+            <p className="font-sans text-sm tracking-wider text-white/40">导航</p>
+            <p className="font-mono text-[10px] uppercase tracking-wider text-white/30">NAVIGATION</p>
+          </div>
           <div className="grid grid-cols-2 gap-px border border-white/10 bg-white/10 sm:grid-cols-3">
-            {quickActions.map(({ to, code, label, desc }) => (
+            {quickActions.map(({ to, code, label, labelEn, desc }) => (
               <button
                 key={to}
                 onClick={() => navigate(to)}
                 className="group bg-[#0A0A0A] p-6 text-left transition-colors hover:bg-[#EAEAEA] hover:text-[#0A0A0A] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2A2A] active:opacity-80"
               >
                 <p className="font-mono text-2xl font-bold">{code}</p>
-                <p className="mt-1 font-mono text-xs uppercase tracking-wider">{label}</p>
-                <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-white/40 group-hover:text-black/60">
+                <p className="mt-1 font-sans text-sm">{label}</p>
+                <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-white/40 group-hover:text-black/60">
+                  {labelEn}
+                </p>
+                <p className="mt-2 font-sans text-xs text-white/30 group-hover:text-black/50">
                   {desc}
                 </p>
               </button>
@@ -220,8 +263,8 @@ export default function Home() {
               [ GITHUB ]
             </a>
           </div>
-          <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-white/30">
-            /// NO TRADE SIGNALS / NOT FINANCIAL ADVICE / DATA ONLY ///
+          <p className="mt-2 font-sans text-[10px] tracking-wider text-white/30">
+            /// 不提供交易信号 / 仅供参考 / 仅数据分析 ///
           </p>
         </div>
       </footer>

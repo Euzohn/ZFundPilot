@@ -100,9 +100,13 @@ def _bootstrap_check(trigger: CronTrigger) -> None:
     if _last_run is not None:
         return
     now = datetime.now()
-    prev = trigger.get_previous_fire_time(now)
-    if prev and prev.date() == now.date():
-        logger.info("[scheduler] 今日 cron=%s 已过, 立即执行净值更新", prev.strftime("%H:%M"))
+    next_fire = trigger.get_next_fire_time(None, now)
+    if next_fire is None or next_fire.date() == now.date():
+        return
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    first_today = trigger.get_next_fire_time(None, midnight)
+    if first_today and first_today.date() == now.date():
+        logger.info("[scheduler] 今日 cron 已过, 立即执行净值更新")
         _run_nav_update()
 
 

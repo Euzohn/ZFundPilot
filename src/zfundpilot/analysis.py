@@ -226,7 +226,7 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
         total_buy=total_buy,
         total_sell=total_sell,
         total_dividend=total_dividend,
-        holding_count=len(open_positions),
+        holding_count=len(set(p.fund_code for p in open_positions)),
     )
 
     if open_positions:

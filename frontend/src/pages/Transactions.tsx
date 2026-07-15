@@ -969,7 +969,7 @@ function CSVImportExport() {
             <Button variant="outline" onClick={() => api.downloadTemplate()}>
               <Download className="mr-1 h-4 w-4" /> 下载 CSV 模板
             </Button>
-            <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent">
+            <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
               <Upload className="h-4 w-4" /> {parsing ? "解析中..." : "上传 CSV 文件"}
               <input type="file" accept=".csv" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
             </label>

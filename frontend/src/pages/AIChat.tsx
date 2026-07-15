@@ -405,7 +405,7 @@ export default function AIChat() {
                     <button
                       type="button"
                       onClick={() => setDropdownOpen((o) => !o)}
-                      className="flex items-center gap-1 text-base font-bold hover:text-blue-600 transition-colors"
+                      className="flex items-center gap-1 text-base font-bold hover:text-blue-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                     >
                       <span className="truncate max-w-[100px] sm:max-w-[180px]">{currentTitle}</span>
                       <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
@@ -413,7 +413,7 @@ export default function AIChat() {
                     <button
                       type="button"
                       onClick={startEditTitle}
-                      className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-blue-500 transition-colors"
+                      className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-blue-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                       title="重命名"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -465,7 +465,7 @@ export default function AIChat() {
                                     <button
                                       type="button"
                                       onClick={(e) => { e.stopPropagation(); setTitleInput(s.title); setEditingArchiveId(s.id) }}
-                                      className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                                      className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-blue-500 hover:bg-blue-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                                       title="重命名"
                                     >
                                       <Pencil className="h-3 w-3" />
@@ -473,7 +473,7 @@ export default function AIChat() {
                                     <button
                                       type="button"
                                       onClick={(e) => { e.stopPropagation(); handleDeleteArchived(s.id) }}
-                                      className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
+                                      className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                                       title="删除此对话"
                                     >
                                       <X className="h-3.5 w-3.5" />
@@ -493,14 +493,14 @@ export default function AIChat() {
                   <button
                     type="button"
                     onClick={startEditTitle}
-                    className="text-base font-bold truncate hover:text-blue-600 transition-colors"
+                    className="text-base font-bold truncate hover:text-blue-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                   >
                     {currentTitle}
                   </button>
                   <button
                     type="button"
                     onClick={startEditTitle}
-                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-blue-500 transition-colors"
+                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-blue-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                     title="重命名"
                   >
                     <Pencil className="h-3.5 w-3.5" />
@@ -517,7 +517,7 @@ export default function AIChat() {
               type="button"
               onClick={() => setIncludeContext(!includeContext)}
               disabled={streaming}
-              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${includeContext ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-400"}`}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] ${includeContext ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-400"}`}
               title={includeContext ? "当前携带持仓明细" : "不携带持仓明细"}
             >
               {includeContext ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
@@ -541,7 +541,7 @@ export default function AIChat() {
                   <button
                     type="button"
                     onClick={() => setShowSysPrompt(!showSysPrompt)}
-                    className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                    className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                   >
                     {showSysPrompt ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                     <span>系统提示词</span>
@@ -623,7 +623,7 @@ export default function AIChat() {
                     key={prompt}
                     onClick={() => !streaming && handleSend(prompt)}
                     disabled={streaming}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50"
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                   >
                     {prompt}
                   </button>
@@ -665,7 +665,7 @@ export default function AIChat() {
                   <button
                     type="button"
                     onClick={() => setShowUsage(true)}
-                    className="text-[11px] text-muted-foreground/60 hover:text-blue-500 hover:underline transition-colors"
+                    className="text-[11px] text-muted-foreground/60 hover:text-blue-500 hover:underline transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                   >
                     用量明细
                   </button>
@@ -835,7 +835,7 @@ function TxConfirmCard({
           <button
             type="button"
             onClick={() => setAfterThree(!afterThree)}
-            className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors ${afterThree ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] ${afterThree ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}
           >
             {afterThree ? "15:00 后（T+1 确认）" : "15:00 前（当日确认）"}
           </button>

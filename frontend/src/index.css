@@ -374,3 +374,13 @@ html, body {
 .la-sand-s1 { animation:la-sand-sparkle 1s ease-in-out infinite; animation-delay: 1.5s; }
 .la-sand-s2 { animation:la-sand-sparkle 1s ease-in-out infinite; animation-delay: 1.7s; }
 .la-sand-s3 { animation:la-sand-sparkle 1s ease-in-out infinite; animation-delay: 1.9s; }
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

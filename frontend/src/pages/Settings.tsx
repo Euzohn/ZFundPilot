@@ -457,7 +457,7 @@ export default function Settings() {
                       key={p.name}
                       type="button"
                       onClick={() => { setAiBaseUrl(p.baseUrl); setAiModel(p.model) }}
-                      className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600"
+                      className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                     >
                       {p.name}
                     </button>
@@ -593,17 +593,17 @@ export default function Settings() {
                         {i + 1}
                       </span>
                       <button onClick={() => moveUp(i)} disabled={i === 0}
-                        className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed">
+                        className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                         <ChevronUp className="h-3.5 w-3.5" />
                       </button>
                       <button onClick={() => moveDown(i)} disabled={i === channels.length - 1}
-                        className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed">
+                        className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                         <ChevronDown className="h-3.5 w-3.5" />
                       </button>
                       <span className="flex-1 text-sm font-medium">{ch}</span>
                       <span className="hidden sm:inline text-xs text-slate-400">{i === 0 ? "默认" : ""}</span>
                       <button onClick={() => remove(i)}
-                        className="flex h-6 w-6 items-center justify-center rounded text-slate-300 transition-colors hover:bg-red-50 hover:text-red-500">
+                        className="flex h-6 w-6 items-center justify-center rounded text-slate-300 transition-colors hover:bg-red-50 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -646,7 +646,7 @@ export default function Settings() {
                       <div className="flex items-center gap-1">
                         {palette.map(color => (
                           <button key={color} onClick={() => handleColorChange(ch, color)}
-                            className={cn("h-5 w-5 rounded-full border-2 transition-transform hover:scale-110",
+                            className={cn("h-5 w-5 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                               channelColors[ch] === color ? "border-slate-400" : "border-transparent")}
                             style={{ background: color }} />
                         ))}
@@ -673,7 +673,7 @@ export default function Settings() {
                     onClick={() => handleThemeChange("international")}
                     disabled={colorThemeLoading}
                     className={cn(
-                      "flex-1 rounded-lg border px-3 py-2 text-sm transition-colors disabled:opacity-50",
+                      "flex-1 rounded-lg border px-3 py-2 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                       colorTheme === "international"
                         ? "border-blue-300 bg-blue-50 text-blue-700"
                         : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
@@ -687,7 +687,7 @@ export default function Settings() {
                     onClick={() => handleThemeChange("china")}
                     disabled={colorThemeLoading}
                     className={cn(
-                      "flex-1 rounded-lg border px-3 py-2 text-sm transition-colors disabled:opacity-50",
+                      "flex-1 rounded-lg border px-3 py-2 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                       colorTheme === "china"
                         ? "border-blue-300 bg-blue-50 text-blue-700"
                         : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
@@ -717,7 +717,7 @@ export default function Settings() {
                         onClick={handleSchedulerToggle}
                         disabled={schedulerToggling}
                         className={cn(
-                          "rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:opacity-50",
+                          "rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                           schedulerStatus.enabled
                             ? "border-blue-300 bg-blue-50 text-blue-700"
                             : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
@@ -775,7 +775,7 @@ export default function Settings() {
                       key={key}
                       type="button"
                       onClick={() => { setKwTab(key); setKwSearch("") }}
-                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${kwTab === key ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] ${kwTab === key ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                     >
                       {label}
                     </button>
@@ -813,18 +813,18 @@ export default function Settings() {
                     {kwCustom.map((e, i) => (
                       <div key={i} className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-1.5">
                         <button onClick={() => moveCustomKeyword(i, -1)} disabled={i === 0}
-                          className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 disabled:opacity-20">
+                          className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 disabled:opacity-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                           <ChevronUp className="h-3 w-3" />
                         </button>
                         <button onClick={() => moveCustomKeyword(i, 1)} disabled={i === kwCustom.length - 1}
-                          className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 disabled:opacity-20">
+                          className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 disabled:opacity-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                           <ChevronDown className="h-3 w-3" />
                         </button>
                         <span className="text-sm font-medium flex-1">{e.keyword}</span>
                         <span className="text-xs text-muted-foreground">→</span>
                         <span className="text-sm font-medium text-blue-600">{e.mapped}</span>
                         <button onClick={() => deleteCustomKeyword(i)}
-                          className="flex h-5 w-5 items-center justify-center rounded text-slate-300 hover:text-red-500">
+                          className="flex h-5 w-5 items-center justify-center rounded text-slate-300 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                           <X className="h-3.5 w-3.5" />
                         </button>
                       </div>
@@ -837,7 +837,7 @@ export default function Settings() {
                   <button
                     type="button"
                     onClick={() => setKwShowDefaults(!kwShowDefaults)}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                   >
                     {kwShowDefaults ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                     {kwShowDefaults ? "收起" : "展开"}默认关键词（{kwDefaults.length} 个）

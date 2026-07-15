@@ -15,6 +15,41 @@ import type { ElementType } from "react"
 
 const PIE_COLORS = ["#1E40AF", "#3B82F6", "#60A5FA", "#93C5FD", "#D97706", "#F59E0B", "#6366F1"]
 
+function CompactCard({ label, value, sub, color }: {
+  label: string; value: string; sub?: string; color?: string
+}) {
+  return (
+    <Card className="card-hover">
+      <CardContent className="p-4 md:p-5">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums fade-in-up ${color ?? ""}`}>{value}</p>
+        {sub && <p className={`text-xs tabular-nums ${color ?? "text-muted-foreground"}`}>{sub}</p>}
+      </CardContent>
+    </Card>
+  )
+}
+
+function HeroCard({ summary }: { summary: PortfolioSummary }) {
+  return (
+    <Card className="card-hover col-span-1 lg:col-span-1">
+      <CardContent className="p-4 md:p-5">
+        <p className="text-xs font-medium text-muted-foreground">当前市值</p>
+        <p className="mt-1 text-2xl font-bold tabular-nums fade-in-up text-foreground">{money(summary.total_value)}</p>
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums">
+          <span className="text-muted-foreground">总盈亏</span>
+          <span className={`font-medium ${pnlColor(summary.total_pnl)}`}>
+            {signedMoney(summary.total_pnl)} <span className="text-muted-foreground">({pct(summary.total_return)})</span>
+          </span>
+        </div>
+        <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums text-muted-foreground">
+          <span>浮动 {signedMoney(summary.unrealized_pnl)}</span>
+          <span>已实现 {signedMoney(summary.realized_pnl)}</span>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 function MetricCard({ icon: Icon, label, value, sub, color }: {
   icon: ElementType; label: string; value: string; sub?: string; color?: string
 }) {
@@ -90,31 +125,57 @@ export default function Overview() {
         )}
       </div>
 
-      {/* Period returns — 今日/本周/本月/今年 */}
+      {/* Row 1: Period returns — compact cards, no icons */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <MetricCard icon={Activity} label={dailyLabel} value={signedMoney(summary.daily_pnl)} sub={pct(summary.daily_return)} color={pnlColor(summary.daily_pnl)} />
-        <MetricCard icon={TrendingUp} label="本周收益" value={signedMoney(summary.week_pnl)} sub={pct(summary.week_return)} color={pnlColor(summary.week_pnl)} />
-        <MetricCard icon={TrendingUp} label="本月收益" value={signedMoney(summary.month_pnl)} sub={pct(summary.month_return)} color={pnlColor(summary.month_pnl)} />
-        <MetricCard icon={TrendingUp} label="今年收益" value={signedMoney(summary.year_pnl)} sub={pct(summary.year_return)} color={pnlColor(summary.year_pnl)} />
+        <CompactCard label={dailyLabel} value={signedMoney(summary.daily_pnl)} sub={pct(summary.daily_return)} color={pnlColor(summary.daily_pnl)} />
+        <CompactCard label="本周收益" value={signedMoney(summary.week_pnl)} sub={pct(summary.week_return)} color={pnlColor(summary.week_pnl)} />
+        <CompactCard label="本月收益" value={signedMoney(summary.month_pnl)} sub={pct(summary.month_return)} color={pnlColor(summary.month_pnl)} />
+        <CompactCard label="今年收益" value={signedMoney(summary.year_pnl)} sub={pct(summary.year_return)} color={pnlColor(summary.year_pnl)} />
       </div>
 
-      {/* Metrics row 1 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <MetricCard icon={DollarSign} label="当前市值" value={money(summary.total_value)} />
-        <MetricCard icon={TrendingUp} label="总盈亏" value={signedMoney(summary.total_pnl)} sub={`浮动 ${signedMoney(summary.unrealized_pnl)} · 已实现 ${signedMoney(summary.realized_pnl)}`} color={pnlColor(summary.total_pnl)} />
-        <MetricCard icon={TrendingUp} label="总收益率" value={pct(summary.total_return)} color={pnlColor(summary.total_return)} />
+      {/* Row 2: Hero + portfolio metrics — 3-col with hero card */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
+        <HeroCard summary={summary} />
         <MetricCard icon={Wallet} label="持仓成本" value={money(summary.total_cost)} />
+        <MetricCard icon={Wallet} label="持仓基金数" value={`${summary.holding_count} 只`} sub={`净值日期 ${summary.as_of_date ?? "未更新"}`} />
       </div>
 
-      {/* Metrics row 2 */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-        <MetricCard icon={ArrowUpFromLine} label="累计买入 / 卖出" value={`${money(summary.total_buy)} / ${money(summary.total_sell)}`} />
-        <MetricCard icon={Wallet} label="持仓基金数" value={`${summary.holding_count} 只`} sub={`净值日期 ${summary.as_of_date ?? "未更新"}`} />
+      {/* Row 3: Transaction summary + max concentration — 2-col */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+        <Card className="card-hover">
+          <CardContent className="p-4 md:p-5">
+            <p className="text-xs font-medium text-muted-foreground">累计买入 / 卖出 / 分红</p>
+            <p className="mt-1 text-sm md:text-base font-bold tabular-nums">
+              <span className="text-blue-600">{money(summary.total_buy)}</span>
+              <span className="text-muted-foreground mx-1.5">/</span>
+              <span className="text-amber-600">{money(summary.total_sell)}</span>
+              <span className="text-muted-foreground mx-1.5">/</span>
+              <span className="text-purple-600">{money(summary.total_dividend)}</span>
+            </p>
+          </CardContent>
+        </Card>
         <MetricCard icon={Calendar} label="最大单基金占比" value={pct(summary.max_single_weight)} sub={summary.max_single_name || undefined} />
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
+      {/* Row 4: Charts — bar chart spans 2 cols, pies 1 col each */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 md:gap-4">
+        <Card className="card-hover lg:col-span-2">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">板块分布</CardTitle></CardHeader>
+          <CardContent>
+            {sectorDist && sectorDist.length > 0 ? (
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={sectorDist.slice(0, 12)} layout="vertical" margin={{ left: 10, right: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
+                  <XAxis type="number" tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="sector" width={65} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <Bar dataKey="market_value" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} barSize={14} />
+                  <Tooltip content={<ChartTooltip nameKey="sector" />} cursor={{ fill: 'hsl(var(--primary))', opacity: 0.08 }} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <p className="py-12 text-center text-sm text-muted-foreground">暂无数据</p>}
+          </CardContent>
+        </Card>
+
         <Card className="card-hover">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">资产类型</CardTitle></CardHeader>
           <CardContent>
@@ -142,23 +203,6 @@ export default function Overview() {
                   </Pie>
                   <Tooltip content={<ChartTooltip nameKey="channel" />} />
                 </PieChart>
-              </ResponsiveContainer>
-            ) : <p className="py-12 text-center text-sm text-muted-foreground">暂无数据</p>}
-          </CardContent>
-        </Card>
-
-        <Card className="card-hover">
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">板块分布</CardTitle></CardHeader>
-          <CardContent>
-            {sectorDist && sectorDist.length > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={sectorDist.slice(0, 12)} layout="vertical" margin={{ left: 10, right: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
-                  <XAxis type="number" tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-                  <YAxis type="category" dataKey="sector" width={65} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-                  <Bar dataKey="market_value" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} barSize={14} />
-                  <Tooltip content={<ChartTooltip nameKey="sector" />} cursor={{ fill: 'hsl(var(--primary))', opacity: 0.08 }} />
-                </BarChart>
               </ResponsiveContainer>
             ) : <p className="py-12 text-center text-sm text-muted-foreground">暂无数据</p>}
           </CardContent>

@@ -122,16 +122,16 @@ export default function Home() {
           </svg>
         </section>
 
-        {/* Hero — bilingual title */}
+        {/* Hero — project name + tagline */}
         <section className="mb-12">
           <h1
             className="text-5xl font-bold tracking-tighter leading-none md:text-6xl lg:text-7xl"
             style={{ textShadow: "0 0 30px rgba(234,234,234,0.08)" }}
           >
-            投资组合<br />终端
+            ZFUNDPILOT
           </h1>
-          <p className="mt-3 font-mono text-xs uppercase tracking-wider text-white/40">
-            PORTFOLIO TERMINAL
+          <p className="mt-3 font-sans text-sm tracking-wider text-white/40">
+            个人基金分析与风险管理系统
           </p>
           <p className="mt-4 font-mono text-xs tracking-wider text-white/40">
             {formatDateTime(now)} · {greeting()}

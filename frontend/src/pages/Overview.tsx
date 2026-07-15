@@ -4,6 +4,7 @@ import { api } from "@/api/client"
 import type { PortfolioSummary, DistributionItem } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
+import ErrorState from "@/components/ErrorState"
 import { money, pct, signedMoney, pnlColor } from "@/lib/format"
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
@@ -45,7 +46,7 @@ function ChartTooltip({ active, payload, nameKey }: any) {
 }
 
 export default function Overview() {
-  const { data: summary, loading: sl } = useApi<PortfolioSummary>(() => api.getSummary())
+  const { data: summary, loading: sl, error: se, reload: reloadSummary } = useApi<PortfolioSummary>(() => api.getSummary())
 
   const dailyLabel = useMemo(() => {
     if (!summary?.as_of_date) return "今日收益"
@@ -60,6 +61,7 @@ export default function Overview() {
   const { data: channelDist } = useApi<DistributionItem[]>(() => api.getDistribution("channel"))
   const { data: sectorDist } = useApi<DistributionItem[]>(() => api.getDistribution("sector"))
 
+  if (se) return <ErrorState message={se} onRetry={reloadSummary} />
   if (sl || !summary) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
 
   const noData = summary.holding_count === 0

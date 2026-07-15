@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import LogoSpinner from "@/components/LogoSpinner"
+import ErrorState from "@/components/ErrorState"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import type { AIUsageStats, AIUsageDaily, KeywordMaps, KeywordEntry, SchedulerStatus } from "@/api/types"
@@ -90,7 +91,7 @@ export default function Settings() {
   const [colorThemeLoading, setColorThemeLoading] = useState(false)
 
   // Scheduler
-  const { data: schedulerStatus, reload: reloadScheduler } = useApi<SchedulerStatus>(() => api.getSchedulerStatus(), [])
+  const { data: schedulerStatus, error: schedulerError, reload: reloadScheduler } = useApi<SchedulerStatus>(() => api.getSchedulerStatus(), [])
   const [schedulerToggling, setSchedulerToggling] = useState(false)
 
   // 页面加载时尝试从服务端同步渠道设置
@@ -111,7 +112,7 @@ export default function Settings() {
   const [changingUsername, setChangingUsername] = useState(false)
 
   // AI config
-  const { data: aiConfig, reload: reloadAIConfig } = useApi(() => api.getAIConfig(), [])
+  const { data: aiConfig, error: aiConfigError, reload: reloadAIConfig } = useApi(() => api.getAIConfig(), [])
   const [aiBaseUrl, setAiBaseUrl] = useState("")
   const [aiApiKey, setAiApiKey] = useState("")
   const [aiModel, setAiModel] = useState("")
@@ -363,7 +364,18 @@ export default function Settings() {
                   当前用户名：<span className="font-medium text-slate-700">{authStatus?.username || "—"}</span>
                 </p>
               </CardHeader>
-              <CardContent className="space-y-5">
+            <CardContent className="space-y-5">
+              {aiConfigError && (
+                <div className="flex items-center gap-2 rounded-md border border-loss-200 bg-loss-50 px-3 py-2 text-xs">
+                  <span className="text-loss-700">AI 配置加载失败</span>
+                  <button
+                    onClick={reloadAIConfig}
+                    className="text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                  >
+                    重试
+                  </button>
+                </div>
+              )}
                 {/* 修改用户名 */}
                 <div className="space-y-2">
                   <Label className="text-xs font-medium text-slate-600">修改用户名</Label>
@@ -710,7 +722,17 @@ export default function Settings() {
                   <p className="text-sm font-medium">定时净值更新</p>
                   <span className="text-xs text-muted-foreground">工作日自动拉取最新净值</span>
                 </div>
-                {schedulerStatus ? (
+                {schedulerError ? (
+                  <div className="flex items-center gap-2 py-2">
+                    <span className="text-xs text-loss-600">加载失败</span>
+                    <button
+                      onClick={reloadScheduler}
+                      className="text-xs text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                    >
+                      重试
+                    </button>
+                  </div>
+                ) : schedulerStatus ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <button

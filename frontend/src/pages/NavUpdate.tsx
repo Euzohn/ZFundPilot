@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import LogoSpinner from "@/components/LogoSpinner"
+import ErrorState from "@/components/ErrorState"
 import { RefreshCw, CheckCircle2, XCircle, RotateCw, AlertTriangle } from "lucide-react"
 import { navStr } from "@/lib/format"
 
@@ -214,7 +215,7 @@ export default function NavUpdate() {
           {loading ? (
             <div className="flex py-8 items-center justify-center"><LogoSpinner className="h-10 w-10" /></div>
           ) : error ? (
-            <p className="py-8 text-center text-red-500">加载失败：{error}</p>
+            <ErrorState message={error} onRetry={reload} />
           ) : sortedRows.length === 0 ? (
             <p className="py-8 text-center text-muted-foreground">暂无基金数据，请先添加交易记录</p>
           ) : (

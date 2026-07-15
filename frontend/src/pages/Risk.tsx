@@ -3,6 +3,7 @@ import { api } from "@/api/client"
 import type { RiskReport, Advice } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
+import ErrorState from "@/components/ErrorState"
 import { Badge } from "@/components/ui/badge"
 import { pct, pnlColor } from "@/lib/format"
 import { ShieldAlert, AlertTriangle, Info, Lightbulb } from "lucide-react"
@@ -27,9 +28,10 @@ const FLAG_STYLES: Record<string, { icon: ReactNode; variant: "destructive" | "w
 }
 
 export default function Risk() {
-  const { data: report, loading: rl } = useApi<RiskReport>(() => api.getRiskReport())
+  const { data: report, loading: rl, error: re, reload: reloadReport } = useApi<RiskReport>(() => api.getRiskReport())
   const { data: advice, loading: al } = useApi<Advice[]>(() => api.getRebalanceAdvice())
 
+  if (re) return <ErrorState message={re} onRetry={reloadReport} />
   if (rl || !report) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
 
   return (

@@ -4,6 +4,7 @@ import { api } from "@/api/client"
 import type { PortfolioSummary, CurvePoint, ChannelPnLPoint, Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
+import ErrorState from "@/components/ErrorState"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { money, pct, signedMoney, pnlColor } from "@/lib/format"
@@ -41,7 +42,7 @@ function ChannelTooltip({ active, payload, label }: { active?: boolean; payload?
 }
 
 export default function Returns() {
-  const { data: summary, loading: sl } = useApi<PortfolioSummary>(() => api.getSummary())
+  const { data: summary, loading: sl, error: se, reload: reloadSummary } = useApi<PortfolioSummary>(() => api.getSummary())
   const { data: curve } = useApi<CurvePoint[]>(() => api.getPortfolioCurve())
   const { data: channelPnl } = useApi<ChannelPnLPoint[]>(() => api.getChannelPnl())
   const { data: positions } = useApi<Position[]>(() => api.getPositions())
@@ -188,6 +189,7 @@ export default function Returns() {
       .map(({ label, sortKey, ...rest }) => ({ date: String(label), ...rest }))
   }, [channelPnl, channels, pnlMode, pnlDays, pnlAggRange])
 
+  if (se) return <ErrorState message={se} onRetry={reloadSummary} />
   if (sl || !summary) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
 
   function SortHeader({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) {

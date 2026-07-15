@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import LogoSpinner from "@/components/LogoSpinner"
+import ErrorState from "@/components/ErrorState"
 import FeeBreakdownCard from "@/components/FeeBreakdownCard"
 import { money } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -604,7 +605,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
 // 交易流水
 // ---------------------------------------------------------------------------
 function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
-  const { data: txs, loading, reload } = useApi<Transaction[]>(() => api.getTransactions())
+  const { data: txs, loading, error, reload } = useApi<Transaction[]>(() => api.getTransactions())
   const [funds, setFunds] = useState<Record<string, Fund>>({})
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [clearConfirmText, setClearConfirmText] = useState("")
@@ -716,6 +717,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
     )
   }
 
+  if (error) return <ErrorState message={error} onRetry={reload} />
   if (loading) return <div className="flex py-8 items-center justify-center"><LogoSpinner className="h-10 w-10" /></div>
 
   const handleDelete = async (id: number) => {

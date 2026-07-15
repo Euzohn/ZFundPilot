@@ -5,6 +5,7 @@ import { api } from "@/api/client"
 import type { Position, Transaction, Fund } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
+import ErrorState from "@/components/ErrorState"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -35,7 +36,7 @@ export default function FundDetail() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [navRange, setNavRange] = useState<"1m" | "3m" | "6m" | "1y" | "hold">("1y")
 
-  const { data: fund, loading: fundLoading } = useApi<Fund>(() => api.getFund(code!), [code])
+  const { data: fund, loading: fundLoading, error: fundError, reload: reloadFund } = useApi<Fund>(() => api.getFund(code!), [code])
   const { data: positions } = useApi<Position[]>(() => api.getPositions(true), [])
   const { data: txs, reload: reloadTxs } = useApi<Transaction[]>(() =>
     api.getTransactionsByFund(code!).then((rows) =>
@@ -115,6 +116,7 @@ export default function FundDetail() {
     })
   }, [navHistory, navRange, txs])
 
+  if (fundError) return <ErrorState message={fundError} onRetry={reloadFund} />
   if (fundLoading) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
 
   // 筛选该基金的所有持仓（跨渠道）

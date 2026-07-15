@@ -227,3 +227,11 @@ AI_BASE_URL: str = _ai_config.get("base_url", "")
 AI_API_KEY: str = _ai_config.get("api_key", "")
 AI_MODEL: str = _ai_config.get("model", "")
 AI_WEB_SEARCH: bool = _ai_config.get("web_search", True)
+
+
+# ---------------------------------------------------------------------------
+# 定时任务配置
+# ---------------------------------------------------------------------------
+# 净值自动更新 cron 表达式，默认工作日 21:00
+# 可通过 ZFUNDPILOT_NAV_CRON 环境变量覆盖
+NAV_CRON = os.environ.get("ZFUNDPILOT_NAV_CRON", "0 21 * * 1-5")

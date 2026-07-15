@@ -83,6 +83,7 @@ nohup uvicorn zfundpilot.api:app --host 0.0.0.0 --port 8000 > zfundpilot.log 2>&
 | `ZFUNDPILOT_USERNAME` | `admin` | **仅首次启动**时用于初始化登录用户名。首次启动后用户名存储在 `data/auth.json`，之后可通过设置页在线修改 |
 | `ZFUNDPILOT_PASSWORD` | 空 | **仅首次启动**时用于初始化密码哈希。首次启动后密码以 SHA-256 哈希存储在 `data/auth.json`，之后可通过设置页在线修改密码 |
 | `ZFUNDPILOT_SECRET` | 自动生成 | **仅首次启动**时用于初始化 token 签名密钥。首次启动后自动生成随机密钥并存储在 `data/auth.json` |
+| `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式（工作日 21:00）。可在设置页面暂停/启用 |
 
 ```bash
 # 示例：设置用户名 + 访问密码 + 自定义数据目录
@@ -183,6 +184,7 @@ sudo firewall-cmd --permanent --add-port=8080/tcp && sudo firewall-cmd --reload
 | `ZFUNDPILOT_USERNAME` | 可选，默认 `admin` | **仅首次启动**时用于初始化登录用户名。首次启动后存储在 `data/auth.json`，之后可通过设置页修改 |
 | `ZFUNDPILOT_PASSWORD` | 服务器部署必填 | **仅首次启动**时用于初始化密码哈希。首次启动后密码存储在 `data/auth.json`，之后可通过设置页修改 |
 | `ZFUNDPILOT_SECRET` | 建议 | **仅首次启动**时用于初始化 token 签名密钥，首次启动后自动生成并存储在 `data/auth.json` |
+| `ZFUNDPILOT_NAV_CRON` | 可选，默认 `0 21 * * 1-5` | 净值定时更新 cron 表达式（工作日 21:00）。可在设置页面暂停/启用 |
 | `ZFUNDPILOT_HOME` | 可选 | 数据目录位置，默认 `/app/data` |
 
 > ⚠️ 服务器对外暴露时**务必设置 `ZFUNDPILOT_PASSWORD`**，否则任何人都能查看你的持仓。

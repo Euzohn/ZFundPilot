@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from . import ai, analysis, config, data_io, db, fetch_fund, rebalance, risk
+from . import ai, analysis, config, data_io, db, fetch_fund, rebalance, risk, scheduler
 from .models import Fund, Transaction
 
 app = FastAPI(title="ZFundPilot API", version="0.5.0")
@@ -98,6 +98,12 @@ async def auth_middleware(request: Request, call_next):
 @app.on_event("startup")
 def _startup() -> None:
     db.init_db()
+    scheduler.init_scheduler()
+
+
+@app.on_event("shutdown")
+def _shutdown() -> None:
+    scheduler.shutdown_scheduler()
 
 
 # ---------------------------------------------------------------------------
@@ -700,6 +706,26 @@ def save_preferences(body: PreferencesBody) -> dict[str, bool]:
         db.upsert_preference("color_theme", body.color_theme)
     analysis.clear_analysis_cache()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# 定时任务
+# ---------------------------------------------------------------------------
+@app.get("/api/scheduler/status")
+def get_scheduler_status() -> dict[str, Any]:
+    """返回定时任务状态。"""
+    return scheduler.get_status()
+
+
+class SchedulerToggleBody(BaseModel):
+    enabled: bool
+
+
+@app.put("/api/scheduler/toggle")
+def toggle_scheduler(body: SchedulerToggleBody) -> dict[str, Any]:
+    """启用/暂停定时净值更新。"""
+    scheduler.set_enabled(body.enabled)
+    return scheduler.get_status()
 
 
 if __name__ == "__main__":

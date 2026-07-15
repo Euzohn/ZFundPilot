@@ -219,3 +219,12 @@ export interface KeywordMaps {
   available_types: string[]
   available_sectors: string[]
 }
+
+// ── 定时任务 ──
+export interface SchedulerStatus {
+  enabled: boolean
+  cron: string
+  next_run: string | null
+  last_run: string | null
+  last_results: { fund_code: string; ok: boolean; written: number; latest_date: string | null; latest_nav: number | null }[] | null
+}

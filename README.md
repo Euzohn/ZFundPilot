@@ -146,6 +146,7 @@ streamlit run app.py
 | `ZFUNDPILOT_USERNAME` | `admin` | **仅首次启动**时用于初始化登录用户名，之后用户名存在 `data/auth.json`，可通过设置页修改 |
 | `ZFUNDPILOT_PASSWORD` | 空 | **仅首次启动**时用于初始化密码哈希，之后密码存在 `data/auth.json`，可通过设置页修改 |
 | `ZFUNDPILOT_SECRET` | 自动生成 | **仅首次启动**时用于初始化 token 签名密钥，之后存于 `data/auth.json` |
+| `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式（工作日 21:00），可在设置页面暂停/启用 |
 | `ZFUNDPILOT_HOME` | 项目根 | 数据目录（`data/`）所在位置 |
 
 ## 使用流程

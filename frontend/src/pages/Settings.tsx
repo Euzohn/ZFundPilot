@@ -14,12 +14,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import LogoSpinner from "@/components/LogoSpinner"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import type { AIUsageStats, AIUsageDaily, KeywordMaps, KeywordEntry } from "@/api/types"
+import type { AIUsageStats, AIUsageDaily, KeywordMaps, KeywordEntry, SchedulerStatus } from "@/api/types"
 import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
   SlidersHorizontal, LogOut, Loader2, CheckCircle2, XCircle, Zap,
-  Search, X, Palette, UserCircle,
+  Search, X, Palette, UserCircle, Clock,
 } from "lucide-react"
 
 function detectProvider(baseUrl: string): string {
@@ -88,6 +88,10 @@ export default function Settings() {
   // Color theme
   const [colorTheme, setColorTheme] = useState<ColorTheme>(() => getColorTheme())
   const [colorThemeLoading, setColorThemeLoading] = useState(false)
+
+  // Scheduler
+  const { data: schedulerStatus, reload: reloadScheduler } = useApi<SchedulerStatus>(() => api.getSchedulerStatus(), [])
+  const [schedulerToggling, setSchedulerToggling] = useState(false)
 
   // 页面加载时尝试从服务端同步渠道设置
   useEffect(() => {
@@ -186,6 +190,18 @@ export default function Settings() {
       await saveColorTheme(theme)
     } catch { /* server unavailable */ }
     finally { setColorThemeLoading(false) }
+  }
+
+  // --- Scheduler ---
+  const handleSchedulerToggle = async () => {
+    if (!schedulerStatus) return
+    setSchedulerToggling(true)
+    try {
+      await api.toggleScheduler(!schedulerStatus.enabled)
+      await reloadScheduler()
+      toast.success(schedulerStatus.enabled ? "定时更新已暂停" : "定时更新已启用")
+    } catch (e) { toast.error(`操作失败: ${e}`) }
+    finally { setSchedulerToggling(false) }
   }
 
   // --- Password ---
@@ -682,6 +698,61 @@ export default function Settings() {
                     <span className="block text-[11px] text-muted-foreground mt-0.5">国内 A 股惯例</span>
                   </button>
                 </div>
+              </div>
+
+              {/* 分隔线 */}
+              <div className="border-t border-slate-100" />
+
+              {/* 定时任务 */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-sm font-medium">定时净值更新</p>
+                  <span className="text-xs text-muted-foreground">工作日自动拉取最新净值</span>
+                </div>
+                {schedulerStatus ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSchedulerToggle}
+                        disabled={schedulerToggling}
+                        className={cn(
+                          "rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:opacity-50",
+                          schedulerStatus.enabled
+                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                            : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                        )}
+                      >
+                        {schedulerToggling ? "切换中..." : schedulerStatus.enabled ? "已启用" : "已暂停"}
+                      </button>
+                      <span className="text-xs text-muted-foreground font-mono">
+                        cron: {schedulerStatus.cron}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                      {schedulerStatus.next_run && (
+                        <span>下次运行: <span className="font-medium text-foreground">{schedulerStatus.next_run}</span></span>
+                      )}
+                      {schedulerStatus.last_run && (
+                        <span>上次运行: <span className="font-medium text-foreground">{schedulerStatus.last_run}</span></span>
+                      )}
+                      {schedulerStatus.last_results && schedulerStatus.last_results.length > 0 && (
+                        <span>
+                          上次结果:{" "}
+                          <span className="text-gain-600 font-medium">
+                            {schedulerStatus.last_results.filter(r => r.ok).length} 成功
+                          </span>
+                          {" / "}
+                          <span className="text-loss-600 font-medium">
+                            {schedulerStatus.last_results.filter(r => !r.ok).length} 失败
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-center py-2"><LogoSpinner className="h-6 w-6" /></div>
+                )}
               </div>
             </CardContent>
           </Card>

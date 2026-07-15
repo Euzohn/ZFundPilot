@@ -146,6 +146,7 @@ Open http://localhost:8501
 | `ZFUNDPILOT_USERNAME` | `admin` | Used **only on first launch** to initialize login username. Afterwards stored in `data/auth.json`, changeable via Settings page |
 | `ZFUNDPILOT_PASSWORD` | empty | Used **only on first launch** to initialize password hash. Afterwards stored in `data/auth.json`, changeable via Settings page |
 | `ZFUNDPILOT_SECRET` | auto-generated | Used **only on first launch** to initialize token signing key. Afterwards stored in `data/auth.json` |
+| `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | Cron expression for scheduled NAV updates (weekdays 21:00). Can be paused/enabled in Settings |
 | `ZFUNDPILOT_HOME` | project root | Location of the `data/` directory |
 
 ## Usage Guide

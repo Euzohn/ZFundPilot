@@ -16,6 +16,7 @@ import type {
   FeeRatesResponse,
   CalcFeeResponse,
   KeywordMaps,
+  SchedulerStatus,
 } from "./types"
 import { getToken, clearToken } from "@/lib/auth"
 
@@ -253,5 +254,13 @@ export const api = {
     request<{ ok: boolean }>("/keyword-maps", {
       method: "PUT",
       body: JSON.stringify({ type_custom, sector_custom }),
+    }),
+
+  // Scheduler
+  getSchedulerStatus: () => request<SchedulerStatus>("/scheduler/status"),
+  toggleScheduler: (enabled: boolean) =>
+    request<SchedulerStatus>("/scheduler/toggle", {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
     }),
 }

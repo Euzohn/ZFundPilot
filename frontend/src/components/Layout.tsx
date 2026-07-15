@@ -118,6 +118,9 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
+      {/* 噪点叠加层 */}
+      <div className="grain-overlay" aria-hidden="true" />
+
       {/* Mobile top bar */}
       <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-3 border-b border-slate-200 bg-white px-4 md:hidden">
         <button

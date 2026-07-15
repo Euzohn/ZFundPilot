@@ -23,7 +23,7 @@
     --border: 214 32% 91%;
     --input: 214 32% 91%;
     --ring: 221 83% 33%;
-    --radius: 0.5rem;
+    --radius: 0.75rem;
 
     /* 涨跌颜色（国际惯例：gain=绿, loss=红） */
     --gain-50: #f0fdf4; --gain-100: #dcfce7; --gain-200: #bbf7d0;
@@ -106,7 +106,8 @@
   transition: box-shadow 200ms ease, transform 200ms ease;
 }
 .card-hover:hover {
-  box-shadow: 0 4px 20px -2px hsl(221 83% 33% / 0.08);
+  box-shadow: 0 8px 30px -6px hsl(221 83% 33% / 0.12);
+  transform: translateY(-1px);
 }
 
 /* 数字渐入动画 */
@@ -374,6 +375,16 @@ html, body {
 .la-sand-s1 { animation:la-sand-sparkle 1s ease-in-out infinite; animation-delay: 1.5s; }
 .la-sand-s2 { animation:la-sand-sparkle 1s ease-in-out infinite; animation-delay: 1.7s; }
 .la-sand-s3 { animation:la-sand-sparkle 1s ease-in-out infinite; animation-delay: 1.9s; }
+
+/* ── 背景噪点叠加层 ── */
+.grain-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' /%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' /%3E%3C/svg%3E");
+}
 
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {

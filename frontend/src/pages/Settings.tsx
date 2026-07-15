@@ -603,224 +603,202 @@ export default function Settings() {
         </TabsContent>
 
         {/* ── 偏好设置 ── */}
-        <TabsContent value="prefs">
+        <TabsContent value="prefs" className="space-y-4">
+          {/* 渠道管理 */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
-                <SlidersHorizontal className="h-5 w-5 text-blue-500" />
-                偏好设置
+                <ShoppingCart className="h-5 w-5 text-blue-500" />
+                渠道管理
               </CardTitle>
-              <p className="text-sm text-muted-foreground">购买渠道顺序与板块映射</p>
+              <p className="text-sm text-muted-foreground">顺序、颜色与增删</p>
             </CardHeader>
-            <CardContent className="space-y-5">
-              {/* 购买渠道 */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-sm font-medium">购买渠道顺序</p>
-                  <span className="text-xs text-muted-foreground">排在前面的为默认选项</span>
-                </div>
-
-                <div className="space-y-1">
-                  {channels.map((ch, i) => (
-                    <div key={ch} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-white px-3 py-2 transition-colors hover:border-slate-200">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-slate-100 text-xs font-medium text-slate-500">
-                        {i + 1}
-                      </span>
-                      <button onClick={() => moveUp(i)} disabled={i === 0}
-                        className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
-                        <ChevronUp className="h-3.5 w-3.5" />
-                      </button>
-                      <button onClick={() => moveDown(i)} disabled={i === channels.length - 1}
-                        className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      </button>
-                      <span className="flex-1 text-sm font-medium">{ch}</span>
-                      <span className="hidden sm:inline text-xs text-slate-400">{i === 0 ? "默认" : ""}</span>
-                      <button onClick={() => remove(i)}
-                        className="flex h-6 w-6 items-center justify-center rounded text-slate-300 transition-colors hover:bg-red-50 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+            <CardContent className="space-y-4">
+              <div className="space-y-1">
+                {channels.map((ch, i) => (
+                  <div key={ch} className="flex items-center gap-2 rounded-lg px-3 py-2 transition-colors hover:bg-muted/40">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-muted text-xs font-medium text-muted-foreground">
+                      {i + 1}
+                    </span>
+                    <button onClick={() => moveUp(i)} disabled={i === 0}
+                      className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button onClick={() => moveDown(i)} disabled={i === channels.length - 1}
+                      className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="flex-1 text-sm font-semibold">{ch}</span>
+                    {i === 0 && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">默认</span>}
+                    <div className="flex items-center gap-1">
+                      {palette.map(color => (
+                        <button key={color} onClick={() => handleColorChange(ch, color)}
+                          className={cn("h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+                            channelColors[ch] === color ? "border-slate-400" : "border-transparent")}
+                          style={{ background: color }} />
+                      ))}
                     </div>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <div className="flex flex-1 gap-2 min-w-0">
-                    <Input
-                      value={newChannel}
-                      onChange={(e) => setNewChannel(e.target.value)}
-                      placeholder="新增渠道名称"
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add() } }}
-                      className="h-8 text-xs max-w-[180px]"
-                    />
-                    <Button variant="outline" size="sm" onClick={add} className="h-8 shrink-0">
-                      <Plus className="mr-1 h-3.5 w-3.5" /> 添加
-                    </Button>
+                    <input type="color" value={channelColors[ch] ?? "#3b82f6"}
+                      onChange={(e) => handleColorChange(ch, e.target.value)}
+                      className="h-7 w-7 rounded cursor-pointer border border-slate-200" />
+                    <button onClick={() => remove(i)}
+                      className="flex h-6 w-6 items-center justify-center rounded text-slate-300 transition-colors hover:bg-red-50 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
-                  <Button variant="outline" size="sm" onClick={handleReset} className="h-8 shrink-0">
-                    <RotateCcw className="mr-1 h-3.5 w-3.5" /> 恢复默认
-                  </Button>
-                </div>
+                ))}
               </div>
 
-              {/* 渠道颜色 */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Palette className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-sm font-medium">渠道颜色</p>
-                  <span className="text-xs text-muted-foreground">收益波动堆叠柱状图中各渠道的展示颜色</span>
-                  <Button variant="ghost" size="sm" onClick={handleColorsReset} className="h-6 px-2 text-xs ml-auto shrink-0">
-                    <RotateCcw className="mr-1 h-3 w-3" /> 恢复默认
+              <div className="flex flex-wrap gap-2">
+                <div className="flex flex-1 gap-2 min-w-0">
+                  <Input
+                    value={newChannel}
+                    onChange={(e) => setNewChannel(e.target.value)}
+                    placeholder="新增渠道名称"
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add() } }}
+                    className="h-8 text-xs max-w-[180px]"
+                  />
+                  <Button variant="outline" size="sm" onClick={add} className="h-8 shrink-0">
+                    <Plus className="mr-1 h-3.5 w-3.5" /> 添加
                   </Button>
                 </div>
-                <div className="space-y-1">
-                  {channels.map((ch) => (
-                    <div key={ch} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-white px-3 py-2">
-                      <span className="flex-1 text-sm font-medium">{ch}</span>
-                      <div className="flex items-center gap-1">
-                        {palette.map(color => (
-                          <button key={color} onClick={() => handleColorChange(ch, color)}
-                            className={cn("h-5 w-5 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
-                              channelColors[ch] === color ? "border-slate-400" : "border-transparent")}
-                            style={{ background: color }} />
-                        ))}
-                      </div>
-                      <input type="color" value={channelColors[ch] ?? "#3b82f6"}
-                        onChange={(e) => handleColorChange(ch, e.target.value)}
-                        className="h-6 w-6 rounded cursor-pointer border border-slate-200" />
-                    </div>
-                  ))}
-                </div>
+                <Button variant="outline" size="sm" onClick={() => { handleReset(); handleColorsReset() }} className="h-8 shrink-0">
+                  <RotateCcw className="mr-1 h-3.5 w-3.5" /> 恢复默认
+                </Button>
               </div>
+            </CardContent>
+          </Card>
 
-              {/* 分隔线 */}
-              <div className="border-t border-slate-100" />
-
-              {/* 涨跌颜色 */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Palette className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-sm font-medium">涨跌颜色</p>
-                </div>
+          {/* 显示设置 */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Palette className="h-5 w-5 text-blue-500" />
+                显示设置
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">涨跌颜色</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleThemeChange("international")}
                     disabled={colorThemeLoading}
                     className={cn(
-                      "flex-1 rounded-lg border px-3 py-2 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+                      "flex-1 rounded-lg border px-3 py-2.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                       colorTheme === "international"
                         ? "border-blue-300 bg-blue-50 text-blue-700"
                         : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
                     )}
                   >
-                    <span className="text-green-600 font-medium">▲</span> 绿涨
-                    <span className="text-red-600 font-medium ml-2">▼</span> 红跌
+                    <span className="text-green-600 font-semibold">▲</span> 绿涨
+                    <span className="text-red-600 font-semibold ml-2">▼</span> 红跌
                     <span className="block text-[11px] text-muted-foreground mt-0.5">国际惯例</span>
                   </button>
                   <button
                     onClick={() => handleThemeChange("china")}
                     disabled={colorThemeLoading}
                     className={cn(
-                      "flex-1 rounded-lg border px-3 py-2 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+                      "flex-1 rounded-lg border px-3 py-2.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                       colorTheme === "china"
                         ? "border-blue-300 bg-blue-50 text-blue-700"
                         : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
                     )}
                   >
-                    <span className="text-red-600 font-medium">▲</span> 红涨
-                    <span className="text-green-600 font-medium ml-2">▼</span> 绿跌
+                    <span className="text-red-600 font-semibold">▲</span> 红涨
+                    <span className="text-green-600 font-semibold ml-2">▼</span> 绿跌
                     <span className="block text-[11px] text-muted-foreground mt-0.5">国内 A 股惯例</span>
                   </button>
                 </div>
               </div>
+            </CardContent>
+          </Card>
 
-              {/* 分隔线 */}
-              <div className="border-t border-slate-100" />
-
-              {/* 定时任务 */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-sm font-medium">定时净值更新</p>
-                  <span className="text-xs text-muted-foreground">工作日自动拉取最新净值</span>
+          {/* 定时净值更新 */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Clock className="h-5 w-5 text-blue-500" />
+                定时净值更新
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">自动拉取最新净值</p>
+            </CardHeader>
+            <CardContent>
+              {schedulerError ? (
+                <div className="flex items-center gap-2 py-2">
+                  <span className="text-xs text-loss-600">加载失败</span>
+                  <button
+                    onClick={reloadScheduler}
+                    className="text-xs text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                  >
+                    重试
+                  </button>
                 </div>
-                {schedulerError ? (
-                  <div className="flex items-center gap-2 py-2">
-                    <span className="text-xs text-loss-600">加载失败</span>
+              ) : schedulerStatus ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={reloadScheduler}
-                      className="text-xs text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                      onClick={handleSchedulerToggle}
+                      disabled={schedulerToggling}
+                      className={cn(
+                        "rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+                        schedulerStatus.enabled
+                          ? "border-blue-300 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                      )}
                     >
-                      重试
+                      {schedulerToggling ? "切换中..." : schedulerStatus.enabled ? "已启用" : "已暂停"}
                     </button>
+                    <span className="text-xs text-muted-foreground font-mono">
+                      cron: {schedulerStatus.cron}
+                    </span>
                   </div>
-                ) : schedulerStatus ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleSchedulerToggle}
-                        disabled={schedulerToggling}
-                        className={cn(
-                          "rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
-                          schedulerStatus.enabled
-                            ? "border-blue-300 bg-blue-50 text-blue-700"
-                            : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
-                        )}
-                      >
-                        {schedulerToggling ? "切换中..." : schedulerStatus.enabled ? "已启用" : "已暂停"}
-                      </button>
-                      <span className="text-xs text-muted-foreground font-mono">
-                        cron: {schedulerStatus.cron}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                      {schedulerStatus.next_run && (
-                        <span>下次运行: <span className="font-medium text-foreground">{schedulerStatus.next_run}</span></span>
-                      )}
-                      {schedulerStatus.last_run && (
-                        <span>上次运行: <span className="font-medium text-foreground">{schedulerStatus.last_run}</span></span>
-                      )}
-                      {schedulerStatus.last_results && schedulerStatus.last_results.length > 0 && (
-                        <span>
-                          上次结果:{" "}
-                          <span className="text-gain-600 font-medium">
-                            {schedulerStatus.last_results.filter(r => r.ok).length} 成功
-                          </span>
-                          {" / "}
-                          <span className="text-loss-600 font-medium">
-                            {schedulerStatus.last_results.filter(r => !r.ok).length} 失败
-                          </span>
+                  <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                    {schedulerStatus.next_run && (
+                      <span>下次运行: <span className="font-semibold text-foreground">{schedulerStatus.next_run}</span></span>
+                    )}
+                    {schedulerStatus.last_run && (
+                      <span>上次运行: <span className="font-semibold text-foreground">{schedulerStatus.last_run}</span></span>
+                    )}
+                    {schedulerStatus.last_results && schedulerStatus.last_results.length > 0 && (
+                      <span>
+                        上次结果:{" "}
+                        <span className="text-gain-600 font-semibold">
+                          {schedulerStatus.last_results.filter(r => r.ok).length} 成功
                         </span>
-                      )}
-                    </div>
-                    {/* 时间设置 */}
-                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
-                      <span className="text-xs text-muted-foreground">执行时间</span>
-                      <input
-                        type="time"
-                        value={cronTime}
-                        onChange={(e) => setCronTime(e.target.value)}
-                        className="h-7 rounded-md border border-input bg-background px-2 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
-                      />
-                      <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={cronWeekdaysOnly}
-                          onChange={(e) => setCronWeekdaysOnly(e.target.checked)}
-                          className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                        />
-                        仅工作日
-                      </label>
-                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleCronSave} disabled={cronSaving}>
-                        {cronSaving ? "保存中..." : "保存"}
-                      </Button>
-                    </div>
+                        {" / "}
+                        <span className="text-loss-600 font-semibold">
+                          {schedulerStatus.last_results.filter(r => !r.ok).length} 失败
+                        </span>
+                      </span>
+                    )}
                   </div>
-                ) : (
-                  <div className="flex justify-center py-2"><LogoSpinner className="h-6 w-6" /></div>
-                )}
-              </div>
+                  {/* 时间设置 */}
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                    <span className="text-xs text-muted-foreground">执行时间</span>
+                    <input
+                      type="time"
+                      value={cronTime}
+                      onChange={(e) => setCronTime(e.target.value)}
+                      className="h-7 rounded-md border border-input bg-background px-2 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                    <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={cronWeekdaysOnly}
+                        onChange={(e) => setCronWeekdaysOnly(e.target.checked)}
+                        className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      />
+                      仅工作日
+                    </label>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleCronSave} disabled={cronSaving}>
+                      {cronSaving ? "保存中..." : "保存"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-center py-2"><LogoSpinner className="h-6 w-6" /></div>
+              )}
             </CardContent>
           </Card>
 

@@ -728,6 +728,17 @@ def toggle_scheduler(body: SchedulerToggleBody) -> dict[str, Any]:
     return scheduler.get_status()
 
 
+class SchedulerCronBody(BaseModel):
+    cron: str
+
+
+@app.put("/api/scheduler/cron")
+def update_scheduler_cron(body: SchedulerCronBody) -> dict[str, Any]:
+    """更新定时净值更新的 cron 表达式。"""
+    scheduler.set_cron(body.cron)
+    return scheduler.get_status()
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("zfundpilot.api:app", host="127.0.0.1", port=8000, reload=True)

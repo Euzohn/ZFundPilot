@@ -15,13 +15,18 @@ from apscheduler.triggers.cron import CronTrigger
 
 from . import config, db, fetch_fund, analysis
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s:     %(name)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 _scheduler: BackgroundScheduler | None = None
 _last_run: datetime | None = None
 _last_results: list[dict[str, Any]] | None = None
 
-_PREF_KEY = "nav_auto_update"
+_PREF_KEY_ENABLED = "nav_auto_update"
+_PREF_KEY_CRON = "nav_cron"
 
 
 def _run_nav_update() -> None:
@@ -69,7 +74,8 @@ def init_scheduler() -> None:
         return
 
     _scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
-    trigger = _parse_cron(config.NAV_CRON)
+    cron_expr = _get_cron()
+    trigger = _parse_cron(cron_expr)
 
     enabled = _get_enabled()
     _scheduler.add_job(
@@ -81,10 +87,23 @@ def init_scheduler() -> None:
         coalesce=True,
     )
     _scheduler.start()
-    logger.info("[scheduler] 调度器已启动, cron=%s, enabled=%s", config.NAV_CRON, enabled)
+    logger.info("[scheduler] 调度器已启动, cron=%s, enabled=%s", cron_expr, enabled)
 
     if not enabled:
         _scheduler.pause_job("nav_update")
+    else:
+        _bootstrap_check(trigger)
+
+
+def _bootstrap_check(trigger: CronTrigger) -> None:
+    """启动时检测：如果今日 cron 时间已过且尚未运行过，立即执行。"""
+    if _last_run is not None:
+        return
+    now = datetime.now()
+    prev = trigger.get_previous_fire_time(now)
+    if prev and prev.date() == now.date():
+        logger.info("[scheduler] 今日 cron=%s 已过, 立即执行净值更新", prev.strftime("%H:%M"))
+        _run_nav_update()
 
 
 def shutdown_scheduler() -> None:
@@ -98,15 +117,32 @@ def shutdown_scheduler() -> None:
 
 def _get_enabled() -> bool:
     """从 preferences 表读取是否启用。默认启用。"""
-    val = db.get_preference(_PREF_KEY)
+    val = db.get_preference(_PREF_KEY_ENABLED)
     if val is None:
         return True
     return val == "true"
 
 
+def _get_cron() -> str:
+    """从 preferences 表读取 cron 表达式，未设置时回退到环境变量默认值。"""
+    val = db.get_preference(_PREF_KEY_CRON)
+    if val:
+        return val
+    return config.NAV_CRON
+
+
+def set_cron(cron_expr: str) -> None:
+    """更新 cron 表达式并重新调度任务。"""
+    trigger = _parse_cron(cron_expr)  # 验证表达式合法
+    db.upsert_preference(_PREF_KEY_CRON, cron_expr)
+    if _scheduler is not None:
+        _scheduler.reschedule_job("nav_update", trigger=trigger)
+        logger.info("[scheduler] cron 已更新: %s", cron_expr)
+
+
 def set_enabled(enabled: bool) -> None:
     """启用/暂停定时任务，并持久化到 preferences 表。"""
-    db.upsert_preference(_PREF_KEY, "true" if enabled else "false")
+    db.upsert_preference(_PREF_KEY_ENABLED, "true" if enabled else "false")
     if _scheduler is None:
         return
     if enabled:
@@ -120,6 +156,7 @@ def set_enabled(enabled: bool) -> None:
 def get_status() -> dict[str, Any]:
     """返回调度器状态。"""
     enabled = _get_enabled()
+    cron_expr = _get_cron()
     next_run: str | None = None
     if _scheduler is not None and enabled:
         job = _scheduler.get_job("nav_update")
@@ -127,7 +164,7 @@ def get_status() -> dict[str, Any]:
             next_run = job.next_run_time.strftime("%Y-%m-%d %H:%M:%S")
     return {
         "enabled": enabled,
-        "cron": config.NAV_CRON,
+        "cron": cron_expr,
         "next_run": next_run,
         "last_run": _last_run.strftime("%Y-%m-%d %H:%M:%S") if _last_run else None,
         "last_results": _last_results,

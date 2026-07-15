@@ -88,6 +88,34 @@ export default function Settings() {
   // Scheduler
   const { data: schedulerStatus, error: schedulerError, reload: reloadScheduler } = useApi<SchedulerStatus>(() => api.getSchedulerStatus(), [])
   const [schedulerToggling, setSchedulerToggling] = useState(false)
+  const [cronTime, setCronTime] = useState("21:00")
+  const [cronWeekdaysOnly, setCronWeekdaysOnly] = useState(true)
+  const [cronSaving, setCronSaving] = useState(false)
+
+  useEffect(() => {
+    if (schedulerStatus?.cron) {
+      const parts = schedulerStatus.cron.split(/\s+/)
+      if (parts.length === 5) {
+        const h = parts[1].padStart(2, "0")
+        const m = parts[0].padStart(2, "0")
+        setCronTime(`${h}:${m}`)
+        setCronWeekdaysOnly(parts[4] === "1-5")
+      }
+    }
+  }, [schedulerStatus?.cron])
+
+  const handleCronSave = async () => {
+    const [h, m] = cronTime.split(":")
+    if (h == null || m == null) { toast.warning("时间格式不正确"); return }
+    const cron = `${parseInt(m)} ${parseInt(h)} * * ${cronWeekdaysOnly ? "1-5" : "*"}`
+    setCronSaving(true)
+    try {
+      await api.setSchedulerCron(cron)
+      toast.success("定时时间已更新")
+      reloadScheduler()
+    } catch (e) { toast.error(`保存失败: ${e}`) }
+    finally { setCronSaving(false) }
+  }
 
   // 页面加载时尝试从服务端同步渠道设置
   useEffect(() => {
@@ -765,6 +793,28 @@ export default function Settings() {
                           </span>
                         </span>
                       )}
+                    </div>
+                    {/* 时间设置 */}
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                      <span className="text-xs text-muted-foreground">执行时间</span>
+                      <input
+                        type="time"
+                        value={cronTime}
+                        onChange={(e) => setCronTime(e.target.value)}
+                        className="h-7 rounded-md border border-input bg-background px-2 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={cronWeekdaysOnly}
+                          onChange={(e) => setCronWeekdaysOnly(e.target.checked)}
+                          className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        />
+                        仅工作日
+                      </label>
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleCronSave} disabled={cronSaving}>
+                        {cronSaving ? "保存中..." : "保存"}
+                      </Button>
                     </div>
                   </div>
                 ) : (

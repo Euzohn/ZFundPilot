@@ -263,4 +263,9 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ enabled }),
     }),
+  setSchedulerCron: (cron: string) =>
+    request<SchedulerStatus>("/scheduler/cron", {
+      method: "PUT",
+      body: JSON.stringify({ cron }),
+    }),
 }

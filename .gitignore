@@ -16,8 +16,6 @@ env/
 data/*.db
 data/*.sqlite
 fund.md
-context.md
-CONTEXT.md
 
 # 临时文件
 tmp/

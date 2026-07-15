@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
@@ -14,6 +14,7 @@ const t = {
   zh: {
     tagline: "个人基金分析与风险管理系统",
     currentValue: "当前市值",
+    dailyPnl: "今日收益",
     totalPnl: "累计盈亏",
     holdings: "持仓数量",
     units: "只",
@@ -40,6 +41,7 @@ const t = {
   en: {
     tagline: "Personal Fund Analysis & Risk Management System",
     currentValue: "CURRENT VALUE",
+    dailyPnl: "TODAY'S P&L",
     totalPnl: "TOTAL P&L",
     holdings: "HOLDINGS",
     units: "UNITS",
@@ -157,22 +159,39 @@ export default function Home() {
 
   useEffect(() => {
     if (reducedMotion) return
+    let lastMin = -1
     const tick = () => {
       const d = new Date()
-      setNow(d)
       if (clockRef.current) clockRef.current.textContent = formatDateTime(d)
+      const min = d.getHours() * 60 + d.getMinutes()
+      if (min !== lastMin) {
+        lastMin = min
+        setNow(d)
+      }
     }
     tick()
     const timer = window.setInterval(tick, 1000)
     return () => window.clearInterval(timer)
   }, [reducedMotion])
 
+  // 页面获得焦点时自动刷新数据
+  const handleVisibility = useCallback(() => {
+    if (document.visibilityState === "visible") reload()
+  }, [reload])
+  useEffect(() => {
+    document.addEventListener("visibilitychange", handleVisibility)
+    return () => document.removeEventListener("visibilitychange", handleVisibility)
+  }, [handleVisibility])
+
   useEffect(() => {
     localStorage.setItem("zfund_lang", lang)
   }, [lang])
 
   const mkt = useMemo(() => marketStatus(now), [now])
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  const todayStr = useMemo(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+  }, [])
   const navStatus = summary?.as_of_date
     ? summary.as_of_date === todayStr
       ? tr.navLatest
@@ -209,10 +228,10 @@ export default function Home() {
       {/* Main content */}
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-6 py-16 md:py-20">
         {/* Hero — logo inline with title */}
-        <section className="mb-12 flex items-start gap-5">
+        <section className="fade-in-up mb-12 flex items-start gap-5">
           <svg
             viewBox="0 0 64 64"
-            className="mt-1 h-12 w-12 shrink-0"
+            className="mt-1 h-12 w-12 shrink-0 md:h-14 md:w-14 lg:h-16 lg:w-16"
             fill="none"
             role="img"
             aria-label="ZFundPilot logo"
@@ -255,11 +274,16 @@ export default function Home() {
         </section>
 
         {/* Metrics */}
-        <section className="mb-6 min-h-[120px]" aria-busy={loading}>
+        <section className="fade-in-up mb-6 min-h-[120px]" style={{ animationDelay: "100ms" }} aria-busy={loading}>
           {loading ? (
-            <p className={`text-sm tracking-wider text-white/40 ${reducedMotion ? "" : "animate-pulse"} ${labelFont}`}>
-              {tr.loading}
-            </p>
+            <div className="grid grid-cols-1 gap-px border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-4" aria-hidden="true">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="bg-[#0A0A0A] p-6">
+                  <div className={`h-3 w-20 bg-white/10 ${reducedMotion ? "" : "animate-pulse"}`} />
+                  <div className={`mt-3 h-7 w-28 bg-white/10 ${reducedMotion ? "" : "animate-pulse"}`} />
+                </div>
+              ))}
+            </div>
           ) : summary && summary.holding_count === 0 ? (
             <div>
               <p className={`text-lg tracking-wider text-white/60 ${labelFont}`}>{tr.noData}</p>
@@ -272,7 +296,14 @@ export default function Home() {
               </button>
             </div>
           ) : summary ? (
-            <div className="grid grid-cols-1 gap-px border border-white/10 bg-white/10 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-px border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="bg-[#0A0A0A] p-6">
+                <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.dailyPnl}</p>
+                <output className={`mt-2 block font-mono text-2xl font-bold tabular-nums ${pnlColorDark(summary.daily_pnl)}`}>
+                  {signedMoney(summary.daily_pnl)}{" "}
+                  <span className="text-sm font-normal text-white/40">({pct(summary.daily_return)})</span>
+                </output>
+              </div>
               <div className="bg-[#0A0A0A] p-6">
                 <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.currentValue}</p>
                 <output className="mt-2 block font-mono text-2xl font-bold tabular-nums text-[#EAEAEA]">
@@ -309,7 +340,7 @@ export default function Home() {
 
         {/* System status */}
         {summary && summary.holding_count > 0 && (
-          <section className="mb-12">
+          <section className="fade-in-up mb-12" style={{ animationDelay: "200ms" }}>
             <div className="border border-white/10 bg-[#0A0A0A] p-4">
               <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.systemStatus}</p>
               <p className="mt-2 font-mono text-xs tracking-wider">
@@ -334,7 +365,7 @@ export default function Home() {
         )}
 
         {/* Navigation — asymmetric bento (TX + AI span 2 cols on desktop) */}
-        <section>
+        <section className="fade-in-up" style={{ animationDelay: "300ms" }}>
           <p className={`mb-4 text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.navigation}</p>
           <div className="grid grid-cols-2 gap-px border border-white/10 bg-white/10 sm:grid-cols-4">
             {quickActions.map(({ to, code, zh, en }, i) => {
@@ -345,7 +376,7 @@ export default function Home() {
                   key={to}
                   type="button"
                   onClick={() => navigate(to)}
-                  className={`group relative bg-[#0A0A0A] p-5 text-left transition-colors hover:bg-[#EAEAEA] hover:text-[#0A0A0A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2A2A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] active:scale-[0.98] sm:p-6 ${isWide ? "sm:col-span-2" : ""}`}
+                  className={`group relative bg-[#0A0A0A] p-5 text-left transition-colors duration-200 hover:bg-[#EAEAEA] hover:text-[#0A0A0A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2A2A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] active:scale-[0.98] sm:p-6 ${isWide ? "sm:col-span-2" : ""}`}
                 >
                   <span
                     aria-hidden="true"

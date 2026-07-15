@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
@@ -33,6 +33,7 @@ const t = {
     initiateTx: ">>> 添加第一笔交易",
     disclaimer: "/// 不提供交易信号 / 仅供参考 / 仅数据分析 ///",
     greetings: ["深夜", "上午好", "中午好", "下午好", "晚上好"],
+    langLabel: "切换到英文",
   },
   en: {
     tagline: "Personal Fund Analysis & Risk Management System",
@@ -56,6 +57,7 @@ const t = {
     initiateTx: ">>> INITIATE FIRST TRANSACTION",
     disclaimer: "/// NO TRADE SIGNALS / NOT FINANCIAL ADVICE / DATA ONLY ///",
     greetings: ["late night", "good morning", "good noon", "good afternoon", "good evening"],
+    langLabel: "Switch to Chinese",
   },
 }
 
@@ -106,10 +108,29 @@ function concentrationLabel(w: number | undefined, lang: Lang): string {
   return l.concLow
 }
 
+function concentrationColor(w: number | undefined): string {
+  if (w == null) return "text-white/80"
+  if (w > 0.5) return "text-loss-400"
+  if (w > 0.3) return "text-[#FF2A2A]"
+  return "text-gain-400"
+}
+
 function pnlColorDark(v: number | null | undefined): string {
   if (v == null || v === 0) return "text-white/60"
   if (v > 0) return "text-gain-400"
   return "text-loss-400"
+}
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)")
+    const update = () => setReduced(mq.matches)
+    update()
+    mq.addEventListener("change", update)
+    return () => mq.removeEventListener("change", update)
+  }, [])
+  return reduced
 }
 
 export default function Home() {
@@ -117,9 +138,15 @@ export default function Home() {
   const { data: summary, loading } = useApi<PortfolioSummary>(() => api.getSummary())
   const [now, setNow] = useState(new Date())
   const [lang, setLang] = useState<Lang>(() => (localStorage.getItem("zfund_lang") as Lang) || "zh")
+  const reducedMotion = usePrefersReducedMotion()
+
+  // Use ref + rAF to update clock without React re-rendering whole tree.
+  // 仅刷新当前 text node，避免父组件重渲染
+  const clockRef = useRef<HTMLSpanElement>(null)
 
   const tr = t[lang]
   const labelFont = lang === "zh" ? "font-sans" : "font-mono uppercase"
+  const descFont = lang === "zh" ? "font-sans" : "font-mono uppercase tracking-wider"
 
   useEffect(() => {
     applyColorTheme(getColorTheme())
@@ -127,59 +154,79 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000)
-    return () => clearInterval(timer)
-  }, [])
+    if (reducedMotion) return
+    const tick = () => {
+      const d = new Date()
+      setNow(d)
+      // 优化：直接写 DOM 文本，避免 setState 触发整页 reconcile
+      if (clockRef.current) clockRef.current.textContent = formatDateTime(d)
+    }
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timer)
+  }, [reducedMotion])
 
   useEffect(() => {
     localStorage.setItem("zfund_lang", lang)
   }, [lang])
 
-  const mkt = marketStatus(now)
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const mkt = useMemo(() => marketStatus(now), [now])
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), [])
   const navStatus = summary?.as_of_date
     ? summary.as_of_date === todayStr
       ? tr.navLatest
       : summary.as_of_date
     : "---"
 
+  // CRT 扫描线仅在用户未禁用动效时启用
+  const showScanlines = !reducedMotion
+
   return (
     <div className="flex min-h-[100dvh] flex-col bg-[#0A0A0A] text-[#EAEAEA]">
-      {/* CRT scanlines */}
-      <div
-        className="fixed inset-0 pointer-events-none z-50"
-        style={{
-          background:
-            "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px)",
-        }}
-      />
+      {/* CRT scanlines — 仅非 reduce-motion */}
+      {showScanlines && (
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 pointer-events-none z-[60]"
+          style={{
+            background:
+              "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px)",
+          }}
+        />
+      )}
 
       {/* Language toggle */}
       <button
+        type="button"
         onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-        className="fixed right-6 top-6 z-50 border border-white/20 px-3 py-1 font-mono text-xs uppercase tracking-wider text-white/60 transition-colors hover:border-[#FF2A2A] hover:text-[#FF2A2A] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2A2A]"
+        aria-label={tr.langLabel}
+        aria-pressed={lang === "en"}
+        className="fixed right-6 top-6 z-[70] border border-white/20 px-3 py-1 font-mono text-xs uppercase tracking-wider text-white/60 transition-colors hover:border-[#FF2A2A] hover:text-[#FF2A2A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2A2A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] active:opacity-70"
       >
         {lang === "zh" ? "EN" : "中文"}
       </button>
 
-      {/* Main content — no header, content-first */}
+      {/* Main content — content-first, no header */}
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-6 py-16 md:py-20">
-        {/* Logo — tactical reticle */}
+        {/* Logo */}
         <section className="mb-8">
-          <svg viewBox="0 0 64 64" className="h-14 w-14" fill="none" aria-label="ZFundPilot">
-            {/* Corner brackets */}
+          <svg
+            viewBox="0 0 64 64"
+            className="h-14 w-14"
+            fill="none"
+            role="img"
+            aria-label="ZFundPilot logo"
+          >
+            <title>ZFundPilot</title>
             <path d="M2 10 L2 2 L10 2" stroke="#FF2A2A" strokeWidth="1" />
             <path d="M54 2 L62 2 L62 10" stroke="#FF2A2A" strokeWidth="1" />
             <path d="M62 54 L62 62 L54 62" stroke="#FF2A2A" strokeWidth="1" />
             <path d="M10 62 L2 62 L2 54" stroke="#FF2A2A" strokeWidth="1" />
-            {/* Crosshair lines */}
             <line x1="32" y1="6" x2="32" y2="20" stroke="#FF2A2A" strokeWidth="1" />
             <line x1="32" y1="44" x2="32" y2="58" stroke="#FF2A2A" strokeWidth="1" />
             <line x1="6" y1="32" x2="20" y2="32" stroke="#FF2A2A" strokeWidth="1" />
             <line x1="44" y1="32" x2="58" y2="32" stroke="#FF2A2A" strokeWidth="1" />
-            {/* Center circle */}
             <circle cx="32" cy="32" r="10" stroke="#EAEAEA" strokeWidth="1" />
-            {/* Z path */}
             <path
               d="M27 28 L37 28 L27 36 L37 36"
               stroke="#FF2A2A"
@@ -191,7 +238,7 @@ export default function Home() {
           </svg>
         </section>
 
-        {/* Hero — project name + tagline */}
+        {/* Hero */}
         <section className="mb-12">
           <h1
             className="text-5xl font-bold tracking-tighter leading-none md:text-6xl lg:text-7xl"
@@ -203,22 +250,25 @@ export default function Home() {
             {tr.tagline}
           </p>
           <p className="mt-4 font-mono text-xs tracking-wider text-white/40">
-            {formatDateTime(now)} · {greeting(lang)}
+            <span ref={clockRef}>{formatDateTime(now)}</span>
+            <span aria-hidden="true"> · </span>
+            <span>{greeting(lang)}</span>
           </p>
         </section>
 
         {/* Metrics */}
-        <section className="mb-6">
+        <section className="mb-6 min-h-[120px]" aria-busy={loading}>
           {loading ? (
-            <p className={`text-sm tracking-wider text-white/40 animate-pulse ${labelFont}`}>
+            <p className={`text-sm tracking-wider text-white/40 ${reducedMotion ? "" : "animate-pulse"} ${labelFont}`}>
               {tr.loading}
             </p>
           ) : summary && summary.holding_count === 0 ? (
             <div>
               <p className={`text-lg tracking-wider text-white/60 ${labelFont}`}>{tr.noData}</p>
               <button
+                type="button"
                 onClick={() => navigate("/transactions")}
-                className="mt-2 font-mono text-sm tracking-wider text-[#FF2A2A] transition-colors hover:text-white"
+                className="mt-2 font-mono text-sm tracking-wider text-[#FF2A2A] transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2A2A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] active:opacity-70"
               >
                 {tr.initiateTx}
               </button>
@@ -227,29 +277,20 @@ export default function Home() {
             <div className="grid grid-cols-1 gap-px border border-white/10 bg-white/10 sm:grid-cols-3">
               <div className="bg-[#0A0A0A] p-6">
                 <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.currentValue}</p>
-                <output
-                  className="mt-2 block font-mono text-2xl font-bold tabular-nums"
-                  style={{ textShadow: "0 0 15px rgba(234,234,234,0.1)" }}
-                >
+                <output className="mt-2 block font-mono text-2xl font-bold tabular-nums text-[#EAEAEA]">
                   {money(summary.total_value)}
                 </output>
               </div>
               <div className="bg-[#0A0A0A] p-6">
                 <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.totalPnl}</p>
-                <output
-                  className={`mt-2 block font-mono text-2xl font-bold tabular-nums ${pnlColorDark(summary.total_pnl)}`}
-                  style={{ textShadow: "0 0 15px rgba(234,234,234,0.1)" }}
-                >
+                <output className={`mt-2 block font-mono text-2xl font-bold tabular-nums ${pnlColorDark(summary.total_pnl)}`}>
                   {signedMoney(summary.total_pnl)}{" "}
                   <span className="text-sm font-normal text-white/40">({pct(summary.total_return)})</span>
                 </output>
               </div>
               <div className="bg-[#0A0A0A] p-6">
                 <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.holdings}</p>
-                <output
-                  className="mt-2 block font-mono text-2xl font-bold tabular-nums"
-                  style={{ textShadow: "0 0 15px rgba(234,234,234,0.1)" }}
-                >
+                <output className="mt-2 block font-mono text-2xl font-bold tabular-nums text-[#EAEAEA]">
                   {summary.holding_count} {tr.units}
                 </output>
               </div>
@@ -267,12 +308,14 @@ export default function Home() {
                 <span className={mkt === "OPEN" ? "text-gain-400" : "text-[#FF2A2A]"}>
                   {mkt === "OPEN" ? tr.marketOpen : tr.marketClosed}
                 </span>
-                <span className="mx-3 text-white/20">///</span>
+                <span aria-hidden="true" className="mx-3 text-white/30">///</span>
                 <span className="text-white/60">{tr.nav}:</span>{" "}
-                <span className="text-white/80">{navStatus}</span>
-                <span className="mx-3 text-white/20">///</span>
+                <span className={summary.as_of_date === todayStr ? "text-gain-400" : "text-white/80"}>
+                  {navStatus}
+                </span>
+                <span aria-hidden="true" className="mx-3 text-white/30">///</span>
                 <span className="text-white/60">{tr.concentration}:</span>{" "}
-                <span className="text-white/80">
+                <span className={concentrationColor(summary.max_single_weight)}>
                   {concentrationLabel(summary.max_single_weight, lang)}
                   {summary.max_single_weight ? ` ${(summary.max_single_weight * 100).toFixed(1)}%` : ""}
                 </span>
@@ -290,12 +333,22 @@ export default function Home() {
               return (
                 <button
                   key={to}
+                  type="button"
                   onClick={() => navigate(to)}
-                  className="group bg-[#0A0A0A] p-6 text-left transition-colors hover:bg-[#EAEAEA] hover:text-[#0A0A0A] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#FF2A2A] active:opacity-80"
+                  className="group relative bg-[#0A0A0A] p-5 text-left transition-colors hover:bg-[#EAEAEA] hover:text-[#0A0A0A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2A2A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] active:opacity-70 sm:p-6"
                 >
+                  {/* corner bracket on hover */}
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-1 top-1 h-2 w-2 border-l border-t border-[#FF2A2A] opacity-0 transition-opacity group-hover:opacity-100"
+                  />
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-1 bottom-1 h-2 w-2 border-r border-b border-[#FF2A2A] opacity-0 transition-opacity group-hover:opacity-100"
+                  />
                   <p className="font-mono text-2xl font-bold">{code}</p>
                   <p className={`mt-1 text-sm ${labelFont}`}>{item.label}</p>
-                  <p className={`mt-2 text-xs text-white/30 group-hover:text-black/50 ${lang === "zh" ? "font-sans" : "font-mono uppercase tracking-wider"}`}>
+                  <p className={`mt-2 text-xs text-white/30 group-hover:text-black/50 ${descFont}`}>
                     {item.desc}
                   </p>
                 </button>
@@ -305,12 +358,12 @@ export default function Home() {
         </section>
       </main>
 
-      {/* Footer — branding at the bottom, no header at top */}
+      {/* Footer */}
       <footer className="border-t border-white/10">
         <div className="mx-auto max-w-5xl px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-sm text-[#FF2A2A]">+</span>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <span aria-hidden="true" className="font-mono text-sm text-[#FF2A2A]">+</span>
               <span className="font-mono text-xs uppercase tracking-wider text-white/60">ZFUNDPILOT ®</span>
               <span className="font-mono text-xs uppercase tracking-wider text-white/30">v0.5.0</span>
             </div>
@@ -318,9 +371,15 @@ export default function Home() {
               href={GITHUB_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-mono text-xs uppercase tracking-wider text-white/60 transition-colors hover:text-[#FF2A2A]"
+              className="group inline-flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-white/60 transition-colors hover:text-[#FF2A2A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2A2A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] active:opacity-70"
             >
-              [ GITHUB ]
+              <span>[ GITHUB ]</span>
+              <span
+                aria-hidden="true"
+                className="inline-block translate-x-0 text-white/40 transition-transform group-hover:translate-x-0.5 group-hover:text-[#FF2A2A]"
+              >
+                ↗
+              </span>
             </a>
           </div>
           <p className={`mt-2 text-[10px] tracking-wider text-white/30 ${lang === "zh" ? "font-sans" : "font-mono uppercase"}`}>

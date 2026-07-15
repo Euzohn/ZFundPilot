@@ -13,8 +13,7 @@ env/
 .ruff_cache/
 
 # 数据库与本地数据
-data/*.db
-data/*.sqlite
+data/
 fund.md
 
 # 临时文件

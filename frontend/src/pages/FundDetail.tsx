@@ -72,7 +72,7 @@ export default function FundDetail() {
       if (navDateList.includes(txDate)) return txDate
       const next = navDateList.find(d => d > txDate)
       if (next) return next
-      if (navDateList.length > 0) return navDateList[0]
+      if (navDateList.length > 0) return navDateList[navDateList.length - 1]
       return null
     }
     const txMap: Record<string, Transaction[]> = {}

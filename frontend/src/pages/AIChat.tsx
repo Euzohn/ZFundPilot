@@ -1,13 +1,12 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { Transaction, AIUsageStats, CalcFeeResponse } from "@/api/types"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import FeeBreakdownCard from "@/components/FeeBreakdownCard"
-import { ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react"
+import { ChevronDown, ChevronRight, Eye, EyeOff, ShieldAlert, Lightbulb, PlusCircle, Newspaper } from "lucide-react"
 import { Bot, Send, Search, Plus, Check, X, Loader2, Clock, Pencil } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -21,10 +20,10 @@ interface ChatMessage {
 }
 
 const QUICK_PROMPTS = [
-  "分析当前组合的风险",
-  "给出调仓建议",
-  "帮我录入一笔买入交易",
-  "科技板块最近怎么样？",
+  { text: "分析当前组合的风险", icon: ShieldAlert },
+  { text: "给出调仓建议", icon: Lightbulb },
+  { text: "帮我录入一笔买入交易", icon: PlusCircle },
+  { text: "科技板块最近怎么样？", icon: Newspaper },
 ]
 
 const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
@@ -62,7 +61,6 @@ function truncate(s: string, n: number): string {
 }
 
 function deriveTitle(messages: ChatMessage[]): string {
-  // 旧版兼容：无 activeTitle 时用首条消息兜底
   const first = messages.find((m) => m.role === "user")
   if (!first) return "新对话"
   return truncate(first.content.replace(/\s+/g, " ").trim(), 24)
@@ -75,8 +73,6 @@ function generateTimeTitle(): string {
 }
 
 function formatRelativeTime(iso: string): string {
-  // 后端存的是 UTC（datetime('now')），格式 "YYYY-MM-DD HH:MM:SS"
-  // 加 T 和 Z 标记为 UTC，new Date() 自动转为本地时区
   const t = new Date(iso.replace(" ", "T") + "Z").getTime()
   if (isNaN(t)) return ""
   const diff = Date.now() - t
@@ -117,7 +113,6 @@ function loadSessions(): PersistedSessions {
       }
     }
   } catch { /* corrupt */ }
-  // 迁移旧的单对话键
   try {
     const legacy = localStorage.getItem(LEGACY_KEY)
     if (legacy) {
@@ -182,6 +177,7 @@ export default function AIChat() {
   const [searching, setSearching] = useState(false)
   const { data: aiConfig } = useApi(() => api.getAIConfig(), [])
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [txStatus, setTxStatus] = useState<TxState>(() => restored.activeTxStatus)
   const [systemPrompt, setSystemPrompt] = useState(() => restored.activeSystemPrompt ?? "")
   const [includeContext, setIncludeContext] = useState(() => restored.includeContext)
@@ -195,7 +191,6 @@ export default function AIChat() {
   const [editingArchiveId, setEditingArchiveId] = useState<string | null>(null)
   const [titleInput, setTitleInput] = useState("")
 
-  // 持久化：当前会话 + 归档列表，切页面/刷新可恢复（含上下文）
   useEffect(() => {
     try {
       localStorage.setItem(SESSIONS_KEY, JSON.stringify({
@@ -209,7 +204,15 @@ export default function AIChat() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, searching])
 
-  // 切换 includeContext 时重新取 system prompt
+  const autoResize = useCallback(() => {
+    const ta = textareaRef.current
+    if (!ta) return
+    ta.style.height = "auto"
+    ta.style.height = Math.min(ta.scrollHeight, 120) + "px"
+  }, [])
+
+  useEffect(() => { autoResize() }, [input, autoResize])
+
   useEffect(() => {
     api.getSystemPrompt(includeContext).then((res) => {
       setSystemPrompt(res.system_prompt)
@@ -230,7 +233,6 @@ export default function AIChat() {
     const aiIndex = newMessages.length
 
     try {
-      // 新对话首条消息时取一次系统提示（含持仓快照），整个对话复用
       let sysPrompt = systemPrompt
       if (!sysPrompt) {
         try {
@@ -314,7 +316,6 @@ export default function AIChat() {
     setTxStatus((prev) => ({ ...prev, [msgIndex]: { state: "discarded" } }))
   }
 
-  // 把当前会话归档（仅当有内容），返回新 archive
   const archiveCurrent = (): SessionMeta[] => {
     if (messages.length === 0) return archive
     const session: SessionMeta = {
@@ -381,318 +382,339 @@ export default function AIChat() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-9rem)] md:h-[calc(100vh-8rem)] max-w-4xl mx-auto">
-      <h1 className="text-xl md:text-2xl font-bold mb-2 md:mb-4">AI 助手</h1>
-      <Card className="flex flex-col flex-1 min-h-0">
-        <CardHeader className="p-3 md:p-6 md:pb-3 flex-row items-center justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-blue-500 shrink-0" />
-              {editingTitle ? (
-                <Input
-                  value={titleInput}
-                  onChange={(e) => setTitleInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveTitle()
-                    if (e.key === "Escape") setEditingTitle(false)
-                  }}
-                  onBlur={saveTitle}
-                  autoFocus
-                  className="h-7 text-base font-bold max-w-[200px] sm:max-w-[280px]"
-                />
-              ) : archive.length > 0 ? (
-                <div className="relative">
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setDropdownOpen((o) => !o)}
-                      className="flex items-center gap-1 text-base font-bold hover:text-blue-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                    >
-                      <span className="truncate max-w-[100px] sm:max-w-[180px]">{currentTitle}</span>
-                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={startEditTitle}
-                      className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-blue-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                      title="重命名"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  {dropdownOpen && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
-                      <div className="absolute left-0 top-full mt-1 z-50 w-72 max-w-[80vw] rounded-lg border bg-white shadow-lg">
-                        <div className="flex items-center gap-2 px-3 py-2 border-b">
-                          <span className="text-sm font-medium truncate flex-1">{currentTitle}</span>
-                          <span className="text-[11px] text-muted-foreground shrink-0">当前</span>
-                        </div>
-                        {archive.length === 0 ? (
-                          <p className="px-3 py-3 text-center text-xs text-muted-foreground">暂无历史对话</p>
-                        ) : (
-                          <div className="max-h-64 overflow-y-auto py-1">
-                            {archive.map((s) => (
-                              <div
-                                key={s.id}
-                                className="group flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer"
-                                onClick={() => handleSwitchChat(s.id)}
-                              >
-                                <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                  {editingArchiveId === s.id ? (
-                                    <Input
-                                      value={titleInput}
-                                      onChange={(e) => setTitleInput(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") handleRenameArchived(s.id, titleInput)
-                                        if (e.key === "Escape") setEditingArchiveId(null)
-                                      }}
-                                      onBlur={() => handleRenameArchived(s.id, titleInput)}
-                                      onClick={(e) => e.stopPropagation()}
-                                      autoFocus
-                                      className="h-6 text-sm"
-                                    />
-                                  ) : (
-                                    <>
-                                      <p className="text-sm truncate">{s.title}</p>
-                                      <p className="text-[11px] text-muted-foreground">{formatRelativeTime(s.updatedAt)}</p>
-                                    </>
-                                  )}
-                                </div>
-                                {editingArchiveId !== s.id && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => { e.stopPropagation(); setTitleInput(s.title); setEditingArchiveId(s.id) }}
-                                      className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-blue-500 hover:bg-blue-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                                      title="重命名"
-                                    >
-                                      <Pencil className="h-3 w-3" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => { e.stopPropagation(); handleDeleteArchived(s.id) }}
-                                      className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                                      title="删除此对话"
-                                    >
-                                      <X className="h-3.5 w-3.5" />
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            ))}
+      {/* Header */}
+      <div className="flex items-center justify-between gap-2 border-b pb-2 md:pb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Bot className="h-5 w-5 text-primary shrink-0" />
+          {editingTitle ? (
+            <Input
+              value={titleInput}
+              onChange={(e) => setTitleInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveTitle()
+                if (e.key === "Escape") setEditingTitle(false)
+              }}
+              onBlur={saveTitle}
+              autoFocus
+              className="h-7 text-base font-bold max-w-[200px] sm:max-w-[280px]"
+            />
+          ) : archive.length > 0 ? (
+            <div className="relative">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setDropdownOpen((o) => !o)}
+                  className="flex items-center gap-1 text-base font-bold hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                >
+                  <span className="truncate max-w-[100px] sm:max-w-[180px]">{currentTitle}</span>
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={startEditTitle}
+                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                  title="重命名"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {dropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
+                  <div className="absolute left-0 top-full mt-1 z-50 w-72 max-w-[80vw] rounded-xl border bg-card shadow-lg">
+                    <div className="flex items-center gap-2 px-3 py-2 border-b">
+                      <span className="text-sm font-medium truncate flex-1">{currentTitle}</span>
+                      <span className="text-[11px] text-muted-foreground shrink-0">当前</span>
+                    </div>
+                    {archive.length === 0 ? (
+                      <p className="px-3 py-3 text-center text-xs text-muted-foreground">暂无历史对话</p>
+                    ) : (
+                      <div className="max-h-64 overflow-y-auto py-1">
+                        {archive.map((s) => (
+                          <div
+                            key={s.id}
+                            className="group flex items-center gap-2 px-3 py-2 hover:bg-muted/50 cursor-pointer"
+                            onClick={() => handleSwitchChat(s.id)}
+                          >
+                            <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              {editingArchiveId === s.id ? (
+                                <Input
+                                  value={titleInput}
+                                  onChange={(e) => setTitleInput(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") handleRenameArchived(s.id, titleInput)
+                                    if (e.key === "Escape") setEditingArchiveId(null)
+                                  }}
+                                  onBlur={() => handleRenameArchived(s.id, titleInput)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  autoFocus
+                                  className="h-6 text-sm"
+                                />
+                              ) : (
+                                <>
+                                  <p className="text-sm truncate">{s.title}</p>
+                                  <p className="text-[11px] text-muted-foreground">{formatRelativeTime(s.updatedAt)}</p>
+                                </>
+                              )}
+                            </div>
+                            {editingArchiveId !== s.id && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setTitleInput(s.title); setEditingArchiveId(s.id) }}
+                                  className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                                  title="重命名"
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteArchived(s.id) }}
+                                  className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                                  title="删除此对话"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
                           </div>
-                        )}
+                        ))}
                       </div>
-                    </>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={startEditTitle}
-                    className="text-base font-bold truncate hover:text-blue-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                  >
-                    {currentTitle}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={startEditTitle}
-                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-blue-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                    title="重命名"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                    )}
+                  </div>
+                </>
               )}
             </div>
-            <p className="hidden md:block text-sm text-muted-foreground mt-1">
-              基于实时资讯 + 当前持仓数据，给出风险分析与调仓建议；也可描述交易让 AI 帮你录入
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setIncludeContext(!includeContext)}
-              disabled={streaming}
-              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] ${includeContext ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-400"}`}
-              title={includeContext ? "当前携带持仓明细" : "不携带持仓明细"}
-            >
-              {includeContext ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-              <span>持仓明细</span>
-            </button>
-            <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={handleNewChat} disabled={streaming} title="开始新对话">
-              <Plus className="h-3.5 w-3.5 mr-1" /> 新对话
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="flex flex-col flex-1 min-h-0 gap-2 md:gap-3 p-3 pt-0 md:p-6 md:pt-0">
-          {!configured ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              请先到「设置」页面配置 AI 模型 API
-            </p>
           ) : (
-            <>
-              {/* 系统提示词折叠面板 */}
-              {systemPrompt && (
-                <div className="shrink-0 rounded-lg border border-slate-200 bg-slate-50/30">
-                  <button
-                    type="button"
-                    onClick={() => setShowSysPrompt(!showSysPrompt)}
-                    className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                  >
-                    {showSysPrompt ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                    <span>系统提示词</span>
-                    <span className="text-[10px] text-muted-foreground/50">
-                      （{includeContext ? "含持仓明细" : "不含持仓明细"} · {systemPrompt.length} 字符）
-                    </span>
-                  </button>
-                  {showSysPrompt && (
-                    <pre className="max-h-48 overflow-y-auto px-3 pb-2 text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap font-mono">
-                      {systemPrompt}
-                    </pre>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={startEditTitle}
+                className="text-base font-bold truncate hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+              >
+                {currentTitle}
+              </button>
+              <button
+                type="button"
+                onClick={startEditTitle}
+                className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                title="重命名"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIncludeContext(!includeContext)}
+            disabled={streaming}
+            className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] ${includeContext ? "border-primary/30 bg-primary/5 text-primary" : "border-border bg-card text-muted-foreground"}`}
+            title={includeContext ? "当前携带持仓明细" : "不携带持仓明细"}
+          >
+            {includeContext ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+            <span>持仓明细</span>
+          </button>
+          <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={handleNewChat} disabled={streaming} title="开始新对话">
+            <Plus className="h-3.5 w-3.5 mr-1" /> 新对话
+          </Button>
+        </div>
+      </div>
+
+      {/* Chat body */}
+      {configured ? (
+        <div className="flex flex-col flex-1 min-h-0 gap-2 md:gap-3 pt-2 md:pt-3">
+          {/* 系统提示词折叠面板 */}
+          {systemPrompt && (
+            <div className="shrink-0 rounded-xl border bg-muted/30">
+              <button
+                type="button"
+                onClick={() => setShowSysPrompt(!showSysPrompt)}
+                className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+              >
+                {showSysPrompt ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                <span>系统提示词</span>
+                <span className="text-[10px] text-muted-foreground/50">
+                  ({includeContext ? "含持仓明细" : "不含持仓明细"} · {systemPrompt.length} 字符)
+                </span>
+              </button>
+              {showSysPrompt && (
+                <pre className="max-h-48 overflow-y-auto px-3 pb-2 text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap font-mono">
+                  {systemPrompt}
+                </pre>
+              )}
+            </div>
+          )}
+
+          {/* 消息列表 */}
+          <div className="flex-1 overflow-y-auto space-y-4 min-h-0">
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
+                  <Bot className="h-8 w-8 text-primary" />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-base font-semibold">AI 投资助手</p>
+                  <p className="text-sm text-muted-foreground max-w-sm">
+                    搜索实时市场资讯，结合你的持仓给出风险分析与调仓建议。也可描述交易让 AI 帮你录入。
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 w-full max-w-md mt-2">
+                  {QUICK_PROMPTS.map(({ text, icon: Icon }) => (
+                    <button
+                      key={text}
+                      onClick={() => !streaming && handleSend(text)}
+                      disabled={streaming}
+                      className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-left text-xs text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                    >
+                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="leading-tight">{text}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {messages.map((msg, i) => {
+              const tx = msg.role === "assistant" ? extractToolCall(msg.content) : null
+              const display = msg.role === "assistant" ? stripJsonBlock(msg.content) : msg.content
+              const status = txStatus[i]
+              return (
+                <div key={i} className={msg.role === "user" ? "flex justify-end" : "flex justify-start gap-2.5"}>
+                  {msg.role === "assistant" && (
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 mt-0.5">
+                      <Bot className="h-4 w-4 text-primary" />
+                    </div>
+                  )}
+                  <div className={msg.role === "user" ? "max-w-[80%]" : "max-w-[80%] flex-1"}>
+                    {msg.role === "user" ? (
+                      <div className="inline-block rounded-xl bg-primary px-3.5 py-2 text-sm text-primary-foreground">
+                        {msg.content}
+                      </div>
+                    ) : display ? (
+                      <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-headings:mb-1 prose-headings:mt-2">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{display}</ReactMarkdown>
+                      </div>
+                    ) : streaming && i === messages.length - 1 ? (
+                      <span className="inline-flex items-center gap-2 text-muted-foreground text-sm">
+                        <LogoTyping className="h-5 w-5" />
+                        思考中...
+                      </span>
+                    ) : null}
+                  </div>
+                  {tx && !streaming && (
+                    <div className="hidden" />
                   )}
                 </div>
-              )}
-              {/* 消息列表 */}
-              <div className="flex-1 overflow-y-auto space-y-3 rounded-lg border bg-slate-50/50 p-3 md:p-4 min-h-0">
-                {messages.length === 0 && (
-                  <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
-                    <p className="text-sm text-muted-foreground">
-                      开始对话吧！AI 会先搜索最新市场资讯，再结合你的持仓给出建议。
-                      <br />
-                      描述一笔交易（如「昨天在支付宝买了1000元005827」），AI 会帮你生成记录待确认。
-                    </p>
-                    <div className="flex flex-wrap gap-2 justify-center max-w-md">
-                      {QUICK_PROMPTS.map((prompt) => (
-                        <button
-                          key={prompt}
-                          onClick={() => !streaming && handleSend(prompt)}
-                          disabled={streaming}
-                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                        >
-                          {prompt}
-                        </button>
-                      ))}
-                    </div>
+              )
+            })}
+            {messages.map((msg, i) => {
+              const tx = msg.role === "assistant" ? extractToolCall(msg.content) : null
+              const status = txStatus[i]
+              return tx && !streaming ? (
+                <div key={`tx-${i}`} className="flex justify-start gap-2.5">
+                  <div className="w-7 shrink-0" />
+                  <div className="max-w-[80%] flex-1">
+                    <TxConfirmCard
+                      tx={tx}
+                      status={status}
+                      adding={adding === i}
+                      onConfirm={(finalTx) => handleConfirmTx(i, finalTx)}
+                      onDiscard={() => handleDiscardTx(i)}
+                    />
                   </div>
-                )}
-                {messages.map((msg, i) => {
-                  const tx = msg.role === "assistant" ? extractToolCall(msg.content) : null
-                  const display = msg.role === "assistant" ? stripJsonBlock(msg.content) : msg.content
-                  const status = txStatus[i]
-                  return (
-                    <div key={i} className={msg.role === "user" ? "text-right" : "text-left"}>
-                      <div
-                        className={
-                          msg.role === "user"
-                            ? "inline-block max-w-[85%] rounded-lg bg-blue-600 px-3 py-2 text-sm text-white"
-                            : "inline-block max-w-[85%] rounded-lg bg-white border px-3 py-2 text-sm"
-                        }
-                      >
-                        {msg.role === "assistant" ? (
-                          display ? (
-                            <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-headings:mb-1 prose-headings:mt-2">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{display}</ReactMarkdown>
-                            </div>
-                          ) : streaming && i === messages.length - 1 ? (
-                            <span className="inline-flex items-center gap-2 text-muted-foreground">
-                              <LogoTyping className="h-5 w-5" />
-                              正在思考...
-                            </span>
-                          ) : null
-                        ) : (
-                          msg.content
-                        )}
-                      </div>
-                      {tx && !streaming && (
-                        <TxConfirmCard
-                          tx={tx}
-                          status={status}
-                          adding={adding === i}
-                          onConfirm={(finalTx) => handleConfirmTx(i, finalTx)}
-                          onDiscard={() => handleDiscardTx(i)}
-                        />
-                      )}
-                    </div>
-                  )
-                })}
-                {searching && (
-                  <div className="text-left">
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-700">
-                      <Search className="h-3.5 w-3.5 animate-pulse" />
-                      正在搜索最新资讯...
-                    </span>
-                  </div>
-                )}
-                <div ref={chatEndRef} />
+                </div>
+              ) : null
+            })}
+            {searching && (
+              <div className="flex justify-start gap-2.5">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted mt-0.5">
+                  <Search className="h-3.5 w-3.5 text-muted-foreground animate-pulse" />
+                </div>
+                <span className="inline-flex items-center rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
+                  搜索最新资讯中...
+                </span>
               </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
 
-              {/* 输入区 */}
-              <div className="flex gap-2 shrink-0">
-                <Input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault()
-                      handleSend()
-                    }
-                  }}
-                  disabled={streaming}
-                />
-                <Button
-                  onClick={() => handleSend()}
-                  disabled={streaming || !input.trim()}
-                  size="icon"
-                  className="shrink-0"
+          {/* 输入区 */}
+          <div className="shrink-0">
+            <div className="flex items-end gap-2 rounded-xl border border-border bg-card px-3 py-2 shadow-sm focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 transition-shadow">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSend()
+                  }
+                }}
+                disabled={streaming}
+                rows={1}
+                placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+                className="flex-1 resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
+                style={{ maxHeight: "120px" }}
+              />
+              <Button
+                onClick={() => handleSend()}
+                disabled={streaming || !input.trim()}
+                size="icon"
+                className="shrink-0 h-8 w-8"
+              >
+                {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              </Button>
+            </div>
+            {/* token 用量 */}
+            <div className="flex items-center justify-between mt-1 px-1">
+              <p className="text-[10px] text-muted-foreground/60">
+                {lastUsage
+                  ? `本次 ${formatTokens(lastUsage.total)} (入 ${formatTokens(lastUsage.prompt)} / 出 ${formatTokens(lastUsage.completion)})`
+                  : "回复后显示 token 消耗"}
+                {usageStats ? ` · 今日 ${formatTokens(usageStats.today)} · 累计 ${formatTokens(usageStats.total)}` : ""}
+              </p>
+              {usageStats && usageStats.recent.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowUsage(true)}
+                  className="text-[10px] text-muted-foreground/50 hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                 >
-                  {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                </Button>
-              </div>
-
-              {/* token 用量状态栏 */}
-              <div className="flex items-center justify-between shrink-0">
-                <p className="text-[11px] text-muted-foreground/70">
-                  {lastUsage
-                    ? `本次 ${formatTokens(lastUsage.total)}（入 ${formatTokens(lastUsage.prompt)} / 出 ${formatTokens(lastUsage.completion)}）`
-                    : "等待回复即可查看本次 token 消耗"}
-                  {usageStats ? ` · 今日 ${formatTokens(usageStats.today)} · 累计 ${formatTokens(usageStats.total)}` : ""}
-                </p>
-                {usageStats && usageStats.recent.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowUsage(true)}
-                    className="text-[11px] text-muted-foreground/60 hover:text-blue-500 hover:underline transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                  >
-                    用量明细
-                  </button>
-                )}
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+                  用量明细
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center flex-1 gap-3 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
+            <Bot className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <p className="text-sm text-muted-foreground">请先到「设置」页面配置 AI 模型 API</p>
+        </div>
+      )}
 
       {/* 用量明细弹窗 */}
       {showUsage && usageStats && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowUsage(false)}>
-          <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-md rounded-xl bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-bold">AI 用量明细</h3>
               <span className="text-xs text-muted-foreground">今日 {formatTokens(usageStats.today)} · 累计 {formatTokens(usageStats.total)}</span>
             </div>
             <div className="max-h-72 overflow-y-auto space-y-1">
               {usageStats.recent.map((r) => (
-                <div key={r.id} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-xs">
+                <div key={r.id} className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-xs">
                   <div className="flex items-center gap-2 min-w-0">
                     <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
                     <span className="text-muted-foreground shrink-0">{formatRelativeTime(r.created_at)}</span>
-                    <span className="truncate">{r.model || "—"}</span>
+                    <span className="truncate">{r.model || "-"}</span>
                   </div>
                   <span className="tabular-nums shrink-0 ml-2">
-                    {formatTokens(r.total_tokens)}（入 {formatTokens(r.prompt_tokens)} / 出 {formatTokens(r.completion_tokens)}）
+                    {formatTokens(r.total_tokens)}(入 {formatTokens(r.prompt_tokens)} / 出 {formatTokens(r.completion_tokens)})
                     <span className="text-muted-foreground ml-1">· {r.turns} 轮</span>
                   </span>
                 </div>
@@ -710,9 +732,6 @@ export default function AIChat() {
   )
 }
 
-// ---------------------------------------------------------------------------
-// 交易确认卡片
-// ---------------------------------------------------------------------------
 function TxConfirmCard({
   tx,
   status,
@@ -739,7 +758,6 @@ function TxConfirmCard({
     setAfterThree(tx.after_three)
   }, [tx.date, tx.after_three])
 
-  // 自动查费率
   useEffect(() => {
     if (!tx.fund_code) return
     const amt = tx.amount ?? 0
@@ -774,14 +792,14 @@ function TxConfirmCard({
 
   if (status?.state === "added") {
     return (
-      <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-sm text-green-700">
+      <div className="mt-2 inline-flex items-center gap-1.5 rounded-xl border border-gain-200 bg-gain-50 px-3 py-1.5 text-sm text-gain-700">
         <Check className="h-3.5 w-3.5" /> 已添加交易 #{status.id}
       </div>
     )
   }
   if (status?.state === "discarded") {
     return (
-      <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm text-muted-foreground">
+      <div className="mt-2 inline-flex items-center gap-1.5 rounded-xl border bg-muted px-3 py-1.5 text-sm text-muted-foreground">
         <X className="h-3.5 w-3.5" /> 已丢弃
       </div>
     )
@@ -796,9 +814,9 @@ function TxConfirmCard({
   const canConfirm = !!finalTx.fund_code && !!finalTx.date && !adding
 
   return (
-    <div className="mt-2 inline-block text-left w-full max-w-[85%] rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+    <div className="mt-2 inline-block text-left w-full rounded-xl border border-primary/20 bg-primary/5 p-3">
       <div className="flex items-center gap-2 mb-2.5">
-        <Plus className="h-4 w-4 text-blue-500" />
+        <Plus className="h-4 w-4 text-primary" />
         <span className="text-sm font-medium">待确认交易</span>
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
@@ -810,7 +828,7 @@ function TxConfirmCard({
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground">代码</span>
-          <span className="font-mono text-xs">{tx.fund_code || "—"}</span>
+          <span className="font-mono text-xs">{tx.fund_code || "-"}</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground">日期</span>
@@ -827,14 +845,14 @@ function TxConfirmCard({
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground">渠道</span>
-          <span>{tx.channel || "—"}</span>
+          <span>{tx.channel || "-"}</span>
         </div>
         <div className="col-span-2 flex items-center gap-2">
           <span className="text-muted-foreground">下单时间</span>
           <button
             type="button"
             onClick={() => setAfterThree(!afterThree)}
-            className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] ${afterThree ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}
+            className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] ${afterThree ? "border-accent/30 bg-accent/10 text-accent" : "border-border bg-card text-muted-foreground"}`}
           >
             {afterThree ? "15:00 后（T+1 确认）" : "15:00 前（当日确认）"}
           </button>
@@ -843,7 +861,7 @@ function TxConfirmCard({
           <div className="flex items-center gap-1.5">
             <span className="text-muted-foreground">金额</span>
             <span className="tabular-nums">{money(finalTx.amount)}</span>
-            {estimatedAmount != null && tx.action === "sell" && <span className="text-[10px] text-muted-foreground">（估算）</span>}
+            {estimatedAmount != null && tx.action === "sell" && <span className="text-[10px] text-muted-foreground">(估算)</span>}
           </div>
         )}
         {tx.shares != null && (

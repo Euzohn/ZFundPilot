@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -20,6 +21,8 @@ logging.basicConfig(
     format="%(levelname)s:     %(name)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+_TZ = ZoneInfo("Asia/Shanghai")
 
 _scheduler: BackgroundScheduler | None = None
 _last_run: datetime | None = None
@@ -38,18 +41,18 @@ def _run_nav_update() -> None:
         codes = [p.fund_code for p in positions if p.is_open]
         if not codes:
             logger.info("[scheduler] 无持仓基金，跳过")
-            _last_run = datetime.now()
+            _last_run = datetime.now(_TZ)
             _last_results = []
             return
         results = fetch_fund.update_all_holdings_nav(codes=codes)
         _last_results = [r.__dict__ for r in results]
-        _last_run = datetime.now()
+        _last_run = datetime.now(_TZ)
         ok = sum(1 for r in results if r.ok)
         fail = len(results) - ok
         logger.info("[scheduler] 净值更新完成: %d 成功, %d 失败", ok, fail)
     except Exception:
         logger.exception("[scheduler] 定时净值更新任务异常")
-        _last_run = datetime.now()
+        _last_run = datetime.now(_TZ)
         _last_results = None
 
 
@@ -99,7 +102,7 @@ def _bootstrap_check(trigger: CronTrigger) -> None:
     """启动时检测：如果今日 cron 时间已过且尚未运行过，立即执行。"""
     if _last_run is not None:
         return
-    now = datetime.now()
+    now = datetime.now(_TZ)
     next_fire = trigger.get_next_fire_time(None, now)
     if next_fire is None or next_fire.date() == now.date():
         return

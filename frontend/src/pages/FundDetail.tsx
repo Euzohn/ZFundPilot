@@ -196,7 +196,7 @@ const handleDelete = async (txId: number) => {
         <MetricCard label="持有份额" value={totalShares.toFixed(2)} />
         <MetricCard label="持仓成本" value={money(totalCost)} />
         <MetricCard label="持仓均价" value={navStr(avgCost)} />
-        <MetricCard label="最新净值" value={navStr(latestNav)} sub={fundEstimate?.ok ? `估算 ${navStr(fundEstimate.gsz)} ${pct(fundEstimate.gszzl / 100)} · ${fundEstimate.gztime.slice(11, 16)}` : latestDate ?? undefined} subColor={fundEstimate?.ok ? pnlColor(fundEstimate.gszzl / 100) : undefined} />
+        <MetricCard label="最新净值" value={navStr(latestNav)} sub={fundEstimate?.ok ? `${latestDate} · 估算 ${navStr(fundEstimate.gsz)} ${pct(fundEstimate.gszzl / 100)} · ${fundEstimate.gztime.slice(5, 16)}` : latestDate ?? undefined} subColor={fundEstimate?.ok ? pnlColor(fundEstimate.gszzl / 100) : undefined} />
         <MetricCard label="当前市值" value={money(totalValue)} />
         <MetricCard label="浮动盈亏" value={signedMoney(totalUnrealized)} color={pnlColor(totalUnrealized)} />
         <MetricCard label="已实现盈亏" value={signedMoney(totalRealized)} color={pnlColor(totalRealized)} />

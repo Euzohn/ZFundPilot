@@ -15,6 +15,7 @@ import {
   Menu,
   X,
   House,
+  Github,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getColorTheme, getColorThemeAsync, applyColorTheme } from "@/lib/colorTheme"
@@ -157,6 +158,19 @@ export default function Layout() {
         <NavLinks collapsed={collapsed} />
 
         <div className={cn("border-t border-slate-800/60", collapsed ? "px-2 py-3" : "px-3 py-3")}>
+          <a
+            href="https://github.com/Euzohn/ZFundPilot"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              "flex items-center rounded-lg text-slate-500 transition-colors hover:bg-slate-800 hover:text-white",
+              collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 px-3 py-2 text-xs",
+            )}
+            title={collapsed ? "GitHub" : undefined}
+          >
+            <Github className="h-4 w-4 shrink-0" />
+            {!collapsed && <span className="whitespace-nowrap">GitHub</span>}
+          </a>
           <button
             onClick={toggle}
             className={cn(

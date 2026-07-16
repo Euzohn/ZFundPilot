@@ -71,6 +71,9 @@ def fetch_estimate(fund_code: str) -> FundEstimate:
             gztime=data.get("gztime", ""),
             ok=True,
         )
+        if est.jzrq and est.gztime and est.jzrq == est.gztime[:10]:
+            est.ok = False
+            est.message = "净值已更新"
         _estimate_cache[fund_code] = (time.time(), est)
         return est
     except Exception as exc:  # noqa: BLE001

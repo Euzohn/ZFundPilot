@@ -29,12 +29,12 @@ _CACHE_TTL = 30  # 秒
 class FundEstimate:
     """单只基金的实时估值结果。"""
     fund_code: str
-    fund_name: str
-    jzrq: str          # 上一交易日净值日期
-    dwjz: float         # 上一交易日单位净值
-    gsz: float          # 估算净值
-    gszzl: float        # 估算涨跌幅 (%)
-    gztime: str         # 估算时间
+    fund_name: str = ""
+    jzrq: str = ""          # 上一交易日净值日期
+    dwjz: float = 0.0       # 上一交易日单位净值
+    gsz: float = 0.0        # 估算净值
+    gszzl: float = 0.0      # 估算涨跌幅 (%)
+    gztime: str = ""        # 估算时间
     ok: bool = False
     message: str = ""
 

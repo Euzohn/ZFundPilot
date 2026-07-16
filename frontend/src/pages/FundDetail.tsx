@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { Position, Transaction, Fund } from "@/api/types"
+import type { Position, Transaction, Fund, FundEstimate } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
@@ -46,6 +46,11 @@ export default function FundDetail() {
     () => api.getNavHistory(code!).then((rows) => rows.map((r) => ({ date: r.date, nav: r.nav }))),
     [code],
   )
+  const { data: fundEstimate, reload: reloadEstimate } = useApi<FundEstimate>(() => api.getFundEstimate(code!), [code])
+  useEffect(() => {
+    const interval = setInterval(reloadEstimate, 60000)
+    return () => clearInterval(interval)
+  }, [reloadEstimate])
 
   // 净值图表数据：时间区间过滤 + 每日收益计算（必须在 early return 之前）
   const chartData = useMemo(() => {
@@ -192,6 +197,7 @@ const handleDelete = async (txId: number) => {
         <MetricCard label="持仓成本" value={money(totalCost)} />
         <MetricCard label="持仓均价" value={navStr(avgCost)} />
         <MetricCard label="最新净值" value={navStr(latestNav)} sub={latestDate ?? undefined} />
+        <MetricCard label="今日估算" value={fundEstimate?.ok ? navStr(fundEstimate.gsz) : "—"} sub={fundEstimate?.ok ? `${pct(fundEstimate.gszzl / 100)}${fundEstimate.gztime ? " · " + fundEstimate.gztime.slice(11, 16) : ""}` : "休市/无估值"} color={fundEstimate?.ok ? pnlColor(fundEstimate.gszzl / 100) : undefined} />
         <MetricCard label="当前市值" value={money(totalValue)} />
         <MetricCard label="浮动盈亏" value={signedMoney(totalUnrealized)} color={pnlColor(totalUnrealized)} />
         <MetricCard label="已实现盈亏" value={signedMoney(totalRealized)} color={pnlColor(totalRealized)} />

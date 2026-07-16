@@ -228,3 +228,37 @@ export interface SchedulerStatus {
   last_run: string | null
   last_results: { fund_code: string; ok: boolean; written: number; latest_date: string | null; latest_nav: number | null }[] | null
 }
+
+// ── 实时估值 ──
+export interface FundEstimateItem {
+  fund_code: string
+  fund_name: string
+  held_shares: number
+  dwjz: number
+  gsz: number
+  gszzl: number
+  gztime: string
+  estimated_pnl: number
+  prev_value: number
+  ok: boolean
+  message: string
+}
+
+export interface EstimateSummary {
+  funds: FundEstimateItem[]
+  total_estimated_pnl: number
+  estimated_return: number
+  gztime: string
+}
+
+export interface FundEstimate {
+  fund_code: string
+  fund_name: string
+  jzrq: string
+  dwjz: number
+  gsz: number
+  gszzl: number
+  gztime: string
+  ok: boolean
+  message: string
+}

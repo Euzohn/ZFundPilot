@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { Position } from "@/api/types"
+import type { Position, EstimateSummary } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
 import { Button } from "@/components/ui/button"
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { money, pct, pnlColor, localDateStr } from "@/lib/format"
+import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search } from "lucide-react"
 
@@ -24,6 +24,21 @@ export default function Positions() {
   const [closedSortField, setClosedSortField] = useState("realized")
   const [closedSortDir, setClosedSortDir] = useState<"asc" | "desc">("desc")
   const { data: positions, loading } = useApi(() => api.getPositions(true))
+  const { data: estimate, reload: reloadEstimate } = useApi<EstimateSummary>(() => api.getEstimate())
+  useEffect(() => {
+    const interval = setInterval(reloadEstimate, 60000)
+    return () => clearInterval(interval)
+  }, [reloadEstimate])
+
+  const estimateMap = useMemo(() => {
+    if (!estimate) return {}
+    const m: Record<string, number> = {}
+    for (const f of estimate.funds) {
+      if (f.ok) m[f.fund_code] = f.gszzl
+    }
+    return m
+  }, [estimate])
+  const hasEstimate = estimate && estimate.funds.some((f) => f.ok)
 
   const availableChannels = useMemo(() => {
     if (!positions) return []
@@ -172,6 +187,7 @@ export default function Positions() {
                     <SortHeader field="value" className="text-right">市值</SortHeader>
                     <SortHeader field="pnl" className="text-right">浮动盈亏</SortHeader>
                     <SortHeader field="return" className="text-right">收益率</SortHeader>
+                    <TableHead className="text-right">估算涨跌</TableHead>
                     <SortHeader field="channels" className="text-right">渠道</SortHeader>
                     <TableHead className="w-20">操作</TableHead>
                     <TableHead className="w-8"></TableHead>
@@ -212,6 +228,13 @@ export default function Positions() {
                           )}
                         </div>
                       </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {estimateMap[code] != null ? (
+                          <span className={pnlColor(estimateMap[code] / 100)}>{pct(estimateMap[code] / 100)}</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground">{m.channels}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1">
@@ -250,6 +273,9 @@ export default function Positions() {
                       <TableCell className="text-right tabular-nums text-slate-800">{money(totalValue)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalPnl)}`}>{money(totalPnl)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
+                      <TableCell className={`text-right tabular-nums ${hasEstimate ? pnlColor(estimate!.total_estimated_pnl) : ""}`}>
+                        {hasEstimate ? signedMoney(estimate!.total_estimated_pnl) : "—"}
+                      </TableCell>
                       <TableCell colSpan={3}></TableCell>
                     </TableRow>
                   )

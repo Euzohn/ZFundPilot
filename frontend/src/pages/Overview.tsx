@@ -1,7 +1,7 @@
 import { useApi } from "@/lib/useApi"
-import { useMemo } from "react"
+import { useMemo, useEffect } from "react"
 import { api } from "@/api/client"
-import type { PortfolioSummary, DistributionItem } from "@/api/types"
+import type { PortfolioSummary, DistributionItem, EstimateSummary } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
@@ -96,6 +96,14 @@ export default function Overview() {
   const { data: channelDist } = useApi<DistributionItem[]>(() => api.getDistribution("channel"))
   const { data: sectorDist } = useApi<DistributionItem[]>(() => api.getDistribution("sector"))
 
+  const { data: estimate, reload: reloadEstimate } = useApi<EstimateSummary>(() => api.getEstimate())
+  useEffect(() => {
+    const interval = setInterval(reloadEstimate, 60000)
+    return () => clearInterval(interval)
+  }, [reloadEstimate])
+
+  const hasEstimate = estimate && estimate.funds.some((f) => f.ok)
+
   if (se) return <ErrorState message={se} onRetry={reloadSummary} />
   if (sl || !summary) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
 
@@ -126,7 +134,8 @@ export default function Overview() {
       </div>
 
       {/* Row 1: Period returns — compact cards, no icons */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
+        <CompactCard label="今日估算" value={hasEstimate ? signedMoney(estimate!.total_estimated_pnl) : "—"} sub={hasEstimate ? `${pct(estimate!.estimated_return)} · ${estimate!.gztime.slice(11, 16) || ""}` : "休市/无估值"} color={hasEstimate ? pnlColor(estimate!.total_estimated_pnl) : undefined} />
         <CompactCard label={dailyLabel} value={signedMoney(summary.daily_pnl)} sub={pct(summary.daily_return)} color={pnlColor(summary.daily_pnl)} />
         <CompactCard label="本周收益" value={signedMoney(summary.week_pnl)} sub={pct(summary.week_return)} color={pnlColor(summary.week_pnl)} />
         <CompactCard label="本月收益" value={signedMoney(summary.month_pnl)} sub={pct(summary.month_return)} color={pnlColor(summary.month_pnl)} />

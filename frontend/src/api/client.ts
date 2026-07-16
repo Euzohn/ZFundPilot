@@ -3,7 +3,9 @@ import type {
   ChannelPnLPoint,
   CurvePoint,
   DistributionItem,
+  EstimateSummary,
   FetchResult,
+  FundEstimate,
   FundMeta,
   LatestNav,
   PortfolioSummary,
@@ -268,4 +270,9 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ cron }),
     }),
+
+  // Estimate (real-time fundgz)
+  getEstimate: () => request<EstimateSummary>("/estimate"),
+  getFundEstimate: (code: string) =>
+    request<FundEstimate>(`/funds/${encodeURIComponent(code)}/estimate`),
 }

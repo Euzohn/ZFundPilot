@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from . import ai, analysis, config, data_io, db, fetch_fund, rebalance, risk, scheduler
+from . import ai, analysis, config, data_io, db, fetch_estimate, fetch_fund, rebalance, risk, scheduler
 from .models import Fund, Transaction
 
 app = FastAPI(title="ZFundPilot API", version="0.5.1")
@@ -399,6 +399,81 @@ def reset_sectors() -> dict[str, int]:
             count += 1
     analysis.clear_analysis_cache()
     return {"reset": count}
+
+
+# ---------------------------------------------------------------------------
+# 实时估值（天天基金 fundgz API）
+# ---------------------------------------------------------------------------
+@app.get("/api/estimate")
+def get_estimates() -> dict[str, Any]:
+    """批量获取所有持仓基金的实时估值 + 组合汇总。"""
+    positions = analysis.calculate_positions()
+    merged: dict[str, dict] = {}
+    for p in positions:
+        if not p.is_open:
+            continue
+        m = merged.setdefault(p.fund_code, {
+            "code": p.fund_code, "name": p.fund_name,
+            "shares": 0.0,
+        })
+        m["shares"] += p.held_shares
+
+    estimates = fetch_estimate.fetch_estimates(list(merged.keys()))
+
+    funds: list[dict[str, Any]] = []
+    total_est_pnl = 0.0
+    total_prev_value = 0.0
+    latest_gztime = ""
+    for est in estimates:
+        info = merged.get(est.fund_code, {})
+        shares = info.get("shares", 0)
+        if est.ok:
+            est_pnl = round(shares * (est.gsz - est.dwjz), 2)
+            prev_value = round(shares * est.dwjz, 2)
+            total_est_pnl += est_pnl
+            total_prev_value += prev_value
+            if est.gztime > latest_gztime:
+                latest_gztime = est.gztime
+        else:
+            est_pnl = 0
+            prev_value = 0
+        funds.append({
+            "fund_code": est.fund_code,
+            "fund_name": est.fund_name or info.get("name", est.fund_code),
+            "held_shares": shares,
+            "dwjz": est.dwjz if est.ok else 0,
+            "gsz": est.gsz if est.ok else 0,
+            "gszzl": est.gszzl if est.ok else 0,
+            "gztime": est.gztime,
+            "estimated_pnl": est_pnl,
+            "prev_value": prev_value,
+            "ok": est.ok,
+            "message": est.message,
+        })
+
+    return {
+        "funds": funds,
+        "total_estimated_pnl": round(total_est_pnl, 2),
+        "estimated_return": (total_est_pnl / total_prev_value) if total_prev_value > 0 else 0,
+        "gztime": latest_gztime,
+    }
+
+
+@app.get("/api/funds/{code}/estimate")
+def get_fund_estimate(code: str) -> dict[str, Any]:
+    """获取单只基金的实时估值。"""
+    est = fetch_estimate.fetch_estimate(code)
+    return {
+        "fund_code": est.fund_code,
+        "fund_name": est.fund_name,
+        "jzrq": est.jzrq,
+        "dwjz": est.dwjz,
+        "gsz": est.gsz,
+        "gszzl": est.gszzl,
+        "gztime": est.gztime,
+        "ok": est.ok,
+        "message": est.message,
+    }
 
 
 # ---------------------------------------------------------------------------

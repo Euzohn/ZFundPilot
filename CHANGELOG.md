@@ -4,6 +4,20 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Added
+- 基金实时估值：调用天天基金 fundgz API，交易日内实时估算基金涨跌幅
+  - Overview 首行新增「今日估算」卡（组合估算 P&L + 涨幅，60s 自动刷新）
+  - Positions 新增「估算涨跌」列，合计行显示总估算 P&L
+  - FundDetail 最新净值卡合并显示估算净值 + 涨跌幅
+  - 真实净值公布后估算自动失效（`jzrq == gztime` 日期则标记已更新）
+- 侧边栏底部新增 GitHub 链接
+- NavUpdate 净值更新中用 LogoRipple 动画替换 Progress 进度条
+
+### Changed
+- FundDetail 估算信息合并至「最新净值」卡子文字，恢复 4×2 网格布局
+
 ## [0.5.1] - 2026-07-16
 
 ### Added

@@ -41,6 +41,7 @@ ZFundPilot/
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
 │   ├── models.py            # 数据结构（Fund/Transaction/Position/PortfolioSummary）
 │   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）
+│   ├── fetch_estimate.py   # 基金实时估值（天天基金 fundgz API）
 │   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）
 │   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI）
 │   ├── rebalance.py         # 再平衡建议
@@ -135,6 +136,14 @@ ZFundPilot/
 - `update_fund_nav(fund_code)`: 获取 + 写入 DB
 - `update_all_holdings_nav(codes, progress)`: 批量更新，0.3s 间隔限流
 - `fetch_fund_meta(fund_code)`: 获取基金名称/类型/板块
+
+### fetch_estimate.py — 实时估值
+
+- 数据源：天天基金 fundgz API（`http://fundgz.1234567.com.cn/js/{code}.js`），JSONP 解析
+- `fetch_estimate(fund_code)`: 获取单只基金估值（`gsz`/`gszzl`/`gztime`），30s 内存缓存
+- `fetch_estimates(fund_codes)`: 批量获取，0.3s 限速
+- 估算失效检测：`jzrq == gztime[:10]` 时标记 `ok=False`（真实净值已公布）
+- API: `GET /api/estimate`（批量 + 组合汇总）+ `GET /api/funds/{code}/estimate`（单只）
 
 ### analysis.py — 收益计算
 
@@ -318,7 +327,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - **AkShare** (`ak.fund_open_fund_info_em`): 主数据源，基金净值历史
 - **天天基金** (`fund.eastmoney.com/pingzhongdata`): fallback 数据源
 - **天天基金** (`fundf10.eastmoney.com`): 费率抓取（HTML 解析）
-- 两者都是东方财富旗下，无需额外 API key
+- **天天基金** (`fundgz.1234567.com.cn`): 实时估值（fundgz JSONP API，交易日实时估算涨跌幅）
+- 均为东方财富旗下，无需额外 API key
 
 ---
 
@@ -339,8 +349,9 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - 渠道颜色/关键词映射/偏好设置同步
 - 基础设计层升级（Card 去边框、圆角加大、hover 增强、噪点叠加）
 - 侧边栏导航分组 + Overview 布局重构
+- 基金实时估值（天天基金 fundgz API，Overview/Positions/FundDetail 三页面集成，60s 自动刷新，净值公布后自动失效）
+- 侧边栏底部 GitHub 链接
 
 ### 待办
 
-- GitHub Release for v0.5.1（需 `gh auth login`）
 - 更多基金类型识别和板块分类

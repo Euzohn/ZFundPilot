@@ -61,6 +61,7 @@ Local-first · Auto NAV updates · Return & risk analytics · Portfolio rebalanc
 - 📈 **Auto Portfolio Aggregation**: Aggregates by fund + channel using moving weighted average cost. Realized P&L transferred on sell
 - 🔄 **NAV Updates**: AkShare primary, Tiantian Fund fallback. Auto-fetch fund name/type/sector on code entry
 - 💰 **Return Analysis**: Unrealized/realized P&L, portfolio return curve (cumulative profit + return rate + legend toggle), return rate ranking, calendar view, stacked bar by channel
+- 📊 **Real-time Estimates**: Live fund change estimates during trading hours (Tiantian Fund fundgz API). Portfolio estimated P&L at a glance. Auto-invalidates when actual NAV is published
 - 🛡️ **Risk Analysis**: Max drawdown, annualized volatility, concentration (HHI), structure breakdown, risk flags
 - ⚖️ **Rebalancing Advice**: Structure-based optimization suggestions (not trading signals)
 - 🤖 **AI Advisor Chat**: Configure any OpenAI-compatible API for AI-powered advice with web search + portfolio context (supports Zhipu / Kimi / Qwen / DeepSeek). Multi-conversation management, date-time naming + custom rename, AI-assisted transaction entry (with auto fee calculation), token usage tracking
@@ -194,11 +195,12 @@ ZFundPilot/
 │   ├── models.py         # Data structures (Fund / Transaction / Position)
 │   ├── db.py             # SQLite database operations
 │   ├── fetch_fund.py     # NAV fetching + name/type/sector detection + fee lookup + keyword mapping
+│   ├── fetch_estimate.py # Real-time fund estimate (Tiantian Fund fundgz API)
 │   ├── analysis.py       # Transaction aggregation, return calculation, portfolio curve
 │   ├── risk.py           # Risk analysis (drawdown/volatility/concentration/structure)
 │   ├── rebalance.py      # Portfolio rebalancing advice
 │   ├── data_io.py        # CSV import/export
-│   ├── api.py            # FastAPI REST API (35+ routes + auth middleware)
+│   ├── api.py            # FastAPI REST API (37+ routes + auth middleware)
 │   └── ai.py             # AI advisor chat (portfolio context + web search + LLM streaming)
 ├── tests/                # Pytest test suite (34 tests)
 ├── data/

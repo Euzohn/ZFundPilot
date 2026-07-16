@@ -18,13 +18,13 @@ const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", d
 const RANGE_DAYS: Record<string, number> = { "1m": 30, "3m": 90, "6m": 180, "1y": 365 }
 const RANGE_LABELS: Record<string, string> = { "1m": "1月", "3m": "3月", "6m": "6月", "1y": "1年", "hold": "持仓至今" }
 
-function MetricCard({ label, value, color, sub }: { label: string; value: string; color?: string; sub?: string }) {
+function MetricCard({ label, value, color, sub, subColor }: { label: string; value: string; color?: string; sub?: string; subColor?: string }) {
   return (
     <Card className="card-hover">
       <CardContent className="p-3 md:p-4">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
         <p className={`mt-1 text-base md:text-lg font-bold tabular-nums ${color ?? ""}`}>{value}</p>
-        {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+        {sub && <p className={`text-xs ${subColor ?? "text-muted-foreground"}`}>{sub}</p>}
       </CardContent>
     </Card>
   )
@@ -195,10 +195,7 @@ const handleDelete = async (txId: number) => {
         <MetricCard label="当前市值" value={money(totalValue)} />
         <MetricCard label="浮动盈亏" value={signedMoney(totalUnrealized)} color={pnlColor(totalUnrealized)} />
         <MetricCard label="已实现盈亏" value={signedMoney(totalRealized)} color={pnlColor(totalRealized)} />
-        <MetricCard label="收益率" value={pct(returnRate)} color={pnlColor(returnRate)} />
-        {latestNav != null && avgCost != null && latestNav < avgCost && (
-          <MetricCard label="回本涨幅" value={pct(avgCost / latestNav - 1)} color="text-amber-600" />
-        )}
+        <MetricCard label="收益率" value={pct(returnRate)} color={pnlColor(returnRate)} sub={latestNav != null && avgCost != null && latestNav < avgCost ? `回本 ${pct(avgCost / latestNav - 1)}` : undefined} subColor="text-amber-600" />
       </div>
 
       {/* 各渠道持仓 */}

@@ -42,7 +42,7 @@ else
   echo "🔨 检测到更新，构建并启动容器..."
   docker compose up -d --build
   docker image prune -f
-  docker builder prune -f
+  docker builder prune -f --keep-storage 1g
 fi
 echo ""
 

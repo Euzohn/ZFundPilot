@@ -131,14 +131,6 @@ uvicorn zfundpilot.api:app --host 0.0.0.0 --port 8000
 
 浏览器打开 http://localhost:8000
 
-### 方式三：Streamlit（旧版界面，仍可用）
-
-```bash
-streamlit run app.py
-```
-
-浏览器打开 http://localhost:8501
-
 ## 环境变量
 
 | 变量 | 默认值 | 说明 |
@@ -194,9 +186,8 @@ streamlit run app.py
 
 ```text
 ZFundPilot/
-├── app.py                # Streamlit 旧版启动入口（仍可用）
 ├── pyproject.toml        # 打包配置、依赖、Ruff/Pytest 配置
-├── Dockerfile            # 多阶段构建 Docker 镜像
+├── Dockerfile            # 多阶段构建 Docker 镜像（内置 TZ=Asia/Shanghai）
 ├── docker-compose.yml    # Docker 部署（端口由 override 指定）
 ├── src/zfundpilot/       # Python 包
 │   ├── __init__.py

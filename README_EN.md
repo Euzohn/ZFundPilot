@@ -131,14 +131,6 @@ uvicorn zfundpilot.api:app --host 0.0.0.0 --port 8000
 
 Open http://localhost:8000
 
-### Option 3: Streamlit (Legacy UI, still works)
-
-```bash
-streamlit run app.py
-```
-
-Open http://localhost:8501
-
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -193,9 +185,8 @@ Any two of `amount` / `shares` / `nav` can be provided; the third is auto-calcul
 
 ```text
 ZFundPilot/
-├── app.py                # Streamlit legacy entry (still works)
 ├── pyproject.toml        # Package config, dependencies, Ruff/Pytest config
-├── Dockerfile            # Multi-stage Docker image build
+├── Dockerfile            # Multi-stage Docker image build (TZ=Asia/Shanghai built-in)
 ├── docker-compose.yml    # Docker deployment
 ├── src/zfundpilot/       # Python package
 │   ├── __init__.py

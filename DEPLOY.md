@@ -155,6 +155,7 @@ docker compose up -d --build
 容器会自动重启（`restart: always`），服务器重启后无需手动干预。
 
 > Dockerfile 已内置 npm（npmmirror）和 pip（阿里云）国内镜像，构建速度有保障。
+> Dockerfile 已内置 `TZ=Asia/Shanghai` + `tzdata`，定时任务和 `datetime.now()` 使用正确时区，无需额外配置。
 
 ### 3.5 防火墙
 

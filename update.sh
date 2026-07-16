@@ -58,3 +58,12 @@ fi
 
 echo ""
 echo "=============================="
+echo ""
+echo "常用命令："
+echo "  ./update.sh              # 拉取代码 + 构建重启"
+echo "  docker compose ps        # 查看容器状态"
+echo "  docker compose logs -f   # 实时查看日志"
+echo "  docker compose logs -50  # 查看最近50行日志"
+echo "  docker compose restart   # 重启容器"
+echo "  docker compose down       # 停止并移除容器"
+echo "  docker compose up -d     # 后台启动（不重新构建）"

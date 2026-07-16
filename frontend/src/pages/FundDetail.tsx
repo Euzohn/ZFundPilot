@@ -196,6 +196,9 @@ const handleDelete = async (txId: number) => {
         <MetricCard label="浮动盈亏" value={signedMoney(totalUnrealized)} color={pnlColor(totalUnrealized)} />
         <MetricCard label="已实现盈亏" value={signedMoney(totalRealized)} color={pnlColor(totalRealized)} />
         <MetricCard label="收益率" value={pct(returnRate)} color={pnlColor(returnRate)} />
+        {latestNav != null && avgCost != null && latestNav < avgCost && (
+          <MetricCard label="回本涨幅" value={pct(avgCost / latestNav - 1)} color="text-amber-600" />
+        )}
       </div>
 
       {/* 各渠道持仓 */}

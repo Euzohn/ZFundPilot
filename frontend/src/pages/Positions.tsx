@@ -42,16 +42,20 @@ export default function Positions() {
     : []
 
   // 按基金合并（跨渠道）
-  const merged: Record<string, { name: string; type: string; sector: string; value: number; cost: number; pnl: number; channels: number; latestDate: string | null; channel: string | null }> = {}
+  const merged: Record<string, { name: string; type: string; sector: string; value: number; cost: number; pnl: number; shares: number; avgCost: number | null; latestNav: number | null; channels: number; latestDate: string | null; channel: string | null }> = {}
   for (const p of view.filter((p) => p.is_open)) {
-    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, value: 0, cost: 0, pnl: 0, channels: 0, latestDate: p.latest_date, channel: p.channel }
+    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, value: 0, cost: 0, pnl: 0, shares: 0, avgCost: null, latestNav: p.latest_nav, channels: 0, latestDate: p.latest_date, channel: p.channel }
     m.value += p.market_value
     m.cost += p.total_cost
     m.pnl += p.unrealized_pnl
+    m.shares += p.held_shares
     m.channels += 1
     m.latestDate = p.latest_date
     if (m.channel !== p.channel) m.channel = null  // 多渠道时置空
     merged[p.fund_code] = m
+  }
+  for (const m of Object.values(merged)) {
+    m.avgCost = m.shares > 0 ? m.cost / m.shares : null
   }
   const mergedRows = Object.entries(merged).sort((a, b) => b[1].value - a[1].value)
 
@@ -176,6 +180,7 @@ export default function Positions() {
               <TableBody>
                 {sortedRows.map(([code, m]) => {
                   const ret = m.cost ? m.value / m.cost - 1 : null
+                  const breakevenGain = m.avgCost && m.latestNav && m.latestNav < m.avgCost ? m.avgCost / m.latestNav - 1 : null
                   return (
                     <TableRow
                       key={code}
@@ -199,7 +204,14 @@ export default function Positions() {
                         </div>
                       </TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(m.pnl)}`}>{money(m.pnl)}</TableCell>
-                      <TableCell className={`text-right tabular-nums ${pnlColor(ret)}`}>{pct(ret)}</TableCell>
+                      <TableCell className={`text-right tabular-nums ${pnlColor(ret)}`}>
+                        <div className="flex flex-col items-end">
+                          <span>{pct(ret)}</span>
+                          {breakevenGain != null && (
+                            <span className="text-xs font-normal text-amber-600">回本 {pct(breakevenGain)}</span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground">{m.channels}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1">

@@ -380,10 +380,10 @@ export default function AIChat() {
   const configured = aiConfig?.base_url && aiConfig?.model
 
   return (
-    <div className="flex flex-col h-[62vh] md:h-[calc(100vh-8rem)]">
-      <h1 className="text-xl md:text-2xl font-bold mb-4">AI 助手</h1>
+    <div className="flex flex-col h-[calc(100vh-9rem)] md:h-[calc(100vh-8rem)] max-w-4xl mx-auto">
+      <h1 className="text-xl md:text-2xl font-bold mb-2 md:mb-4">AI 助手</h1>
       <Card className="flex flex-col flex-1 min-h-0">
-        <CardHeader className="pb-3 flex-row items-center justify-between gap-2">
+        <CardHeader className="p-3 md:p-6 md:pb-3 flex-row items-center justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <Bot className="h-5 w-5 text-blue-500 shrink-0" />
@@ -507,7 +507,7 @@ export default function AIChat() {
                 </div>
               )}
             </div>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="hidden md:block text-sm text-muted-foreground mt-1">
               基于实时资讯 + 当前持仓数据，给出风险分析与调仓建议；也可描述交易让 AI 帮你录入
             </p>
           </div>
@@ -527,7 +527,7 @@ export default function AIChat() {
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="flex flex-col flex-1 min-h-0 gap-3">
+        <CardContent className="flex flex-col flex-1 min-h-0 gap-2 md:gap-3 p-3 pt-0 md:p-6 md:pt-0">
           {!configured ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
               请先到「设置」页面配置 AI 模型 API
@@ -556,13 +556,27 @@ export default function AIChat() {
                 </div>
               )}
               {/* 消息列表 */}
-              <div className="flex-1 overflow-y-auto space-y-3 rounded-lg border bg-slate-50/50 p-4 min-h-0">
+              <div className="flex-1 overflow-y-auto space-y-3 rounded-lg border bg-slate-50/50 p-3 md:p-4 min-h-0">
                 {messages.length === 0 && (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    开始对话吧！AI 会先搜索最新市场资讯，再结合你的持仓给出建议。
-                    <br />
-                    描述一笔交易（如「昨天在支付宝买了1000元005827」），AI 会帮你生成记录待确认。
-                  </p>
+                  <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
+                    <p className="text-sm text-muted-foreground">
+                      开始对话吧！AI 会先搜索最新市场资讯，再结合你的持仓给出建议。
+                      <br />
+                      描述一笔交易（如「昨天在支付宝买了1000元005827」），AI 会帮你生成记录待确认。
+                    </p>
+                    <div className="flex flex-wrap gap-2 justify-center max-w-md">
+                      {QUICK_PROMPTS.map((prompt) => (
+                        <button
+                          key={prompt}
+                          onClick={() => !streaming && handleSend(prompt)}
+                          disabled={streaming}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                        >
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
                 {messages.map((msg, i) => {
                   const tx = msg.role === "assistant" ? extractToolCall(msg.content) : null
@@ -613,20 +627,6 @@ export default function AIChat() {
                   </div>
                 )}
                 <div ref={chatEndRef} />
-              </div>
-
-              {/* 快捷提示 */}
-              <div className="flex flex-wrap gap-2 shrink-0">
-                {QUICK_PROMPTS.map((prompt) => (
-                  <button
-                    key={prompt}
-                    onClick={() => !streaming && handleSend(prompt)}
-                    disabled={streaming}
-                    className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                  >
-                    {prompt}
-                  </button>
-                ))}
               </div>
 
               {/* 输入区 */}

@@ -4,10 +4,10 @@ import { api } from "@/api/client"
 import type { FetchResult, Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import LogoSpinner from "@/components/LogoSpinner"
+import LogoRipple from "@/components/LogoRipple"
 import ErrorState from "@/components/ErrorState"
 import { RefreshCw, CheckCircle2, XCircle, RotateCw, AlertTriangle } from "lucide-react"
 import { navStr, localDateStr } from "@/lib/format"
@@ -16,7 +16,6 @@ export default function NavUpdate() {
   // 和持仓页同源：用 getPositions 取数据（含 latest_date / latest_nav）
   const { data: positions, loading, error, reload } = useApi<Position[]>(() => api.getPositions())
   const [updating, setUpdating] = useState(false)
-  const [progress, setProgress] = useState(0)
   const [results, setResults] = useState<FetchResult[] | null>(null)
 
   const todayStr = localDateStr()
@@ -74,12 +73,10 @@ export default function NavUpdate() {
 
   const handleUpdate = async () => {
     setUpdating(true)
-    setProgress(0)
     setResults(null)
     try {
       const res = await api.updateNav()
       setResults(res)
-      setProgress(100)
       await reload()
     } catch (e) {
       alert(`更新失败: ${e}`)
@@ -169,9 +166,9 @@ export default function NavUpdate() {
           </Button>
 
           {updating && (
-            <div className="space-y-2">
-              <Progress value={progress} />
-              <p className="text-center text-sm text-muted-foreground">正在拉取净值数据...</p>
+            <div className="flex flex-col items-center gap-3 py-4">
+              <LogoRipple className="h-12 w-12" />
+              <p className="text-sm text-muted-foreground">正在拉取净值数据...</p>
             </div>
           )}
 

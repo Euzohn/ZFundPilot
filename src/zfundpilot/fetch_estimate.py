@@ -20,6 +20,10 @@ import re
 import time
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+_TZ = ZoneInfo("Asia/Shanghai")
 
 _estimate_cache: dict[str, tuple[float, FundEstimate]] = {}
 _CACHE_TTL = 30  # 秒
@@ -74,6 +78,9 @@ def fetch_estimate(fund_code: str) -> FundEstimate:
         if est.jzrq and est.gztime and est.jzrq == est.gztime[:10]:
             est.ok = False
             est.message = "净值已更新"
+        elif est.gztime and est.gztime[:10] != datetime.now(_TZ).strftime("%Y-%m-%d"):
+            est.ok = False
+            est.message = "非交易时段"
         _estimate_cache[fund_code] = (time.time(), est)
         return est
     except Exception as exc:  # noqa: BLE001

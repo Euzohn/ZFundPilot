@@ -183,12 +183,54 @@ sudo firewall-cmd --permanent --add-port=8080/tcp && sudo firewall-cmd --reload
 | 变量 | 必填 | 说明 |
 |------|------|------|
 | `ZFUNDPILOT_USERNAME` | 可选，默认 `admin` | **仅首次启动**时用于初始化登录用户名。首次启动后存储在 `data/auth.json`，之后可通过设置页修改 |
-| `ZFUNDPILOT_PASSWORD` | 服务器部署必填 | **仅首次启动**时用于初始化密码哈希。首次启动后密码存储在 `data/auth.json`，之后可通过设置页修改 |
+| `ZFUNDPILOT_PASSWORD` | 服务器部署必填 | **仅首次启动**时用于初始化密码哈希。首次启动后密码存储在 `data/auth.json`（bcrypt），之后可通过设置页修改 |
 | `ZFUNDPILOT_SECRET` | 建议 | **仅首次启动**时用于初始化 token 签名密钥，首次启动后自动生成并存储在 `data/auth.json` |
 | `ZFUNDPILOT_NAV_CRON` | 可选，默认 `0 21 * * 1-5` | 净值定时更新 cron 表达式（工作日 21:00）。可在设置页面暂停/启用 |
 | `ZFUNDPILOT_HOME` | 可选 | 数据目录位置，默认 `/app/data` |
+| `ZFUNDPILOT_TRUSTED_PROXIES` | 可选 | 反向代理信任网段，逗号分隔 CIDR（如 `127.0.0.1/32,10.0.0.0/8`）。仅在 Nginx/Caddy 等反代后需配置，用于登录限流正确读取客户端 IP |
 
 > ⚠️ 服务器对外暴露时**务必设置 `ZFUNDPILOT_PASSWORD`**，否则任何人都能查看你的持仓。
+
+### 3.8 反向代理 + HTTPS（可选）
+
+如果使用域名，推荐用 Caddy 自动 HTTPS：
+
+```caddyfile
+fund.example.com {
+    reverse_proxy localhost:8080
+}
+```
+
+Caddy 自动签发 + 续期 Let's Encrypt 证书。同时需设置 `ZFUNDPILOT_TRUSTED_PROXIES` 让应用正确识别客户端 IP：
+
+```bash
+ZFUNDPILOT_TRUSTED_PROXIES=127.0.0.1/32
+```
+
+如果使用 Nginx：
+
+```nginx
+server {
+    listen 80;
+    server_name fund.example.com;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name fund.example.com;
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+> ⚠️ 如果公网直接暴露 uvicorn 端口（无反代），**不要设置** `ZFUNDPILOT_TRUSTED_PROXIES`，否则客户端可伪造 X-Forwarded-For 头绕过登录限流。
 
 ---
 

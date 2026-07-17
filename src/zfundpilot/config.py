@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import secrets as _secrets
+
+import bcrypt
 
 # ---------------------------------------------------------------------------
 # 路径配置
@@ -109,14 +112,27 @@ FETCH_MAX_RETRIES = 2
 AUTH_DATA_PATH = os.path.join(DATA_DIR, "auth.json")
 
 
-def _hash_password(password: str) -> str:
+def _hash_password_sha256(password: str) -> str:
     """SHA-256 哈希密码。"""
     return hashlib.sha256(password.encode()).hexdigest()
 
 
+def _hash_password(password: str) -> str:
+    """bcrypt 哈希密码（cost=12）。"""
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
+
+
 def verify_password(password: str, password_hash: str) -> bool:
-    """验证密码与哈希是否匹配（常量时间比较）。"""
-    return hmac.compare_digest(_hash_password(password), password_hash)
+    """验证密码与哈希是否匹配。
+
+    bcrypt（$2b$）优先；回退 SHA-256 hex。常量时间比较。
+    """
+    if password_hash.startswith("$2b$"):
+        try:
+            return bcrypt.checkpw(password.encode(), password_hash.encode())
+        except Exception:
+            return False
+    return hmac.compare_digest(_hash_password_sha256(password), password_hash)
 
 
 def _load_auth_data() -> dict | None:
@@ -141,6 +157,16 @@ def update_password(new_password: str) -> None:
     global AUTH_PASSWORD_HASH, AUTH_SECRET
     AUTH_PASSWORD_HASH = _hash_password(new_password)
     AUTH_SECRET = _secrets.token_hex(32)
+    _save_auth_data({"username": AUTH_USERNAME, "password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
+
+
+def migrate_password_hash(new_password: str) -> None:
+    """只更新密码哈希为 bcrypt，不刷新 AUTH_SECRET（不踢掉其他设备）。
+
+    用于用户登录时从旧 SHA-256 无感升级为 bcrypt。
+    """
+    global AUTH_PASSWORD_HASH
+    AUTH_PASSWORD_HASH = _hash_password(new_password)
     _save_auth_data({"username": AUTH_USERNAME, "password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
 
 
@@ -180,6 +206,13 @@ AUTH_ENABLED = bool(AUTH_PASSWORD_HASH)
 
 # token 有效期（秒），默认 7 天
 AUTH_TOKEN_MAX_AGE = 7 * 24 * 3600
+
+# 信任代理网段（用于登录限流时安全读取 X-Forwarded-For 头）
+# 逗号分隔 CIDR，默认空 = 不信任任何代理
+TRUSTED_PROXIES: list[ipaddress.IPv4Network] = []
+_env_trusted = os.environ.get("ZFUNDPILOT_TRUSTED_PROXIES", "")
+if _env_trusted:
+    TRUSTED_PROXIES = [ipaddress.IPv4Network(cidr.strip()) for cidr in _env_trusted.split(",") if cidr.strip()]
 
 
 # ---------------------------------------------------------------------------

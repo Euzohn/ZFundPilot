@@ -249,13 +249,16 @@ def test_connection() -> dict:
             provider = detect_provider(config.AI_BASE_URL)
             has_search = config.AI_WEB_SEARCH and provider in ("kimi", "zhipu", "qwen", "deepseek")
             return {"ok": True, "provider": provider, "model": config.AI_MODEL, "has_search": has_search}
-        return {"ok": False, "error": f"API 返回 {resp.status_code}: {resp.text[:300]}"}
-    except httpx.ConnectError as e:
-        return {"ok": False, "error": f"连接失败: {e}"}
+        logger.error("AI 测试连接返回 %s: %s", resp.status_code, resp.text[:300])
+        return {"ok": False, "error": f"API 返回 {resp.status_code}"}
+    except httpx.ConnectError:
+        logger.exception("AI 测试连接失败（网络错误）")
+        return {"ok": False, "error": "连接失败，请检查 Base URL 或网络"}
     except httpx.TimeoutException:
         return {"ok": False, "error": "请求超时（15s）"}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    except Exception:
+        logger.exception("AI 测试连接异常")
+        return {"ok": False, "error": "连接失败，请稍后再试"}
 
 
 # ---------------------------------------------------------------------------

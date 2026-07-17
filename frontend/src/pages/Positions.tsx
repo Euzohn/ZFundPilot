@@ -32,9 +32,9 @@ export default function Positions() {
 
   const estimateMap = useMemo(() => {
     if (!estimate) return {}
-    const m: Record<string, number> = {}
+    const m: Record<string, { gszzl: number; pnl: number; shares: number }> = {}
     for (const f of estimate.funds) {
-      if (f.ok) m[f.fund_code] = f.gszzl
+      if (f.ok) m[f.fund_code] = { gszzl: f.gszzl, pnl: f.estimated_pnl, shares: f.held_shares }
     }
     return m
   }, [estimate])
@@ -230,7 +230,7 @@ export default function Positions() {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {estimateMap[code] != null ? (
-                          <span className={pnlColor(estimateMap[code] / 100)}>{pct(estimateMap[code] / 100)}</span>
+                          <span className={pnlColor(estimateMap[code].gszzl / 100)}>{pct(estimateMap[code].gszzl / 100)}</span>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
@@ -267,14 +267,20 @@ export default function Positions() {
                   const totalCost = sortedRows.reduce((s, [, m]) => s + m.cost, 0)
                   const totalPnl = sortedRows.reduce((s, [, m]) => s + m.pnl, 0)
                   const totalRet = totalCost ? totalValue / totalCost - 1 : null
+                  const totalEstPnl = sortedRows.reduce((s, [code, m]) => {
+                    const e = estimateMap[code]
+                    if (!e?.shares) return s
+                    return s + (m.shares / e.shares) * e.pnl
+                  }, 0)
+                  const hasFilteredEstimate = sortedRows.some(([code]) => estimateMap[code] != null)
                   return (
                     <TableRow className="border-t-2 border-slate-300 bg-slate-100/80 [&>td]:py-2.5 [&>td]:font-bold [&>td]:text-sm">
                       <TableCell colSpan={3} className="text-slate-700">合计（{sortedRows.length} 只）</TableCell>
                       <TableCell className="text-right tabular-nums text-slate-800">{money(totalValue)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalPnl)}`}>{money(totalPnl)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
-                      <TableCell className={`text-right tabular-nums ${hasEstimate ? pnlColor(estimate!.total_estimated_pnl) : ""}`}>
-                        {hasEstimate ? signedMoney(estimate!.total_estimated_pnl) : "—"}
+                      <TableCell className={`text-right tabular-nums ${hasFilteredEstimate ? pnlColor(totalEstPnl) : ""}`}>
+                        {hasFilteredEstimate ? signedMoney(totalEstPnl) : "—"}
                       </TableCell>
                       <TableCell colSpan={3}></TableCell>
                     </TableRow>

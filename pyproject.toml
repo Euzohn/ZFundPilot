@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zfundpilot"
-version = "0.5.1"
+version = "0.6.0"
 description = "个人基金分析与风险管理系统"
 readme = "README.md"
 license = {text = "MIT"}

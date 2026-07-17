@@ -4,7 +4,7 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [0.6.0] - 2026-07-17
 
 ### Added
 - 基金实时估值：调用天天基金 fundgz API，交易日内实时估算基金涨跌幅

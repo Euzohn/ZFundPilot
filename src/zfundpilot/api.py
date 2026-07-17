@@ -26,7 +26,7 @@ from . import __version__ as APP_VERSION
 from . import ai, analysis, config, data_io, db, fetch_estimate, fetch_fund, rebalance, risk, scheduler
 from .models import Fund, Transaction
 
-app = FastAPI(title="ZFundPilot API", version="0.5.1")
+app = FastAPI(title="ZFundPilot API", version="0.6.0")
 
 _nav_update_state: dict[str, Any] = {
     "running": False,

@@ -187,7 +187,7 @@ export default function Positions() {
                     <SortHeader field="value" className="text-right">市值</SortHeader>
                     <SortHeader field="pnl" className="text-right">浮动盈亏</SortHeader>
                     <SortHeader field="return" className="text-right">收益率</SortHeader>
-                    <TableHead className="text-right">涨跌</TableHead>
+                    <TableHead className="text-right">日内涨跌</TableHead>
                     <SortHeader field="channels" className="text-right">渠道</SortHeader>
                     <TableHead className="w-20">操作</TableHead>
                     <TableHead className="w-8"></TableHead>

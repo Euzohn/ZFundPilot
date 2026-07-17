@@ -545,3 +545,24 @@ if __name__ == "__main__":
         tag = "" if p.is_open else "[已清仓]"
         print(f"  {p.fund_name[:18]:20} {p.channel:6} 份额{p.held_shares:.1f} "
               f"浮动{p.unrealized_pnl:.1f} 已实现{p.realized_pnl:.1f} {tag}")
+
+
+def backfill_transaction_navs() -> int:
+    """回填缺失净值的交易记录。净值更新后自动调用。
+
+    查找 nav IS NULL 的交易，按日期查净值，补全 nav 并计算缺失的份额/金额。
+    现金分红的 nav 是每份分红金额（非基金净值），不自动回填。
+    """
+    txs = db.get_transactions_without_nav()
+    count = 0
+    for tx in txs:
+        if tx.action == "dividend":
+            continue
+        nav_point = db.get_nav_on_or_after(tx.fund_code, tx.date)
+        if not nav_point:
+            continue
+        tx.nav = float(nav_point["nav"])
+        tx.normalize()
+        db.update_transaction(tx)
+        count += 1
+    return count

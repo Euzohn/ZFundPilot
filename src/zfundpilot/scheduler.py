@@ -45,6 +45,8 @@ def _run_nav_update() -> None:
             _last_results = []
             return
         results = fetch_fund.update_all_holdings_nav(codes=codes)
+        analysis.backfill_transaction_navs()
+        analysis.clear_analysis_cache()
         _last_results = [r.__dict__ for r in results]
         _last_run = datetime.now(_TZ)
         ok = sum(1 for r in results if r.ok)

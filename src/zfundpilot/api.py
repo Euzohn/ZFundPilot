@@ -583,7 +583,7 @@ def update_nav() -> dict[str, Any]:
                 _nav_update_state["current"] = code
 
             results = fetch_fund.update_all_holdings_nav(codes=codes, progress=_progress)
-            _backfill_transaction_navs()
+            analysis.backfill_transaction_navs()
             analysis.clear_analysis_cache()
             _nav_update_state["results"] = [r.__dict__ for r in results]
         except Exception as exc:  # noqa: BLE001
@@ -601,27 +601,9 @@ def nav_update_status() -> dict[str, Any]:
     return dict(_nav_update_state)
 
 
-def _backfill_transaction_navs() -> int:
-    """回填缺失净值的交易记录。净值更新后自动调用。
-
-    查找 nav IS NULL 的交易，按日期查净值，补全 nav 并计算缺失的份额/金额。
-    现金分红的 nav 是每份分红金额（非基金净值），不自动回填。
-    """
-    txs = db.get_transactions_without_nav()
-    count = 0
-    for tx in txs:
-        if tx.action == "dividend":
-            continue  # 分红的 nav 含义不同，不自动回填
-        nav_point = db.get_nav_on_or_after(tx.fund_code, tx.date)
-        if not nav_point:
-            continue
-        tx.nav = float(nav_point["nav"])
-        tx.normalize()
-        db.update_transaction(tx)
-        count += 1
-    return count
-
-
+# ---------------------------------------------------------------------------
+# 净值
+# ---------------------------------------------------------------------------
 @app.get("/api/nav/{code}")
 def get_nav_history(code: str, date: str | None = None) -> list[dict[str, Any]]:
     if date:

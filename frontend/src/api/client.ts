@@ -62,7 +62,7 @@ async function downloadWithAuth(url: string, filename: string) {
 
 export const api = {
   // Auth
-  getAuthStatus: () => request<{ required: boolean; username: string }>("/auth/status"),
+  getAuthStatus: () => request<{ required: boolean; username: string; version: string }>("/auth/status"),
   login: (username: string, password: string) =>
     request<{ ok: boolean; token: string; message: string }>("/auth/login", {
       method: "POST",

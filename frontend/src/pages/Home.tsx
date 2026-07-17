@@ -144,6 +144,7 @@ function usePrefersReducedMotion() {
 export default function Home() {
   const navigate = useNavigate()
   const { data: summary, loading, reload } = useApi<PortfolioSummary>(() => api.getSummary())
+  const { data: authStatus } = useApi(() => api.getAuthStatus(), [])
   const [now, setNow] = useState(new Date())
   const [lang, setLang] = useState<Lang>(() => (localStorage.getItem("zfund_lang") as Lang) || "zh")
   const reducedMotion = usePrefersReducedMotion()
@@ -408,7 +409,7 @@ export default function Home() {
             <div className="flex items-center gap-3 min-w-0">
               <span aria-hidden="true" className="font-mono text-sm text-[#FF2A2A]">+</span>
               <span className="font-mono text-xs uppercase tracking-wider text-white/60">ZFUNDPILOT ®</span>
-              <span className="font-mono text-xs uppercase tracking-wider text-white/30">v0.5.0</span>
+              <span className="font-mono text-xs uppercase tracking-wider text-white/30">v{authStatus?.version ?? "..."}</span>
             </div>
             <a
               href={GITHUB_URL}

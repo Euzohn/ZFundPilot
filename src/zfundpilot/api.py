@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
+from . import __version__ as APP_VERSION
 from . import ai, analysis, config, data_io, db, fetch_estimate, fetch_fund, rebalance, risk, scheduler
 from .models import Fund, Transaction
 
@@ -112,7 +113,7 @@ def _shutdown() -> None:
 @app.get("/api/auth/status")
 def auth_status() -> dict[str, Any]:
     """返回是否需要登录及当前用户名。前端据此决定是否展示登录页。"""
-    return {"required": config.AUTH_ENABLED, "username": config.AUTH_USERNAME}
+    return {"required": config.AUTH_ENABLED, "username": config.AUTH_USERNAME, "version": APP_VERSION}
 
 
 @app.post("/api/auth/login")

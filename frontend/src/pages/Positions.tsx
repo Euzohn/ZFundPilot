@@ -32,9 +32,9 @@ export default function Positions() {
 
   const estimateMap = useMemo(() => {
     if (!estimate) return {}
-    const m: Record<string, { gszzl: number; pnl: number; shares: number }> = {}
+    const m: Record<string, { gszzl: number; pnl: number; shares: number; ok: boolean }> = {}
     for (const f of estimate.funds) {
-      if (f.ok) m[f.fund_code] = { gszzl: f.gszzl, pnl: f.estimated_pnl, shares: f.held_shares }
+      if (f.ok || f.gszzl !== 0) m[f.fund_code] = { gszzl: f.gszzl, pnl: f.estimated_pnl, shares: f.held_shares, ok: f.ok }
     }
     return m
   }, [estimate])
@@ -187,7 +187,7 @@ export default function Positions() {
                     <SortHeader field="value" className="text-right">市值</SortHeader>
                     <SortHeader field="pnl" className="text-right">浮动盈亏</SortHeader>
                     <SortHeader field="return" className="text-right">收益率</SortHeader>
-                    <TableHead className="text-right">估算涨跌</TableHead>
+                    <TableHead className="text-right">涨跌</TableHead>
                     <SortHeader field="channels" className="text-right">渠道</SortHeader>
                     <TableHead className="w-20">操作</TableHead>
                     <TableHead className="w-8"></TableHead>
@@ -230,7 +230,10 @@ export default function Positions() {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {estimateMap[code] != null ? (
-                          <span className={pnlColor(estimateMap[code].gszzl / 100)}>{pct(estimateMap[code].gszzl / 100)}</span>
+                          <span className={cn(pnlColor(estimateMap[code].gszzl / 100), !estimateMap[code].ok && "opacity-70")}>
+                            {pct(estimateMap[code].gszzl / 100)}
+                            {estimateMap[code].ok && <span className="ml-0.5 text-[10px] opacity-50">估</span>}
+                          </span>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}

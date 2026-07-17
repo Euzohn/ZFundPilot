@@ -446,15 +446,25 @@ def get_estimates() -> dict[str, Any]:
             if est.gztime > latest_gztime:
                 latest_gztime = est.gztime
         else:
-            est_pnl = 0
-            prev_value = 0
+            # 估算不可用时，从 DB 最近两条净值算实际涨跌
+            latest_nav = db.get_latest_nav(est.fund_code)
+            prev_nav = db.get_prev_nav(est.fund_code)
+            if latest_nav and prev_nav:
+                est.dwjz = float(prev_nav["nav"])
+                est.gsz = float(latest_nav["nav"])
+                est.gszzl = round((est.gsz - est.dwjz) / est.dwjz * 100, 2) if est.dwjz else 0
+                est_pnl = round(shares * (est.gsz - est.dwjz), 2)
+                prev_value = round(shares * est.dwjz, 2)
+            else:
+                est_pnl = 0
+                prev_value = 0
         funds.append({
             "fund_code": est.fund_code,
             "fund_name": est.fund_name or info.get("name", est.fund_code),
             "held_shares": shares,
-            "dwjz": est.dwjz if est.ok else 0,
-            "gsz": est.gsz if est.ok else 0,
-            "gszzl": est.gszzl if est.ok else 0,
+            "dwjz": est.dwjz,
+            "gsz": est.gsz,
+            "gszzl": est.gszzl,
             "gztime": est.gztime,
             "estimated_pnl": est_pnl,
             "prev_value": prev_value,

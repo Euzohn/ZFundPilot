@@ -9,14 +9,29 @@
 ### Added
 - 基金实时估值：调用天天基金 fundgz API，交易日内实时估算基金涨跌幅
   - Overview 首行新增「今日估算」卡（组合估算 P&L + 涨幅，60s 自动刷新）
-  - Positions 新增「估算涨跌」列，合计行显示总估算 P&L
-  - FundDetail 最新净值卡合并显示估算净值 + 涨跌幅
+  - Positions 新增「估算涨跌」列，合计行显示总估算 P&L，跟随渠道筛选正确分摊
+  - FundDetail 最新净值卡合并显示估算净值 + 涨跌幅 + 完整日期信息
   - 真实净值公布后估算自动失效（`jzrq == gztime` 日期则标记已更新）
+  - 非交易时段 / 盘前自动隐藏估算（`gztime` 日期 != 今天则标记非交易时段）
+  - 净值更新后 / DB 净值已超过估算基准时不显示估算
 - 侧边栏底部新增 GitHub 链接
 - NavUpdate 净值更新中用 LogoRipple 动画替换 Progress 进度条
+- 净值更新改为后端异步 + 前端轮询（1.5s 轮询 `/api/nav/update/status`），切换页面不影响拉取进度，回来自动恢复
+- 首页版本号从后端 API 获取（`/api/auth/status` 的 version 字段），不再写死
+- update.sh 末尾打印常用命令（docker 操作、定时任务状态查询、执行日志查询）
 
 ### Changed
 - FundDetail 估算信息合并至「最新净值」卡子文字，恢复 4×2 网格布局
+- 首页收益标签根据 `as_of_date` 动态显示「今日收益」/「昨日收益」
+- `/api/nav/update` 改为异步端点，新增 `GET /api/nav/update/status` 返回实时进度
+
+### Fixed
+- FundEstimate 字段缺默认值导致 `/api/estimate` 500 错误
+- 定时任务拉取净值后未回填 T+1 交易（`backfill_transaction_navs`）且未清除分析缓存，现与手动拉取行为一致
+
+### Performance
+- Dockerfile 构建缓存优化：pip install 移至 COPY src/ 之前，源码变更不再重装依赖
+- update.sh builder prune 改为 `--keep-storage 1g`，保留最近构建缓存加速增量构建
 
 ## [0.5.1] - 2026-07-16
 

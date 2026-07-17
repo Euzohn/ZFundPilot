@@ -425,9 +425,11 @@ def get_estimates() -> dict[str, Any]:
             continue
         m = merged.setdefault(p.fund_code, {
             "code": p.fund_code, "name": p.fund_name,
-            "shares": 0.0,
+            "shares": 0.0, "latest_date": None,
         })
         m["shares"] += p.held_shares
+        if p.latest_date and (not m["latest_date"] or p.latest_date > m["latest_date"]):
+            m["latest_date"] = p.latest_date
 
     estimates = fetch_estimate.fetch_estimates(list(merged.keys()))
 
@@ -438,6 +440,11 @@ def get_estimates() -> dict[str, Any]:
     for est in estimates:
         info = merged.get(est.fund_code, {})
         shares = info.get("shares", 0)
+        # DB 净值已超过估算基准日期 → 估算已过时，用实际值
+        latest_date = info.get("latest_date")
+        if est.ok and latest_date and est.jzrq and latest_date > est.jzrq:
+            est.ok = False
+            est.message = "净值已更新"
         if est.ok:
             est_pnl = round(shares * (est.gsz - est.dwjz), 2)
             prev_value = round(shares * est.dwjz, 2)

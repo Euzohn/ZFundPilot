@@ -16,7 +16,7 @@ import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import type { AIUsageStats, AIUsageDaily, KeywordMaps, KeywordEntry, SchedulerStatus } from "@/api/types"
+import type { AIUsageStats, AIUsageDaily, AuditLog, KeywordMaps, KeywordEntry, SchedulerStatus } from "@/api/types"
 import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
@@ -64,6 +64,82 @@ function Sparkline({ data }: { data: number[] }) {
         <Line type="monotone" dataKey="v" stroke="hsl(var(--primary))" strokeWidth={1.5} dot={false} />
       </LineChart>
     </ResponsiveContainer>
+  )
+}
+
+const AUDIT_LOG_LABELS: Record<string, string> = {
+  login_success: "登录成功",
+  login_failed: "登录失败",
+  change_password: "修改密码",
+  change_username: "修改用户名",
+  delete_transaction: "删除交易",
+  delete_all_transactions: "清空流水",
+  clear_then_import: "导入 CSV（清空）",
+  update_ai_config: "修改 AI 配置",
+  scheduler_toggle: "定时任务开关",
+  scheduler_cron_change: "修改定时 Cron",
+}
+
+function AuditLogPanel() {
+  const { data: logs, loading, error, reload } = useApi<AuditLog[]>(() => api.getAuditLogs(100), [])
+
+  return (
+    <Card className="mt-4">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Clock className="h-5 w-5 text-blue-500" />
+          审计日志
+        </CardTitle>
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">最近 100 条敏感操作记录</p>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={reload} disabled={loading}>
+            <RefreshCw className={cn("mr-1 h-3 w-3", loading && "animate-spin")} />
+            {loading ? "加载中..." : "刷新"}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {error ? (
+          <div className="flex items-center gap-2 py-2">
+            <span className="text-xs text-loss-600">加载失败</span>
+            <button onClick={reload} className="text-xs text-blue-600 hover:underline">重试</button>
+          </div>
+        ) : !logs ? (
+          <div className="flex justify-center py-4"><LogoSpinner className="h-8 w-8" /></div>
+        ) : logs.length === 0 ? (
+          <p className="py-4 text-center text-xs text-muted-foreground">暂无审计日志</p>
+        ) : (
+          <div className="overflow-x-auto rounded-md border max-h-96 overflow-y-auto">
+            <Table>
+              <TableHeader className="sticky top-0 bg-white">
+                <TableRow>
+                  <TableHead className="text-xs">时间</TableHead>
+                  <TableHead className="text-xs">IP</TableHead>
+                  <TableHead className="text-xs">用户</TableHead>
+                  <TableHead className="text-xs">操作</TableHead>
+                  <TableHead className="text-xs">详情</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {logs.map((log) => (
+                  <TableRow key={log.id}>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">
+                      {log.ts.slice(5, 19).replace("T", " ")}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">{log.ip || "—"}</TableCell>
+                    <TableCell className="text-xs">{log.username || "—"}</TableCell>
+                    <TableCell className="text-xs">{AUDIT_LOG_LABELS[log.action] || log.action}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
+                      {log.detail || "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -126,6 +202,7 @@ export default function Settings() {
 
   // Auth
   const { data: authStatus } = useApi(() => api.getAuthStatus(), [])
+  const { data: authMe } = useApi(() => api.getMe(), [])
   const [currentPwd, setCurrentPwd] = useState("")
   const [newPwd, setNewPwd] = useState("")
   const [confirmPwd, setConfirmPwd] = useState("")
@@ -384,7 +461,7 @@ export default function Settings() {
                   账户与安全
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  当前用户名：<span className="font-medium text-slate-700">{authStatus?.username || "—"}</span>
+                  当前用户名：<span className="font-medium text-slate-700">{authMe?.username || "—"}</span>
                 </p>
               </CardHeader>
             <CardContent className="space-y-5">
@@ -449,6 +526,9 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* ── 审计日志 ── */}
+            <AuditLogPanel />
           </TabsContent>
         )}
 

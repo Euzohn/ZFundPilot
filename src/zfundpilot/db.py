@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
@@ -109,6 +110,16 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
             CREATE INDEX IF NOT EXISTS idx_nav_code_date
                 ON nav_history(fund_code, date);
+
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts         TEXT NOT NULL,
+                ip         TEXT,
+                username   TEXT,
+                action     TEXT NOT NULL,
+                detail     TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts DESC);
             """
         )
     _migrate_add_columns()
@@ -529,6 +540,31 @@ def get_all_preferences() -> dict[str, str]:
     with get_connection() as conn:
         rows = conn.execute("SELECT key, value FROM preferences").fetchall()
     return {r["key"]: r["value"] for r in rows}
+
+
+# ---------------------------------------------------------------------------
+# 审计日志
+# ---------------------------------------------------------------------------
+def log_audit(action: str, ip: str | None = None,
+              username: str | None = None,
+              detail: dict | None = None) -> None:
+    """写入审计日志。"""
+    with get_connection() as conn:
+        from datetime import datetime, timezone
+        conn.execute(
+            "INSERT INTO audit_log(ts, ip, username, action, detail) VALUES(?,?,?,?,?)",
+            (datetime.now(timezone.utc).isoformat(), ip, username, action,
+             json.dumps(detail, ensure_ascii=False) if detail else None),
+        )
+
+
+def fetch_audit_logs(limit: int = 100) -> list[dict]:
+    """返回最近 N 条审计日志。"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 if __name__ == "__main__":

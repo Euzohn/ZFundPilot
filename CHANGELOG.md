@@ -4,6 +4,28 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.7.0] - 2026-07-18
+
+### Added
+- 登录速率限制：5 分钟内失败 5 次锁定 15 分钟，返回 429 Too Many Requests
+  - 安全读取 X-Forwarded-For（需配置 `ZFUNDPILOT_TRUSTED_PROXIES`），默认直接用 `request.client.host`
+- 密码哈希升级 bcrypt（cost=12）：兼容旧 SHA-256，登录成功后无感自动 rehash
+- 审计日志：`audit_log` 表记录敏感操作，设置页可查看最近 100 条
+  - 记录：登录成功/失败、改密、改用户名、删交易、清空流水、CSV 导入清空、AI 配置修改、定时任务开关与 cron 变更
+  - `detail` 字段不记密码 / API key 明文
+- `/api/auth/me` 端点（需认证），返回当前登录用户名
+- 新增环境变量 `ZFUNDPILOT_TRUSTED_PROXIES`（逗号分隔 CIDR，默认空）
+- DEPLOY.md 新增「反向代理 + HTTPS（可选）」章节，给出 Caddy 示例
+
+### Changed
+- 隐藏 username 枚举：`/api/auth/status` 不再返回 `username` 字段，前端登录页不再预填用户名
+- AI 错误脱敏：`test_connection` 和 SSE 对话不再将上游错误详情回传给客户端，改为后端日志记录
+- Settings 页「当前用户名」改从 `/api/auth/me` 获取
+
+### Security
+- 密码哈希：SHA-256 无盐 → bcrypt（cost=12），常时间比较不变
+- 所有 API 错误消息不再暴露上游服务细节
+
 ## [0.6.0] - 2026-07-17
 
 ### Added

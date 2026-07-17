@@ -72,7 +72,7 @@
 - 🏠 **首页门户**：深色主题全屏门户页，品牌展示 + 核心指标 + 快捷入口 + GitHub 链接
 - 📱 **移动端适配**：抽屉式侧边栏导航、响应式网格布局
 - 🎨 **涨跌颜色切换**：支持「绿涨红跌（国际惯例）」/「红涨绿跌（A 股惯例）」双主题，服务端同步
-- 🔐 **密码认证**：用户名 + 密码双因素登录，HMAC 签名 token，支持设置页在线修改用户名与密码（SHA-256 哈希存储）
+- 🔐 **密码认证**：用户名 + 密码登录，HMAC 签名 token，bcrypt 密码哈希，支持设置页在线修改用户名与密码；登录速率限制防爆破
 
 ## 环境要求
 
@@ -137,10 +137,27 @@ uvicorn zfundpilot.api:app --host 0.0.0.0 --port 8000
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `ZFUNDPILOT_USERNAME` | `admin` | **仅首次启动**时用于初始化登录用户名，之后用户名存在 `data/auth.json`，可通过设置页修改 |
-| `ZFUNDPILOT_PASSWORD` | 空 | **仅首次启动**时用于初始化密码哈希，之后密码存在 `data/auth.json`，可通过设置页修改 |
+| `ZFUNDPILOT_PASSWORD` | 空 | **仅首次启动**时用于初始化密码哈希（bcrypt），之后密码存在 `data/auth.json`，可通过设置页修改 |
 | `ZFUNDPILOT_SECRET` | 自动生成 | **仅首次启动**时用于初始化 token 签名密钥，之后存于 `data/auth.json` |
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式（工作日 21:00），可在设置页面暂停/启用 |
 | `ZFUNDPILOT_HOME` | 项目根 | 数据目录（`data/`）所在位置 |
+| `ZFUNDPILOT_TRUSTED_PROXIES` | 空 | 信任代理网段（逗号分隔 CIDR），仅在 Nginx/Caddy 等反代后配置 |
+
+## 安全
+
+| 措施 | 说明 |
+|------|------|
+| 密码哈希 | bcrypt（cost=12），兼容旧版 SHA-256，登录后自动无感升级 |
+| 登录限流 | 5 分钟内失败 5 次锁定 15 分钟，支持 X-Forwarded-For 安全读取 |
+| 审计日志 | 登录/改密/删交易等敏感操作记入 `audit_log` 表，设置页可查看 |
+| Token 认证 | HMAC-SHA256 签名 token，7 天有效期，改密后旧 token 立即失效 |
+| 错误脱敏 | AI 上游错误细节不暴露给客户端，仅后端日志记录 |
+| 信任代理 | `ZFUNDPILOT_TRUSTED_PROXIES` 环境变量控制，默认空（不信任任何代理） |
+
+### 部署模式
+
+- **纯 IP / 局域网**：设密码即可，默认配置安全（`TRUSTED_PROXIES` 保持空）
+- **域名 + HTTPS**：推荐使用 Caddy 自动 TLS，配置 `TRUSTED_PROXIES` 后登录限流正确识别客户端 IP
 
 ## 使用流程
 

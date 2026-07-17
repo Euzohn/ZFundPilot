@@ -271,3 +271,13 @@ export interface FundEstimate {
   ok: boolean
   message: string
 }
+
+// ── 审计日志 ──
+export interface AuditLog {
+  id: number
+  ts: string
+  ip: string | null
+  username: string | null
+  action: string
+  detail: string | null
+}

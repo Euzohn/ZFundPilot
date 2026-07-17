@@ -72,7 +72,7 @@ Local-first · Auto NAV updates · Return & risk analytics · Portfolio rebalanc
 - 🏠 **Home Portal**: Dark-themed full-screen portal page with branding, key metrics, quick actions, and GitHub link
 - 📱 **Mobile Responsive**: Drawer-style sidebar navigation, responsive grid layout
 - 🎨 **Color Theme Switch**: Toggle between "Green-up/Red-down (International)" and "Red-up/Green-down (A-share)". Synced server-side
-- 🔐 **Password Auth**: Username + password login, HMAC-signed token. In-app username and password changes (SHA-256 hashed storage)
+- 🔐 **Password Auth**: Username + password login, HMAC-signed token, bcrypt password hashing. In-app username and password changes with login rate limiting
 
 ## Requirements
 
@@ -137,10 +137,27 @@ Open http://localhost:8000
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ZFUNDPILOT_USERNAME` | `admin` | Used **only on first launch** to initialize login username. Afterwards stored in `data/auth.json`, changeable via Settings page |
-| `ZFUNDPILOT_PASSWORD` | empty | Used **only on first launch** to initialize password hash. Afterwards stored in `data/auth.json`, changeable via Settings page |
+| `ZFUNDPILOT_PASSWORD` | empty | Used **only on first launch** to initialize password hash (bcrypt). Afterwards stored in `data/auth.json`, changeable via Settings page |
 | `ZFUNDPILOT_SECRET` | auto-generated | Used **only on first launch** to initialize token signing key. Afterwards stored in `data/auth.json` |
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | Cron expression for scheduled NAV updates (weekdays 21:00). Can be paused/enabled in Settings |
 | `ZFUNDPILOT_HOME` | project root | Location of the `data/` directory |
+| `ZFUNDPILOT_TRUSTED_PROXIES` | empty | Trusted proxy CIDRs (comma-separated). Only needed when behind a reverse proxy (Nginx/Caddy) |
+
+## Security
+
+| Measure | Description |
+|---------|-------------|
+| Password Hashing | bcrypt (cost=12), backward-compatible with SHA-256, auto-upgraded on login |
+| Login Rate Limiting | 5 failed attempts within 5 min → 15 min lockout. Supports X-Forwarded-For via trusted proxy config |
+| Audit Log | Sensitive operations logged to `audit_log` table, viewable in Settings |
+| Token Auth | HMAC-SHA256 signed tokens, 7-day expiry, invalidated on password change |
+| Error Sanitization | Upstream AI errors logged server-side, never exposed to client |
+| Trusted Proxy | `ZFUNDPILOT_TRUSTED_PROXIES` controls X-Forwarded-For trust. Empty by default (no proxy) |
+
+### Deployment Modes
+
+- **IP-only / LAN**: Set a password. Default config is safe (leave `TRUSTED_PROXIES` empty)
+- **Domain + HTTPS**: Use Caddy for automatic TLS. Configure `TRUSTED_PROXIES` for correct client IP detection
 
 ## Usage Guide
 

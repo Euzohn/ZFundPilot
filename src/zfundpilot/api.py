@@ -11,7 +11,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
+import logging
 import os
 import threading
 import time
@@ -26,7 +28,9 @@ from . import __version__ as APP_VERSION
 from . import ai, analysis, config, data_io, db, fetch_estimate, fetch_fund, rebalance, risk, scheduler
 from .models import Fund, Transaction
 
-app = FastAPI(title="ZFundPilot API", version="0.6.0")
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="ZFundPilot API", version="0.7.0")
 
 _nav_update_state: dict[str, Any] = {
     "running": False,
@@ -36,6 +40,55 @@ _nav_update_state: dict[str, Any] = {
     "results": [],
     "error": "",
 }
+
+# ---------------------------------------------------------------------------
+# 登录速率限制（in-memory，单 uvicorn worker）
+# ---------------------------------------------------------------------------
+_LOGIN_ATTEMPTS: dict[str, list[float]] = {}
+_LOGIN_WINDOW = 300       # 5 分钟滑动窗口
+_LOGIN_MAX_FAILURES = 5   # 窗口内最多失败次数
+_LOGIN_LOCKOUT = 900      # 锁定时间（15 分钟）
+
+
+def _get_client_ip(request: Request) -> str:
+    """安全获取客户端 IP。
+
+    仅在 request.client.host 命中 TRUSTED_PROXIES 时读取 X-Forwarded-For 头，
+    否则直接用 request.client.host（防止客户端伪造 IP 绕过限流）。
+    """
+    client_host = request.client.host if request.client else "unknown"
+    try:
+        addr = ipaddress.IPv4Address(client_host)
+    except ipaddress.AddressValueError:
+        return client_host
+    if any(addr in net for net in config.TRUSTED_PROXIES):
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            return xff.split(",")[0].strip()
+    return client_host
+
+
+def _check_rate_limit(ip: str) -> tuple[bool, int]:
+    """检查 IP 是否超出登录失败限制。
+
+    返回 (允许尝试, 剩余锁定秒数)。
+    """
+    now = time.time()
+    attempts = [t for t in _LOGIN_ATTEMPTS.get(ip, []) if now - t < _LOGIN_LOCKOUT]
+    if len(attempts) >= _LOGIN_MAX_FAILURES:
+        remaining = int(_LOGIN_LOCKOUT - (now - attempts[-1]))
+        return False, max(remaining, 0)
+    return True, 0
+
+
+def _record_failed_login(ip: str) -> None:
+    now = time.time()
+    _LOGIN_ATTEMPTS.setdefault(ip, []).append(now)
+    _LOGIN_ATTEMPTS[ip] = [t for t in _LOGIN_ATTEMPTS[ip] if now - t < _LOGIN_LOCKOUT]
+
+
+def _clear_login_attempts(ip: str) -> None:
+    _LOGIN_ATTEMPTS.pop(ip, None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -122,24 +175,58 @@ def _shutdown() -> None:
 # ---------------------------------------------------------------------------
 @app.get("/api/auth/status")
 def auth_status() -> dict[str, Any]:
-    """返回是否需要登录及当前用户名。前端据此决定是否展示登录页。"""
-    return {"required": config.AUTH_ENABLED, "username": config.AUTH_USERNAME, "version": APP_VERSION}
+    """返回是否需要登录。前端据此决定是否展示登录页。"""
+    return {"required": config.AUTH_ENABLED, "version": APP_VERSION}
+
+
+@app.get("/api/auth/me")
+def auth_me(request: Request) -> dict[str, Any]:
+    """返回当前登录用户信息（需 token 认证）。"""
+    return {"username": config.AUTH_USERNAME}
 
 
 @app.post("/api/auth/login")
-def auth_login(body: LoginRequest) -> dict[str, Any]:
+def auth_login(request: Request, body: LoginRequest) -> dict[str, Any]:
     """验证用户名 + 密码，返回 token。"""
     if not config.AUTH_ENABLED:
         return {"ok": True, "token": "", "message": "未设置密码，无需登录"}
+
+    ip = _get_client_ip(request)
+    allowed, retry_after = _check_rate_limit(ip)
+    if not allowed:
+        db.log_audit("login_failed", ip=ip, username=body.username,
+                      detail={"reason": "rate_limited", "retry_after": retry_after})
+        return JSONResponse(
+            status_code=429,
+            content={"detail": f"尝试次数过多，请 {retry_after} 秒后再试",
+                     "retry_after": retry_after},
+        )
+
     if body.username != config.AUTH_USERNAME:
+        _record_failed_login(ip)
+        db.log_audit("login_failed", ip=ip, username=body.username,
+                      detail={"reason": "wrong_username"})
         raise HTTPException(401, "用户名或密码错误")
+
     if not config.verify_password(body.password, config.AUTH_PASSWORD_HASH):
+        _record_failed_login(ip)
+        db.log_audit("login_failed", ip=ip, username=body.username,
+                      detail={"reason": "wrong_password"})
         raise HTTPException(401, "用户名或密码错误")
+
+    _clear_login_attempts(ip)
+    db.log_audit("login_success", ip=ip, username=body.username)
+
+    # 检测旧 SHA-256 hash，无感升级为 bcrypt
+    if not config.AUTH_PASSWORD_HASH.startswith("$2b$"):
+        config.migrate_password_hash(body.password)
+        logger.info("用户 %s 密码哈希自动升级为 bcrypt", body.username)
+
     return {"ok": True, "token": _create_token(), "message": "登录成功"}
 
 
 @app.post("/api/auth/change-password")
-def change_password(body: ChangePasswordRequest) -> dict[str, Any]:
+def change_password(request: Request, body: ChangePasswordRequest) -> dict[str, Any]:
     """修改密码（需已登录 + 当前密码验证）。"""
     if not config.AUTH_ENABLED:
         raise HTTPException(400, "未启用密码认证")
@@ -148,11 +235,12 @@ def change_password(body: ChangePasswordRequest) -> dict[str, Any]:
     if len(body.new_password) < 6:
         raise HTTPException(400, "新密码至少 6 位")
     config.update_password(body.new_password)
+    db.log_audit("change_password", ip=_get_client_ip(request), username=config.AUTH_USERNAME)
     return {"ok": True, "message": "密码已修改，所有设备需要重新登录"}
 
 
 @app.post("/api/auth/change-username")
-def change_username(body: ChangeUsernameRequest) -> dict[str, Any]:
+def change_username(request: Request, body: ChangeUsernameRequest) -> dict[str, Any]:
     """修改用户名（需已登录 + 当前密码验证）。"""
     if not config.AUTH_ENABLED:
         raise HTTPException(400, "未启用密码认证")
@@ -161,7 +249,11 @@ def change_username(body: ChangeUsernameRequest) -> dict[str, Any]:
     new_username = body.new_username.strip()
     if len(new_username) < 2:
         raise HTTPException(400, "用户名至少 2 位")
+    old_username = config.AUTH_USERNAME
     config.update_username(new_username)
+    db.log_audit("change_username", ip=_get_client_ip(request),
+                  username=old_username,
+                  detail={"old_username": old_username, "new_username": new_username})
     return {"ok": True, "message": "用户名已修改，所有设备需要重新登录"}
 
 
@@ -191,10 +283,14 @@ def get_ai_config() -> dict[str, Any]:
 
 
 @app.put("/api/settings/ai")
-def update_ai_config(body: AIConfigUpdate) -> dict[str, Any]:
+def update_ai_config(request: Request, body: AIConfigUpdate) -> dict[str, Any]:
     """保存 AI 配置。api_key 为空时保留原值。"""
     api_key = body.api_key if body.api_key else config.AI_API_KEY
     config.update_ai_config(body.base_url, api_key, body.model, body.web_search)
+    db.log_audit("update_ai_config", ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                  detail={"base_url": body.base_url, "model": body.model,
+                          "web_search": body.web_search, "has_key": bool(body.api_key)})
     return {"ok": True}
 
 
@@ -232,8 +328,9 @@ async def ai_chat(body: ChatRequest):
         try:
             async for chunk in ai.chat_stream(body.messages, context):
                 yield f"data: {chunk}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        except Exception:
+            logger.exception("AI 流式对话异常")
+            yield f"data: {json.dumps({'error': 'AI 服务暂时不可用'})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
@@ -350,16 +447,21 @@ def update_transaction(tx_id: int, body: TransactionCreate) -> dict[str, Any]:
 
 
 @app.delete("/api/transactions/{tx_id}")
-def delete_transaction(tx_id: int) -> dict[str, bool]:
+def delete_transaction(request: Request, tx_id: int) -> dict[str, bool]:
     db.delete_transaction(tx_id)
     analysis.clear_analysis_cache()
+    db.log_audit("delete_transaction", ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                  detail={"tx_id": tx_id})
     return {"ok": True}
 
 
 @app.delete("/api/transactions")
-def delete_all_transactions() -> dict[str, bool]:
+def delete_all_transactions(request: Request) -> dict[str, bool]:
     db.delete_all_transactions()
     analysis.clear_analysis_cache()
+    db.log_audit("delete_all_transactions", ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None)
     return {"ok": True}
 
 
@@ -732,9 +834,12 @@ async def parse_csv(file: UploadFile = File(...)) -> dict[str, Any]:
 
 
 @app.post("/api/csv/import")
-def confirm_import(body: CSVImportConfirm) -> dict[str, Any]:
+def confirm_import(request: Request, body: CSVImportConfirm) -> dict[str, Any]:
     if body.clear_existing:
         db.delete_all_transactions()
+        db.log_audit("clear_then_import", ip=_get_client_ip(request),
+                      username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                      detail={"import_count": len(body.transactions)})
     codes = {t.fund_code for t in body.transactions}
     if body.fetch_meta:
         for code in codes:
@@ -824,6 +929,15 @@ def save_preferences(body: PreferencesBody) -> dict[str, bool]:
 
 
 # ---------------------------------------------------------------------------
+# 审计日志
+# ---------------------------------------------------------------------------
+@app.get("/api/audit")
+def get_audit_logs(limit: int = 100) -> list[dict]:
+    """返回最近 N 条审计日志（需认证）。"""
+    return db.fetch_audit_logs(limit)
+
+
+# ---------------------------------------------------------------------------
 # 定时任务
 # ---------------------------------------------------------------------------
 @app.get("/api/scheduler/status")
@@ -837,9 +951,12 @@ class SchedulerToggleBody(BaseModel):
 
 
 @app.put("/api/scheduler/toggle")
-def toggle_scheduler(body: SchedulerToggleBody) -> dict[str, Any]:
+def toggle_scheduler(request: Request, body: SchedulerToggleBody) -> dict[str, Any]:
     """启用/暂停定时净值更新。"""
     scheduler.set_enabled(body.enabled)
+    db.log_audit("scheduler_toggle", ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                  detail={"enabled": body.enabled})
     return scheduler.get_status()
 
 
@@ -848,9 +965,12 @@ class SchedulerCronBody(BaseModel):
 
 
 @app.put("/api/scheduler/cron")
-def update_scheduler_cron(body: SchedulerCronBody) -> dict[str, Any]:
+def update_scheduler_cron(request: Request, body: SchedulerCronBody) -> dict[str, Any]:
     """更新定时净值更新的 cron 表达式。"""
     scheduler.set_cron(body.cron)
+    db.log_audit("scheduler_cron_change", ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                  detail={"cron": body.cron})
     return scheduler.get_status()
 
 

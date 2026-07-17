@@ -236,19 +236,7 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
         summary.as_of_date = max(
             (p.latest_date for p in open_positions if p.latest_date), default=None)
 
-    # 今日收益 = 每只基金 (latest_nav - prev_nav) × held_shares 直接算
-    daily_pnl = 0.0
-    prev_value = 0.0
-    for p in open_positions:
-        if not p.held_shares or not p.latest_nav:
-            continue
-        prev = db.get_prev_nav(p.fund_code)
-        if prev:
-            prev_nav = float(prev["nav"])
-            daily_pnl += p.held_shares * (p.latest_nav - prev_nav)
-            prev_value += p.held_shares * prev_nav
-    summary.daily_pnl = round(daily_pnl, 2)
-    summary.daily_return = (daily_pnl / prev_value) if prev_value > 0 else 0.0
+    # 今日收益 = 从曲线最后两个点的 Δ市值 - Δ成本 计算（与 Returns 页一致）
 
     # 周/月/年收益 = (Δ市值 - Δ投入成本)，扣除期间资金流入流出
     try:
@@ -286,6 +274,10 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
                         pnl = (end_val - start_val) - (end_cost - start_cost)
                         setattr(summary, pnl_attr, round(pnl, 2))
                         setattr(summary, ret_attr, pnl / start_val)
+            if len(curve) >= 2:
+                pnl = (values[-1] - values[-2]) - (costs[-1] - costs[-2])
+                summary.daily_pnl = round(pnl, 2)
+                summary.daily_return = pnl / values[-2] if values[-2] > 0 else 0.0
     except Exception:  # noqa: BLE001
         pass
 

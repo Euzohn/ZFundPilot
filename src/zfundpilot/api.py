@@ -45,7 +45,8 @@ _nav_update_state: dict[str, Any] = {
 # 登录速率限制（in-memory，单 uvicorn worker）
 # ---------------------------------------------------------------------------
 _LOGIN_ATTEMPTS: dict[str, list[float]] = {}
-_LOGIN_WINDOW = 300       # 5 分钟滑动窗口
+_LOGIN_LOCKED_UNTIL: dict[str, float] = {}
+_LOGIN_WINDOW = 300       # 5 分钟滚动窗口（此窗口内失败次数触发锁定）
 _LOGIN_MAX_FAILURES = 5   # 窗口内最多失败次数
 _LOGIN_LOCKOUT = 900      # 锁定时间（15 分钟）
 
@@ -74,21 +75,26 @@ def _check_rate_limit(ip: str) -> tuple[bool, int]:
     返回 (允许尝试, 剩余锁定秒数)。
     """
     now = time.time()
-    attempts = [t for t in _LOGIN_ATTEMPTS.get(ip, []) if now - t < _LOGIN_LOCKOUT]
-    if len(attempts) >= _LOGIN_MAX_FAILURES:
-        remaining = int(_LOGIN_LOCKOUT - (now - attempts[-1]))
-        return False, max(remaining, 0)
+    lock_expiry = _LOGIN_LOCKED_UNTIL.get(ip, 0)
+    if now < lock_expiry:
+        return False, int(lock_expiry - now)
+    if lock_expiry:
+        _LOGIN_LOCKED_UNTIL.pop(ip, None)
+        _LOGIN_ATTEMPTS.pop(ip, None)
     return True, 0
 
 
 def _record_failed_login(ip: str) -> None:
     now = time.time()
     _LOGIN_ATTEMPTS.setdefault(ip, []).append(now)
-    _LOGIN_ATTEMPTS[ip] = [t for t in _LOGIN_ATTEMPTS[ip] if now - t < _LOGIN_LOCKOUT]
+    _LOGIN_ATTEMPTS[ip] = [t for t in _LOGIN_ATTEMPTS[ip] if now - t < _LOGIN_WINDOW]
+    if len(_LOGIN_ATTEMPTS[ip]) >= _LOGIN_MAX_FAILURES:
+        _LOGIN_LOCKED_UNTIL[ip] = now + _LOGIN_LOCKOUT
 
 
 def _clear_login_attempts(ip: str) -> None:
     _LOGIN_ATTEMPTS.pop(ip, None)
+    _LOGIN_LOCKED_UNTIL.pop(ip, None)
 
 app.add_middleware(
     CORSMiddleware,

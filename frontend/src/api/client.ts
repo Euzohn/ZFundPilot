@@ -41,8 +41,10 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     throw new Error("未登录或登录已过期")
   }
   if (!res.ok) {
-    const msg = await res.text().catch(() => res.statusText)
-    throw new Error(msg || `${res.status}`)
+    const text = await res.text().catch(() => res.statusText)
+    let msg = text || `${res.status}`
+    try { const j = JSON.parse(text); if (j.detail) msg = j.detail } catch { /* not json */ }
+    throw new Error(msg)
   }
   return res.json()
 }

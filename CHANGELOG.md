@@ -26,6 +26,12 @@
 - 密码哈希：SHA-256 无盐 → bcrypt（cost=12），常时间比较不变
 - 所有 API 错误消息不再暴露上游服务细节
 
+### Fixed
+- 登录 429 响应体 JSON 被前端当原始字符串显示（now 解析 `detail` 字段）
+- 速率限制窗口语义修正：`_LOGIN_WINDOW`（5 分钟）用于计数窗口，`_LOGIN_LOCKED_UNTIL` 独立跟踪锁定到期时间（15 分钟）
+- 审计日志时间戳使用 `Asia/Shanghai` 时区（之前存 UTC，前端未转换导致相差 8 小时）
+- `db.py` 内联 `import datetime` 移至文件顶部
+
 ## [0.6.0] - 2026-07-17
 
 ### Added

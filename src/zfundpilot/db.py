@@ -16,6 +16,8 @@ import json
 import sqlite3
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from . import config
 from .models import Fund, NavPoint, Transaction
@@ -550,10 +552,9 @@ def log_audit(action: str, ip: str | None = None,
               detail: dict | None = None) -> None:
     """写入审计日志。"""
     with get_connection() as conn:
-        from datetime import datetime, timezone
         conn.execute(
             "INSERT INTO audit_log(ts, ip, username, action, detail) VALUES(?,?,?,?,?)",
-            (datetime.now(timezone.utc).isoformat(), ip, username, action,
+            (datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(), ip, username, action,
              json.dumps(detail, ensure_ascii=False) if detail else None),
         )
 

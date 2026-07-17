@@ -15,6 +15,7 @@ const t = {
     tagline: "个人基金分析与风险管理系统",
     currentValue: "当前市值",
     dailyPnl: "今日收益",
+    yesterdayPnl: "昨日收益",
     totalPnl: "累计盈亏",
     holdings: "持仓数量",
     units: "只",
@@ -42,6 +43,7 @@ const t = {
     tagline: "Personal Fund Analysis & Risk Management System",
     currentValue: "CURRENT VALUE",
     dailyPnl: "TODAY'S P&L",
+    yesterdayPnl: "YESTERDAY'S P&L",
     totalPnl: "TOTAL P&L",
     holdings: "HOLDINGS",
     units: "UNITS",
@@ -295,7 +297,7 @@ export default function Home() {
           ) : summary ? (
             <div className="grid grid-cols-1 gap-px border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-4">
               <div className="bg-[#0A0A0A] p-6">
-                <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.dailyPnl}</p>
+                <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{summary.as_of_date === todayStr ? tr.dailyPnl : tr.yesterdayPnl}</p>
                 <output className={`mt-2 block font-mono text-2xl font-bold tabular-nums ${pnlColorDark(summary.daily_pnl)}`}>
                   {signedMoney(summary.daily_pnl)}{" "}
                   <span className="text-sm font-normal text-white/40">({pct(summary.daily_return)})</span>

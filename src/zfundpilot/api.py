@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import json
 import os
+import threading
 import time
 from typing import Any
 
@@ -26,6 +27,15 @@ from . import ai, analysis, config, data_io, db, fetch_estimate, fetch_fund, reb
 from .models import Fund, Transaction
 
 app = FastAPI(title="ZFundPilot API", version="0.5.1")
+
+_nav_update_state: dict[str, Any] = {
+    "running": False,
+    "total": 0,
+    "done": 0,
+    "current": "",
+    "results": [],
+    "error": "",
+}
 
 app.add_middleware(
     CORSMiddleware,
@@ -552,13 +562,43 @@ def calc_fund_fee(code: str, action: str = "buy",
 # 净值
 # ---------------------------------------------------------------------------
 @app.post("/api/nav/update")
-def update_nav() -> list[dict[str, Any]]:
+def update_nav() -> dict[str, Any]:
+    if _nav_update_state["running"]:
+        raise HTTPException(409, "净值更新正在进行中")
+
     positions = analysis.calculate_positions()
     codes = [p.fund_code for p in positions if p.is_open]
-    results = fetch_fund.update_all_holdings_nav(codes=codes)
-    _backfill_transaction_navs()
-    analysis.clear_analysis_cache()
-    return [r.__dict__ for r in results]
+
+    def _run() -> None:
+        _nav_update_state["running"] = True
+        _nav_update_state["total"] = len(codes)
+        _nav_update_state["done"] = 0
+        _nav_update_state["current"] = ""
+        _nav_update_state["results"] = []
+        _nav_update_state["error"] = ""
+        try:
+            def _progress(i: int, total: int, code: str) -> None:
+                _nav_update_state["done"] = i
+                _nav_update_state["total"] = total
+                _nav_update_state["current"] = code
+
+            results = fetch_fund.update_all_holdings_nav(codes=codes, progress=_progress)
+            _backfill_transaction_navs()
+            analysis.clear_analysis_cache()
+            _nav_update_state["results"] = [r.__dict__ for r in results]
+        except Exception as exc:  # noqa: BLE001
+            _nav_update_state["error"] = str(exc)
+        finally:
+            _nav_update_state["running"] = False
+            _nav_update_state["current"] = ""
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"ok": True, "message": "净值更新已启动", "total": len(codes)}
+
+
+@app.get("/api/nav/update/status")
+def nav_update_status() -> dict[str, Any]:
+    return dict(_nav_update_state)
 
 
 def _backfill_transaction_navs() -> int:

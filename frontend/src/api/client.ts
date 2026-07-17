@@ -4,10 +4,10 @@ import type {
   CurvePoint,
   DistributionItem,
   EstimateSummary,
-  FetchResult,
   FundEstimate,
   FundMeta,
   LatestNav,
+  NavUpdateStatus,
   PortfolioSummary,
   Position,
   RiskReport,
@@ -197,7 +197,8 @@ export const api = {
   },
 
   // NAV
-  updateNav: () => request<FetchResult[]>("/nav/update", { method: "POST" }),
+  updateNav: () => request<{ ok: boolean; message: string; total: number }>("/nav/update", { method: "POST" }),
+  getNavUpdateStatus: () => request<NavUpdateStatus>("/nav/update/status"),
   getLatestNavs: () => request<LatestNav[]>("/nav/latest"),
   getNavHistory: (code: string) =>
     request<{ fund_code: string; date: string; nav: number; accumulated_nav: number | null; source: string }[]>(`/nav/${encodeURIComponent(code)}`),

@@ -116,6 +116,15 @@ export interface FetchResult {
   latest_nav: number | null
 }
 
+export interface NavUpdateStatus {
+  running: boolean
+  total: number
+  done: number
+  current: string
+  results: FetchResult[]
+  error: string
+}
+
 export interface FundMeta {
   fund_code: string
   fund_name: string

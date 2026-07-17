@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo, useCallback } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { FetchResult, Position } from "@/api/types"
+import type { NavUpdateStatus, Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -15,8 +15,39 @@ import { navStr, localDateStr } from "@/lib/format"
 export default function NavUpdate() {
   // 和持仓页同源：用 getPositions 取数据（含 latest_date / latest_nav）
   const { data: positions, loading, error, reload } = useApi<Position[]>(() => api.getPositions())
-  const [updating, setUpdating] = useState(false)
-  const [results, setResults] = useState<FetchResult[] | null>(null)
+  const [status, setStatus] = useState<NavUpdateStatus | null>(null)
+  const [startError, setStartError] = useState<string | null>(null)
+
+  // 轮询拉取后端进度（从页面挂载时就开始，兼容恢复进行中的更新）
+  useEffect(() => {
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const s = await api.getNavUpdateStatus()
+        if (!cancelled) setStatus(s)
+      } catch {
+        // 忽略单次轮询失败
+      }
+    }
+    poll()
+    const id = setInterval(poll, 1500)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [])
+
+  // 后端完成后自动 reload 持仓数据
+  const wasRunning = useRef(false)
+  useEffect(() => {
+    if (!status) return
+    if (status.running) {
+      wasRunning.current = true
+    } else if (wasRunning.current) {
+      wasRunning.current = false
+      reload()
+    }
+  }, [status, reload])
 
   const todayStr = localDateStr()
 
@@ -72,19 +103,19 @@ export default function NavUpdate() {
   }, [handleVisibilityChange])
 
   const handleUpdate = async () => {
-    setUpdating(true)
-    setResults(null)
+    setStartError(null)
     try {
-      const res = await api.updateNav()
-      setResults(res)
-      await reload()
+      await api.updateNav()
+      // 轮询会自动更新 status
     } catch (e) {
-      alert(`更新失败: ${e}`)
-    } finally {
-      setUpdating(false)
+      setStartError(String(e))
     }
   }
 
+  const updating = !!status?.running
+  const results: NavUpdateStatus["results"] | null = !status?.running && status && status.results.length > 0
+    ? status.results
+    : null
   const okCount = results?.filter((r) => r.ok).length ?? 0
   const failCount = results?.filter((r) => !r.ok).length ?? 0
 
@@ -165,11 +196,24 @@ export default function NavUpdate() {
             {updating ? "更新中..." : "更新全部基金净值"}
           </Button>
 
+          {startError && (
+            <p className="text-sm text-red-600">启动失败：{startError}</p>
+          )}
+
           {updating && (
             <div className="flex flex-col items-center gap-3 py-4">
               <LogoRipple className="h-12 w-12" />
-              <p className="text-sm text-muted-foreground">正在拉取净值数据...</p>
+              <p className="text-sm text-muted-foreground">
+                正在拉取净值数据… ({status?.done ?? 0}/{status?.total ?? 0})
+              </p>
+              {status?.current && (
+                <p className="font-mono text-xs text-muted-foreground/70">{status.current}</p>
+              )}
             </div>
+          )}
+
+          {!updating && status?.error && (
+            <p className="text-sm text-red-600">更新异常：{status.error}</p>
           )}
 
           {results && (

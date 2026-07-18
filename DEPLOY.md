@@ -232,6 +232,65 @@ server {
 
 > ⚠️ 如果公网直接暴露 uvicorn 端口（无反代），**不要设置** `ZFUNDPILOT_TRUSTED_PROXIES`，否则客户端可伪造 X-Forwarded-For 头绕过登录限流。
 
+### 3.9 多实例部署（多人独立使用）
+
+ZFundPilot 是单用户设计，多人共用需**每人一个独立容器**，数据完全隔离：
+
+```bash
+# 用户 A
+cp .env .env.userA
+# 编辑 .env.userA：设置 ZFUNDPILOT_USERNAME / ZFUNDPILOT_PASSWORD / ZFUNDPILOT_NAV_CRON 等
+
+cat > compose.userA.yml << 'EOF'
+services:
+  zfundpilot_a:
+    build: .
+    container_name: zfundpilot_a
+    restart: always
+    env_file: .env.userA
+    ports:
+      - "8081:8000"
+    volumes:
+      - ./data_userA:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+EOF
+
+# 用户 B（重复：换端口、换 env_file、换 data 目录）
+cp .env .env.userB
+# 编辑 .env.userB
+
+cp compose.userA.yml compose.userB.yml
+# 编辑 compose.userB.yml：s/zfundpilot_a/zfundpilot_b/g, s/8081/8082/g, s/data_userA/data_userB/g
+
+# 分别构建启动
+docker compose -f compose.userA.yml up -d --build
+docker compose -f compose.userB.yml up -d --build
+```
+
+| 用户 | 端口 | 数据目录 |
+|------|------|---------|
+| A | `8081` | `data_userA/` |
+| B | `8082` | `data_userB/` |
+
+**隔离保证**：每个容器有独立的 SQLite 数据库、独立的密码/token 密钥、独立的定时任务。互不感知。
+
+**管理命令**：
+
+```bash
+# 各自操作
+docker compose -f compose.userA.yml logs -f
+docker compose -f compose.userA.yml down
+docker compose -f compose.userB.yml up -d
+
+# 批量更新（所有实例使用同一份源码）
+git pull
+for f in compose.user*.yml; do docker compose -f "$f" up -d --build; done
+```
+
 ---
 
 ## 数据备份

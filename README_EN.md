@@ -62,6 +62,7 @@ Local-first · Auto NAV updates · Return & risk analytics · Portfolio rebalanc
 - 🔄 **NAV Updates**: AkShare primary, Tiantian Fund fallback. Auto-fetch fund name/type/sector on code entry
 - 💰 **Return Analysis**: Unrealized/realized P&L, portfolio return curve (cumulative profit + return rate + legend toggle), return rate ranking, calendar view, stacked bar by channel
 - 📊 **Real-time Estimates**: Live fund change estimates during trading hours (Tiantian Fund fundgz API). Portfolio estimated P&L at a glance. Auto-invalidates when actual NAV is published
+- 🔬 **Fund Compare**: Multi-dimensional side-by-side comparison (basic info, fees, scale, manager) + NAV curve overlay + correlation matrix for fund selection
 - 🛡️ **Risk Analysis**: Max drawdown, annualized volatility, concentration (HHI), structure breakdown, risk flags
 - ⚖️ **Rebalancing Advice**: Structure-based optimization suggestions (not trading signals)
 - 🤖 **AI Advisor Chat**: Configure any OpenAI-compatible API for AI-powered advice with web search + portfolio context (supports Zhipu / Kimi / Qwen / DeepSeek). Multi-conversation management, date-time naming + custom rename, AI-assisted transaction entry (with auto fee calculation), token usage tracking
@@ -227,7 +228,7 @@ ZFundPilot/
 │   └── sector_map.json   # Fund code → sector mapping (auto-maintained)
 ├── frontend/             # React + Vite + TypeScript + Tailwind + shadcn/ui
 │   ├── src/
-│   │   ├── pages/        # 10 pages (Home / Overview / Transactions / Positions / FundDetail / NavUpdate / Returns / Risk / AIChat / Settings / Login)
+│   │   ├── pages/        # 12 pages (Home / Overview / Transactions / Positions / FundDetail / NavUpdate / Returns / Risk / FundCompare / AIChat / Settings / Login)
 │   │   ├── components/   # Layout + shadcn/ui + Logo + LogoSpinner + PnLCalendar + FeeBreakdownCard
 │   │   ├── api/          # Typed API client + streamChat (SSE)
 │   │   └── lib/          # Utilities (format / auth / channels / channelColors / colorTheme / useApi)

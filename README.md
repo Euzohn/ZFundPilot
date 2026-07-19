@@ -62,6 +62,7 @@
 - 🔄 **净值更新**：AkShare 优先，天天基金兜底，输入代码自动获取名称/类型/板块
 - 💰 **收益分析**：浮动盈亏、已实现盈亏、组合收益曲线（累计收益 + 收益率 + 图例切换）、收益率排序、日历视图、按渠道堆叠柱状图
 - 📊 **实时估值**：交易日实时估算基金涨跌幅（天天基金 fundgz API），组合估算 P&L 一目了然，真实净值公布后估算自动失效
+- 🔬 **基金对比**：多维度同框对比（基本信息、费率、规模、经理）+ 净值走势叠加 + 相关性矩阵，辅助选基决策
 - 🛡️ **风险分析**：最大回撤、年化波动率、集中度（HHI）、结构占比、风险提示
 - ⚖️ **结构建议**：基于组合结构给出再平衡建议（非交易指令）
 - 🤖 **AI 投顾对话**：配置 OpenAI 兼容 API 后，AI 自动联网搜索最新资讯 + 结合持仓数据给出调仓建议（支持智谱 / Kimi / 通义千问 / DeepSeek）；多对话管理、日期-时间命名 + 自定义重命名、AI 帮你录入交易（含手续费自动计算）、token 用量统计
@@ -228,7 +229,7 @@ ZFundPilot/
 │   └── sector_map.json   # 基金代码→板块映射（自动维护）
 ├── frontend/             # React + Vite + TypeScript + Tailwind + shadcn/ui
 │   ├── src/
-│   │   ├── pages/        # 10 个页面（Home / Overview / Transactions / Positions / FundDetail / NavUpdate / Returns / Risk / AIChat / Settings / Login）
+│   │   ├── pages/        # 12 个页面（Home / Overview / Transactions / Positions / FundDetail / NavUpdate / Returns / Risk / FundCompare / AIChat / Settings / Login）
 │   │   ├── components/   # Layout + shadcn/ui + Logo + LogoSpinner + PnLCalendar + FeeBreakdownCard
 │   │   ├── api/          # 类型化 API client + streamChat (SSE)
 │   │   └── lib/          # 工具函数（format / auth / channels / channelColors / colorTheme / useApi）

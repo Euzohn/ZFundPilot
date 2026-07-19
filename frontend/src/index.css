@@ -147,7 +147,7 @@ html, body {
 }
 
 /* ═════════════════════════════════════════════ */
-/* Logo Animations (B1-B12, skip B5)             */
+/* Logo Animations (B1-B7)                        */
 /* ═════════════════════════════════════════════ */
 
 /* ── B1: 金光入场 (splash) ── */
@@ -188,7 +188,7 @@ html, body {
 }
 .la-splash-zg { animation:la-splash-zg 2.5s ease-in-out infinite; animation-delay:1.8s; }
 
-/* ── B3: 金环扩散 (ripple) ── */
+/* ── B2: 金环扩散 (ripple) ── */
 @keyframes la-ripple-r {
   0% { r:12.5; opacity:0.6; stroke-width:0.8; }
   100% { r:32; opacity:0; stroke-width:2; }
@@ -199,7 +199,7 @@ html, body {
 @keyframes la-ripple-z { 0%,100% { stroke:#F59E0B; } 50% { stroke:#FBBF24; } }
 .la-ripple-z { animation:la-ripple-z 1s ease-in-out infinite; }
 
-/* ── B4: 硬币翻转 (coinflip) ── */
+/* ── B3: 硬币翻转 (coinflip) ── */
 @keyframes la-coinflip-f {
   0% { transform:rotateY(0deg); }
   50% { transform:rotateY(180deg); }
@@ -207,7 +207,7 @@ html, body {
 }
 .la-coinflip-f { animation:la-coinflip-f 3s ease-in-out infinite; transform-box:fill-box; transform-origin:center; transform-style:preserve-3d; }
 
-/* ── B7: 分光汇聚 (prism) ── */
+/* ── B4: 分光汇聚 (prism) ── */
 @keyframes la-prism-sp {
   0% { opacity:0; transform:translate(var(--ox),var(--oy)) scale(0.5); }
   100% { opacity:1; transform:translate(0,0) scale(1); }
@@ -225,7 +225,7 @@ html, body {
 @keyframes la-prism-zg { 0%,100% { filter:drop-shadow(0 0 1px #F59E0B); } 50% { filter:drop-shadow(0 0 8px #F59E0B); } }
 .la-prism-zg { animation:la-prism-zg 2s ease-in-out infinite; animation-delay:0.8s; }
 
-/* ── B8: 光环打字 (typing) ── */
+/* ── B5: 光环打字 (typing) ── */
 @keyframes la-typing-type {
   0% { stroke-dashoffset:50; stroke-dasharray:50; }
   40% { stroke-dashoffset:0; }
@@ -248,7 +248,7 @@ html, body {
 }
 .la-typing-zg { animation:la-typing-zg 2s ease-in-out infinite; }
 
-/* ── B9: 心跳脉动 (heartbeat) ── */
+/* ── B6: 心跳脉动 (heartbeat) ── */
 @keyframes la-heartbeat-beat {
   0%, 100% { scale: 1; }
   10% { scale: 1.12; }
@@ -278,7 +278,7 @@ html, body {
 }
 .la-heartbeat-ecg { stroke-dasharray: 200; animation:la-heartbeat-ecg 1.2s ease-in-out infinite; }
 
-/* ── B11: 翻牌洗牌 (shuffle) ── */
+/* ── B7: 翻牌洗牌 (shuffle) ── */
 @keyframes la-shuffle-flip {
   0% { transform: rotateY(0deg) scale(1); opacity: 1; }
   25% { transform: rotateY(90deg) scale(0.8); opacity: 0.3; }

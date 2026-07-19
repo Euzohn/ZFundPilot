@@ -188,27 +188,6 @@ html, body {
 }
 .la-splash-zg { animation:la-splash-zg 2.5s ease-in-out infinite; animation-delay:1.8s; }
 
-/* ── B2: 金色呼吸 (breathe) ── */
-@keyframes la-breathe-br {
-  0%,100% { scale:1; }
-  50% { scale:1.06; }
-}
-.la-breathe-br { animation:la-breathe-br 2.8s ease-in-out infinite; transform-box:fill-box; transform-origin:center; }
-@keyframes la-breathe-z {
-  0%,100% { filter:drop-shadow(0 0 0 transparent); stroke:#F59E0B; }
-  50% { filter:drop-shadow(0 0 8px #FBBF24) drop-shadow(0 0 14px #F59E0B); stroke:#FBBF24; }
-}
-.la-breathe-z { animation:la-breathe-z 2.8s ease-in-out infinite; }
-@keyframes la-breathe-rot {
-  0% { transform:rotate(0deg); }
-  100% { transform:rotate(360deg); }
-}
-.la-breathe-ring { animation:la-breathe-rot 6s linear infinite; transform-box:fill-box; transform-origin:32px 32px; }
-@keyframes la-breathe-g12 { 0%,100% { fill-opacity:0.42; } 50% { fill-opacity:0.65; } }
-@keyframes la-breathe-g34 { 0%,100% { fill-opacity:0.34; } 50% { fill-opacity:0.5; } }
-.la-breathe-g12 { animation:la-breathe-g12 2.8s ease-in-out infinite; }
-.la-breathe-g34 { animation:la-breathe-g34 2.8s ease-in-out infinite; }
-
 /* ── B3: 金环扩散 (ripple) ── */
 @keyframes la-ripple-r {
   0% { r:12.5; opacity:0.6; stroke-width:0.8; }
@@ -227,22 +206,6 @@ html, body {
   100% { transform:rotateY(360deg); }
 }
 .la-coinflip-f { animation:la-coinflip-f 3s ease-in-out infinite; transform-box:fill-box; transform-origin:center; transform-style:preserve-3d; }
-
-/* ── B6: 罗盘摆动 (compass) ── */
-@keyframes la-compass-w {
-  0%,100% { transform:rotate(0deg); }
-  20% { transform:rotate(-15deg); }
-  40% { transform:rotate(12deg); }
-  60% { transform:rotate(-8deg); }
-  80% { transform:rotate(5deg); }
-}
-.la-compass-w { animation:la-compass-w 1.5s ease-in-out infinite; transform-box:fill-box; transform-origin:32px 32px; }
-@keyframes la-compass-rp { 0%,100% { opacity:0.5; r:12.5; } 50% { opacity:0.8; r:14; } }
-.la-compass-rp { animation:la-compass-rp 2s ease-in-out infinite; }
-@keyframes la-compass-z { 0% { opacity:0; stroke-dashoffset:50; stroke-dasharray:50; } 100% { opacity:1; stroke-dashoffset:0; } }
-.la-compass-z { animation:la-compass-z 0.5s ease-in-out both; animation-delay:0.2s; }
-@keyframes la-compass-zg { 0%,100% { filter:drop-shadow(0 0 1px #F59E0B); } 50% { filter:drop-shadow(0 0 6px #F59E0B); } }
-.la-compass-zg { animation:la-compass-zg 1.5s ease-in-out infinite; animation-delay:0.8s; }
 
 /* ── B7: 分光汇聚 (prism) ── */
 @keyframes la-prism-sp {
@@ -315,28 +278,6 @@ html, body {
 }
 .la-heartbeat-ecg { stroke-dasharray: 200; animation:la-heartbeat-ecg 1.2s ease-in-out infinite; }
 
-/* ── B10: 流星环 (meteor) ── */
-@keyframes la-meteor-orbit {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-.la-meteor-orb { animation:la-meteor-orbit 2.5s linear infinite; transform-box:fill-box; transform-origin:32px 32px; }
-.la-meteor-orb2 { animation:la-meteor-orbit 3.5s linear infinite; transform-box:fill-box; transform-origin:32px 32px; }
-@keyframes la-meteor-trail {
-  0% { opacity: 0; }
-  5% { opacity: 1; }
-  20% { opacity: 0.3; }
-  100% { opacity: 0; }
-}
-.la-meteor-m1 { animation:la-meteor-trail 2.5s ease-in-out infinite; }
-.la-meteor-m2 { animation:la-meteor-trail 2.5s ease-in-out infinite; animation-delay: 0.83s; }
-.la-meteor-m3 { animation:la-meteor-trail 2.5s ease-in-out infinite; animation-delay: 1.67s; }
-@keyframes la-meteor-z {
-  0%, 100% { filter: drop-shadow(0 0 1px #F59E0B); }
-  50% { filter: drop-shadow(0 0 8px #F59E0B) drop-shadow(0 0 14px #F59E0B); }
-}
-.la-meteor-z { animation:la-meteor-z 2s ease-in-out infinite; }
-
 /* ── B11: 翻牌洗牌 (shuffle) ── */
 @keyframes la-shuffle-flip {
   0% { transform: rotateY(0deg) scale(1); opacity: 1; }
@@ -354,35 +295,6 @@ html, body {
   45%, 55% { opacity: 0.2; }
 }
 .la-shuffle-z { animation:la-shuffle-z 2.4s ease-in-out infinite; }
-
-/* ── B12: 金砂成型 (sand) ── */
-@keyframes la-sand-bg {
-  0% { opacity: 0; } 100% { opacity: 1; }
-}
-.la-sand-bg { animation:la-sand-bg 0.3s ease-out both; }
-@keyframes la-sand-fall {
-  0% { transform: translateY(-40px); opacity: 0; }
-  30% { opacity: 1; }
-  100% { transform: translateY(0); opacity: 1; }
-}
-.la-sand-d1 { animation:la-sand-fall 0.6s cubic-bezier(0.36, 1.2, 0.64, 1) both; animation-delay: 0.1s; transform-box:fill-box; transform-origin:center; }
-.la-sand-d2 { animation:la-sand-fall 0.6s cubic-bezier(0.36, 1.2, 0.64, 1) both; animation-delay: 0.2s; transform-box:fill-box; transform-origin:center; }
-.la-sand-d3 { animation:la-sand-fall 0.6s cubic-bezier(0.36, 1.2, 0.64, 1) both; animation-delay: 0.3s; transform-box:fill-box; transform-origin:center; }
-.la-sand-d4 { animation:la-sand-fall 0.6s cubic-bezier(0.36, 1.2, 0.64, 1) both; animation-delay: 0.4s; transform-box:fill-box; transform-origin:center; }
-.la-sand-c  { animation:la-sand-fall 0.6s cubic-bezier(0.36, 1.2, 0.64, 1) both; animation-delay: 0.5s; transform-box:fill-box; transform-origin:center; }
-.la-sand-ring { animation:la-sand-fall 0.6s cubic-bezier(0.36, 1.2, 0.64, 1) both; animation-delay: 0.6s; transform-box:fill-box; transform-origin:center; }
-@keyframes la-sand-z {
-  0% { opacity: 0; stroke-dashoffset: 50; stroke-dasharray: 50; }
-  100% { opacity: 1; stroke-dashoffset: 0; }
-}
-.la-sand-z { animation:la-sand-z 0.7s ease-out both; animation-delay: 0.7s; }
-@keyframes la-sand-sparkle {
-  0%, 100% { opacity: 0; }
-  50% { opacity: 1; }
-}
-.la-sand-s1 { animation:la-sand-sparkle 1s ease-in-out infinite; animation-delay: 1.5s; }
-.la-sand-s2 { animation:la-sand-sparkle 1s ease-in-out infinite; animation-delay: 1.7s; }
-.la-sand-s3 { animation:la-sand-sparkle 1s ease-in-out infinite; animation-delay: 1.9s; }
 
 /* ── 背景噪点叠加层 ── */
 .grain-overlay {

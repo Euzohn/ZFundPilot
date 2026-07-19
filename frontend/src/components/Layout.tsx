@@ -9,6 +9,7 @@ import {
   TrendingUp,
   ShieldCheck,
   Bot,
+  GitCompare,
   Settings as SettingsIcon,
   ChevronLeft,
   ChevronRight,
@@ -43,6 +44,7 @@ const navGroups = [
     items: [
       { to: "/returns", label: "收益分析", icon: TrendingUp },
       { to: "/risk", label: "风险与建议", icon: ShieldCheck },
+      { to: "/compare", label: "基金对比", icon: GitCompare },
       { to: "/ai", label: "AI 助手", icon: Bot },
     ],
   },

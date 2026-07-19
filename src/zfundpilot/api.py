@@ -25,7 +25,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from . import __version__ as APP_VERSION
-from . import ai, analysis, config, data_io, db, fetch_estimate, fetch_fund, rebalance, risk, scheduler
+from . import ai, analysis, config, data_io, db, fetch_estimate, fetch_fund, rebalance, risk, scheduler, compare
 from .models import Fund, Transaction
 
 logger = logging.getLogger(__name__)
@@ -477,6 +477,17 @@ def delete_all_transactions(request: Request) -> dict[str, bool]:
 @app.get("/api/funds")
 def get_funds() -> list[dict[str, Any]]:
     return [f.to_dict() for f in db.get_funds()]
+
+
+class CompareRequest(BaseModel):
+    codes: list[str]
+
+
+@app.post("/api/funds/compare")
+def compare_funds(body: CompareRequest) -> dict[str, Any]:
+    """对比多只基金。"""
+    result = compare.compare_funds(body.codes)
+    return result.__dict__
 
 
 @app.get("/api/funds/{code}")

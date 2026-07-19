@@ -281,3 +281,31 @@ export interface AuditLog {
   action: string
   detail: string | null
 }
+
+// ── 基金对比 ──
+export interface FundCompareItem {
+  code: string
+  name: string
+  type: string
+  sector: string
+  inception_date: string
+  scale: number | null
+  manager: string
+  management_fee: number | null
+  custodian_fee: number | null
+  sales_fee: number | null
+  returns: Record<string, number | null>
+  risk: Record<string, number | null>
+  latest_nav: number | null
+  latest_date: string | null
+  ok: boolean
+  message: string
+}
+
+export interface CompareResponse {
+  funds: FundCompareItem[]
+  correlations: (number | null)[][] | null
+  nav_series: Record<string, { date: string; value: number }[]> | null
+  ok: boolean
+  message: string
+}

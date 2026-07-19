@@ -2,6 +2,7 @@ import type {
   Advice,
   AuditLog,
   ChannelPnLPoint,
+  CompareResponse,
   CurvePoint,
   DistributionItem,
   EstimateSummary,
@@ -284,4 +285,11 @@ export const api = {
   // Audit log
   getAuditLogs: (limit = 100) =>
     request<AuditLog[]>(`/audit?limit=${limit}`),
+
+  // Fund compare
+  compareFunds: (codes: string[]) =>
+    request<CompareResponse>("/funds/compare", {
+      method: "POST",
+      body: JSON.stringify({ codes }),
+    }),
 }

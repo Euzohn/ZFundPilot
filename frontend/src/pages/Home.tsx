@@ -192,6 +192,7 @@ export default function Home() {
 
   const mkt = useMemo(() => marketStatus(now), [now])
   const todayStr = useMemo(() => localDateStr(), [])
+  const yesterdayStr = useMemo(() => localDateStr(new Date(Date.now() - 86400000)), [])
   const navStatus = summary?.as_of_date
     ? summary.as_of_date === todayStr
       ? tr.navLatest
@@ -298,7 +299,7 @@ export default function Home() {
           ) : summary ? (
             <div className="grid grid-cols-1 gap-px border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-4">
               <div className="bg-[#0A0A0A] p-6">
-                <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{summary.as_of_date === todayStr ? tr.dailyPnl : tr.yesterdayPnl}</p>
+                <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{summary.as_of_date === todayStr ? tr.dailyPnl : summary.as_of_date === yesterdayStr ? tr.yesterdayPnl : summary.as_of_date}</p>
                 <output className={`mt-2 block font-mono text-2xl font-bold tabular-nums ${pnlColorDark(summary.daily_pnl)}`}>
                   {signedMoney(summary.daily_pnl)}{" "}
                   <span className="text-sm font-normal text-white/40">({pct(summary.daily_return)})</span>

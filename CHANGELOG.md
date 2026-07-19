@@ -4,6 +4,33 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.8.0] - 2026-07-20
+
+### Added
+- 基金对比页面：输入任意基金代码，多维度横向对比
+  - 基本信息：代码/名称/类型/板块/成立日期/规模/基金经理/费率
+  - 收益表现：近1周/1月/3月/6月/1年/3年/成立以来收益率
+  - 风险指标：最大回撤/年化波动率/夏普比率/卡玛比率/胜率
+  - 净值走势：归一化基期=100 多线图（Recharts Legend 可切换）
+  - 相关性矩阵：NxN 颜色编码，正相关绿色/负相关红色
+  - 输入支持逗号/空格/换行分隔，URL 参数 `?codes=` 支持分享
+  - 并发获取 AkShare 数据，单只失败不阻塞整体
+- 后端 `compare.py`：纯函数计算（收益率、最大回撤、波动率、夏普、卡玛、胜率、相关性）
+- `/api/funds/compare` 端点（POST，接收 codes 列表，返回结构化对比结果）
+- DEPLOY.md 新增「多实例部署」章节（每人独立 Docker 容器，数据完全隔离）
+
+### Changed
+- 自托管字体：移除 Google Fonts 外部依赖，改用 `@fontsource/fira-sans` + `@fontsource/fira-code`
+  - 字体文件内联到 `dist/assets/`，无外部请求，提升隐私与加载速度
+- 删除未使用的 8 个 Logo 动画变体（B2/B4/B6/B7/B9/B10/B12），保留 4 个实际使用的
+  - CSS bundle 从 50.5 kB 降至 46.5 kB
+
+### Fixed
+- 登录 429 响应体 JSON 被前端当原始字符串显示（now 解析 `detail` 字段）
+- 速率限制窗口语义修正：`_LOGIN_WINDOW`（5 分钟）用于计数窗口，`_LOGIN_LOCKED_UNTIL` 独立跟踪锁定到期时间（15 分钟）
+- 审计日志时间戳使用 `Asia/Shanghai` 时区（之前存 UTC，前端未转换导致相差 8 小时）
+- `db.py` 内联 `import datetime` 移至文件顶部
+
 ## [0.7.0] - 2026-07-18
 
 ### Added

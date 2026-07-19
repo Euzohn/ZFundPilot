@@ -30,7 +30,7 @@ from .models import Fund, Transaction
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="ZFundPilot API", version="0.7.0")
+app = FastAPI(title="ZFundPilot API", version="0.8.0")
 
 _nav_update_state: dict[str, Any] = {
     "running": False,

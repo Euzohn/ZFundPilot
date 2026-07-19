@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -58,17 +59,29 @@ def _run_nav_update() -> None:
         _last_results = None
 
 
+def _convert_dow(dow: str) -> str:
+    """将标准 cron day_of_week 数值（0=周日, 1=周一）转为 APScheduler 编号（0=周一, 6=周日）。"""
+    def _shift(m: re.Match) -> str:
+        return str((int(m.group(0)) - 1) % 7)
+    return re.sub(r'\d+', _shift, dow)
+
+
 def _parse_cron(expr: str) -> CronTrigger:
     """将 cron 表达式解析为 CronTrigger。"""
     parts = expr.split()
     if len(parts) != 5:
         raise ValueError(f"无效的 cron 表达式: {expr}")
+
+    dow = parts[4]
+    if dow != "*" and not any(c.isalpha() for c in dow):
+        dow = _convert_dow(dow)
+
     return CronTrigger(
         minute=parts[0],
         hour=parts[1],
         day=parts[2],
         month=parts[3],
-        day_of_week=parts[4],
+        day_of_week=dow,
     )
 
 

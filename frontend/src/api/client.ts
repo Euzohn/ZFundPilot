@@ -8,6 +8,7 @@ import type {
   EstimateSummary,
   FundEstimate,
   FundMeta,
+  FilterResponse,
   LatestNav,
   NavUpdateStatus,
   PortfolioSummary,
@@ -285,6 +286,13 @@ export const api = {
   // Audit log
   getAuditLogs: (limit = 100) =>
     request<AuditLog[]>(`/audit?limit=${limit}`),
+
+  // Fund filter
+  filterFunds: (params: { types?: string[]; sectors?: string[]; keyword?: string; limit?: number; offset?: number }) =>
+    request<FilterResponse>("/funds/filter", {
+      method: "POST",
+      body: JSON.stringify(params),
+    }),
 
   // Fund compare
   compareFunds: (codes: string[]) =>

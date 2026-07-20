@@ -309,3 +309,21 @@ export interface CompareResponse {
   ok: boolean
   message: string
 }
+
+// ── 基金筛选 ──
+export interface FundFilterItem {
+  code: string
+  name: string
+  type: string
+  sector: string
+  scale: number | null
+  manager: string
+  inception_date: string
+}
+
+export interface FilterResponse {
+  funds: FundFilterItem[]
+  total: number
+  ok: boolean
+  message: string
+}

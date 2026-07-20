@@ -25,7 +25,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from . import __version__ as APP_VERSION
-from . import ai, analysis, config, data_io, db, fetch_estimate, fetch_fund, rebalance, risk, scheduler, compare
+from . import ai, analysis, config, data_io, db, fetch_estimate, fetch_fund, fund_filter, rebalance, risk, scheduler, compare
 from .models import Fund, Transaction
 
 logger = logging.getLogger(__name__)
@@ -481,6 +481,27 @@ def get_funds() -> list[dict[str, Any]]:
 
 class CompareRequest(BaseModel):
     codes: list[str]
+
+
+class FilterRequest(BaseModel):
+    types: list[str] = []
+    sectors: list[str] = []
+    keyword: str = ""
+    limit: int = 50
+    offset: int = 0
+
+
+@app.post("/api/funds/filter")
+def filter_funds(body: FilterRequest) -> dict[str, Any]:
+    """按条件筛选基金候选池。"""
+    result = fund_filter.filter_funds(
+        types=body.types if body.types else None,
+        sectors=body.sectors if body.sectors else None,
+        keyword=body.keyword,
+        limit=body.limit,
+        offset=body.offset,
+    )
+    return result.__dict__
 
 
 @app.post("/api/funds/compare")

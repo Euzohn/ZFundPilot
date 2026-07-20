@@ -1,17 +1,18 @@
-import { useState, useCallback, useMemo, useRef } from "react"
+import { useState, useCallback, useMemo, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { FundCompareItem } from "@/api/types"
+import type { FundCompareItem, FundFilterItem, FilterResponse } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import { pct, money } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { GitCompare, Search, X, BarChart3, Table2, TrendingUp, Activity, DollarSign, RefreshCw } from "lucide-react"
+import { GitCompare, Search, X, BarChart3, Table2, TrendingUp, Activity, DollarSign, RefreshCw, ChevronDown, ChevronRight, Filter, Check, Plus } from "lucide-react"
 import {
   LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
 } from "recharts"
@@ -58,6 +59,217 @@ function InputSection({ onSubmit, loading }: { onSubmit: (codes: string[]) => vo
     </div>
   )
 }
+
+function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) => void }) {
+  const [open, setOpen] = useState(false)
+  const [types, setTypes] = useState<string[]>([])
+  const [sectors, setSectors] = useState<string[]>([])
+  const [keyword, setKeyword] = useState("")
+  const [results, setResults] = useState<FundFilterItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  const [availTypes, setAvailTypes] = useState<string[]>([])
+  const [availSectors, setAvailSectors] = useState<string[]>([])
+
+  useEffect(() => {
+    api.getKeywordMaps().then((m) => {
+      setAvailTypes(m.available_types)
+      setAvailSectors(m.available_sectors)
+    }).catch(() => {})
+  }, [])
+
+  const handleSearch = useCallback(async () => {
+    setLoading(true)
+    setError("")
+    setResults([])
+    setTotal(0)
+    setSelected(new Set())
+    try {
+      const res = await api.filterFunds({ types, sectors, keyword: keyword.trim(), limit: 50, offset: 0 })
+      if (res.ok) {
+        setResults(res.funds)
+        setTotal(res.total)
+      } else {
+        setError(res.message)
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "筛选请求失败")
+    } finally {
+      setLoading(false)
+    }
+  }, [types, sectors, keyword])
+
+  const toggleType = (t: string) => {
+    setTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])
+  }
+
+  const toggleSector = (s: string) => {
+    setSectors((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s])
+  }
+
+  const toggleSelect = (code: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(code)) next.delete(code); else next.add(code)
+      return next
+    })
+  }
+
+  const handleAdd = () => {
+    if (selected.size > 0) {
+      onAddToCompare(Array.from(selected))
+    }
+  }
+
+  return (
+    <Card className="not-prose">
+      <CardContent className="p-4">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="flex w-full items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          <Filter className="h-4 w-4" />
+          条件筛选
+          {(types.length > 0 || sectors.length > 0 || keyword.trim()) && (
+            <Badge variant="secondary" className="ml-auto text-[10px]">筛选中</Badge>
+          )}
+        </button>
+
+        {open && (
+          <div className="mt-4 space-y-4">
+            {/* Types */}
+            <div>
+              <p className="mb-1.5 text-xs text-muted-foreground">资产类型</p>
+              <div className="flex flex-wrap gap-2">
+                {availTypes.map((t) => (
+                  <label
+                    key={t}
+                    className={cn(
+                      "inline-flex cursor-pointer items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-colors",
+                      types.includes(t)
+                        ? "border-blue-400 bg-blue-50 text-blue-700"
+                        : "border-border hover:bg-muted/50",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={types.includes(t)}
+                      onChange={() => toggleType(t)}
+                      className="sr-only"
+                    />
+                    {types.includes(t) && <Check className="h-3 w-3" />}
+                    {t}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Sectors */}
+            <div>
+              <p className="mb-1.5 text-xs text-muted-foreground">板块</p>
+              <div className="flex max-h-32 flex-wrap gap-2 overflow-y-auto">
+                {availSectors.map((s) => (
+                  <label
+                    key={s}
+                    className={cn(
+                      "inline-flex cursor-pointer items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-colors shrink-0",
+                      sectors.includes(s)
+                        ? "border-blue-400 bg-blue-50 text-blue-700"
+                        : "border-border hover:bg-muted/50",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={sectors.includes(s)}
+                      onChange={() => toggleSector(s)}
+                      className="sr-only"
+                    />
+                    {sectors.includes(s) && <Check className="h-3 w-3" />}
+                    {s}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Keyword + Search */}
+            <div className="flex gap-2">
+              <Input
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleSearch() }}
+                placeholder="基金名称或代码"
+                className="h-9 text-sm flex-1"
+              />
+              <Button size="sm" onClick={handleSearch} disabled={loading}>
+                {loading ? <RefreshCw className="mr-1 h-4 w-4 animate-spin" /> : <Search className="mr-1 h-4 w-4" />}
+                {loading ? "搜索中..." : "搜索"}
+              </Button>
+            </div>
+
+            {/* Error */}
+            {error && <p className="text-xs text-loss-600">{error}</p>}
+
+            {/* Results */}
+            {results.length > 0 && (
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">共 {total} 只，显示前 {results.length} 只</p>
+                  {selected.size > 0 && (
+                    <Button size="sm" variant="outline" onClick={handleAdd}>
+                      <Plus className="mr-1 h-3.5 w-3.5" />
+                      加入对比 ({selected.size})
+                    </Button>
+                  )}
+                </div>
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-muted/50">
+                        <th className="w-8 px-2 py-2 text-left" />
+                        <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">代码</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">名称</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">类型</th>
+                        <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">板块</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {results.map((f) => (
+                        <tr key={f.code} className="border-t border-border/50">
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="checkbox"
+                              checked={selected.has(f.code)}
+                              onChange={() => toggleSelect(f.code)}
+                              className="h-4 w-4 accent-blue-600"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5 font-mono text-xs">{f.code}</td>
+                          <td className="max-w-[200px] truncate px-2 py-1.5 text-xs" title={f.name}>{f.name}</td>
+                          <td className="px-2 py-1.5 text-xs">{f.type}</td>
+                          <td className="px-2 py-1.5 text-xs">{f.sector}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {!loading && !error && results.length === 0 && total === 0 && (
+              <p className="text-xs text-muted-foreground">选择筛选条件后点击搜索</p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 
 function Cell({ value, suffix = "" }: { value: number | null | undefined; suffix?: string }) {
   if (value == null) return <span className="text-muted-foreground">—</span>
@@ -287,6 +499,8 @@ export default function FundCompare() {
         <GitCompare className="h-5 w-5 text-blue-500" />
         <h1 className="text-xl md:text-2xl font-bold tracking-tight">基金对比</h1>
       </div>
+
+      <FilterSection onAddToCompare={handleCompare} />
 
       <Card>
         <CardContent className="p-4">

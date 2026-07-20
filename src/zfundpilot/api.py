@@ -25,7 +25,20 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from . import __version__ as APP_VERSION
-from . import ai, analysis, config, data_io, db, fetch_estimate, fetch_fund, fund_filter, rebalance, risk, scheduler, compare
+from . import (
+    ai,
+    analysis,
+    compare,
+    config,
+    data_io,
+    db,
+    fetch_estimate,
+    fetch_fund,
+    fund_filter,
+    rebalance,
+    risk,
+    scheduler,
+)
 from .models import Fund, Transaction
 
 logger = logging.getLogger(__name__)
@@ -580,8 +593,13 @@ def get_estimates() -> dict[str, Any]:
     for est in estimates:
         info = merged.get(est.fund_code, {})
         shares = info.get("shares", 0)
-        # DB 净值已超过估算基准日期 → 估算已过时，用实际值
         latest_date = info.get("latest_date")
+        # fundgz 标记净值已发布但 DB 尚未拉取 → 估算仍是最佳数据
+        if not est.ok and est.jzrq and est.gztime and est.jzrq == est.gztime[:10] \
+                and latest_date and latest_date < est.jzrq:
+            est.ok = True
+            est.message = ""
+        # DB 净值已超过估算基准日期 → 估算已过时，用实际值
         if est.ok and latest_date and est.jzrq and latest_date > est.jzrq:
             est.ok = False
             est.message = "净值已更新"

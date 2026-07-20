@@ -4,6 +4,21 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.8.1] - 2026-07-20
+
+### Added
+- 基金筛选器：从天天基金全市场池按类型/板块/关键词筛选候选基金，一键加入对比
+  - 后端 `fund_filter.py`：天天基金 fundcode_search.js 加载 + 本地缓存 24h + 多条件筛选
+  - `POST /api/funds/filter` 端点，支持分页
+  - 前端 `FundCompare.tsx` 新增 FilterSection 组件，筛选结果可直接加入对比
+
+### Fixed
+- 标准 cron day_of_week 数值转换：APScheduler 使用 0=周一 6=周日，与标准 cron（0=周日 1=周一）不同
+  - `scheduler.py` 新增 `_convert_dow()`，将 cron 数值型 day_of_week 做 `(n-1)%7` 转换
+  - `0 21 * * 1-5` 之前错误地排在了 Tue-Sat，现正确为 Mon-Fri
+- 首页「昨日收益」标签在周末/周一显示错误：昨天（日历日）非交易日时显示昨日收益常让人困惑
+  - 改为 3 分支：today→今日收益、yesterday（日历日）→昨日收益、else→显示实际日期
+
 ## [0.8.0] - 2026-07-20
 
 ### Added

@@ -63,6 +63,7 @@ Local-first · Auto NAV updates · Return & risk analytics · Portfolio rebalanc
 - 💰 **Return Analysis**: Unrealized/realized P&L, portfolio return curve (cumulative profit + return rate + legend toggle), return rate ranking, calendar view, stacked bar by channel
 - 📊 **Real-time Estimates**: Live fund change estimates during trading hours (Tiantian Fund fundgz API). Portfolio estimated P&L at a glance. Auto-invalidates when actual NAV is published
 - 🔬 **Fund Compare**: Multi-dimensional side-by-side comparison (basic info, fees, scale, manager) + NAV curve overlay + correlation matrix for fund selection
+- 🔍 **Fund Filter**: Filter candidate funds from the full market universe by type/sector/keyword, add to comparison with one click
 - 🛡️ **Risk Analysis**: Max drawdown, annualized volatility, concentration (HHI), structure breakdown, risk flags
 - ⚖️ **Rebalancing Advice**: Structure-based optimization suggestions (not trading signals)
 - 🤖 **AI Advisor Chat**: Configure any OpenAI-compatible API for AI-powered advice with web search + portfolio context (supports Zhipu / Kimi / Qwen / DeepSeek). Multi-conversation management, date-time naming + custom rename, AI-assisted transaction entry (with auto fee calculation), token usage tracking
@@ -214,6 +215,8 @@ ZFundPilot/
 │   ├── db.py             # SQLite database operations
 │   ├── fetch_fund.py     # NAV fetching + name/type/sector detection + fee lookup + keyword mapping
 │   ├── fetch_estimate.py # Real-time fund estimate (Tiantian Fund fundgz API)
+│   ├── compare.py        # Fund comparison (returns/risk/correlation multi-dimension calc)
+│   ├── fund_filter.py    # Fund filter (full market universe loading + multi-condition filtering)
 │   ├── analysis.py       # Transaction aggregation, return calculation, portfolio curve
 │   ├── risk.py           # Risk analysis (drawdown/volatility/concentration/structure)
 │   ├── rebalance.py      # Portfolio rebalancing advice

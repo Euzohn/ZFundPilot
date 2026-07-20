@@ -566,7 +566,7 @@ def reset_sectors() -> dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
-# 实时估值（天天基金 fundgz API）
+# 实时估值（AkShare fund_value_estimation_em）
 # ---------------------------------------------------------------------------
 @app.get("/api/estimate")
 def get_estimates() -> dict[str, Any]:
@@ -593,17 +593,8 @@ def get_estimates() -> dict[str, Any]:
     for est in estimates:
         info = merged.get(est.fund_code, {})
         shares = info.get("shares", 0)
-        latest_date = info.get("latest_date")
-        # fundgz 标记净值已发布但 DB 尚未拉取 → 估算仍是最佳数据
-        if not est.ok and est.jzrq and est.gztime and est.jzrq == est.gztime[:10] \
-                and latest_date and latest_date < est.jzrq:
-            est.ok = True
-            est.message = ""
-        # DB 净值已超过估算基准日期 → 估算已过时，用实际值
-        if est.ok and latest_date and est.jzrq and latest_date > est.jzrq:
-            est.ok = False
-            est.message = "净值已更新"
         if est.ok:
+            # 盘中估算
             est_pnl = round(shares * (est.gsz - est.dwjz), 2)
             prev_value = round(shares * est.dwjz, 2)
             total_est_pnl += est_pnl
@@ -611,19 +602,24 @@ def get_estimates() -> dict[str, Any]:
             if est.gztime > latest_gztime:
                 latest_gztime = est.gztime
         else:
-            # 估算不可用时，从 DB 最近两条净值算实际涨跌
-            latest_nav = db.get_latest_nav(est.fund_code)
-            prev_nav = db.get_prev_nav(est.fund_code)
-            if latest_nav and prev_nav:
-                est.dwjz = float(prev_nav["nav"])
-                est.gsz = float(latest_nav["nav"])
-                est.gszzl = round((est.gsz - est.dwjz) / est.dwjz * 100, 2) if est.dwjz else 0
+            # 已公布净值：优先用 API 数据，DB 兜底
+            if est.gsz and est.dwjz:
                 est_pnl = round(shares * (est.gsz - est.dwjz), 2)
                 prev_value = round(shares * est.dwjz, 2)
             else:
-                est.gszzl = 0
-                est_pnl = 0
-                prev_value = 0
+                # DB 最近两条净值算实际涨跌
+                latest_nav = db.get_latest_nav(est.fund_code)
+                prev_nav = db.get_prev_nav(est.fund_code)
+                if latest_nav and prev_nav:
+                    est.dwjz = float(prev_nav["nav"])
+                    est.gsz = float(latest_nav["nav"])
+                    est.gszzl = round((est.gsz - est.dwjz) / est.dwjz * 100, 2) if est.dwjz else 0
+                    est_pnl = round(shares * (est.gsz - est.dwjz), 2)
+                    prev_value = round(shares * est.dwjz, 2)
+                else:
+                    est.gszzl = 0
+                    est_pnl = 0
+                    prev_value = 0
         funds.append({
             "fund_code": est.fund_code,
             "fund_name": est.fund_name or info.get("name", est.fund_code),

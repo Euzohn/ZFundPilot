@@ -391,7 +391,7 @@ export default function AIChat() {
               value={titleInput}
               onChange={(e) => setTitleInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") saveTitle()
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) saveTitle()
                 if (e.key === "Escape") setEditingTitle(false)
               }}
               onBlur={saveTitle}
@@ -443,7 +443,7 @@ export default function AIChat() {
                                   value={titleInput}
                                   onChange={(e) => setTitleInput(e.target.value)}
                                   onKeyDown={(e) => {
-                                    if (e.key === "Enter") handleRenameArchived(s.id, titleInput)
+                                    if (e.key === "Enter" && !e.nativeEvent.isComposing) handleRenameArchived(s.id, titleInput)
                                     if (e.key === "Escape") setEditingArchiveId(null)
                                   }}
                                   onBlur={() => handleRenameArchived(s.id, titleInput)}
@@ -648,7 +648,7 @@ export default function AIChat() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault()
                     handleSend()
                   }

@@ -603,6 +603,7 @@ def get_estimates() -> dict[str, Any]:
                 est_pnl = round(shares * (est.gsz - est.dwjz), 2)
                 prev_value = round(shares * est.dwjz, 2)
             else:
+                est.gszzl = 0
                 est_pnl = 0
                 prev_value = 0
         funds.append({

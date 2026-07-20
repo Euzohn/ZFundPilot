@@ -34,7 +34,7 @@ export default function Positions() {
     if (!estimate) return {}
     const m: Record<string, { gszzl: number; pnl: number; shares: number; ok: boolean }> = {}
     for (const f of estimate.funds) {
-      if (f.ok || f.gszzl !== 0) m[f.fund_code] = { gszzl: f.gszzl, pnl: f.estimated_pnl, shares: f.held_shares, ok: f.ok }
+      if (f.ok || f.prev_value > 0) m[f.fund_code] = { gszzl: f.gszzl, pnl: f.estimated_pnl, shares: f.held_shares, ok: f.ok }
     }
     return m
   }, [estimate])

@@ -21,6 +21,7 @@ import { CHART_COLORS } from "@/lib/chartPalette"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 
 const RISK_LABELS: Record<string, string> = {
   max_drawdown: "最大回撤", volatility: "年化波动率",
@@ -228,35 +229,35 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
                   )}
                 </div>
                 <div className="overflow-x-auto rounded-md border">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-muted/50">
-                        <th className="w-8 px-2 py-2 text-left" />
-                        <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">代码</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">名称</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">类型</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">板块</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table className="w-full text-sm">
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="w-8 px-2 py-2 text-left" />
+                        <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">代码</TableHead>
+                        <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">名称</TableHead>
+                        <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">类型</TableHead>
+                        <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">板块</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {results.map((f) => (
-                        <tr key={f.code} className="border-t border-border/50">
-                          <td className="px-2 py-1.5">
+                        <TableRow key={f.code} className="border-t border-border/50">
+                          <TableCell className="px-2 py-1.5">
                             <input
                               type="checkbox"
                               checked={selected.has(f.code)}
                               onChange={() => toggleSelect(f.code)}
                               className="h-4 w-4 accent-blue-600"
                             />
-                          </td>
-                          <td className="px-2 py-1.5 font-mono text-xs">{f.code}</td>
-                          <td className="max-w-[200px] truncate px-2 py-1.5 text-xs" title={f.name}>{f.name}</td>
-                          <td className="px-2 py-1.5 text-xs">{f.type}</td>
-                          <td className="px-2 py-1.5 text-xs">{f.sector}</td>
-                        </tr>
+                          </TableCell>
+                          <TableCell className="px-2 py-1.5 font-mono text-xs">{f.code}</TableCell>
+                          <TableCell className="max-w-[200px] truncate px-2 py-1.5 text-xs" title={f.name}>{f.name}</TableCell>
+                          <TableCell className="px-2 py-1.5 text-xs">{f.type}</TableCell>
+                          <TableCell className="px-2 py-1.5 text-xs">{f.sector}</TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               </div>
             )}
@@ -295,31 +296,31 @@ function CompareTable({ funds, labelMap, valueKey, format }: {
   const keys = Object.keys(labelMap)
   return (
     <div className="overflow-x-auto rounded-md border">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-muted/50">
-            <th className="sticky left-0 bg-muted/50 px-3 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">指标</th>
+      <Table className="w-full text-sm">
+        <TableHeader>
+          <TableRow className="bg-muted/50">
+            <TableHead className="sticky left-0 bg-muted/50 px-3 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">指标</TableHead>
             {funds.map((f) => (
-              <th key={f.code} className="px-3 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">{f.name || f.code}</th>
+              <TableHead key={f.code} className="px-3 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">{f.name || f.code}</TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {keys.map((key) => (
-            <tr key={key} className="border-t border-border/50">
-              <td className="sticky left-0 bg-background px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{labelMap[key]}</td>
+            <TableRow key={key} className="border-t border-border/50">
+              <TableCell className="sticky left-0 bg-background px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{labelMap[key]}</TableCell>
               {funds.map((f) => (
-                <td key={f.code} className="px-3 py-2 text-right text-xs">
+                <TableCell key={f.code} className="px-3 py-2 text-right text-xs">
                   {format === "pct"
                     ? <ReturnCell value={f[valueKey]?.[key] as number | null | undefined} />
                     : <Cell value={f[valueKey]?.[key] as number | null | undefined} />
                   }
-                </td>
+                </TableCell>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   )
 }
@@ -341,26 +342,26 @@ function InfoTable({ funds }: { funds: FundCompareItem[] }) {
   ]
   return (
     <div className="overflow-x-auto rounded-md border">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-muted/50">
-            <th className="sticky left-0 bg-muted/50 px-3 py-2 text-left text-xs font-medium text-muted-foreground">指标</th>
+      <Table className="w-full text-sm">
+        <TableHeader>
+          <TableRow className="bg-muted/50">
+            <TableHead className="sticky left-0 bg-muted/50 px-3 py-2 text-left text-xs font-medium text-muted-foreground">指标</TableHead>
             {funds.map((f) => (
-              <th key={f.code} className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">{f.name || f.code}</th>
+              <TableHead key={f.code} className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">{f.name || f.code}</TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map(({ label, render }) => (
-            <tr key={label} className="border-t border-border/50">
-              <td className="sticky left-0 bg-background px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{label}</td>
+            <TableRow key={label} className="border-t border-border/50">
+              <TableCell className="sticky left-0 bg-background px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{label}</TableCell>
               {funds.map((f) => (
-                <td key={f.code} className="px-3 py-2 text-right text-xs">{render(f)}</td>
+                <TableCell key={f.code} className="px-3 py-2 text-right text-xs">{render(f)}</TableCell>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   )
 }
@@ -418,23 +419,23 @@ function CorrelationMatrix({ funds, correlations }: { funds: FundCompareItem[]; 
   const n = correlations.length
   return (
     <div className="overflow-x-auto">
-      <table className="mx-auto text-sm">
-        <thead>
-          <tr>
-            <th className="px-2 py-1" />
+      <Table className="mx-auto text-sm">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="px-2 py-1" />
             {funds.map((f) => (
-              <th key={f.code} className="px-2 py-1 text-xs text-muted-foreground font-medium max-w-[80px] truncate" title={f.name}>
+              <TableHead key={f.code} className="px-2 py-1 text-xs text-muted-foreground font-medium max-w-[80px] truncate" title={f.name}>
                 {f.code}
-              </th>
+              </TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {funds.map((f, i) => (
-            <tr key={f.code}>
-              <td className="px-2 py-1 text-xs text-muted-foreground font-medium max-w-[80px] truncate" title={f.name}>
+            <TableRow key={f.code}>
+              <TableCell className="px-2 py-1 text-xs text-muted-foreground font-medium max-w-[80px] truncate" title={f.name}>
                 {f.code}
-              </td>
+              </TableCell>
               {funds.map((_, j) => {
                 const v = correlations[i][j]
                 const intensity = v != null ? Math.abs(v) : 0
@@ -442,20 +443,20 @@ function CorrelationMatrix({ funds, correlations }: { funds: FundCompareItem[]; 
                 const g = Math.round(200 * (1 - intensity))
                 const bg = v != null && v >= 0 ? `rgb(${r}, ${g}, ${g})` : `rgb(${g}, ${r}, ${g})`
                 return (
-                  <td
+                  <TableCell
                     key={j}
                     className="px-2 py-1 text-center text-xs tabular-nums font-medium"
                     style={{ background: bg, color: intensity > 0.5 ? "#fff" : "#1e293b" }}
                     title={`${f.name} vs ${funds[j].name}: ${v != null ? v.toFixed(3) : "—"}`}
                   >
                     {v != null ? v.toFixed(2) : "—"}
-                  </td>
+                  </TableCell>
                 )
               })}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
       <div className="mt-2 flex items-center justify-center gap-2 text-[10px] text-muted-foreground">
         <span>负相关</span>
         <div className="flex h-3 w-20 rounded overflow-hidden">

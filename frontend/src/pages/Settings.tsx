@@ -88,7 +88,7 @@ function AuditLogPanel() {
     <Card className="mt-4">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Clock className="h-5 w-5 text-blue-500" />
+          <Clock className="h-5 w-5 text-primary" />
           审计日志
         </CardTitle>
         <div className="flex items-center justify-between">
@@ -103,7 +103,7 @@ function AuditLogPanel() {
         {error ? (
           <div className="flex items-center gap-2 py-2">
             <span className="text-xs text-loss-600">加载失败</span>
-            <button onClick={reload} className="text-xs text-blue-600 hover:underline">重试</button>
+            <button onClick={reload} className="text-xs text-primary hover:underline">重试</button>
           </div>
         ) : !logs ? (
           <div className="flex justify-center py-4"><LogoSpinner className="h-8 w-8" /></div>
@@ -112,7 +112,7 @@ function AuditLogPanel() {
         ) : (
           <div className="overflow-x-auto rounded-md border max-h-96 overflow-y-auto">
             <Table>
-              <TableHeader className="sticky top-0 bg-white">
+              <TableHeader className="sticky top-0 bg-background">
                 <TableRow>
                   <TableHead className="text-xs">时间</TableHead>
                   <TableHead className="text-xs">IP</TableHead>
@@ -458,11 +458,11 @@ export default function Settings() {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <ShieldCheck className="h-5 w-5 text-blue-500" />
+                  <ShieldCheck className="h-5 w-5 text-primary" />
                   账户与安全
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  当前用户名：<span className="font-medium text-slate-700">{authMe?.username || "—"}</span>
+                  当前用户名：<span className="font-medium text-foreground">{authMe?.username || "—"}</span>
                 </p>
               </CardHeader>
             <CardContent className="space-y-5">
@@ -471,7 +471,7 @@ export default function Settings() {
                   <span className="text-loss-700">AI 配置加载失败</span>
                   <button
                     onClick={reloadAIConfig}
-                    className="text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                    className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                   >
                     重试
                   </button>
@@ -479,7 +479,7 @@ export default function Settings() {
               )}
                 {/* 修改用户名 */}
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium text-slate-600">修改用户名</Label>
+                  <Label className="text-xs font-medium text-muted-foreground">修改用户名</Label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value)}
                       className="h-8 text-xs" placeholder="新用户名（至少 2 位）" />
@@ -496,20 +496,20 @@ export default function Settings() {
 
                 {/* 修改密码 */}
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium text-slate-600">修改密码</Label>
+                  <Label className="text-xs font-medium text-muted-foreground">修改密码</Label>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <Label className="mb-1 block text-xs text-slate-500">当前密码</Label>
+                      <Label className="mb-1 block text-xs text-muted-foreground">当前密码</Label>
                       <Input type="password" value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)}
                         className="h-8 text-xs" placeholder="输入当前密码" />
                     </div>
                     <div>
-                      <Label className="mb-1 block text-xs text-slate-500">新密码</Label>
+                      <Label className="mb-1 block text-xs text-muted-foreground">新密码</Label>
                       <Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)}
                         className="h-8 text-xs" placeholder="至少 6 位" />
                     </div>
                     <div>
-                      <Label className="mb-1 block text-xs text-slate-500">确认新密码</Label>
+                      <Label className="mb-1 block text-xs text-muted-foreground">确认新密码</Label>
                       <Input type="password" value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)}
                         className="h-8 text-xs" placeholder="再次输入新密码"
                         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleChangePassword() } }} />
@@ -519,7 +519,7 @@ export default function Settings() {
                     <Button size="sm" onClick={handleChangePassword} disabled={changingPwd} variant="outline">
                       <KeyRound className="mr-1.5 h-3.5 w-3.5" /> {changingPwd ? "修改中..." : "修改密码"}
                     </Button>
-                    <Button size="sm" variant="outline" className="text-red-500 hover:bg-red-50 hover:text-red-600"
+                    <Button size="sm" variant="outline" className="text-destructive hover:bg-red-50 hover:text-destructive"
                       onClick={() => { clearToken(); window.location.reload() }}>
                       <LogOut className="mr-1.5 h-3.5 w-3.5" /> 退出登录
                     </Button>
@@ -538,7 +538,7 @@ export default function Settings() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
-                <Bot className="h-5 w-5 text-blue-500" />
+                <Bot className="h-5 w-5 text-primary" />
                 AI 投顾配置
               </CardTitle>
               <p className="text-sm text-muted-foreground">配置 OpenAI 兼容 API 后，可在「AI 助手」页面对话并录入交易</p>
@@ -548,18 +548,18 @@ export default function Settings() {
               <div className="space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <Label className="mb-1 block text-xs text-slate-500">API Base URL</Label>
+                    <Label className="mb-1 block text-xs text-muted-foreground">API Base URL</Label>
                     <Input value={aiBaseUrl} onChange={(e) => setAiBaseUrl(e.target.value)}
                       className="h-8 text-xs" placeholder="https://api.moonshot.cn/v1" />
                   </div>
                   <div>
-                    <Label className="mb-1 block text-xs text-slate-500">API Key</Label>
+                    <Label className="mb-1 block text-xs text-muted-foreground">API Key</Label>
                     <Input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)}
                       className="h-8 text-xs"
                       placeholder={aiConfig?.has_key ? "已配置，输入新值覆盖" : "sk-..."} />
                   </div>
                   <div>
-                    <Label className="mb-1 block text-xs text-slate-500">模型 ID</Label>
+                    <Label className="mb-1 block text-xs text-muted-foreground">模型 ID</Label>
                     <Input value={aiModel} onChange={(e) => setAiModel(e.target.value)}
                       className="h-8 text-xs" placeholder="glm-4-plus / moonshot-v1-8k / deepseek-chat" />
                   </div>
@@ -573,7 +573,7 @@ export default function Settings() {
                       key={p.name}
                       type="button"
                       onClick={() => { setAiBaseUrl(p.baseUrl); setAiModel(p.model) }}
-                      className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                      className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                     >
                       {p.name}
                     </button>
@@ -587,7 +587,7 @@ export default function Settings() {
                     启用联网搜索
                   </label>
                   {aiWebSearch && aiBaseUrl && (
-                    <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                    <span className="text-xs text-primary bg-blue-50 px-2 py-0.5 rounded-full">
                       {detectProvider(aiBaseUrl)}
                     </span>
                   )}
@@ -608,7 +608,7 @@ export default function Settings() {
                 {testResult && (
                   <div className={cn(
                     "flex items-center gap-1.5 rounded-md px-3 py-2 text-xs",
-                    testResult.ok ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-600 border border-red-200"
+                    testResult.ok ? "bg-green-50 text-success border border-green-200" : "bg-red-50 text-destructive border border-red-200"
                   )}>
                     {testResult.ok
                       ? <><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> 连接成功 · {testResult.provider} · {testResult.model}{testResult.has_search ? " · 联网搜索已启用" : ""}</>
@@ -619,7 +619,7 @@ export default function Settings() {
               </div>
 
               {/* 分隔线 */}
-              <div className="border-t border-slate-100" />
+              <div className="border-t border-border/60" />
 
               {/* Token 用量 */}
               <div className="space-y-3">
@@ -635,7 +635,7 @@ export default function Settings() {
 
                 {/* 7 天趋势 sparkline */}
                 {usageDaily && usageDaily.length >= 2 ? (
-                  <div className="rounded-lg border bg-slate-50/50 px-3 py-2">
+                  <div className="rounded-lg border bg-muted/50 px-3 py-2">
                     <Sparkline data={usageDaily.map((d) => d.tokens)} />
                     <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
                       <span>{usageDaily[0].date.slice(5)}</span>
@@ -689,7 +689,7 @@ export default function Settings() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
-                <ShoppingCart className="h-5 w-5 text-blue-500" />
+                <ShoppingCart className="h-5 w-5 text-primary" />
                 渠道管理
               </CardTitle>
               <p className="text-sm text-muted-foreground">顺序、颜色与增删</p>
@@ -702,11 +702,11 @@ export default function Settings() {
                       {i + 1}
                     </span>
                     <button onClick={() => moveUp(i)} disabled={i === 0}
-                      className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
+                      className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                       <ChevronUp className="h-3.5 w-3.5" />
                     </button>
                     <button onClick={() => moveDown(i)} disabled={i === channels.length - 1}
-                      className="flex h-5 w-5 items-center justify-center rounded text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700 disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
+                      className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                       <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                     <span className="flex-1 text-sm font-semibold">{ch}</span>
@@ -715,15 +715,15 @@ export default function Settings() {
                       {palette.map(color => (
                         <button key={color} onClick={() => handleColorChange(ch, color)}
                           className={cn("h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
-                            channelColors[ch] === color ? "border-slate-400" : "border-transparent")}
+                            channelColors[ch] === color ? "border-border" : "border-transparent")}
                           style={{ background: color }} />
                       ))}
                     </div>
                     <input type="color" value={channelColors[ch] ?? "#3b82f6"}
                       onChange={(e) => handleColorChange(ch, e.target.value)}
-                      className="h-7 w-7 rounded cursor-pointer border border-slate-200" />
+                      className="h-7 w-7 rounded cursor-pointer border border-border" />
                     <button onClick={() => remove(i)}
-                      className="flex h-6 w-6 items-center justify-center rounded text-slate-300 transition-colors hover:bg-red-50 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-red-50 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
@@ -754,7 +754,7 @@ export default function Settings() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
-                <Palette className="h-5 w-5 text-blue-500" />
+                <Palette className="h-5 w-5 text-primary" />
                 显示设置
               </CardTitle>
             </CardHeader>
@@ -768,12 +768,12 @@ export default function Settings() {
                     className={cn(
                       "flex-1 rounded-lg border px-3 py-2.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                       colorTheme === "international"
-                        ? "border-blue-300 bg-blue-50 text-blue-700"
-                        : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                        ? "border-blue-300 bg-blue-50 text-primary"
+                        : "border-border bg-background text-muted-foreground hover:bg-accent"
                     )}
                   >
-                    <span className="text-green-600 font-semibold">▲</span> 绿涨
-                    <span className="text-red-600 font-semibold ml-2">▼</span> 红跌
+                    <span className="text-success font-semibold">▲</span> 绿涨
+                    <span className="text-destructive font-semibold ml-2">▼</span> 红跌
                     <span className="block text-[11px] text-muted-foreground mt-0.5">国际惯例</span>
                   </button>
                   <button
@@ -782,12 +782,12 @@ export default function Settings() {
                     className={cn(
                       "flex-1 rounded-lg border px-3 py-2.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                       colorTheme === "china"
-                        ? "border-blue-300 bg-blue-50 text-blue-700"
-                        : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                        ? "border-blue-300 bg-blue-50 text-primary"
+                        : "border-border bg-background text-muted-foreground hover:bg-accent"
                     )}
                   >
-                    <span className="text-red-600 font-semibold">▲</span> 红涨
-                    <span className="text-green-600 font-semibold ml-2">▼</span> 绿跌
+                    <span className="text-destructive font-semibold">▲</span> 红涨
+                    <span className="text-success font-semibold ml-2">▼</span> 绿跌
                     <span className="block text-[11px] text-muted-foreground mt-0.5">国内 A 股惯例</span>
                   </button>
                 </div>
@@ -804,7 +804,7 @@ export default function Settings() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
-                <Clock className="h-5 w-5 text-blue-500" />
+                <Clock className="h-5 w-5 text-primary" />
                 定时净值更新
               </CardTitle>
               <p className="text-sm text-muted-foreground">自动拉取最新净值</p>
@@ -815,7 +815,7 @@ export default function Settings() {
                   <span className="text-xs text-loss-600">加载失败</span>
                   <button
                     onClick={reloadScheduler}
-                    className="text-xs text-blue-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                    className="text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                   >
                     重试
                   </button>
@@ -829,8 +829,8 @@ export default function Settings() {
                       className={cn(
                         "rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                         schedulerStatus.enabled
-                          ? "border-blue-300 bg-blue-50 text-blue-700"
-                          : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                          ? "border-blue-300 bg-blue-50 text-primary"
+                          : "border-border bg-background text-muted-foreground hover:bg-accent"
                       )}
                     >
                       {schedulerToggling ? "切换中..." : schedulerStatus.enabled ? "已启用" : "已暂停"}
@@ -860,7 +860,7 @@ export default function Settings() {
                     )}
                   </div>
                   {/* 时间设置 */}
-                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/60">
                     <span className="text-xs text-muted-foreground">执行时间</span>
                     <input
                       type="time"
@@ -893,7 +893,7 @@ export default function Settings() {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <Search className="h-5 w-5 text-blue-500" />
+                  <Search className="h-5 w-5 text-primary" />
                   关键词映射
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">添加自定义关键词，匹配时优先于默认规则</p>
@@ -906,7 +906,7 @@ export default function Settings() {
                       key={key}
                       type="button"
                       onClick={() => { setKwTab(key); setKwSearch("") }}
-                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] ${kwTab === key ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] ${kwTab === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                     >
                       {label}
                     </button>
@@ -944,18 +944,18 @@ export default function Settings() {
                     {kwCustom.map((e, i) => (
                       <div key={i} className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-1.5">
                         <button onClick={() => moveCustomKeyword(i, -1)} disabled={i === 0}
-                          className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 disabled:opacity-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
+                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:opacity-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                           <ChevronUp className="h-3 w-3" />
                         </button>
                         <button onClick={() => moveCustomKeyword(i, 1)} disabled={i === kwCustom.length - 1}
-                          className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100 disabled:opacity-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
+                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:opacity-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                           <ChevronDown className="h-3 w-3" />
                         </button>
                         <span className="text-sm font-medium flex-1">{e.keyword}</span>
                         <span className="text-xs text-muted-foreground">→</span>
-                        <span className="text-sm font-medium text-blue-600">{e.mapped}</span>
+                        <span className="text-sm font-medium text-primary">{e.mapped}</span>
                         <button onClick={() => deleteCustomKeyword(i)}
-                          className="flex h-5 w-5 items-center justify-center rounded text-slate-300 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
+                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                           <X className="h-3.5 w-3.5" />
                         </button>
                       </div>
@@ -981,9 +981,9 @@ export default function Settings() {
                         placeholder="搜索关键词..."
                         className="h-7 text-xs max-w-[200px]"
                       />
-                      <div className="max-h-48 overflow-y-auto rounded border border-slate-100 divide-y divide-slate-100">
+                      <div className="max-h-48 overflow-y-auto rounded border border-border/60 divide-y divide-border/60">
                         {kwFilteredDefaults.map((e, i) => (
-                          <div key={i} className="flex items-center gap-2 px-3 py-1 text-xs hover:bg-slate-50">
+                          <div key={i} className="flex items-center gap-2 px-3 py-1 text-xs hover:bg-accent">
                             <span className="font-mono">{e.keyword}</span>
                             <span className="text-muted-foreground">→</span>
                             <span>{e.mapped}</span>

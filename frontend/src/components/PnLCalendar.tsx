@@ -15,7 +15,7 @@ interface Props {
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"]
 
 function getPnlBg(pnl: number | null, maxAbs: number): string {
-  if (pnl === null || pnl === 0) return "bg-slate-50/60"
+  if (pnl === null || pnl === 0) return "bg-muted/50"
   const intensity = Math.min(Math.abs(pnl) / maxAbs, 1)
   if (pnl > 0) {
     if (intensity > 0.8) return "bg-gain-400 text-gain-950"
@@ -97,7 +97,7 @@ export default function PnLCalendar({ data }: Props) {
     <div className="space-y-3">
       {/* Month navigation */}
       <div className="flex items-center justify-between">
-        <button onClick={prevMonth} className="flex h-7 w-7 items-center justify-center rounded hover:bg-slate-100 transition-colors">
+        <button onClick={prevMonth} className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent transition-colors">
           <ChevronLeft className="h-4 w-4 text-muted-foreground" />
         </button>
         <div className="text-center">
@@ -109,7 +109,7 @@ export default function PnLCalendar({ data }: Props) {
             </span>
           )}
         </div>
-        <button onClick={nextMonth} className="flex h-7 w-7 items-center justify-center rounded hover:bg-slate-100 transition-colors">
+        <button onClick={nextMonth} className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent transition-colors">
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
         </button>
       </div>

@@ -119,7 +119,7 @@ function concentrationLabel(w: number | undefined, lang: Lang): string {
 function concentrationColor(w: number | undefined): string {
   if (w == null) return "text-white/80"
   if (w > 0.5) return "text-loss-400"
-  if (w > 0.3) return "text-[#FF2A2A]"
+  if (w > 0.3) return "text-brand-accent"
   return "text-gain-400"
 }
 
@@ -202,7 +202,7 @@ export default function Home() {
   const showScanlines = !reducedMotion
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-[#0A0A0A] text-[#EAEAEA]">
+    <div className="flex min-h-[100dvh] flex-col bg-brand-bg-dark text-brand-text-light">
       {/* CRT scanlines */}
       {showScanlines && (
         <div
@@ -221,7 +221,7 @@ export default function Home() {
         onClick={() => setLang(lang === "zh" ? "en" : "zh")}
         aria-label={tr.langLabel}
         aria-pressed={lang === "en"}
-        className="fixed right-6 top-6 z-20 border border-white/20 px-3 py-1 font-mono text-xs uppercase tracking-wider text-white/60 transition-colors hover:border-[#FF2A2A] hover:text-[#FF2A2A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2A2A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] active:scale-[0.98]"
+        className="fixed right-6 top-6 z-20 border border-white/20 px-3 py-1 font-mono text-xs uppercase tracking-wider text-white/60 transition-colors hover:border-brand-accent hover:text-brand-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg-dark active:scale-[0.98]"
       >
         {lang === "zh" ? "EN" : "中文"}
       </button>
@@ -238,18 +238,18 @@ export default function Home() {
             aria-label="ZFundPilot logo"
           >
             <title>ZFundPilot</title>
-            <path d="M2 10 L2 2 L10 2" stroke="#FF2A2A" strokeWidth="1" />
-            <path d="M54 2 L62 2 L62 10" stroke="#FF2A2A" strokeWidth="1" />
-            <path d="M62 54 L62 62 L54 62" stroke="#FF2A2A" strokeWidth="1" />
-            <path d="M10 62 L2 62 L2 54" stroke="#FF2A2A" strokeWidth="1" />
-            <line x1="32" y1="6" x2="32" y2="20" stroke="#FF2A2A" strokeWidth="1" />
-            <line x1="32" y1="44" x2="32" y2="58" stroke="#FF2A2A" strokeWidth="1" />
-            <line x1="6" y1="32" x2="20" y2="32" stroke="#FF2A2A" strokeWidth="1" />
-            <line x1="44" y1="32" x2="58" y2="32" stroke="#FF2A2A" strokeWidth="1" />
-            <circle cx="32" cy="32" r="10" stroke="#EAEAEA" strokeWidth="1" />
+            <path d="M2 10 L2 2 L10 2" stroke="hsl(var(--brand-accent))" strokeWidth="1" />
+            <path d="M54 2 L62 2 L62 10" stroke="hsl(var(--brand-accent))" strokeWidth="1" />
+            <path d="M62 54 L62 62 L54 62" stroke="hsl(var(--brand-accent))" strokeWidth="1" />
+            <path d="M10 62 L2 62 L2 54" stroke="hsl(var(--brand-accent))" strokeWidth="1" />
+            <line x1="32" y1="6" x2="32" y2="20" stroke="hsl(var(--brand-accent))" strokeWidth="1" />
+            <line x1="32" y1="44" x2="32" y2="58" stroke="hsl(var(--brand-accent))" strokeWidth="1" />
+            <line x1="6" y1="32" x2="20" y2="32" stroke="hsl(var(--brand-accent))" strokeWidth="1" />
+            <line x1="44" y1="32" x2="58" y2="32" stroke="hsl(var(--brand-accent))" strokeWidth="1" />
+            <circle cx="32" cy="32" r="10" stroke="hsl(var(--brand-text-light))" strokeWidth="1" />
             <path
               d="M27 28 L37 28 L27 36 L37 36"
-              stroke="#FF2A2A"
+              stroke="hsl(var(--brand-accent))"
               strokeWidth="2"
               strokeLinecap="square"
               strokeLinejoin="miter"
@@ -279,7 +279,7 @@ export default function Home() {
           {loading ? (
             <div className="grid grid-cols-1 gap-px border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-4" aria-hidden="true">
               {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="bg-[#0A0A0A] p-6">
+                <div key={i} className="bg-brand-bg-dark p-6">
                   <div className={`h-3 w-20 bg-white/10 ${reducedMotion ? "" : "animate-pulse"}`} />
                   <div className={`mt-3 h-7 w-28 bg-white/10 ${reducedMotion ? "" : "animate-pulse"}`} />
                 </div>
@@ -291,47 +291,47 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => navigate("/transactions")}
-                className="mt-2 font-mono text-sm tracking-wider text-[#FF2A2A] transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2A2A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] active:scale-[0.98]"
+                className="mt-2 font-mono text-sm tracking-wider text-brand-accent transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg-dark active:scale-[0.98]"
               >
                 {tr.initiateTx}
               </button>
             </div>
           ) : summary ? (
             <div className="grid grid-cols-1 gap-px border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="bg-[#0A0A0A] p-6">
+              <div className="bg-brand-bg-dark p-6">
                 <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{summary.as_of_date === todayStr ? tr.dailyPnl : summary.as_of_date === yesterdayStr ? tr.yesterdayPnl : summary.as_of_date}</p>
                 <output className={`mt-2 block font-mono text-2xl font-bold tabular-nums ${pnlColorDark(summary.daily_pnl)}`}>
                   {signedMoney(summary.daily_pnl)}{" "}
                   <span className="text-sm font-normal text-white/40">({pct(summary.daily_return)})</span>
                 </output>
               </div>
-              <div className="bg-[#0A0A0A] p-6">
+              <div className="bg-brand-bg-dark p-6">
                 <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.currentValue}</p>
-                <output className="mt-2 block font-mono text-2xl font-bold tabular-nums text-[#EAEAEA]">
+                <output className="mt-2 block font-mono text-2xl font-bold tabular-nums text-brand-text-light">
                   {money(summary.total_value)}
                 </output>
               </div>
-              <div className="bg-[#0A0A0A] p-6">
+              <div className="bg-brand-bg-dark p-6">
                 <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.totalPnl}</p>
                 <output className={`mt-2 block font-mono text-2xl font-bold tabular-nums ${pnlColorDark(summary.total_pnl)}`}>
                   {signedMoney(summary.total_pnl)}{" "}
                   <span className="text-sm font-normal text-white/40">({pct(summary.total_return)})</span>
                 </output>
               </div>
-              <div className="bg-[#0A0A0A] p-6">
+              <div className="bg-brand-bg-dark p-6">
                 <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.holdings}</p>
-                <output className="mt-2 block font-mono text-2xl font-bold tabular-nums text-[#EAEAEA]">
+                <output className="mt-2 block font-mono text-2xl font-bold tabular-nums text-brand-text-light">
                   {summary.holding_count} {tr.units}
                 </output>
               </div>
             </div>
           ) : (
             <div>
-              <p className={`text-lg tracking-wider text-[#FF2A2A] ${labelFont}`}>{tr.error}</p>
+              <p className={`text-lg tracking-wider text-brand-accent ${labelFont}`}>{tr.error}</p>
               <button
                 type="button"
                 onClick={reload}
-                className="mt-2 font-mono text-sm tracking-wider text-[#FF2A2A] transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2A2A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] active:scale-[0.98]"
+                className="mt-2 font-mono text-sm tracking-wider text-brand-accent transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg-dark active:scale-[0.98]"
               >
                 {tr.retry}
               </button>
@@ -342,11 +342,11 @@ export default function Home() {
         {/* System status */}
         {summary && summary.holding_count > 0 && (
           <section className="fade-in-up mb-12" style={{ animationDelay: "200ms" }}>
-            <div className="border border-white/10 bg-[#0A0A0A] p-4">
+            <div className="border border-white/10 bg-brand-bg-dark p-4">
               <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.systemStatus}</p>
               <p className="mt-2 font-mono text-xs tracking-wider">
                 <span className="text-white/60">{tr.market}:</span>{" "}
-                <span className={mkt === "OPEN" ? "text-gain-400" : "text-[#FF2A2A]"}>
+                <span className={mkt === "OPEN" ? "text-gain-400" : "text-brand-accent"}>
                   {mkt === "OPEN" ? tr.marketOpen : tr.marketClosed}
                 </span>
                 <span aria-hidden="true" className="mx-3 text-white/30">///</span>
@@ -377,15 +377,15 @@ export default function Home() {
                   key={to}
                   type="button"
                   onClick={() => navigate(to)}
-                  className={`group relative bg-[#0A0A0A] p-5 text-left transition-colors duration-200 hover:bg-[#EAEAEA] hover:text-[#0A0A0A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2A2A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] active:scale-[0.98] sm:p-6 ${isWide ? "sm:col-span-2" : ""}`}
+                  className={`group relative bg-brand-bg-dark p-5 text-left transition-colors duration-200 hover:bg-brand-text-light hover:text-brand-bg-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg-dark active:scale-[0.98] sm:p-6 ${isWide ? "sm:col-span-2" : ""}`}
                 >
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none absolute left-1 top-1 h-2 w-2 border-l border-t border-[#FF2A2A] opacity-0 transition-opacity group-hover:opacity-100"
+                    className="pointer-events-none absolute left-1 top-1 h-2 w-2 border-l border-t border-brand-accent opacity-0 transition-opacity group-hover:opacity-100"
                   />
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none absolute right-1 bottom-1 h-2 w-2 border-r border-b border-[#FF2A2A] opacity-0 transition-opacity group-hover:opacity-100"
+                    className="pointer-events-none absolute right-1 bottom-1 h-2 w-2 border-r border-b border-brand-accent opacity-0 transition-opacity group-hover:opacity-100"
                   />
                   <div className={`flex items-center gap-3 ${isWide ? "sm:flex-row sm:items-center" : "flex-col"}`}>
                     <p className="font-mono text-2xl font-bold">{code}</p>
@@ -408,7 +408,7 @@ export default function Home() {
         <div className="mx-auto max-w-5xl px-6 py-4">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <span aria-hidden="true" className="font-mono text-sm text-[#FF2A2A]">+</span>
+              <span aria-hidden="true" className="font-mono text-sm text-brand-accent">+</span>
               <span className="font-mono text-xs uppercase tracking-wider text-white/60">ZFUNDPILOT ®</span>
               <span className="font-mono text-xs uppercase tracking-wider text-white/30">v{authStatus?.version ?? "..."}</span>
             </div>
@@ -416,12 +416,12 @@ export default function Home() {
               href={GITHUB_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="group inline-flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-white/60 transition-colors hover:text-[#FF2A2A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF2A2A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0A] active:scale-[0.98]"
+              className="group inline-flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider text-white/60 transition-colors hover:text-brand-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg-dark active:scale-[0.98]"
             >
               <span>[ GITHUB ]</span>
               <span
                 aria-hidden="true"
-                className="inline-block translate-x-0 text-white/40 transition-transform group-hover:translate-x-0.5 group-hover:text-[#FF2A2A]"
+                className="inline-block translate-x-0 text-white/40 transition-transform group-hover:translate-x-0.5 group-hover:text-brand-accent"
               >
                 ↗
               </span>

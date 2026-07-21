@@ -33,7 +33,7 @@ export default function App() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3">
         <LogoSplash className="h-20 w-20" />
-        <p className="text-sm font-bold tracking-tight text-slate-700">ZFundPilot</p>
+        <p className="text-sm font-bold tracking-tight text-foreground">ZFundPilot</p>
       </div>
     )
   }

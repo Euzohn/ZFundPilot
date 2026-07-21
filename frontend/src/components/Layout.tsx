@@ -60,7 +60,7 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
       collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2",
       isActive
         ? "bg-blue-600/15 text-blue-300"
-        : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200",
+        : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200",
     )
 
   return (
@@ -68,7 +68,7 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
       {navGroups.map((group) => (
         <div key={group.label} className="mb-1">
           {!collapsed && (
-            <p className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-slate-600">{group.label}</p>
+            <p className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600">{group.label}</p>
           )}
           {group.items.map(({ to, label, icon: Icon }) => (
             <NavLink
@@ -85,7 +85,7 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
           ))}
         </div>
       ))}
-      <div className="mt-2 border-t border-slate-800/50 pt-2">
+      <div className="mt-2 border-t border-zinc-800/50 pt-2">
         <NavLink
           to={bottomNav.to}
           onClick={onNavigate}
@@ -121,15 +121,15 @@ export default function Layout() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="flex h-screen overflow-hidden bg-background">
       {/* 噪点叠加层 */}
       <div className="grain-overlay" aria-hidden="true" />
 
       {/* Mobile top bar */}
-      <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-3 border-b border-slate-200 bg-white px-4 md:hidden">
+      <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background px-4 md:hidden">
         <button
           onClick={() => setMobileOpen(true)}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+          className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
           aria-label="打开菜单"
         >
           <Menu className="h-5 w-5" />
@@ -145,7 +145,7 @@ export default function Layout() {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "hidden md:flex flex-col bg-gradient-to-b from-slate-900 to-slate-950 text-slate-300 transition-all duration-300",
+          "hidden md:flex flex-col bg-gradient-to-b from-zinc-900 to-zinc-950 text-zinc-300 transition-all duration-300",
           collapsed ? "w-16" : "w-60",
         )}
       >
@@ -160,13 +160,13 @@ export default function Layout() {
 
         <NavLinks collapsed={collapsed} />
 
-        <div className={cn("border-t border-slate-800/60", collapsed ? "px-2 py-3" : "px-3 py-3")}>
+        <div className={cn("border-t border-zinc-800/60", collapsed ? "px-2 py-3" : "px-3 py-3")}>
           <a
             href="https://github.com/Euzohn/ZFundPilot"
             target="_blank"
             rel="noopener noreferrer"
             className={cn(
-              "flex items-center rounded-lg text-slate-500 transition-colors hover:bg-slate-800 hover:text-white",
+              "flex items-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-white",
               collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 px-3 py-2 text-xs",
             )}
             title={collapsed ? "GitHub" : undefined}
@@ -178,14 +178,14 @@ export default function Layout() {
             variant="icon"
             label={collapsed ? undefined : "主题"}
             className={cn(
-              "mt-1 text-slate-500 hover:bg-slate-800 hover:text-white",
+              "mt-1 text-zinc-500 hover:bg-zinc-800 hover:text-white",
               collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 px-3 py-2 text-xs",
             )}
           />
           <button
             onClick={toggle}
             className={cn(
-              "mt-1 flex items-center rounded-lg text-slate-500 transition-colors hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+              "mt-1 flex items-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
               collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 px-3 py-2 text-xs",
             )}
             title={collapsed ? "展开侧边栏" : "收起侧边栏"}
@@ -207,7 +207,7 @@ export default function Layout() {
       {/* Mobile drawer sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-gradient-to-b from-slate-900 to-slate-950 text-slate-300 transition-transform duration-300 md:hidden",
+          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-gradient-to-b from-zinc-900 to-zinc-950 text-zinc-300 transition-transform duration-300 md:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
@@ -220,7 +220,7 @@ export default function Layout() {
           </div>
           <button
             onClick={() => setMobileOpen(false)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
             aria-label="关闭菜单"
           >
             <X className="h-5 w-5" />

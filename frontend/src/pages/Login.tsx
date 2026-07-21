@@ -31,10 +31,10 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-muted px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
-          <Package className="h-12 w-12 text-blue-500" />
+          <Package className="h-12 w-12 text-primary" />
           <CardTitle className="text-xl">ZFundPilot</CardTitle>
           <p className="text-sm text-muted-foreground">个人基金分析与风险管理系统</p>
         </CardHeader>

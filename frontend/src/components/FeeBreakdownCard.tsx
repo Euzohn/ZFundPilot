@@ -31,7 +31,7 @@ export default function FeeBreakdownCard({ result, action, className }: Props) {
             </span>
           )}
           {result.fee === 0 && (
-            <span className="ml-1 text-green-600">免手续费</span>
+            <span className="ml-1 text-success">免手续费</span>
           )}
         </span>
         {hasLots && (
@@ -47,7 +47,7 @@ export default function FeeBreakdownCard({ result, action, className }: Props) {
       </div>
 
       {hasLots && open && (
-        <div className="mt-2 rounded border border-slate-200 bg-slate-50/60 p-2 space-y-1">
+        <div className="mt-2 rounded border border-border bg-muted/50 p-2 space-y-1">
           {action === "sell" && (
             <>
               <p className="text-[11px] font-medium text-muted-foreground mb-1.5">FIFO 赎回明细</p>
@@ -69,7 +69,7 @@ export default function FeeBreakdownCard({ result, action, className }: Props) {
                   </span>
                 </div>
               ))}
-              <div className="pt-1 mt-1 border-t border-slate-200 flex items-center justify-between text-xs font-medium">
+              <div className="pt-1 mt-1 border-t border-border flex items-center justify-between text-xs font-medium">
                 <span>合计</span>
                 <span className="tabular-nums">{money(result.fee)}</span>
               </div>

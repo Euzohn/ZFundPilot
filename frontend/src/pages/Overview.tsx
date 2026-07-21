@@ -12,8 +12,7 @@ import {
 } from "recharts"
 import { Wallet, TrendingUp, DollarSign, ArrowUpFromLine, Calendar, Activity } from "lucide-react"
 import type { ElementType } from "react"
-
-const PIE_COLORS = ["#1E40AF", "#3B82F6", "#60A5FA", "#93C5FD", "#D97706", "#F59E0B", "#6366F1"]
+import { CHART_COLORS } from "@/lib/chartPalette"
 
 function CompactCard({ label, value, sub, color }: {
   label: string; value: string; sub?: string; color?: string
@@ -61,8 +60,8 @@ function MetricCard({ icon: Icon, label, value, sub, color }: {
           <p className={`text-lg md:text-xl font-bold tabular-nums fade-in-up ${color ?? ""}`}>{value}</p>
           {sub && <p className={`text-xs tabular-nums ${color ?? "text-muted-foreground"}`}>{sub}</p>}
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-50">
-          <Icon className="h-5 w-5 text-slate-400" />
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted/50">
+          <Icon className="h-5 w-5 text-muted-foreground" />
         </div>
       </CardContent>
     </Card>
@@ -155,11 +154,11 @@ export default function Overview() {
           <CardContent className="p-4 md:p-5">
             <p className="text-xs font-medium text-muted-foreground">累计买入 / 卖出 / 分红</p>
             <p className="mt-1 text-sm md:text-base font-bold tabular-nums">
-              <span className="text-blue-600">{money(summary.total_buy)}</span>
+              <span className="text-primary">{money(summary.total_buy)}</span>
               <span className="text-muted-foreground mx-1.5">/</span>
-              <span className="text-amber-600">{money(summary.total_sell)}</span>
+              <span className="text-warning">{money(summary.total_sell)}</span>
               <span className="text-muted-foreground mx-1.5">/</span>
-              <span className="text-purple-600">{money(summary.total_dividend)}</span>
+              <span className="text-info">{money(summary.total_dividend)}</span>
             </p>
           </CardContent>
         </Card>
@@ -192,7 +191,7 @@ export default function Overview() {
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
                   <Pie data={typeDist} dataKey="market_value" nameKey="fund_type" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
-                    {typeDist.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke="none" />)}
+                    {typeDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip nameKey="fund_type" />} />
                 </PieChart>
@@ -208,7 +207,7 @@ export default function Overview() {
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
                   <Pie data={channelDist.map(d => ({ ...d, channel: d.channel || "未标注" }))} dataKey="market_value" nameKey="channel" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
-                    {channelDist.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke="none" />)}
+                    {channelDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip nameKey="channel" />} />
                 </PieChart>

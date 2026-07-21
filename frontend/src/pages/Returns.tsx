@@ -241,11 +241,11 @@ export default function Returns() {
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
           <p className="text-xs font-medium text-muted-foreground">累计买入 / 卖出 / 分红</p>
           <p className="mt-1 text-sm md:text-base font-bold tabular-nums">
-            <span className="text-blue-600">{money(summary.total_buy)}</span>
+            <span className="text-primary">{money(summary.total_buy)}</span>
             <span className="text-muted-foreground mx-1">/</span>
-            <span className="text-amber-600">{money(summary.total_sell)}</span>
+            <span className="text-warning">{money(summary.total_sell)}</span>
             <span className="text-muted-foreground mx-1">/</span>
-            <span className="text-purple-600">{money(summary.total_dividend)}</span>
+            <span className="text-info">{money(summary.total_dividend)}</span>
           </p>
         </CardContent></Card>
       </div>
@@ -354,9 +354,9 @@ export default function Returns() {
                 }} labelStyle={{ color: 'hsl(var(--foreground))' }} contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} onClick={toggleLegend} />
                 <Area yAxisId="value" type="monotone" dataKey="total_value" name="组合市值" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#valueGradient)" hide={hiddenKeys.has("total_value")} />
-                <Line yAxisId="value" type="monotone" dataKey="invested_cost" name="累计净投入" stroke="#f59e0b" strokeWidth={2} dot={false} hide={hiddenKeys.has("invested_cost")} />
+                <Line yAxisId="value" type="monotone" dataKey="invested_cost" name="累计净投入" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={false} hide={hiddenKeys.has("invested_cost")} />
                 <Line yAxisId="value" type="monotone" dataKey="profit" name="累计收益" stroke="var(--gain-500)" strokeWidth={2} dot={false} hide={hiddenKeys.has("profit")} />
-                <Line yAxisId="return" type="monotone" dataKey="total_return" name="累计收益率" stroke="#8b5cf6" strokeWidth={2} dot={false} hide={hiddenKeys.has("total_return")} />
+                <Line yAxisId="return" type="monotone" dataKey="total_return" name="累计收益率" stroke="hsl(var(--chart-5))" strokeWidth={2} dot={false} hide={hiddenKeys.has("total_return")} />
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
@@ -400,19 +400,19 @@ export default function Returns() {
                     <TableCell className={`text-right tabular-nums ${pnlColor(p.unrealized_pnl)}`}>{money(p.unrealized_pnl)}</TableCell>
                     <TableCell className={`text-right tabular-nums font-medium ${pnlColor(p.return_rate)}`}>{pct(p.return_rate)}</TableCell>
                     <TableCell className={`text-right tabular-nums ${pnlColor(p.realized_pnl)}`}>{money(p.realized_pnl)}</TableCell>
-                    <TableCell className="text-right tabular-nums text-blue-600">{p.dividend_total ? money(p.dividend_total) : "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums text-primary">{p.dividend_total ? money(p.dividend_total) : "—"}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">{pct(p.weight)}</TableCell>
                   </TableRow>
                 ))}
                 {/* 汇总行 */}
-                <TableRow className="border-t-2 border-slate-200 bg-slate-50/50 font-medium">
+                <TableRow className="border-t-2 border-border bg-muted/50 font-medium">
                   <TableCell colSpan={3} className="text-sm">合计（{openPositions.length} 只）</TableCell>
                   <TableCell className="text-right tabular-nums">{money(totals.total_cost)}</TableCell>
                   <TableCell className="text-right tabular-nums">{money(totals.market_value)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${pnlColor(totals.unrealized_pnl)}`}>{money(totals.unrealized_pnl)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${pnlColor(totals.realized_pnl)}`}>{money(totals.realized_pnl)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-blue-600">{totals.dividend_total ? money(totals.dividend_total) : "—"}</TableCell>
+                  <TableCell className="text-right tabular-nums text-primary">{totals.dividend_total ? money(totals.dividend_total) : "—"}</TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">100%</TableCell>
                 </TableRow>
               </TableBody>

@@ -155,7 +155,7 @@ export default function NavUpdate() {
               <p className="text-sm text-muted-foreground">基金总数</p>
               <p className="text-xl md:text-2xl font-bold">{rows.length} 只</p>
             </div>
-            <RefreshCw className="h-8 w-8 text-blue-500" />
+            <RefreshCw className="h-8 w-8 text-primary" />
           </CardContent>
         </Card>
         <Card>
@@ -163,11 +163,11 @@ export default function NavUpdate() {
             <div>
               <p className="text-sm text-muted-foreground">待更新基金数</p>
               <p className="text-xl md:text-2xl font-bold">
-                <span className={needsUpdate > 0 ? "text-amber-500" : "text-green-600"}>{needsUpdate}</span>
+                <span className={needsUpdate > 0 ? "text-warning" : "text-success"}>{needsUpdate}</span>
                 <span className="text-base text-muted-foreground"> / {rows.length}</span>
               </p>
             </div>
-            <AlertTriangle className={`h-8 w-8 ${needsUpdate > 0 ? "text-amber-400" : "text-green-400"}`} />
+            <AlertTriangle className={`h-8 w-8 ${needsUpdate > 0 ? "text-warning" : "text-success"}`} />
           </CardContent>
         </Card>
         <Card>
@@ -197,7 +197,7 @@ export default function NavUpdate() {
           </Button>
 
           {startError && (
-            <p className="text-sm text-red-600">启动失败：{startError}</p>
+            <p className="text-sm text-destructive">启动失败：{startError}</p>
           )}
 
           {updating && (
@@ -213,17 +213,17 @@ export default function NavUpdate() {
           )}
 
           {!updating && status?.error && (
-            <p className="text-sm text-red-600">更新异常：{status.error}</p>
+            <p className="text-sm text-destructive">更新异常：{status.error}</p>
           )}
 
           {results && (
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-4">
-                <span className="flex items-center gap-1 text-green-600">
+                <span className="flex items-center gap-1 text-success">
                   <CheckCircle2 className="h-4 w-4" /> 成功 {okCount} 只
                 </span>
                 {failCount > 0 && (
-                  <span className="flex items-center gap-1 text-red-600">
+                  <span className="flex items-center gap-1 text-destructive">
                     <XCircle className="h-4 w-4" /> 失败 {failCount} 只
                   </span>
                 )}
@@ -231,7 +231,7 @@ export default function NavUpdate() {
               {failCount > 0 && (
                 <div className="rounded-md border border-red-200 bg-red-50 p-3">
                   {results.filter((r) => !r.ok).map((r) => (
-                    <p key={r.fund_code} className="text-sm text-red-700">
+                    <p key={r.fund_code} className="text-sm text-destructive">
                       {r.fund_code}：{r.message}
                     </p>
                   ))}
@@ -287,20 +287,20 @@ export default function NavUpdate() {
                       <TableCell className="text-center">
                         {r.hasResult ? (
                           r.ok ? (
-                            <span title="更新成功"><CheckCircle2 className="h-4 w-4 text-green-500 inline" /></span>
+                            <span title="更新成功"><CheckCircle2 className="h-4 w-4 text-success inline" /></span>
                           ) : (
-                            <span title={r.message}><XCircle className="h-4 w-4 text-red-500 inline" /></span>
+                            <span title={r.message}><XCircle className="h-4 w-4 text-destructive inline" /></span>
                           )
                         ) : !r.date ? (
-                          <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50 text-[11px] px-1.5 py-0">
+                          <Badge variant="outline" className="text-warning border-amber-300 bg-amber-50 text-[11px] px-1.5 py-0">
                             待更新
                           </Badge>
                         ) : outdated ? (
-                          <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50 text-[11px] px-1.5 py-0">
+                          <Badge variant="outline" className="text-warning border-amber-300 bg-amber-50 text-[11px] px-1.5 py-0">
                             过时
                           </Badge>
                         ) : (
-                          <span title="已是最新"><CheckCircle2 className="h-4 w-4 text-green-500 inline" /></span>
+                          <span title="已是最新"><CheckCircle2 className="h-4 w-4 text-success inline" /></span>
                         )}
                       </TableCell>
                     </TableRow>

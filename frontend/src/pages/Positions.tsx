@@ -140,7 +140,7 @@ export default function Positions() {
       {loading ? (
         <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
       ) : !positions ? (
-        <div className="py-20 text-center text-red-500">加载失败</div>
+        <div className="py-20 text-center text-destructive">加载失败</div>
       ) : (
       <>
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -214,7 +214,7 @@ export default function Positions() {
 <TableCell className="text-right tabular-nums font-medium">
                         <div className="flex flex-col items-end">
                           <span>{money(m.value)}</span>
-                          <span className={`text-xs font-normal ${m.latestDate === today ? "text-muted-foreground" : "text-amber-600"}`}>
+                          <span className={`text-xs font-normal ${m.latestDate === today ? "text-muted-foreground" : "text-warning"}`}>
                             {m.latestDate ?? "—"}
                           </span>
                         </div>
@@ -224,7 +224,7 @@ export default function Positions() {
                         <div className="flex flex-col items-end">
                           <span>{pct(ret)}</span>
                           {breakevenGain != null && (
-                            <span className="text-xs font-normal text-amber-600">回本 {pct(breakevenGain)}</span>
+                            <span className="text-xs font-normal text-warning">回本 {pct(breakevenGain)}</span>
                           )}
                         </div>
                       </TableCell>
@@ -277,9 +277,9 @@ export default function Positions() {
                   }, 0)
                   const hasFilteredEstimate = sortedRows.some(([code]) => estimateMap[code] != null)
                   return (
-                    <TableRow className="border-t-2 border-slate-300 bg-slate-100/80 [&>td]:py-2.5 [&>td]:font-bold [&>td]:text-sm">
-                      <TableCell colSpan={3} className="text-slate-700">合计（{sortedRows.length} 只）</TableCell>
-                      <TableCell className="text-right tabular-nums text-slate-800">{money(totalValue)}</TableCell>
+                    <TableRow className="border-t-2 border-border bg-muted/80 [&>td]:py-2.5 [&>td]:font-bold [&>td]:text-sm">
+                      <TableCell colSpan={3} className="text-foreground">合计（{sortedRows.length} 只）</TableCell>
+                      <TableCell className="text-right tabular-nums text-foreground">{money(totalValue)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalPnl)}`}>{money(totalPnl)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${hasFilteredEstimate ? pnlColor(totalEstPnl) : ""}`}>

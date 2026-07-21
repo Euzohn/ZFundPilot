@@ -26,8 +26,8 @@ function actionBadgeClass(action: string): string {
   switch (action) {
     case "buy": return ""
     case "sell": return ""
-    case "dividend": return "text-blue-600 border-blue-300 bg-blue-50"
-    case "reinvest": return "text-purple-600 border-purple-300 bg-purple-50"
+    case "dividend": return "text-primary border-blue-300 bg-blue-50"
+    case "reinvest": return "text-info border-purple-300 bg-purple-50"
     default: return ""
   }
 }
@@ -438,7 +438,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             </div>
           </div>
 
-          <div className="border-t border-slate-100" />
+          <div className="border-t border-border/60" />
 
           {/* ── 操作 / 日期 / 渠道 ── */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
@@ -472,7 +472,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             </div>
           </div>
 
-          <div className="border-t border-slate-100" />
+          <div className="border-t border-border/60" />
 
           {/* ── 金额 / 份额 / 净值 / 手续费 ── */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
@@ -484,7 +484,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
-                    份额 <span className="text-blue-500">可修改</span>
+                    份额 <span className="text-primary">可修改</span>
                   </Label>
                   <Input type="number" step="0.01" value={shares || autoShares} onChange={(e) => setShares(e.target.value)} className="h-9" placeholder={autoShares || "—"} />
                 </div>
@@ -508,7 +508,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
-                    金额 <span className="text-blue-500">可修改</span>
+                    金额 <span className="text-primary">可修改</span>
                   </Label>
                   <Input type="number" step="0.01" value={amount || autoAmount} onChange={(e) => setAmount(e.target.value)} className="h-9" placeholder={autoAmount || "—"} />
                 </div>
@@ -529,7 +529,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
-                    金额 <span className="text-blue-500">自动</span>
+                    金额 <span className="text-primary">自动</span>
                   </Label>
                   <Input type="number" step="0.01" value={autoAmount} readOnly className="h-9 bg-muted/50" placeholder="—" />
                 </div>
@@ -550,7 +550,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                     <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
                   )}
                 </div>
-                <p className={cn("mt-1 text-[11px]", navNotFound ? "text-amber-500" : "text-muted-foreground")}>
+                <p className={cn("mt-1 text-[11px]", navNotFound ? "text-warning" : "text-muted-foreground")}>
                   {navLoading ? "正在查询净值..." : navNotFound ? "该日期暂无净值，请手动输入" : "自动加载或手动填写"}
                 </p>
               </div>
@@ -570,7 +570,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             )}
           </div>
 
-          <div className="border-t border-slate-100" />
+          <div className="border-t border-border/60" />
 
           {/* ── 自定义渠道 / 备注 ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -832,17 +832,17 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
                     <TableCell className="text-right tabular-nums">{t.amount ? money(t.amount) : "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{t.shares?.toFixed(2) ?? "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {t.nav != null ? t.nav.toFixed(4) : t.action === "dividend" ? "—" : <Badge variant="outline" className="text-amber-600 border-amber-300 bg-amber-50">待确认</Badge>}
+                      {t.nav != null ? t.nav.toFixed(4) : t.action === "dividend" ? "—" : <Badge variant="outline" className="text-warning border-amber-300 bg-amber-50">待确认</Badge>}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{t.fee || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{t.note}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
                         <Button variant="ghost" size="icon" onClick={() => onEdit(t)}>
-                          <Pencil className="h-4 w-4 text-blue-500" />
+                          <Pencil className="h-4 w-4 text-primary" />
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => setConfirmDeleteId(t.id!)}>
-                          <Trash2 className="h-4 w-4 text-red-500" />
+                          <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
                     </TableCell>
@@ -869,7 +869,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
       {/* 删除单条确认弹窗 */}
       {confirmDeleteId != null && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={() => setConfirmDeleteId(null)}>
-          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-sm rounded-lg bg-background p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-base font-bold">确认删除</h3>
             <p className="mt-2 text-sm text-muted-foreground">
               确定要删除这笔交易记录吗？此操作<strong>不可撤销</strong>。
@@ -892,8 +892,8 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
       {/* 清空确认弹窗 */}
       {showClearConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowClearConfirm(false)}>
-          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-base font-bold text-red-600">⚠️ 清空全部交易流水</h3>
+          <div className="w-full max-w-sm rounded-lg bg-background p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-destructive">⚠️ 清空全部交易流水</h3>
             <p className="mt-2 text-sm text-muted-foreground">
               此操作将删除所有交易记录，<strong>不可撤销</strong>。
             </p>
@@ -980,8 +980,8 @@ function CSVImportExport() {
           {/* Parse errors */}
           {parseResult?.errors && parseResult.errors.length > 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
-              <p className="mb-1 text-sm font-medium text-amber-800">⚠️ {parseResult.errors.length} 条提示/警告</p>
-              <ul className="space-y-0.5 text-xs text-amber-700">
+              <p className="mb-1 text-sm font-medium text-warning">⚠️ {parseResult.errors.length} 条提示/警告</p>
+              <ul className="space-y-0.5 text-xs text-warning">
                 {parseResult.errors.map((e, i) => <li key={i}>{e}</li>)}
               </ul>
             </div>

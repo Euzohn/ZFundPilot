@@ -22,9 +22,9 @@ function MetricCard({ label, value, sub, color }: { label: string; value: string
 }
 
 const FLAG_STYLES: Record<string, { icon: ReactNode; variant: "destructive" | "warning" | "default" }> = {
-  danger: { icon: <ShieldAlert className="h-5 w-5 text-red-500" />, variant: "destructive" },
-  warning: { icon: <AlertTriangle className="h-5 w-5 text-amber-500" />, variant: "warning" },
-  info: { icon: <Info className="h-5 w-5 text-blue-500" />, variant: "default" },
+  danger: { icon: <ShieldAlert className="h-5 w-5 text-destructive" />, variant: "destructive" },
+  warning: { icon: <AlertTriangle className="h-5 w-5 text-warning" />, variant: "warning" },
+  info: { icon: <Info className="h-5 w-5 text-primary" />, variant: "default" },
 }
 
 export default function Risk() {
@@ -76,7 +76,7 @@ export default function Risk() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Lightbulb className="h-5 w-5 text-amber-500" />
+            <Lightbulb className="h-5 w-5 text-warning" />
             结构优化建议
           </CardTitle>
         </CardHeader>
@@ -85,7 +85,7 @@ export default function Risk() {
           {al && advice && advice.length > 0 ? (
             advice.map((a, i) => (
               <div key={i} className="flex items-start gap-3 rounded-md border p-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-600">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-primary">
                   {i + 1}
                 </span>
                 <div>

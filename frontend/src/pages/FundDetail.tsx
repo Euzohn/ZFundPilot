@@ -201,7 +201,7 @@ const handleDelete = async (txId: number) => {
         <MetricCard label="当前市值" value={money(totalValue)} />
         <MetricCard label="浮动盈亏" value={signedMoney(totalUnrealized)} color={pnlColor(totalUnrealized)} />
         <MetricCard label="已实现盈亏" value={signedMoney(totalRealized)} color={pnlColor(totalRealized)} />
-        <MetricCard label="收益率" value={pct(returnRate)} color={pnlColor(returnRate)} sub={latestNav != null && avgCost != null && latestNav < avgCost ? `回本 ${pct(avgCost / latestNav - 1)}` : undefined} subColor="text-amber-600" />
+        <MetricCard label="收益率" value={pct(returnRate)} color={pnlColor(returnRate)} sub={latestNav != null && avgCost != null && latestNav < avgCost ? `回本 ${pct(avgCost / latestNav - 1)}` : undefined} subColor="text-warning" />
       </div>
 
       {/* 各渠道持仓 */}
@@ -286,7 +286,7 @@ const handleDelete = async (txId: number) => {
                         {txInfo && txInfo.length > 0 && (
                           <div className="mt-1 space-y-0.5 border-t pt-1">
                             {txInfo.map((t, i) => (
-                              <p key={i} className={`text-xs tabular-nums ${t.action === 'buy' ? 'text-gain' : t.action === 'sell' ? 'text-loss' : t.action === 'dividend' ? 'text-blue-500' : 'text-purple-500'}`}>
+                              <p key={i} className={`text-xs tabular-nums ${t.action === 'buy' ? 'text-gain' : t.action === 'sell' ? 'text-loss' : t.action === 'dividend' ? 'text-primary' : 'text-info'}`}>
                                 {ACTION_LABELS[t.action] ?? t.action}
                                 {t.date !== label && <span className="text-muted-foreground"> ({t.date})</span>}
                                 {t.amount ? ` ${money(t.amount)}` : ''}
@@ -367,7 +367,7 @@ const handleDelete = async (txId: number) => {
                     <TableCell>
                       <Badge
                         variant={t.action === "buy" ? "success" : t.action === "sell" ? "destructive" : "outline"}
-                        className={t.action === "dividend" ? "text-blue-600 border-blue-300 bg-blue-50" : t.action === "reinvest" ? "text-purple-600 border-purple-300 bg-purple-50" : ""}
+                        className={t.action === "dividend" ? "text-primary border-blue-300 bg-blue-50" : t.action === "reinvest" ? "text-info border-purple-300 bg-purple-50" : ""}
                       >
                         {ACTION_LABELS[t.action] ?? t.action}
                       </Badge>
@@ -381,10 +381,10 @@ const handleDelete = async (txId: number) => {
                     <TableCell>
                       <div className="flex gap-1">
                         <Button variant="ghost" size="icon" onClick={() => handleEdit(t)}>
-                          <Pencil className="h-4 w-4 text-blue-500" />
+                          <Pencil className="h-4 w-4 text-primary" />
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => setConfirmDeleteId(t.id!)}>
-                          <Trash2 className="h-4 w-4 text-red-500" />
+                          <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
                     </TableCell>
@@ -400,7 +400,7 @@ const handleDelete = async (txId: number) => {
       {/* 删除确认弹窗 */}
       {confirmDeleteId != null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmDeleteId(null)}>
-          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-sm rounded-lg bg-background p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-base font-bold">确认删除</h3>
             <p className="mt-2 text-sm text-muted-foreground">
               确定要删除这笔交易记录吗？此操作<strong>不可撤销</strong>。

@@ -16,6 +16,7 @@ import { GitCompare, Search, X, BarChart3, Table2, TrendingUp, Activity, DollarS
 import {
   LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
 } from "recharts"
+import { CHART_COLORS } from "@/lib/chartPalette"
 
 const PERIOD_LABELS: Record<string, string> = {
   "1w": "近1周", "1m": "近1月", "3m": "近3月", "6m": "近6月",
@@ -152,7 +153,7 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
                     className={cn(
                       "inline-flex cursor-pointer items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-colors",
                       types.includes(t)
-                        ? "border-blue-400 bg-blue-50 text-blue-700"
+                        ? "border-blue-400 bg-blue-50 text-primary"
                         : "border-border hover:bg-muted/50",
                     )}
                   >
@@ -179,7 +180,7 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
                     className={cn(
                       "inline-flex cursor-pointer items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-colors shrink-0",
                       sectors.includes(s)
-                        ? "border-blue-400 bg-blue-50 text-blue-700"
+                        ? "border-blue-400 bg-blue-50 text-primary"
                         : "border-border hover:bg-muted/50",
                     )}
                   >
@@ -306,7 +307,7 @@ function CompareTable({ funds, labelMap, valueKey, format }: {
         <tbody>
           {keys.map((key) => (
             <tr key={key} className="border-t border-border/50">
-              <td className="sticky left-0 bg-white px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{labelMap[key]}</td>
+              <td className="sticky left-0 bg-background px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{labelMap[key]}</td>
               {funds.map((f) => (
                 <td key={f.code} className="px-3 py-2 text-right text-xs">
                   {format === "pct"
@@ -352,7 +353,7 @@ function InfoTable({ funds }: { funds: FundCompareItem[] }) {
         <tbody>
           {rows.map(({ label, render }) => (
             <tr key={label} className="border-t border-border/50">
-              <td className="sticky left-0 bg-white px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{label}</td>
+              <td className="sticky left-0 bg-background px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{label}</td>
               {funds.map((f) => (
                 <td key={f.code} className="px-3 py-2 text-right text-xs">{render(f)}</td>
               ))}
@@ -364,7 +365,7 @@ function InfoTable({ funds }: { funds: FundCompareItem[] }) {
   )
 }
 
-const NAV_CHART_COLORS = ["#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#be185d", "#059669"]
+const NAV_CHART_COLORS = CHART_COLORS
 
 function NavChart({ navSeries }: { navSeries: Record<string, { date: string; value: number }[]> }) {
   const codes = Object.keys(navSeries).filter((c) => navSeries[c].length > 0)
@@ -496,7 +497,7 @@ export default function FundCompare() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
-        <GitCompare className="h-5 w-5 text-blue-500" />
+        <GitCompare className="h-5 w-5 text-primary" />
         <h1 className="text-xl md:text-2xl font-bold tracking-tight">基金对比</h1>
       </div>
 
@@ -533,7 +534,7 @@ export default function FundCompare() {
       {!loading && !error && data && data.ok && okFunds.length > 0 && (
         <>
           {failedFunds.length > 0 && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-warning">
               以下基金获取失败：{failedFunds.map((f) => `${f.code}(${f.message})`).join("；")}
             </div>
           )}

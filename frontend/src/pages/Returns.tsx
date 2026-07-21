@@ -8,17 +8,16 @@ import ErrorState from "@/components/ErrorState"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
+import PageHeader from "@/components/PageHeader"
 import { cn } from "@/lib/utils"
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart, Cell, ReferenceLine } from "recharts"
 import PnLCalendar from "@/components/PnLCalendar"
 import { ChevronUp, ChevronDown, BarChart3, CalendarDays } from "lucide-react"
 import { getChannelColors, getChannelColorsAsync, getPalette } from "@/lib/channelColors"
+import { RANGE_LABELS, RANGE_DAYS } from "@/lib/rangeLabels"
+import { makeSortHeader } from "@/components/SortHeader"
 
 const PALETTE = getPalette()
-const CURVE_RANGE_DAYS: Record<string, number> = { "1m": 30, "3m": 90, "6m": 180, "1y": 365 }
-const CURVE_RANGE_LABELS: Record<string, string> = { "1m": "1月", "3m": "3月", "6m": "6月", "1y": "1年", "all": "全部" }
-const AGG_RANGE_DAYS: Record<string, number> = { "3m": 90, "6m": 180, "1y": 365 }
-const AGG_RANGE_LABELS: Record<string, string> = { "3m": "3月", "6m": "6月", "1y": "1年", "all": "全部" }
 
 function ChannelTooltip({ active, payload, label }: { active?: boolean; payload?: { dataKey: string; value: number; color: string }[]; label?: string }) {
   if (!active || !payload?.length) return null
@@ -118,7 +117,7 @@ export default function Returns() {
     if (!curve?.length) return []
     let data = curve
     if (curveRange !== "all") {
-      const days = CURVE_RANGE_DAYS[curveRange]
+      const days = RANGE_DAYS[curveRange]
       const d = new Date()
       d.setDate(d.getDate() - days)
       const cutoff = localDateStr(d)
@@ -149,7 +148,7 @@ export default function Returns() {
     // 周/月/年聚合 — 先按区间过滤
     let filtered = channelPnl
     if (pnlAggRange !== "all") {
-      const days = AGG_RANGE_DAYS[pnlAggRange]
+      const days = RANGE_DAYS[pnlAggRange]
       const d = new Date()
       d.setDate(d.getDate() - days)
       const cutoff = localDateStr(d)
@@ -192,17 +191,7 @@ export default function Returns() {
   if (se) return <ErrorState message={se} onRetry={reloadSummary} />
   if (sl || !summary) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
 
-  function SortHeader({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) {
-    const active = sortField === field
-    return (
-      <TableHead className={cn("cursor-pointer select-none", active ? "text-foreground" : "", className)} onClick={() => toggleSort(field)}>
-        <span className="inline-flex items-center gap-1">
-          {children}
-          {active && (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
-        </span>
-      </TableHead>
-    )
-  }
+  const SortHeader = makeSortHeader({ sortField, sortDir, toggleSort })
 
   // 汇总行
   const totals = {
@@ -222,7 +211,7 @@ export default function Returns() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl md:text-2xl font-bold">收益分析</h1>
+      <PageHeader title="收益分析" />
 
       {/* Metrics — 详细指标，不与总览重复 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
@@ -279,7 +268,7 @@ export default function Returns() {
                   {(["3m", "6m", "1y", "all"] as const).map(r => (
                     <Button key={r} size="sm" variant={pnlAggRange === r ? "default" : "outline"} className="h-6 px-2 text-[11px]"
                       onClick={() => setPnlAggRange(r)}>
-                      {AGG_RANGE_LABELS[r]}
+                      {RANGE_LABELS[r]}
                     </Button>
                   ))}
                 </>
@@ -329,7 +318,7 @@ export default function Returns() {
             {(["1m", "3m", "6m", "1y", "all"] as const).map(r => (
               <Button key={r} size="sm" variant={curveRange === r ? "default" : "outline"} className="h-6 px-2 text-[11px]"
                 onClick={() => setCurveRange(r)}>
-                {CURVE_RANGE_LABELS[r]}
+                {RANGE_LABELS[r]}
               </Button>
             ))}
           </div>

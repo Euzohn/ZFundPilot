@@ -11,7 +11,8 @@ import { Bot, Send, Search, Plus, Check, X, Loader2, Clock, Pencil } from "lucid
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { toast } from "sonner"
-import { money } from "@/lib/format"
+import { money, formatRelativeTime, formatTokens } from "@/lib/format"
+import { ACTION_LABELS } from "@/lib/actionLabels"
 import LogoTyping from "@/components/LogoTyping"
 
 interface ChatMessage {
@@ -25,8 +26,6 @@ const QUICK_PROMPTS = [
   { text: "帮我录入一笔买入交易", icon: PlusCircle },
   { text: "科技板块最近怎么样？", icon: Newspaper },
 ]
-
-const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
 
 const SESSIONS_KEY = "zfundpilot_chat_sessions"
 const LEGACY_KEY = "zfundpilot_chat_messages"
@@ -70,28 +69,6 @@ function generateTimeTitle(): string {
   const now = new Date()
   const pad = (n: number) => String(n).padStart(2, "0")
   return `${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`
-}
-
-function formatRelativeTime(iso: string): string {
-  const t = new Date(iso.replace(" ", "T") + "Z").getTime()
-  if (isNaN(t)) return ""
-  const diff = Date.now() - t
-  const min = Math.floor(diff / 60000)
-  if (min < 1) return "刚刚"
-  if (min < 60) return `${min} 分钟前`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr} 小时前`
-  const day = Math.floor(hr / 24)
-  if (day === 1) return "昨天"
-  if (day < 30) return `${day} 天前`
-  const d = new Date(iso)
-  return `${d.getMonth() + 1} 月 ${d.getDate()} 日`
-}
-
-function formatTokens(n: number): string {
-  if (n < 1000) return String(n)
-  if (n < 1000000) return (n / 1000).toFixed(n < 10000 ? 1 : 0) + "k"
-  return (n / 1000000).toFixed(1) + "m"
 }
 
 function loadSessions(): PersistedSessions {

@@ -6,20 +6,10 @@ import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import { Badge } from "@/components/ui/badge"
 import { pct, pnlColor } from "@/lib/format"
+import PageHeader from "@/components/PageHeader"
 import { ShieldAlert, AlertTriangle, Info, Lightbulb } from "lucide-react"
 import type { ReactNode } from "react"
-
-function MetricCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
-  return (
-    <Card className="card-hover">
-      <CardContent className="p-4 md:p-5">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${color ?? ""}`}>{value}</p>
-        {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
-      </CardContent>
-    </Card>
-  )
-}
+import MetricCard from "@/components/MetricCard"
 
 const FLAG_STYLES: Record<string, { icon: ReactNode; variant: "destructive" | "warning" | "default" }> = {
   danger: { icon: <ShieldAlert className="h-5 w-5 text-destructive" />, variant: "destructive" },
@@ -36,7 +26,7 @@ export default function Risk() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl md:text-2xl font-bold">风险与建议</h1>
+      <PageHeader title="风险与建议" />
 
       {/* Metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">

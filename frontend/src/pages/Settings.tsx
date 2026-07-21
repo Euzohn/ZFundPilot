@@ -3,6 +3,8 @@ import { LineChart, Line, ResponsiveContainer } from "recharts"
 import { getChannels, getChannelsAsync, saveChannels, getDefaultChannels } from "@/lib/channels"
 import { getChannelColors, getChannelColorsAsync, saveChannelColors, getDefaultChannelColors, getPalette } from "@/lib/channelColors"
 import { getColorTheme, getColorThemeAsync, saveColorTheme, applyColorTheme, type ColorTheme } from "@/lib/colorTheme"
+import { formatRelativeTime, formatTokens } from "@/lib/format"
+import PageHeader from "@/components/PageHeader"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import { clearToken } from "@/lib/auth"
@@ -32,28 +34,6 @@ function detectProvider(baseUrl: string): string {
   if (url.includes("dashscope") || url.includes("aliyun") || url.includes("aliyuncs") || url.includes("maas")) return "通义千问 (百炼)"
   if (url.includes("deepseek")) return "DeepSeek"
   return "通用 OpenAI 兼容"
-}
-
-function formatTokens(n: number): string {
-  if (n < 1000) return String(n)
-  if (n < 1000000) return (n / 1000).toFixed(n < 10000 ? 1 : 0) + "k"
-  return (n / 1000000).toFixed(1) + "m"
-}
-
-function formatRelativeTime(iso: string): string {
-  // 后端存的是 UTC（datetime('now')），格式 "YYYY-MM-DD HH:MM:SS"
-  // 加 T 和 Z 标记为 UTC，new Date() 自动转为本地时区
-  const t = new Date(iso.replace(" ", "T") + "Z").getTime()
-  if (isNaN(t)) return ""
-  const diff = Date.now() - t
-  const min = Math.floor(diff / 60000)
-  if (min < 1) return "刚刚"
-  if (min < 60) return `${min} 分钟前`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr} 小时前`
-  const day = Math.floor(hr / 24)
-  if (day === 1) return "昨天"
-  return `${day} 天前`
 }
 
 function Sparkline({ data }: { data: number[] }) {
@@ -432,7 +412,7 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl md:text-2xl font-bold tracking-tight">设置</h1>
+      <PageHeader title="设置" tracking="tight" />
 
       <Tabs defaultValue="ai">
         <TabsList className={cn("grid w-full sm:inline-flex sm:w-auto", authRequired ? "grid-cols-3" : "grid-cols-2")}>

@@ -11,6 +11,7 @@ import LogoRipple from "@/components/LogoRipple"
 import ErrorState from "@/components/ErrorState"
 import { RefreshCw, CheckCircle2, XCircle, RotateCw, AlertTriangle } from "lucide-react"
 import { navStr, localDateStr } from "@/lib/format"
+import PageHeader from "@/components/PageHeader"
 
 export default function NavUpdate() {
   // 和持仓页同源：用 getPositions 取数据（含 latest_date / latest_nav）
@@ -146,7 +147,7 @@ export default function NavUpdate() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl md:text-2xl font-bold">净值更新</h1>
+      <PageHeader title="净值更新" />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
         <Card>

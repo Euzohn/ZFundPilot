@@ -15,12 +15,14 @@ import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import FeeBreakdownCard from "@/components/FeeBreakdownCard"
 import { money, localDateStr } from "@/lib/format"
+import PageHeader from "@/components/PageHeader"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2, Receipt, ArrowUpDown } from "lucide-react"
 import { getChannels, getChannelsAsync } from "@/lib/channels"
-
-const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
+import { ACTION_LABELS } from "@/lib/actionLabels"
+import { makeSortHeader } from "@/components/SortHeader"
+import ConfirmDialog from "@/components/ConfirmDialog"
 
 function actionBadgeClass(action: string): string {
   switch (action) {
@@ -83,7 +85,7 @@ export default function Transactions() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl md:text-2xl font-bold">交易管理</h1>
+      <PageHeader title="交易管理" />
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-3 sm:inline-flex sm:w-auto">
           <TabsTrigger value="form" className="gap-1.5">
@@ -702,20 +704,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
     return sortedTxs.slice(0, visibleCount)
   }, [sortedTxs, visibleCount])
 
-  function SortHeader({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) {
-    const active = sortField === field
-    return (
-      <TableHead
-        className={cn("cursor-pointer select-none", active ? "text-foreground" : "", className)}
-        onClick={() => toggleSort(field)}
-      >
-        <span className="inline-flex items-center gap-1">
-          {children}
-          {active && (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
-        </span>
-      </TableHead>
-    )
-  }
+  const SortHeader = makeSortHeader({ sortField, sortDir, toggleSort })
 
   if (error) return <ErrorState message={error} onRetry={reload} />
   if (loading) return <div className="flex py-8 items-center justify-center"><LogoSpinner className="h-10 w-10" /></div>
@@ -867,27 +856,17 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
       </CardContent>
 
       {/* 删除单条确认弹窗 */}
-      {confirmDeleteId != null && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40" onClick={() => setConfirmDeleteId(null)}>
-          <div className="w-full max-w-sm rounded-lg bg-background p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-base font-bold">确认删除</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              确定要删除这笔交易记录吗？此操作<strong>不可撤销</strong>。
-            </p>
-            <div className="mt-4 flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setConfirmDeleteId(null)}>
-                取消
-              </Button>
-              <Button variant="destructive" className="flex-1" onClick={async () => {
-                await handleDelete(confirmDeleteId)
-                setConfirmDeleteId(null)
-              }}>
-                删除
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={confirmDeleteId != null}
+        onOpenChange={(open) => { if (!open) setConfirmDeleteId(null) }}
+        title="确认删除"
+        description={<>确定要删除这笔交易记录吗？此操作<strong>不可撤销</strong>。</>}
+        confirmText="删除"
+        tone="destructive"
+        onConfirm={async () => {
+          if (confirmDeleteId != null) await handleDelete(confirmDeleteId)
+        }}
+      />
 
       {/* 清空确认弹窗 */}
       {showClearConfirm && (

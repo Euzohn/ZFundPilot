@@ -11,8 +11,10 @@ import { Badge } from "@/components/ui/badge"
 import { Select } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
+import PageHeader from "@/components/PageHeader"
 import { cn } from "@/lib/utils"
 import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search } from "lucide-react"
+import { makeSortHeader } from "@/components/SortHeader"
 
 export default function Positions() {
   const navigate = useNavigate()
@@ -120,20 +122,7 @@ export default function Positions() {
     null as string | null,
   )
 
-  function SortHeader({ field, children, className }: { field: string; children: React.ReactNode; className?: string }) {
-    const active = sortField === field
-    return (
-      <TableHead
-        className={cn("cursor-pointer select-none", active ? "text-foreground" : "", className)}
-        onClick={() => toggleSort(field)}
-      >
-        <span className="inline-flex items-center gap-1">
-          {children}
-          {active && (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
-        </span>
-      </TableHead>
-    )
-  }
+  const SortHeader = makeSortHeader({ sortField, sortDir, toggleSort })
 
   return (
     <div className="space-y-6">
@@ -144,7 +133,7 @@ export default function Positions() {
       ) : (
       <>
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-xl md:text-2xl font-bold">持仓明细</h1>
+        <PageHeader title="持仓明细" />
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />

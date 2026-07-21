@@ -12,16 +12,14 @@ import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import { pct, money } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { PERIOD_LABELS } from "@/lib/rangeLabels"
 import { GitCompare, Search, X, BarChart3, Table2, TrendingUp, Activity, DollarSign, RefreshCw, ChevronDown, ChevronRight, Filter, Check, Plus } from "lucide-react"
 import {
   LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
 } from "recharts"
 import { CHART_COLORS } from "@/lib/chartPalette"
+import PageHeader from "@/components/PageHeader"
 
-const PERIOD_LABELS: Record<string, string> = {
-  "1w": "近1周", "1m": "近1月", "3m": "近3月", "6m": "近6月",
-  "1y": "近1年", "3y": "近3年", "ytd": "今年以来", "since": "成立以来",
-}
 const RISK_LABELS: Record<string, string> = {
   max_drawdown: "最大回撤", volatility: "年化波动率",
   sharpe: "夏普比率", calmar: "卡玛比率", win_rate: "胜率",
@@ -498,7 +496,7 @@ export default function FundCompare() {
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <GitCompare className="h-5 w-5 text-primary" />
-        <h1 className="text-xl md:text-2xl font-bold tracking-tight">基金对比</h1>
+        <PageHeader title="基金对比" tracking="tight" />
       </div>
 
       <FilterSection onAddToCompare={handleCompare} />

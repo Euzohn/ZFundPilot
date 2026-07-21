@@ -10,25 +10,14 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, navStr, pnlColor, localDateStr } from "@/lib/format"
+import { ACTION_LABELS } from "@/lib/actionLabels"
+import { RANGE_LABELS, RANGE_DAYS } from "@/lib/rangeLabels"
 import { toast } from "sonner"
 import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
 import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
-
-const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出", dividend: "分红", reinvest: "再投资" }
-const RANGE_DAYS: Record<string, number> = { "1m": 30, "3m": 90, "6m": 180, "1y": 365 }
-const RANGE_LABELS: Record<string, string> = { "1m": "1月", "3m": "3月", "6m": "6月", "1y": "1年", "hold": "持仓至今" }
-
-function MetricCard({ label, value, color, sub, subColor }: { label: string; value: string; color?: string; sub?: string; subColor?: string }) {
-  return (
-    <Card className="card-hover">
-      <CardContent className="p-3 md:p-4">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p className={`mt-1 text-base md:text-lg font-bold tabular-nums ${color ?? ""}`}>{value}</p>
-        {sub && <p className={`text-xs ${subColor ?? "text-muted-foreground"}`}>{sub}</p>}
-      </CardContent>
-    </Card>
-  )
-}
+import MetricCard from "@/components/MetricCard"
+import ConfirmDialog from "@/components/ConfirmDialog"
+import PageHeader from "@/components/PageHeader"
 
 export default function FundDetail() {
   const { code } = useParams<{ code: string }>()
@@ -161,7 +150,7 @@ const handleDelete = async (txId: number) => {
         </Button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-xl md:text-2xl font-bold tracking-tight truncate">{fund?.fund_name ?? code}</h1>
+            <PageHeader title={fund?.fund_name ?? code} tracking="tight" truncate className="min-w-0" />
             <span className="font-mono text-sm text-muted-foreground">{code}</span>
             {fund?.fund_type && <Badge variant="secondary">{fund.fund_type}</Badge>}
             {fund?.sector && <Badge variant="outline">{fund.sector}</Badge>}
@@ -194,14 +183,14 @@ const handleDelete = async (txId: number) => {
 
       {/* Summary metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <MetricCard label="持有份额" value={totalShares.toFixed(2)} />
-        <MetricCard label="持仓成本" value={money(totalCost)} />
-        <MetricCard label="持仓均价" value={navStr(avgCost)} />
-        <MetricCard label="最新净值" value={navStr(latestNav)} sub={showEstimate ? `${latestDate} · 估算 ${navStr(fundEstimate!.gsz)} ${pct(fundEstimate!.gszzl / 100)} · ${fundEstimate!.gztime.slice(5, 16)}` : latestDate ?? undefined} subColor={showEstimate ? pnlColor(fundEstimate!.gszzl / 100) : undefined} />
-        <MetricCard label="当前市值" value={money(totalValue)} />
-        <MetricCard label="浮动盈亏" value={signedMoney(totalUnrealized)} color={pnlColor(totalUnrealized)} />
-        <MetricCard label="已实现盈亏" value={signedMoney(totalRealized)} color={pnlColor(totalRealized)} />
-        <MetricCard label="收益率" value={pct(returnRate)} color={pnlColor(returnRate)} sub={latestNav != null && avgCost != null && latestNav < avgCost ? `回本 ${pct(avgCost / latestNav - 1)}` : undefined} subColor="text-warning" />
+        <MetricCard size="sm" label="持有份额" value={totalShares.toFixed(2)} />
+        <MetricCard size="sm" label="持仓成本" value={money(totalCost)} />
+        <MetricCard size="sm" label="持仓均价" value={navStr(avgCost)} />
+        <MetricCard size="sm" label="最新净值" value={navStr(latestNav)} sub={showEstimate ? `${latestDate} · 估算 ${navStr(fundEstimate!.gsz)} ${pct(fundEstimate!.gszzl / 100)} · ${fundEstimate!.gztime.slice(5, 16)}` : latestDate ?? undefined} subColor={showEstimate ? pnlColor(fundEstimate!.gszzl / 100) : undefined} />
+        <MetricCard size="sm" label="当前市值" value={money(totalValue)} />
+        <MetricCard size="sm" label="浮动盈亏" value={signedMoney(totalUnrealized)} color={pnlColor(totalUnrealized)} />
+        <MetricCard size="sm" label="已实现盈亏" value={signedMoney(totalRealized)} color={pnlColor(totalRealized)} />
+        <MetricCard size="sm" label="收益率" value={pct(returnRate)} color={pnlColor(returnRate)} sub={latestNav != null && avgCost != null && latestNav < avgCost ? `回本 ${pct(avgCost / latestNav - 1)}` : undefined} subColor="text-warning" />
       </div>
 
       {/* 各渠道持仓 */}
@@ -398,27 +387,17 @@ const handleDelete = async (txId: number) => {
       </Card>
 
       {/* 删除确认弹窗 */}
-      {confirmDeleteId != null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setConfirmDeleteId(null)}>
-          <div className="w-full max-w-sm rounded-lg bg-background p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-base font-bold">确认删除</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              确定要删除这笔交易记录吗？此操作<strong>不可撤销</strong>。
-            </p>
-            <div className="mt-4 flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setConfirmDeleteId(null)}>
-                取消
-              </Button>
-              <Button variant="destructive" className="flex-1" onClick={async () => {
-                await handleDelete(confirmDeleteId)
-                setConfirmDeleteId(null)
-              }}>
-                删除
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        open={confirmDeleteId != null}
+        onOpenChange={(open) => { if (!open) setConfirmDeleteId(null) }}
+        title="确认删除"
+        description={<>确定要删除这笔交易记录吗？此操作<strong>不可撤销</strong>。</>}
+        confirmText="删除"
+        tone="destructive"
+        onConfirm={async () => {
+          if (confirmDeleteId != null) await handleDelete(confirmDeleteId)
+        }}
+      />
     </div>
   )
 }

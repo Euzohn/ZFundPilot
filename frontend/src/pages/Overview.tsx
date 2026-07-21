@@ -11,8 +11,9 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts"
 import { Wallet, TrendingUp, DollarSign, ArrowUpFromLine, Calendar, Activity } from "lucide-react"
-import type { ElementType } from "react"
 import { CHART_COLORS } from "@/lib/chartPalette"
+import MetricCard from "@/components/MetricCard"
+import PageHeader from "@/components/PageHeader"
 
 function CompactCard({ label, value, sub, color }: {
   label: string; value: string; sub?: string; color?: string
@@ -43,25 +44,6 @@ function HeroCard({ summary }: { summary: PortfolioSummary }) {
         <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums text-muted-foreground">
           <span>浮动 {signedMoney(summary.unrealized_pnl)}</span>
           <span>已实现 {signedMoney(summary.realized_pnl)}</span>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function MetricCard({ icon: Icon, label, value, sub, color }: {
-  icon: ElementType; label: string; value: string; sub?: string; color?: string
-}) {
-  return (
-    <Card className="card-hover">
-      <CardContent className="flex items-center justify-between p-4 md:p-5">
-        <div className="space-y-0.5">
-          <p className="text-xs font-medium text-muted-foreground">{label}</p>
-          <p className={`text-lg md:text-xl font-bold tabular-nums fade-in-up ${color ?? ""}`}>{value}</p>
-          {sub && <p className={`text-xs tabular-nums ${color ?? "text-muted-foreground"}`}>{sub}</p>}
-        </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted/50">
-          <Icon className="h-5 w-5 text-muted-foreground" />
         </div>
       </CardContent>
     </Card>
@@ -110,7 +92,7 @@ export default function Overview() {
   if (noData) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl md:text-2xl font-bold">组合总览</h1>
+        <PageHeader title="组合总览" />
         <Card>
           <CardContent className="py-20 text-center text-muted-foreground">
             还没有交易记录。请到「交易管理」添加买入/卖出流水或导入 CSV。
@@ -122,15 +104,12 @@ export default function Overview() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-xl md:text-2xl font-bold tracking-tight">组合总览</h1>
-        {summary.max_single_name && (
+        <PageHeader title="组合总览" tracking="tight" actions={summary.max_single_name ? (
           <p className="text-sm text-muted-foreground">
             最大单持仓：<span className="font-medium text-foreground">{summary.max_single_name}</span>
             {" "}占比 <span className="font-mono font-medium">{pct(summary.max_single_weight)}</span>
           </p>
-        )}
-      </div>
+        ) : undefined} />
 
       {/* Row 1: Period returns — compact cards, no icons */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
@@ -144,8 +123,8 @@ export default function Overview() {
       {/* Row 2: Hero + portfolio metrics — 3-col with hero card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
         <HeroCard summary={summary} />
-        <MetricCard icon={Wallet} label="持仓成本" value={money(summary.total_cost)} />
-        <MetricCard icon={Wallet} label="持仓基金数" value={`${summary.holding_count} 只`} sub={`净值日期 ${summary.as_of_date ?? "未更新"}`} />
+        <MetricCard fade icon={Wallet} label="持仓成本" value={money(summary.total_cost)} />
+        <MetricCard fade icon={Wallet} label="持仓基金数" value={`${summary.holding_count} 只`} sub={`净值日期 ${summary.as_of_date ?? "未更新"}`} />
       </div>
 
       {/* Row 3: Transaction summary + max concentration — 2-col */}
@@ -162,7 +141,7 @@ export default function Overview() {
             </p>
           </CardContent>
         </Card>
-        <MetricCard icon={Calendar} label="最大单基金占比" value={pct(summary.max_single_weight)} sub={summary.max_single_name || undefined} />
+        <MetricCard fade icon={Calendar} label="最大单基金占比" value={pct(summary.max_single_weight)} sub={summary.max_single_name || undefined} />
       </div>
 
       {/* Row 4: Charts — bar chart spans 2 cols, pies 1 col each */}

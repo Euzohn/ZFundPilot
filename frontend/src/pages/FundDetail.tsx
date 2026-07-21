@@ -18,6 +18,8 @@ import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, R
 import MetricCard from "@/components/MetricCard"
 import ConfirmDialog from "@/components/ConfirmDialog"
 import PageHeader from "@/components/PageHeader"
+import LoadingState from "@/components/LoadingState"
+import EmptyState from "@/components/EmptyState"
 
 export default function FundDetail() {
   const { code } = useParams<{ code: string }>()
@@ -111,7 +113,7 @@ export default function FundDetail() {
   }, [navHistory, navRange, txs])
 
   if (fundError) return <ErrorState message={fundError} onRetry={reloadFund} />
-  if (fundLoading) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
+  if (fundLoading) return <LoadingState />
 
   // 筛选该基金的所有持仓（跨渠道）
   const fundPositions = positions?.filter((p) => p.fund_code === code) ?? []
@@ -323,7 +325,7 @@ const handleDelete = async (txId: number) => {
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
-            <p className="py-12 text-center text-sm text-muted-foreground">净值历史不足，先到「净值更新」抓取数据。</p>
+            <EmptyState title="净值历史不足，先到「净值更新」抓取数据。" size="lg" />
           )}
         </CardContent>
       </Card>
@@ -333,7 +335,7 @@ const handleDelete = async (txId: number) => {
         <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">交易记录</CardTitle></CardHeader>
         <CardContent>
           {!txs || txs.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">暂无交易记录</p>
+            <EmptyState title="暂无交易记录" />
           ) : (
             <Table>
               <TableHeader>

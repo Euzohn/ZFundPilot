@@ -12,6 +12,8 @@ import { Select } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
+import LoadingState from "@/components/LoadingState"
+import EmptyState from "@/components/EmptyState"
 import { cn } from "@/lib/utils"
 import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search } from "lucide-react"
 import { makeSortHeader } from "@/components/SortHeader"
@@ -127,7 +129,7 @@ export default function Positions() {
   return (
     <div className="space-y-6">
       {loading ? (
-        <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
+        <LoadingState />
       ) : !positions ? (
         <div className="py-20 text-center text-destructive">加载失败</div>
       ) : (
@@ -165,7 +167,7 @@ export default function Positions() {
         </CardHeader>
         <CardContent>
             {sortedRows.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">暂无持仓数据</p>
+            <EmptyState title="暂无持仓数据" />
           ) : (
             <Table>
               <TableHeader>

@@ -5,6 +5,8 @@ import { getChannelColors, getChannelColorsAsync, saveChannelColors, getDefaultC
 import { getColorTheme, getColorThemeAsync, saveColorTheme, applyColorTheme, type ColorTheme } from "@/lib/colorTheme"
 import { formatRelativeTime, formatTokens } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
+import LoadingState from "@/components/LoadingState"
+import EmptyState from "@/components/EmptyState"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import { clearToken } from "@/lib/auth"
@@ -86,9 +88,9 @@ function AuditLogPanel() {
             <button onClick={reload} className="text-xs text-primary hover:underline">重试</button>
           </div>
         ) : !logs ? (
-          <div className="flex justify-center py-4"><LogoSpinner className="h-8 w-8" /></div>
+          <LoadingState size="sm" />
         ) : logs.length === 0 ? (
-          <p className="py-4 text-center text-xs text-muted-foreground">暂无审计日志</p>
+          <EmptyState title="暂无审计日志" size="sm" />
         ) : (
           <div className="overflow-x-auto rounded-md border max-h-96 overflow-y-auto">
             <Table>
@@ -656,7 +658,7 @@ export default function Settings() {
                     </Table>
                   </div>
                 ) : (
-                  !usageStats && <div className="flex justify-center py-4"><LogoSpinner className="h-8 w-8" /></div>
+                  !usageStats && <LoadingState size="sm" />
                 )}
               </div>
             </CardContent>
@@ -863,7 +865,7 @@ export default function Settings() {
                   </div>
                 </div>
               ) : (
-                <div className="flex justify-center py-2"><LogoSpinner className="h-6 w-6" /></div>
+                <LoadingState size="xs" />
               )}
             </CardContent>
           </Card>

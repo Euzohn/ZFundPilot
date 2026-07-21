@@ -14,6 +14,9 @@ import { toast } from "sonner"
 import { money, formatRelativeTime, formatTokens } from "@/lib/format"
 import { ACTION_LABELS } from "@/lib/actionLabels"
 import LogoTyping from "@/components/LogoTyping"
+import EmptyState from "@/components/EmptyState"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 
 interface ChatMessage {
   role: "user" | "assistant"
@@ -376,16 +379,17 @@ export default function AIChat() {
               className="h-7 text-base font-bold max-w-[200px] sm:max-w-[280px]"
             />
           ) : archive.length > 0 ? (
-            <div className="relative">
+            <Popover open={dropdownOpen} onOpenChange={setDropdownOpen}>
               <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setDropdownOpen((o) => !o)}
-                  className="flex items-center gap-1 text-base font-bold hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                >
-                  <span className="truncate max-w-[100px] sm:max-w-[180px]">{currentTitle}</span>
-                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
-                </button>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 text-base font-bold hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                  >
+                    <span className="truncate max-w-[100px] sm:max-w-[180px]">{currentTitle}</span>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
+                  </button>
+                </PopoverTrigger>
                 <button
                   type="button"
                   onClick={startEditTitle}
@@ -395,74 +399,69 @@ export default function AIChat() {
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
               </div>
-              {dropdownOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
-                  <div className="absolute left-0 top-full mt-1 z-50 w-72 max-w-[80vw] rounded-xl border bg-card shadow-lg">
-                    <div className="flex items-center gap-2 px-3 py-2 border-b">
-                      <span className="text-sm font-medium truncate flex-1">{currentTitle}</span>
-                      <span className="text-[11px] text-muted-foreground shrink-0">当前</span>
-                    </div>
-                    {archive.length === 0 ? (
-                      <p className="px-3 py-3 text-center text-xs text-muted-foreground">暂无历史对话</p>
-                    ) : (
-                      <div className="max-h-64 overflow-y-auto py-1">
-                        {archive.map((s) => (
-                          <div
-                            key={s.id}
-                            className="group flex items-center gap-2 px-3 py-2 hover:bg-muted/50 cursor-pointer"
-                            onClick={() => handleSwitchChat(s.id)}
-                          >
-                            <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              {editingArchiveId === s.id ? (
-                                <Input
-                                  value={titleInput}
-                                  onChange={(e) => setTitleInput(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter" && !e.nativeEvent.isComposing) handleRenameArchived(s.id, titleInput)
-                                    if (e.key === "Escape") setEditingArchiveId(null)
-                                  }}
-                                  onBlur={() => handleRenameArchived(s.id, titleInput)}
-                                  onClick={(e) => e.stopPropagation()}
-                                  autoFocus
-                                  className="h-6 text-sm"
-                                />
-                              ) : (
-                                <>
-                                  <p className="text-sm truncate">{s.title}</p>
-                                  <p className="text-[11px] text-muted-foreground">{formatRelativeTime(s.updatedAt)}</p>
-                                </>
-                              )}
-                            </div>
-                            {editingArchiveId !== s.id && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); setTitleInput(s.title); setEditingArchiveId(s.id) }}
-                                  className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                                  title="重命名"
-                                >
-                                  <Pencil className="h-3 w-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); handleDeleteArchived(s.id) }}
-                                  className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                                  title="删除此对话"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        ))}
+              <PopoverContent className="w-72 max-w-[80vw]" align="start">
+                <div className="flex items-center gap-2 px-3 py-2 border-b">
+                  <span className="text-sm font-medium truncate flex-1">{currentTitle}</span>
+                  <span className="text-[11px] text-muted-foreground shrink-0">当前</span>
+                </div>
+                {archive.length === 0 ? (
+                  <EmptyState title="暂无历史对话" size="sm" />
+                ) : (
+                  <div className="max-h-64 overflow-y-auto py-1">
+                    {archive.map((s) => (
+                      <div
+                        key={s.id}
+                        className="group flex items-center gap-2 px-3 py-2 hover:bg-muted/50 cursor-pointer"
+                        onClick={() => handleSwitchChat(s.id)}
+                      >
+                        <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          {editingArchiveId === s.id ? (
+                            <Input
+                              value={titleInput}
+                              onChange={(e) => setTitleInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.nativeEvent.isComposing) handleRenameArchived(s.id, titleInput)
+                                if (e.key === "Escape") setEditingArchiveId(null)
+                              }}
+                              onBlur={() => handleRenameArchived(s.id, titleInput)}
+                              onClick={(e) => e.stopPropagation()}
+                              autoFocus
+                              className="h-6 text-sm"
+                            />
+                          ) : (
+                            <>
+                              <p className="text-sm truncate">{s.title}</p>
+                              <p className="text-[11px] text-muted-foreground">{formatRelativeTime(s.updatedAt)}</p>
+                            </>
+                          )}
+                        </div>
+                        {editingArchiveId !== s.id && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setTitleInput(s.title); setEditingArchiveId(s.id) }}
+                              className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                              title="重命名"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleDeleteArchived(s.id) }}
+                              className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                              title="删除此对话"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
-                    )}
+                    ))}
                   </div>
-                </>
-              )}
-            </div>
+                )}
+              </PopoverContent>
+            </Popover>
           ) : (
             <div className="flex items-center gap-1">
               <button
@@ -675,36 +674,34 @@ export default function AIChat() {
       )}
 
       {/* 用量明细弹窗 */}
-      {showUsage && usageStats && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowUsage(false)}>
-          <div className="w-full max-w-md rounded-xl bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold">AI 用量明细</h3>
-              <span className="text-xs text-muted-foreground">今日 {formatTokens(usageStats.today)} · 累计 {formatTokens(usageStats.total)}</span>
-            </div>
-            <div className="max-h-72 overflow-y-auto space-y-1">
-              {usageStats.recent.map((r) => (
-                <div key={r.id} className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-xs">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
-                    <span className="text-muted-foreground shrink-0">{formatRelativeTime(r.created_at)}</span>
-                    <span className="truncate">{r.model || "-"}</span>
-                  </div>
-                  <span className="tabular-nums shrink-0 ml-2">
-                    {formatTokens(r.total_tokens)}(入 {formatTokens(r.prompt_tokens)} / 出 {formatTokens(r.completion_tokens)})
-                    <span className="text-muted-foreground ml-1">· {r.turns} 轮</span>
-                  </span>
+      <Dialog open={showUsage && !!usageStats} onOpenChange={(open) => !open && setShowUsage(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>AI 用量明细</DialogTitle>
+            <DialogDescription>今日 {formatTokens(usageStats?.today ?? 0)} · 累计 {formatTokens(usageStats?.total ?? 0)}</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-72 overflow-y-auto space-y-1">
+            {usageStats?.recent.map((r) => (
+              <div key={r.id} className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-xs">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <span className="text-muted-foreground shrink-0">{formatRelativeTime(r.created_at)}</span>
+                  <span className="truncate">{r.model || "-"}</span>
                 </div>
-              ))}
-            </div>
-            <div className="mt-3 text-right">
-              <Button variant="outline" size="sm" className="h-7" onClick={() => setShowUsage(false)}>
-                关闭
-              </Button>
-            </div>
+                <span className="tabular-nums shrink-0 ml-2">
+                  {formatTokens(r.total_tokens)}(入 {formatTokens(r.prompt_tokens)} / 出 {formatTokens(r.completion_tokens)})
+                  <span className="text-muted-foreground ml-1">· {r.turns} 轮</span>
+                </span>
+              </div>
+            ))}
           </div>
-        </div>
-      )}
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setShowUsage(false)}>
+              关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -12,6 +12,8 @@ import ErrorState from "@/components/ErrorState"
 import { RefreshCw, CheckCircle2, XCircle, RotateCw, AlertTriangle } from "lucide-react"
 import { navStr, localDateStr } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
+import LoadingState from "@/components/LoadingState"
+import EmptyState from "@/components/EmptyState"
 
 export default function NavUpdate() {
   // 和持仓页同源：用 getPositions 取数据（含 latest_date / latest_nav）
@@ -255,11 +257,11 @@ export default function NavUpdate() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="flex py-8 items-center justify-center"><LogoSpinner className="h-10 w-10" /></div>
+            <LoadingState size="md" />
           ) : error ? (
             <ErrorState message={error} onRetry={reload} />
           ) : sortedRows.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">暂无基金数据，请先添加交易记录</p>
+            <EmptyState title="暂无基金数据，请先添加交易记录" />
           ) : (
             <Table>
               <TableHeader>

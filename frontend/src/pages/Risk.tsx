@@ -7,6 +7,8 @@ import ErrorState from "@/components/ErrorState"
 import { Badge } from "@/components/ui/badge"
 import { pct, pnlColor } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
+import LoadingState from "@/components/LoadingState"
+import EmptyState from "@/components/EmptyState"
 import { ShieldAlert, AlertTriangle, Info, Lightbulb } from "lucide-react"
 import type { ReactNode } from "react"
 import MetricCard from "@/components/MetricCard"
@@ -22,7 +24,7 @@ export default function Risk() {
   const { data: advice, loading: al } = useApi<Advice[]>(() => api.getRebalanceAdvice())
 
   if (re) return <ErrorState message={re} onRetry={reloadReport} />
-  if (rl || !report) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
+  if (rl || !report) return <LoadingState />
 
   return (
     <div className="space-y-6">
@@ -85,7 +87,7 @@ export default function Risk() {
               </div>
             ))
           ) : (
-            <p className="py-4 text-center text-sm text-muted-foreground">暂无建议</p>
+            <EmptyState title="暂无建议" size="sm" />
           )}
         </CardContent>
       </Card>

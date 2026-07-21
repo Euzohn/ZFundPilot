@@ -16,6 +16,8 @@ import ErrorState from "@/components/ErrorState"
 import FeeBreakdownCard from "@/components/FeeBreakdownCard"
 import { money, localDateStr } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
+import LoadingState from "@/components/LoadingState"
+import EmptyState from "@/components/EmptyState"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2, Receipt, ArrowUpDown } from "lucide-react"
@@ -23,6 +25,7 @@ import { getChannels, getChannelsAsync } from "@/lib/channels"
 import { ACTION_LABELS } from "@/lib/actionLabels"
 import { makeSortHeader } from "@/components/SortHeader"
 import ConfirmDialog from "@/components/ConfirmDialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 
 function actionBadgeClass(action: string): string {
   switch (action) {
@@ -707,7 +710,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
   const SortHeader = makeSortHeader({ sortField, sortDir, toggleSort })
 
   if (error) return <ErrorState message={error} onRetry={reload} />
-  if (loading) return <div className="flex py-8 items-center justify-center"><LogoSpinner className="h-10 w-10" /></div>
+  if (loading) return <LoadingState size="md" />
 
   const handleDelete = async (id: number) => {
     try {
@@ -779,9 +782,9 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
         )}
 
         {!txs || txs.length === 0 ? (
-          <p className="py-8 text-center text-muted-foreground">暂无交易流水</p>
+          <EmptyState title="暂无交易流水" />
         ) : filteredTxs && filteredTxs.length === 0 ? (
-          <p className="py-8 text-center text-muted-foreground">当前筛选范围无交易记录</p>
+          <EmptyState title="当前筛选范围无交易记录" />
         ) : (
 <Table>
               <TableHeader>
@@ -869,35 +872,36 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
       />
 
       {/* 清空确认弹窗 */}
-      {showClearConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowClearConfirm(false)}>
-          <div className="w-full max-w-sm rounded-lg bg-background p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-base font-bold text-destructive">⚠️ 清空全部交易流水</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              此操作将删除所有交易记录，<strong>不可撤销</strong>。
-            </p>
-            <p className="mt-3 text-sm text-muted-foreground">
-              请输入 <code className="rounded bg-muted px-1.5 py-0.5 text-sm font-mono">确认清空</code> 以确认：
-            </p>
-            <Input
-              value={clearConfirmText}
-              onChange={(e) => setClearConfirmText(e.target.value)}
-              placeholder="确认清空"
-              className="mt-2"
-              onKeyDown={(e) => { if (e.key === "Enter" && clearConfirmText === "确认清空") { e.preventDefault(); handleClearAll() } }}
-              autoFocus
-            />
-            <div className="mt-4 flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => { setShowClearConfirm(false); setClearConfirmText("") }}>
-                取消
-              </Button>
-              <Button variant="destructive" className="flex-1" disabled={clearConfirmText !== "确认清空"} onClick={handleClearAll}>
-                确认清空
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog open={showClearConfirm} onOpenChange={(open) => { if (!open) { setShowClearConfirm(false); setClearConfirmText("") } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">⚠️ 清空全部交易流水</DialogTitle>
+            <DialogDescription asChild>
+              <div>
+                此操作将删除所有交易记录，<strong>不可撤销</strong>。
+                <p className="mt-3">
+                  请输入 <code className="rounded bg-muted px-1.5 py-0.5 text-sm font-mono">确认清空</code> 以确认：
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={clearConfirmText}
+            onChange={(e) => setClearConfirmText(e.target.value)}
+            placeholder="确认清空"
+            onKeyDown={(e) => { if (e.key === "Enter" && clearConfirmText === "确认清空") { e.preventDefault(); handleClearAll() } }}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowClearConfirm(false); setClearConfirmText("") }}>
+              取消
+            </Button>
+            <Button variant="destructive" disabled={clearConfirmText !== "确认清空"} onClick={handleClearAll}>
+              确认清空
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

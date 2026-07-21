@@ -9,6 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button"
 import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
+import LoadingState from "@/components/LoadingState"
+import EmptyState from "@/components/EmptyState"
 import { cn } from "@/lib/utils"
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart, Cell, ReferenceLine } from "recharts"
 import PnLCalendar from "@/components/PnLCalendar"
@@ -189,7 +191,7 @@ export default function Returns() {
   }, [channelPnl, channels, pnlMode, pnlDays, pnlAggRange])
 
   if (se) return <ErrorState message={se} onRetry={reloadSummary} />
-  if (sl || !summary) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
+  if (sl || !summary) return <LoadingState />
 
   const SortHeader = makeSortHeader({ sortField, sortDir, toggleSort })
 
@@ -361,7 +363,7 @@ export default function Returns() {
         <CardHeader className="pb-2"><CardTitle className="text-base">单基金收益明细</CardTitle></CardHeader>
         <CardContent>
           {openPositions.length === 0 ? (
-            <p className="py-8 text-center text-muted-foreground">暂无持仓数据</p>
+            <EmptyState title="暂无持仓数据" />
           ) : (
             <Table>
               <TableHeader>

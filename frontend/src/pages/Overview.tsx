@@ -14,6 +14,8 @@ import { Wallet, TrendingUp, DollarSign, ArrowUpFromLine, Calendar, Activity } f
 import { CHART_COLORS } from "@/lib/chartPalette"
 import MetricCard from "@/components/MetricCard"
 import PageHeader from "@/components/PageHeader"
+import LoadingState from "@/components/LoadingState"
+import EmptyState from "@/components/EmptyState"
 
 function CompactCard({ label, value, sub, color }: {
   label: string; value: string; sub?: string; color?: string
@@ -86,7 +88,7 @@ export default function Overview() {
   const hasEstimate = estimate && estimate.funds.some((f) => f.ok)
 
   if (se) return <ErrorState message={se} onRetry={reloadSummary} />
-  if (sl || !summary) return <div className="flex min-h-[60vh] items-center justify-center"><LogoSpinner className="h-16 w-16" /></div>
+  if (sl || !summary) return <LoadingState />
 
   const noData = summary.holding_count === 0
   if (noData) {
@@ -159,7 +161,7 @@ export default function Overview() {
                   <Tooltip content={<ChartTooltip nameKey="sector" />} cursor={{ fill: 'hsl(var(--primary))', opacity: 0.08 }} />
                 </BarChart>
               </ResponsiveContainer>
-            ) : <p className="py-12 text-center text-sm text-muted-foreground">暂无数据</p>}
+            ) : <EmptyState title="暂无数据" size="lg" />}
           </CardContent>
         </Card>
 
@@ -175,7 +177,7 @@ export default function Overview() {
                   <Tooltip content={<ChartTooltip nameKey="fund_type" />} />
                 </PieChart>
               </ResponsiveContainer>
-            ) : <p className="py-12 text-center text-sm text-muted-foreground">暂无数据</p>}
+            ) : <EmptyState title="暂无数据" size="lg" />}
           </CardContent>
         </Card>
 
@@ -191,7 +193,7 @@ export default function Overview() {
                   <Tooltip content={<ChartTooltip nameKey="channel" />} />
                 </PieChart>
               </ResponsiveContainer>
-            ) : <p className="py-12 text-center text-sm text-muted-foreground">暂无数据</p>}
+            ) : <EmptyState title="暂无数据" size="lg" />}
           </CardContent>
         </Card>
       </div>

@@ -19,6 +19,8 @@ import {
 } from "recharts"
 import { CHART_COLORS } from "@/lib/chartPalette"
 import PageHeader from "@/components/PageHeader"
+import LoadingState from "@/components/LoadingState"
+import EmptyState from "@/components/EmptyState"
 
 const RISK_LABELS: Record<string, string> = {
   max_drawdown: "最大回撤", volatility: "年化波动率",
@@ -367,7 +369,7 @@ const NAV_CHART_COLORS = CHART_COLORS
 
 function NavChart({ navSeries }: { navSeries: Record<string, { date: string; value: number }[]> }) {
   const codes = Object.keys(navSeries).filter((c) => navSeries[c].length > 0)
-  if (codes.length === 0) return <p className="py-12 text-center text-sm text-muted-foreground">无净值数据</p>
+  if (codes.length === 0) return <EmptyState title="无净值数据" size="lg" />
 
   const merged = navSeries[codes[0]].map((p) => {
     const row: Record<string, string | number | null> = { date: p.date }
@@ -411,7 +413,7 @@ function NavChart({ navSeries }: { navSeries: Record<string, { date: string; val
 }
 
 function CorrelationMatrix({ funds, correlations }: { funds: FundCompareItem[]; correlations: (number | null)[][] }) {
-  if (!correlations || correlations.length < 2) return <p className="py-12 text-center text-sm text-muted-foreground">至少需要 2 只基金计算相关性</p>
+  if (!correlations || correlations.length < 2) return <EmptyState title="至少需要 2 只基金计算相关性" size="lg" />
 
   const n = correlations.length
   return (
@@ -510,9 +512,7 @@ export default function FundCompare() {
       {error && <ErrorState message={error} onRetry={reload} />}
 
       {loading && (
-        <div className="flex min-h-[40vh] items-center justify-center">
-          <LogoSpinner className="h-16 w-16" />
-        </div>
+        <LoadingState className="min-h-[40vh]" />
       )}
 
       {!loading && !error && data && !data.ok && (

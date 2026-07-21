@@ -146,7 +146,7 @@ export default function Home() {
   const { data: summary, loading, reload } = useApi<PortfolioSummary>(() => api.getSummary())
   const { data: authStatus } = useApi(() => api.getAuthStatus(), [])
   const [now, setNow] = useState(new Date())
-  const [lang, setLang] = useState<Lang>(() => (localStorage.getItem("zfund_lang") as Lang) || "zh")
+  const [lang, setLang] = useState<Lang>(() => (localStorage.getItem("zfundpilot_lang") as Lang) || "zh")
   const reducedMotion = usePrefersReducedMotion()
 
   const clockRef = useRef<HTMLSpanElement>(null)
@@ -187,7 +187,7 @@ export default function Home() {
   }, [handleVisibility])
 
   useEffect(() => {
-    localStorage.setItem("zfund_lang", lang)
+    localStorage.setItem("zfundpilot_lang", lang)
   }, [lang])
 
   const mkt = useMemo(() => marketStatus(now), [now])

@@ -4,6 +4,44 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.9.0] - 2026-07-22
+
+### Added
+- 暗色模式：light / dark / system 三态切换，默认跟随 `prefers-color-scheme`，Settings 可手动锁定
+  - `index.html` 防闪烁内联脚本，Layout 侧边栏底部 + Settings 显示设置卡双入口
+  - `lib/theme.ts` 管理 localStorage 持久化 + 系统主题变化监听
+- shadcn 原语组件：`dialog` / `alert-dialog` / `tooltip` / `popover` / `dropdown-menu` / `skeleton` / `checkbox`
+- 业务组件：`MetricCard` / `SortHeader`（factory 模式）/ `ConfirmDialog` / `PageHeader` / `EmptyState` / `LoadingState` / `ThemeToggle`
+- 公共工具：`lib/actionLabels.ts` / `lib/rangeLabels.ts` / `lib/chartPalette.ts` / 扩展 `lib/format.ts`（新增 `formatRelativeTime` / `formatTokens`）
+- 设计 token：`warning` / `info` / `success` 语义色 + `brand-accent` / `brand-bg-dark` / `brand-text-light` 桥接 token + `chart-1..8` 统一图表色板（light/dark 双值）
+- Vite `manualChunks` 代码拆分：`vendor-react` / `vendor-charts` / `vendor-radix` / `vendor-markdown` 4 个 vendor chunk + `index` 应用 chunk，vendor 可长期缓存
+
+### Changed
+- 中性色族由 `slate` 切换为 `zinc`（无蓝 tint，更中性，与 Linear 风格一致）
+- 全局 200+ 处硬编码颜色 token 化（`text-blue-500` → `text-primary`、`text-amber-600` → `text-warning` 等）
+- Home brutalist 桥接 token：`#0A0A0A` / `#FF2A2A` / `#EAEAEA` → `brand-bg-dark` / `brand-accent` / `brand-text-light`
+- 4 套图表色板统一为 1 套 `CHART_PALETTE`（Overview / Returns / FundCompare 共用）
+- 3 处手写 `fixed inset-0 z-50` 弹窗 → Radix Dialog / AlertDialog / Popover（Transactions 清空确认 / FundDetail 删除确认 / AIChat token 用量 / AIChat 历史会话下拉）
+- 9 处 `<h1>` 标题 → `PageHeader` 组件（支持 tracking / truncate / actions props）
+- 11 处 `LogoSpinner` 包装 → `LoadingState` 组件（支持 xs / sm / md / lg 四档 size）
+- 14 处"暂无数据" 文本 → `EmptyState` 组件（支持 size / icon / description / action）
+- `FundCompare` 4 个原生 `<table>` → shadcn `Table`（FilterSection / CompareTable / InfoTable / CorrelationMatrix）
+- `Settings` 原生 `<input type="checkbox">` → Radix `Checkbox`，原生 `<select>` → shadcn `Select`
+- `FundCompare` CorrelationMatrix RGB 热力图 → `hsl(var(--chart-*) / opacity)` 透明度混合，light/dark 双模适配
+- 3 套重复 `MetricCard` 实现（Overview / Risk / FundDetail）→ 统一签名组件（支持 icon / color / subColor / size / fade props）
+- 3 套重复 `SortHeader` 实现（Positions / Transactions / Returns）→ `makeSortHeader` factory 模式
+- 3 处重复 `ACTION_LABELS` 定义 → `lib/actionLabels.ts`
+- 多套 `RANGE_LABELS` / `PERIOD_LABELS` 定义 → `lib/rangeLabels.ts`
+- 2 处重复 `formatRelativeTime` / `formatTokens`（AIChat / Settings）→ 合并到 `lib/format.ts`
+- localStorage key 前缀统一为 `zfundpilot_*`（`zfund_lang` → `zfundpilot_lang`）
+- 全局 `bg-blue-50` / `border-blue-300` 等 selected state → `bg-primary/10` / `border-primary/30`
+- 全局 `bg-amber-50` / `bg-red-50` / `bg-green-50` → `bg-warning/10` / `bg-destructive/10` / `bg-success/10`
+
+### Removed
+- 4 个未使用 Logo 组件（`LogoHeartbeat` / `LogoCoinFlip` / `LogoPrism` / `LogoShuffle`）+ 对应 CSS keyframes
+- `@radix-ui/react-progress` / `@radix-ui/react-select` 依赖（装了未用）
+- `.dark` CSS 死代码已启用并补齐所有变量值
+
 ## [0.8.1] - 2026-07-20
 
 ### Added

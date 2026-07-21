@@ -74,6 +74,7 @@
 - 🏠 **首页门户**：深色主题全屏门户页，品牌展示 + 核心指标 + 快捷入口 + GitHub 链接
 - 📱 **移动端适配**：抽屉式侧边栏导航、响应式网格布局
 - 🎨 **涨跌颜色切换**：支持「绿涨红跌（国际惯例）」/「红涨绿跌（A 股惯例）」双主题，服务端同步
+- 🌓 **暗色模式**：light / dark / system 三态切换，默认跟随系统偏好，Settings 可手动锁定，所有页面双模适配
 - 🔐 **密码认证**：用户名 + 密码登录，HMAC 签名 token，bcrypt 密码哈希，支持设置页在线修改用户名与密码；登录速率限制防爆破
 
 ## 环境要求
@@ -233,9 +234,9 @@ ZFundPilot/
 ├── frontend/             # React + Vite + TypeScript + Tailwind + shadcn/ui
 │   ├── src/
 │   │   ├── pages/        # 12 个页面（Home / Overview / Transactions / Positions / FundDetail / NavUpdate / Returns / Risk / FundCompare / AIChat / Settings / Login）
-│   │   ├── components/   # Layout + shadcn/ui + Logo + LogoSpinner + PnLCalendar + FeeBreakdownCard
+│   │   ├── components/   # Layout + shadcn/ui（dialog/tooltip/popover 等）+ 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/EmptyState/LoadingState/ThemeToggle）+ Logo + PnLCalendar + FeeBreakdownCard
 │   │   ├── api/          # 类型化 API client + streamChat (SSE)
-│   │   └── lib/          # 工具函数（format / auth / channels / channelColors / colorTheme / useApi）
+│   │   └── lib/          # 工具函数（format / auth / theme / actionLabels / rangeLabels / chartPalette / channels / channelColors / colorTheme / useApi）
 │   └── dist/             # 构建产物（生产模式）
 └── .env.example           # 环境变量模板
 ```

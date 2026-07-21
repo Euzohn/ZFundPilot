@@ -74,6 +74,7 @@ Local-first · Auto NAV updates · Return & risk analytics · Portfolio rebalanc
 - 🏠 **Home Portal**: Dark-themed full-screen portal page with branding, key metrics, quick actions, and GitHub link
 - 📱 **Mobile Responsive**: Drawer-style sidebar navigation, responsive grid layout
 - 🎨 **Color Theme Switch**: Toggle between "Green-up/Red-down (International)" and "Red-up/Green-down (A-share)". Synced server-side
+- 🌓 **Dark Mode**: light / dark / system three-way toggle, defaults to system preference, can be manually locked in Settings, all pages adapted for both modes
 - 🔐 **Password Auth**: Username + password login, HMAC-signed token, bcrypt password hashing. In-app username and password changes with login rate limiting
 
 ## Requirements
@@ -232,9 +233,9 @@ ZFundPilot/
 ├── frontend/             # React + Vite + TypeScript + Tailwind + shadcn/ui
 │   ├── src/
 │   │   ├── pages/        # 12 pages (Home / Overview / Transactions / Positions / FundDetail / NavUpdate / Returns / Risk / FundCompare / AIChat / Settings / Login)
-│   │   ├── components/   # Layout + shadcn/ui + Logo + LogoSpinner + PnLCalendar + FeeBreakdownCard
+│   │   ├── components/   # Layout + shadcn/ui (dialog/tooltip/popover etc.) + business components (MetricCard/SortHeader/PageHeader/ConfirmDialog/EmptyState/LoadingState/ThemeToggle) + Logo + PnLCalendar + FeeBreakdownCard
 │   │   ├── api/          # Typed API client + streamChat (SSE)
-│   │   └── lib/          # Utilities (format / auth / channels / channelColors / colorTheme / useApi)
+│   │   └── lib/          # Utilities (format / auth / theme / actionLabels / rangeLabels / chartPalette / channels / channelColors / colorTheme / useApi)
 │   └── dist/             # Build output (production mode)
 └── .env.example           # Environment variable template
 ```

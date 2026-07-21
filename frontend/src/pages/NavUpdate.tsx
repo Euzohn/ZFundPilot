@@ -232,7 +232,7 @@ export default function NavUpdate() {
                 )}
               </div>
               {failCount > 0 && (
-                <div className="rounded-md border border-red-200 bg-red-50 p-3">
+                <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3">
                   {results.filter((r) => !r.ok).map((r) => (
                     <p key={r.fund_code} className="text-sm text-destructive">
                       {r.fund_code}：{r.message}
@@ -276,7 +276,7 @@ export default function NavUpdate() {
                 {sortedRows.map((r) => {
                   const outdated = !r.date || r.date < todayStr
                   return (
-                    <TableRow key={r.fund_code} className={outdated ? "bg-amber-50/40" : ""}>
+                    <TableRow key={r.fund_code} className={outdated ? "bg-warning/10" : ""}>
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="font-medium max-w-[160px] truncate" title={r.fund_name}>
@@ -295,11 +295,11 @@ export default function NavUpdate() {
                             <span title={r.message}><XCircle className="h-4 w-4 text-destructive inline" /></span>
                           )
                         ) : !r.date ? (
-                          <Badge variant="outline" className="text-warning border-amber-300 bg-amber-50 text-[11px] px-1.5 py-0">
+                          <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10 text-[11px] px-1.5 py-0">
                             待更新
                           </Badge>
                         ) : outdated ? (
-                          <Badge variant="outline" className="text-warning border-amber-300 bg-amber-50 text-[11px] px-1.5 py-0">
+                          <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10 text-[11px] px-1.5 py-0">
                             过时
                           </Badge>
                         ) : (

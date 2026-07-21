@@ -77,7 +77,7 @@ export default function Risk() {
           {al && advice && advice.length > 0 ? (
             advice.map((a, i) => (
               <div key={i} className="flex items-start gap-3 rounded-md border p-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-primary">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
                   {i + 1}
                 </span>
                 <div>

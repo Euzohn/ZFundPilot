@@ -358,7 +358,7 @@ const handleDelete = async (txId: number) => {
                     <TableCell>
                       <Badge
                         variant={t.action === "buy" ? "success" : t.action === "sell" ? "destructive" : "outline"}
-                        className={t.action === "dividend" ? "text-primary border-blue-300 bg-blue-50" : t.action === "reinvest" ? "text-info border-purple-300 bg-purple-50" : ""}
+                        className={t.action === "dividend" ? "text-primary border-primary/30 bg-primary/10" : t.action === "reinvest" ? "text-info border-info/30 bg-info/10" : ""}
                       >
                         {ACTION_LABELS[t.action] ?? t.action}
                       </Badge>

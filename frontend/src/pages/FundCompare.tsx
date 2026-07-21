@@ -154,7 +154,7 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
                     className={cn(
                       "inline-flex cursor-pointer items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-colors",
                       types.includes(t)
-                        ? "border-blue-400 bg-blue-50 text-primary"
+                        ? "border-primary/40 bg-primary/10 text-primary"
                         : "border-border hover:bg-muted/50",
                     )}
                   >
@@ -181,7 +181,7 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
                     className={cn(
                       "inline-flex cursor-pointer items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-colors shrink-0",
                       sectors.includes(s)
-                        ? "border-blue-400 bg-blue-50 text-primary"
+                        ? "border-primary/40 bg-primary/10 text-primary"
                         : "border-border hover:bg-muted/50",
                     )}
                   >
@@ -439,14 +439,16 @@ function CorrelationMatrix({ funds, correlations }: { funds: FundCompareItem[]; 
               {funds.map((_, j) => {
                 const v = correlations[i][j]
                 const intensity = v != null ? Math.abs(v) : 0
-                const r = Math.round(200 * intensity)
-                const g = Math.round(200 * (1 - intensity))
-                const bg = v != null && v >= 0 ? `rgb(${r}, ${g}, ${g})` : `rgb(${g}, ${r}, ${g})`
+                const bg = v != null
+                  ? v >= 0
+                    ? `hsl(var(--chart-3) / ${Math.max(0.08, intensity)})`
+                    : `hsl(var(--chart-2) / ${Math.max(0.08, intensity)})`
+                  : "transparent"
                 return (
                   <TableCell
                     key={j}
                     className="px-2 py-1 text-center text-xs tabular-nums font-medium"
-                    style={{ background: bg, color: intensity > 0.5 ? "#fff" : "#1e293b" }}
+                    style={{ background: bg, color: intensity > 0.5 ? "white" : "hsl(var(--foreground))" }}
                     title={`${f.name} vs ${funds[j].name}: ${v != null ? v.toFixed(3) : "—"}`}
                   >
                     {v != null ? v.toFixed(2) : "—"}
@@ -459,12 +461,12 @@ function CorrelationMatrix({ funds, correlations }: { funds: FundCompareItem[]; 
       </Table>
       <div className="mt-2 flex items-center justify-center gap-2 text-[10px] text-muted-foreground">
         <span>负相关</span>
-        <div className="flex h-3 w-20 rounded overflow-hidden">
-          <div className="h-full flex-1" style={{ background: "rgb(200, 200, 200)" }} />
-          <div className="h-full flex-1" style={{ background: "rgb(200, 200, 200)" }} />
-          <div className="h-full flex-1" style={{ background: "rgb(200, 200, 200)" }} />
-          <div className="h-full flex-1" style={{ background: "rgb(0, 200, 200)" }} />
-          <div className="h-full flex-1" style={{ background: "rgb(0, 200, 200)" }} />
+        <div className="flex h-3 w-32 rounded overflow-hidden border border-border">
+          <div className="h-full flex-1" style={{ background: "hsl(var(--chart-2))" }} />
+          <div className="h-full flex-1" style={{ background: "hsl(var(--chart-2) / 0.6)" }} />
+          <div className="h-full flex-1" style={{ background: "hsl(var(--muted))" }} />
+          <div className="h-full flex-1" style={{ background: "hsl(var(--chart-3) / 0.6)" }} />
+          <div className="h-full flex-1" style={{ background: "hsl(var(--chart-3))" }} />
         </div>
         <span>正相关</span>
       </div>
@@ -533,7 +535,7 @@ export default function FundCompare() {
       {!loading && !error && data && data.ok && okFunds.length > 0 && (
         <>
           {failedFunds.length > 0 && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-warning">
+            <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
               以下基金获取失败：{failedFunds.map((f) => `${f.code}(${f.message})`).join("；")}
             </div>
           )}

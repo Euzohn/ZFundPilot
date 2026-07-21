@@ -31,8 +31,8 @@ function actionBadgeClass(action: string): string {
   switch (action) {
     case "buy": return ""
     case "sell": return ""
-    case "dividend": return "text-primary border-blue-300 bg-blue-50"
-    case "reinvest": return "text-info border-purple-300 bg-purple-50"
+    case "dividend": return "text-primary border-primary/30 bg-primary/10"
+    case "reinvest": return "text-info border-info/30 bg-info/10"
     default: return ""
   }
 }
@@ -549,7 +549,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                     type="number" step="0.0001" min="0" value={nav}
                     onChange={(e) => { setNav(e.target.value); setNavNotFound(false) }}
                     placeholder={navLoading ? "查询中..." : "0.0000"}
-                    className={cn("h-9", navLoading && "pr-8", navNotFound && "border-amber-400")}
+                    className={cn("h-9", navLoading && "pr-8", navNotFound && "border-warning/50")}
                   />
                   {navLoading && (
                     <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
@@ -824,7 +824,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
                     <TableCell className="text-right tabular-nums">{t.amount ? money(t.amount) : "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{t.shares?.toFixed(2) ?? "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {t.nav != null ? t.nav.toFixed(4) : t.action === "dividend" ? "—" : <Badge variant="outline" className="text-warning border-amber-300 bg-amber-50">待确认</Badge>}
+                      {t.nav != null ? t.nav.toFixed(4) : t.action === "dividend" ? "—" : <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10">待确认</Badge>}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{t.fee || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{t.note}</TableCell>
@@ -962,7 +962,7 @@ function CSVImportExport() {
 
           {/* Parse errors */}
           {parseResult?.errors && parseResult.errors.length > 0 && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+            <div className="rounded-md border border-warning/30 bg-warning/10 p-3">
               <p className="mb-1 text-sm font-medium text-warning">⚠️ {parseResult.errors.length} 条提示/警告</p>
               <ul className="space-y-0.5 text-xs text-warning">
                 {parseResult.errors.map((e, i) => <li key={i}>{e}</li>)}

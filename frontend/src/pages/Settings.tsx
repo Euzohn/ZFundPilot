@@ -16,6 +16,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Select } from "@/components/ui/select"
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import ThemeToggle from "@/components/ThemeToggle"
@@ -501,7 +503,7 @@ export default function Settings() {
                     <Button size="sm" onClick={handleChangePassword} disabled={changingPwd} variant="outline">
                       <KeyRound className="mr-1.5 h-3.5 w-3.5" /> {changingPwd ? "修改中..." : "修改密码"}
                     </Button>
-                    <Button size="sm" variant="outline" className="text-destructive hover:bg-red-50 hover:text-destructive"
+                    <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => { clearToken(); window.location.reload() }}>
                       <LogOut className="mr-1.5 h-3.5 w-3.5" /> 退出登录
                     </Button>
@@ -555,7 +557,7 @@ export default function Settings() {
                       key={p.name}
                       type="button"
                       onClick={() => { setAiBaseUrl(p.baseUrl); setAiModel(p.model) }}
-                      className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                      className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                     >
                       {p.name}
                     </button>
@@ -565,11 +567,11 @@ export default function Settings() {
                 {/* 联网搜索 */}
                 <div className="flex flex-wrap items-center gap-3">
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
-                    <input type="checkbox" checked={aiWebSearch} onChange={(e) => setAiWebSearch(e.target.checked)} className="rounded" />
+                    <Checkbox checked={aiWebSearch} onCheckedChange={(v) => setAiWebSearch(!!v)} />
                     启用联网搜索
                   </label>
                   {aiWebSearch && aiBaseUrl && (
-                    <span className="text-xs text-primary bg-blue-50 px-2 py-0.5 rounded-full">
+                    <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">
                       {detectProvider(aiBaseUrl)}
                     </span>
                   )}
@@ -590,7 +592,7 @@ export default function Settings() {
                 {testResult && (
                   <div className={cn(
                     "flex items-center gap-1.5 rounded-md px-3 py-2 text-xs",
-                    testResult.ok ? "bg-green-50 text-success border border-green-200" : "bg-red-50 text-destructive border border-red-200"
+                    testResult.ok ? "bg-success/10 text-success border border-success/30" : "bg-destructive/10 text-destructive border border-destructive/30"
                   )}>
                     {testResult.ok
                       ? <><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> 连接成功 · {testResult.provider} · {testResult.model}{testResult.has_search ? " · 联网搜索已启用" : ""}</>
@@ -703,9 +705,9 @@ export default function Settings() {
                     </div>
                     <input type="color" value={channelColors[ch] ?? "#3b82f6"}
                       onChange={(e) => handleColorChange(ch, e.target.value)}
-                      className="h-7 w-7 rounded cursor-pointer border border-border" />
+                      className="h-7 w-7 rounded cursor-pointer border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
                     <button onClick={() => remove(i)}
-                      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-red-50 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
@@ -750,7 +752,7 @@ export default function Settings() {
                     className={cn(
                       "flex-1 rounded-lg border px-3 py-2.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                       colorTheme === "international"
-                        ? "border-blue-300 bg-blue-50 text-primary"
+                        ? "border-primary/30 bg-primary/10 text-primary"
                         : "border-border bg-background text-muted-foreground hover:bg-accent"
                     )}
                   >
@@ -764,7 +766,7 @@ export default function Settings() {
                     className={cn(
                       "flex-1 rounded-lg border px-3 py-2.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                       colorTheme === "china"
-                        ? "border-blue-300 bg-blue-50 text-primary"
+                        ? "border-primary/30 bg-primary/10 text-primary"
                         : "border-border bg-background text-muted-foreground hover:bg-accent"
                     )}
                   >
@@ -811,7 +813,7 @@ export default function Settings() {
                       className={cn(
                         "rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                         schedulerStatus.enabled
-                          ? "border-blue-300 bg-blue-50 text-primary"
+                          ? "border-primary/30 bg-primary/10 text-primary"
                           : "border-border bg-background text-muted-foreground hover:bg-accent"
                       )}
                     >
@@ -848,14 +850,12 @@ export default function Settings() {
                       type="time"
                       value={cronTime}
                       onChange={(e) => setCronTime(e.target.value)}
-                      className="h-7 rounded-md border border-input bg-background px-2 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
+                      className="h-7 rounded-md border border-input bg-background px-2 text-xs tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     />
                     <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={cronWeekdaysOnly}
-                        onChange={(e) => setCronWeekdaysOnly(e.target.checked)}
-                        className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        onCheckedChange={(v) => setCronWeekdaysOnly(!!v)}
                       />
                       仅工作日
                     </label>
@@ -905,14 +905,14 @@ export default function Settings() {
                   </div>
                   <div className="flex-1 min-w-[120px]">
                     <Label className="mb-1 block text-xs text-muted-foreground">映射为</Label>
-                    <select
+                    <Select
                       value={newKwMapped}
                       onChange={(e) => setNewKwMapped(e.target.value)}
-                      className="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                      className="h-8 text-xs shadow-sm"
                     >
                       <option value="">选择{kwTab === "sector" ? "板块" : "类型"}</option>
                       {kwAvailable.map((a) => <option key={a} value={a}>{a}</option>)}
-                    </select>
+                    </Select>
                   </div>
                   <Button size="sm" onClick={addCustomKeyword} className="h-8 shrink-0">
                     <Plus className="mr-1 h-3.5 w-3.5" /> 添加
@@ -924,7 +924,7 @@ export default function Settings() {
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-muted-foreground">自定义关键词（{kwCustom.length} 个）</p>
                     {kwCustom.map((e, i) => (
-                      <div key={i} className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/40 px-3 py-1.5">
+                      <div key={i} className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-1.5">
                         <button onClick={() => moveCustomKeyword(i, -1)} disabled={i === 0}
                           className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:opacity-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                           <ChevronUp className="h-3 w-3" />

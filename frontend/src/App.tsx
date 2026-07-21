@@ -16,12 +16,17 @@ import FundCompare from "@/pages/FundCompare"
 import Login from "@/pages/Login"
 import { api } from "@/api/client"
 import { getToken } from "@/lib/auth"
+import { initUiTheme } from "@/lib/theme"
 
 export default function App() {
   const [authRequired, setAuthRequired] = useState<boolean | null>(null)
 
   useEffect(() => {
     api.getAuthStatus().then((s) => setAuthRequired(s.required)).catch(() => setAuthRequired(false))
+  }, [])
+
+  useEffect(() => {
+    return initUiTheme()
   }, [])
 
   if (authRequired === null) {

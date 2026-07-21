@@ -14,24 +14,50 @@
 
 @layer base {
   :root {
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
+    /* Linear-style 中性色族：纯 zinc (无 blue tint)，取代 slate */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 4%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 240 10% 4%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 4%;
     --primary: 221 83% 33%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 32 95% 44%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 84% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 6% 10%;
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+    --accent: 240 5% 96%;
+    --accent-foreground: 240 6% 10%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
     --ring: 221 83% 33%;
-    --radius: 0.75rem;
+    --radius: 0.5rem;
+
+    /* 语义色 token：替代散落的 amber/purple/green 硬编码 */
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --info: 271 81% 56%;
+    --info-foreground: 0 0% 100%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    /* 桥接 token：brutalist Home 与内页共享品牌强调 */
+    --brand-accent: 0 100% 58%;
+    --brand-bg-dark: 0 0% 4%;
+    --brand-text-light: 0 0% 92%;
+
+    /* 统一图表色板（8 色，色盲友好，light） */
+    --chart-1: 221 83% 53%;
+    --chart-2: 142 71% 45%;
+    --chart-3: 0 72% 51%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 271 81% 56%;
+    --chart-6: 199 89% 48%;
+    --chart-7: 280 65% 60%;
+    --chart-8: 248 53% 58%;
 
     /* 涨跌颜色（国际惯例：gain=绿, loss=红） */
     --gain-50: #f0fdf4; --gain-100: #dcfce7; --gain-200: #bbf7d0;
@@ -40,7 +66,7 @@
     --gain-900: #14532d; --gain-950: #052e16;
     --loss-50: #fef2f2; --loss-100: #fee2e2; --loss-200: #fecaca;
     --loss-300: #fca5a5; --loss-400: #f87171; --loss-500: #ef4444;
-    --loss-600: #dc2626; --loss-700: #b91c1c; --loss-800: #991b1b;
+    --loss-600: #dc2626; --loss-700: #b91c1b; --loss-800: #991b1b;
     --loss-900: #7f1d1d; --loss-950: #450a0a;
   }
 
@@ -57,23 +83,45 @@
   }
 
   .dark {
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 13%;
-    --card-foreground: 210 40% 98%;
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
+    --card: 240 6% 10%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 6% 10%;
+    --popover-foreground: 0 0% 98%;
     --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 11%;
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 32 95% 54%;
-    --accent-foreground: 0 0% 100%;
+    --primary-foreground: 240 6% 10%;
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 4% 14%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 240 4% 16%;
+    --accent-foreground: 0 0% 98%;
     --destructive: 0 63% 31%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 217 33% 20%;
-    --input: 217 33% 20%;
-    --ring: 224 76% 48%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 4% 18%;
+    --input: 240 4% 18%;
+    --ring: 217 91% 60%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 0 0% 98%;
+    --info: 271 81% 70%;
+    --info-foreground: 0 0% 98%;
+    --success: 142 71% 50%;
+    --success-foreground: 0 0% 98%;
+
+    --brand-accent: 0 100% 58%;
+    --brand-bg-dark: 0 0% 4%;
+    --brand-text-light: 0 0% 92%;
+
+    --chart-1: 217 91% 60%;
+    --chart-2: 142 71% 55%;
+    --chart-3: 0 72% 60%;
+    --chart-4: 38 92% 55%;
+    --chart-5: 271 81% 70%;
+    --chart-6: 199 89% 55%;
+    --chart-7: 280 65% 70%;
+    --chart-8: 248 53% 65%;
   }
 }
 
@@ -109,15 +157,6 @@
   background: hsl(var(--muted-foreground) / 0.45);
 }
 
-/* 卡片悬停微动效 */
-.card-hover {
-  transition: box-shadow 200ms ease, transform 200ms ease;
-}
-.card-hover:hover {
-  box-shadow: 0 8px 30px -6px hsl(221 83% 33% / 0.12);
-  transform: translateY(-1px);
-}
-
 /* 数字渐入动画 */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(4px); }
@@ -147,7 +186,7 @@ html, body {
 }
 
 /* ═════════════════════════════════════════════ */
-/* Logo Animations (B1-B7)                        */
+/* Logo Animations — 仅保留实际使用的 B1/B2/B5     */
 /* ═════════════════════════════════════════════ */
 
 /* ── B1: 金光入场 (splash) ── */
@@ -199,32 +238,6 @@ html, body {
 @keyframes la-ripple-z { 0%,100% { stroke:#F59E0B; } 50% { stroke:#FBBF24; } }
 .la-ripple-z { animation:la-ripple-z 1s ease-in-out infinite; }
 
-/* ── B3: 硬币翻转 (coinflip) ── */
-@keyframes la-coinflip-f {
-  0% { transform:rotateY(0deg); }
-  50% { transform:rotateY(180deg); }
-  100% { transform:rotateY(360deg); }
-}
-.la-coinflip-f { animation:la-coinflip-f 3s ease-in-out infinite; transform-box:fill-box; transform-origin:center; transform-style:preserve-3d; }
-
-/* ── B4: 分光汇聚 (prism) ── */
-@keyframes la-prism-sp {
-  0% { opacity:0; transform:translate(var(--ox),var(--oy)) scale(0.5); }
-  100% { opacity:1; transform:translate(0,0) scale(1); }
-}
-.la-prism-ly { animation:la-prism-sp 0.6s cubic-bezier(0.16,1,0.3,1) both; transform-box:fill-box; transform-origin:center; }
-@keyframes la-prism-ray {
-  0% { opacity:0; r:5; }
-  30% { opacity:0.6; }
-  100% { opacity:0; r:28; }
-}
-.la-prism-r1 { animation:la-prism-ray 1.5s ease-out infinite; }
-.la-prism-r2 { animation:la-prism-ray 1.5s ease-out infinite; animation-delay:0.38s; }
-.la-prism-r3 { animation:la-prism-ray 1.5s ease-out infinite; animation-delay:0.75s; }
-.la-prism-r4 { animation:la-prism-ray 1.5s ease-out infinite; animation-delay:1.13s; }
-@keyframes la-prism-zg { 0%,100% { filter:drop-shadow(0 0 1px #F59E0B); } 50% { filter:drop-shadow(0 0 8px #F59E0B); } }
-.la-prism-zg { animation:la-prism-zg 2s ease-in-out infinite; animation-delay:0.8s; }
-
 /* ── B5: 光环打字 (typing) ── */
 @keyframes la-typing-type {
   0% { stroke-dashoffset:50; stroke-dasharray:50; }
@@ -247,54 +260,6 @@ html, body {
   50% { filter:drop-shadow(0 0 5px #FBBF24); }
 }
 .la-typing-zg { animation:la-typing-zg 2s ease-in-out infinite; }
-
-/* ── B6: 心跳脉动 (heartbeat) ── */
-@keyframes la-heartbeat-beat {
-  0%, 100% { scale: 1; }
-  10% { scale: 1.12; }
-  20% { scale: 0.96; }
-  30% { scale: 1.08; }
-  40%, 100% { scale: 1; }
-}
-.la-heartbeat-beat { animation:la-heartbeat-beat 1.2s ease-in-out infinite; transform-box:fill-box; transform-origin:center; }
-@keyframes la-heartbeat-z {
-  0%, 100% { filter:drop-shadow(0 0 3px #F59E0B); stroke:#F59E0B; }
-  12% { filter:drop-shadow(0 0 14px #FBBF24); stroke:#FBBF24; }
-  25% { filter:drop-shadow(0 0 3px #F59E0B); stroke:#F59E0B; }
-}
-.la-heartbeat-z { animation:la-heartbeat-z 1.2s ease-in-out infinite; }
-@keyframes la-heartbeat-ring {
-  0%, 100% { r: 12.5; opacity: 0.4; stroke-width: 0.8; }
-  12% { r: 15; opacity: 0.8; stroke-width: 1.5; }
-  25% { r: 12.5; opacity: 0.4; stroke-width: 0.8; }
-}
-.la-heartbeat-ring { animation:la-heartbeat-ring 1.2s ease-in-out infinite; }
-@keyframes la-heartbeat-ecg {
-  0% { stroke-dashoffset: 200; }
-  40% { stroke-dashoffset: 120; }
-  50% { stroke-dashoffset: 115; }
-  60% { stroke-dashoffset: 110; }
-  100% { stroke-dashoffset: 0; }
-}
-.la-heartbeat-ecg { stroke-dasharray: 200; animation:la-heartbeat-ecg 1.2s ease-in-out infinite; }
-
-/* ── B7: 翻牌洗牌 (shuffle) ── */
-@keyframes la-shuffle-flip {
-  0% { transform: rotateY(0deg) scale(1); opacity: 1; }
-  25% { transform: rotateY(90deg) scale(0.8); opacity: 0.3; }
-  50% { transform: rotateY(180deg) scale(1); opacity: 1; }
-  75% { transform: rotateY(270deg) scale(0.8); opacity: 0.3; }
-  100% { transform: rotateY(360deg) scale(1); opacity: 1; }
-}
-.la-shuffle-f1 { animation:la-shuffle-flip 2.4s ease-in-out infinite; transform-box:fill-box; transform-origin:center; }
-.la-shuffle-f2 { animation:la-shuffle-flip 2.4s ease-in-out infinite; animation-delay: 0.3s; transform-box:fill-box; transform-origin:center; }
-.la-shuffle-f3 { animation:la-shuffle-flip 2.4s ease-in-out infinite; animation-delay: 0.6s; transform-box:fill-box; transform-origin:center; }
-.la-shuffle-f4 { animation:la-shuffle-flip 2.4s ease-in-out infinite; animation-delay: 0.9s; transform-box:fill-box; transform-origin:center; }
-@keyframes la-shuffle-z {
-  0%, 100% { opacity: 1; }
-  45%, 55% { opacity: 0.2; }
-}
-.la-shuffle-z { animation:la-shuffle-z 2.4s ease-in-out infinite; }
 
 /* ── 背景噪点叠加层 ── */
 .grain-overlay {

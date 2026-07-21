@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
+import ThemeToggle from "@/components/ThemeToggle"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import type { AIUsageStats, AIUsageDaily, AuditLog, KeywordMaps, KeywordEntry, SchedulerStatus } from "@/api/types"
@@ -790,6 +791,11 @@ export default function Settings() {
                     <span className="block text-[11px] text-muted-foreground mt-0.5">国内 A 股惯例</span>
                   </button>
                 </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">外观主题</p>
+                <ThemeToggle variant="segmented" />
+                <p className="text-xs text-muted-foreground">跟随系统将根据 prefers-color-scheme 自动切换</p>
               </div>
             </CardContent>
           </Card>

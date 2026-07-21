@@ -20,6 +20,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getColorTheme, getColorThemeAsync, applyColorTheme } from "@/lib/colorTheme"
+import ThemeToggle from "./ThemeToggle"
 
 const STORAGE_KEY = "zfundpilot_sidebar_collapsed"
 
@@ -173,10 +174,18 @@ export default function Layout() {
             <Github className="h-4 w-4 shrink-0" />
             {!collapsed && <span className="whitespace-nowrap">GitHub</span>}
           </a>
+          <ThemeToggle
+            variant="icon"
+            label={collapsed ? undefined : "主题"}
+            className={cn(
+              "mt-1 text-slate-500 hover:bg-slate-800 hover:text-white",
+              collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 px-3 py-2 text-xs",
+            )}
+          />
           <button
             onClick={toggle}
             className={cn(
-              "flex items-center rounded-lg text-slate-500 transition-colors hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+              "mt-1 flex items-center rounded-lg text-slate-500 transition-colors hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
               collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 px-3 py-2 text-xs",
             )}
             title={collapsed ? "展开侧边栏" : "收起侧边栏"}

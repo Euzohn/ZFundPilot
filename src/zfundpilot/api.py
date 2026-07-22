@@ -17,7 +17,9 @@ import logging
 import os
 import threading
 import time
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,6 +44,7 @@ from . import (
 from .models import Fund, Transaction
 
 logger = logging.getLogger(__name__)
+_TZ = ZoneInfo("Asia/Shanghai")
 
 app = FastAPI(title="ZFundPilot API", version="0.9.0")
 
@@ -590,6 +593,7 @@ def get_estimates() -> dict[str, Any]:
     total_est_pnl = 0.0
     total_prev_value = 0.0
     latest_gztime = ""
+    today_str = datetime.now(_TZ).strftime("%Y-%m-%d")
     for est in estimates:
         info = merged.get(est.fund_code, {})
         shares = info.get("shares", 0)
@@ -602,12 +606,11 @@ def get_estimates() -> dict[str, Any]:
             if est.gztime > latest_gztime:
                 latest_gztime = est.gztime
         else:
-            # 已公布净值：优先用 API 数据，DB 兜底
+            # 已公布净值：用 API 数据；API 无数据时 DB 有今日净值才兜底
             if est.gsz and est.dwjz:
                 est_pnl = round(shares * (est.gsz - est.dwjz), 2)
                 prev_value = round(shares * est.dwjz, 2)
-            else:
-                # DB 最近两条净值算实际涨跌
+            elif info.get("latest_date") == today_str:
                 latest_nav = db.get_latest_nav(est.fund_code)
                 prev_nav = db.get_prev_nav(est.fund_code)
                 if latest_nav and prev_nav:
@@ -620,6 +623,10 @@ def get_estimates() -> dict[str, Any]:
                     est.gszzl = 0
                     est_pnl = 0
                     prev_value = 0
+            else:
+                est.gszzl = 0
+                est_pnl = 0
+                prev_value = 0
         funds.append({
             "fund_code": est.fund_code,
             "fund_name": est.fund_name or info.get("name", est.fund_code),

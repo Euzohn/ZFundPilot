@@ -27,6 +27,9 @@
 ## 截图
 
 <div align="center">
+  <img src="docs/screenshots/home.png" alt="首页门户" width="90%">
+  <p><b>首页门户</b> — 深色战术终端风格，核心指标 + 快捷导航 + 系统状态</p>
+  <br>
   <img src="docs/screenshots/overview.png" alt="组合总览" width="90%">
   <p><b>组合总览</b> — 持仓成本、市值、盈亏一览 + 资产/渠道/板块分布图</p>
   <br>

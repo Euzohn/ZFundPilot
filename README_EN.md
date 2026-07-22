@@ -27,6 +27,9 @@ Local-first · Auto NAV updates · Return & risk analytics · Portfolio rebalanc
 ## Screenshots
 
 <div align="center">
+  <img src="docs/screenshots/home_en.png" alt="Home Portal" width="90%">
+  <p><b>Home Portal</b> — Dark tactical terminal style, key metrics + quick navigation + system status</p>
+  <br>
   <img src="docs/screenshots/overview.png" alt="Portfolio Overview" width="90%">
   <p><b>Portfolio Overview</b> — Cost, market value, P&L at a glance + asset/channel/sector distribution charts</p>
   <br>

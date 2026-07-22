@@ -238,6 +238,24 @@ html, body {
 @keyframes la-ripple-z { 0%,100% { stroke:#F59E0B; } 50% { stroke:#FBBF24; } }
 .la-ripple-z { animation:la-ripple-z 1s ease-in-out infinite; }
 
+/* ── B7: 翻牌洗牌 (shuffle) ── */
+@keyframes la-shuffle-flip {
+  0% { transform: rotateY(0deg) scale(1); opacity: 1; }
+  25% { transform: rotateY(90deg) scale(0.8); opacity: 0.3; }
+  50% { transform: rotateY(180deg) scale(1); opacity: 1; }
+  75% { transform: rotateY(270deg) scale(0.8); opacity: 0.3; }
+  100% { transform: rotateY(360deg) scale(1); opacity: 1; }
+}
+.la-shuffle-f1 { animation: la-shuffle-flip 2.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.la-shuffle-f2 { animation: la-shuffle-flip 2.4s ease-in-out infinite; animation-delay: 0.3s; transform-box: fill-box; transform-origin: center; }
+.la-shuffle-f3 { animation: la-shuffle-flip 2.4s ease-in-out infinite; animation-delay: 0.6s; transform-box: fill-box; transform-origin: center; }
+.la-shuffle-f4 { animation: la-shuffle-flip 2.4s ease-in-out infinite; animation-delay: 0.9s; transform-box: fill-box; transform-origin: center; }
+@keyframes la-shuffle-z {
+  0%, 100% { opacity: 1; }
+  45%, 55% { opacity: 0.2; }
+}
+.la-shuffle-z { animation: la-shuffle-z 2.4s ease-in-out infinite; }
+
 /* ── B5: 光环打字 (typing) ── */
 @keyframes la-typing-type {
   0% { stroke-dashoffset:50; stroke-dasharray:50; }

@@ -220,12 +220,23 @@ export default function Positions() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {estimateMap[code] != null ? (
-                          <span className={cn(pnlColor(estimateMap[code].gszzl / 100), !estimateMap[code].ok && "opacity-70")}>
-                            {pct(estimateMap[code].gszzl / 100)}
-                            {estimateMap[code].ok && <span className="ml-0.5 text-[10px] opacity-50">估</span>}
-                          </span>
-                        ) : (
+                        {estimateMap[code] != null ? (() => {
+                          const e = estimateMap[code]
+                          const scaledPnl = e.shares ? (m.shares / e.shares) * e.pnl : e.pnl
+                          return (
+                            <div className="flex flex-col items-end">
+                              <span className={cn(pnlColor(e.gszzl / 100), !e.ok && "opacity-70")}>
+                                {pct(e.gszzl / 100)}
+                                {e.ok && <span className="ml-0.5 text-[10px] opacity-50">估</span>}
+                              </span>
+                              {!e.ok && e.pnl !== 0 && (
+                                <span className={cn("text-xs font-normal", pnlColor(scaledPnl))}>
+                                  {signedMoney(scaledPnl)}
+                                </span>
+                              )}
+                            </div>
+                          )
+                        })() : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>

@@ -194,7 +194,7 @@ export default function NavUpdate() {
           <p className="text-sm text-muted-foreground">
             数据源：AkShare 优先，失败自动切换天天基金。首次抓取较慢。
           </p>
-          {!updating && !results && (
+          {!updating && (
             <Button onClick={handleUpdate} className="w-full">
               <RefreshCw className="mr-2 h-4 w-4" />
               更新全部基金净值

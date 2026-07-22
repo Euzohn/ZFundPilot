@@ -16,17 +16,15 @@ import MetricCard from "@/components/MetricCard"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
-import { GRID } from "@/lib/grid"
-import ChartContainer from "@/components/ChartContainer"
 
 function CompactCard({ label, value, sub, color }: {
   label: string; value: string; sub?: string; color?: string
 }) {
   return (
     <Card className="card-hover">
-      <CardContent className="p-3 sm:p-4 md:p-5">
+      <CardContent className="p-4 md:p-5">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p className={`mt-1 text-base sm:text-lg md:text-xl font-bold tabular-nums fade-in-up ${color ?? ""}`}>{value}</p>
+        <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums fade-in-up ${color ?? ""}`}>{value}</p>
         {sub && <p className={`text-xs tabular-nums ${color ?? "text-muted-foreground"}`}>{sub}</p>}
       </CardContent>
     </Card>
@@ -36,9 +34,9 @@ function CompactCard({ label, value, sub, color }: {
 function HeroCard({ summary }: { summary: PortfolioSummary }) {
   return (
     <Card className="card-hover col-span-1 lg:col-span-1">
-      <CardContent className="p-3 sm:p-4 md:p-5">
+      <CardContent className="p-4 md:p-5">
         <p className="text-xs font-medium text-muted-foreground">当前市值</p>
-        <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums fade-in-up text-foreground">{money(summary.total_value)}</p>
+        <p className="mt-1 text-2xl font-bold tabular-nums fade-in-up text-foreground">{money(summary.total_value)}</p>
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums">
           <span className="text-muted-foreground">总盈亏</span>
           <span className={`font-medium ${pnlColor(summary.total_pnl)}`}>
@@ -116,7 +114,7 @@ export default function Overview() {
         ) : undefined} />
 
       {/* Row 1: Period returns — compact cards, no icons */}
-      <div className={GRID.metricsWide}>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
         <CompactCard label="今日估算" value={hasEstimate ? signedMoney(estimate!.total_estimated_pnl) : "—"} sub={hasEstimate ? `${pct(estimate!.estimated_return)} · ${estimate!.gztime.slice(11, 16) || ""}` : undefined} color={hasEstimate ? pnlColor(estimate!.total_estimated_pnl) : undefined} />
         <CompactCard label={dailyLabel} value={signedMoney(summary.daily_pnl)} sub={pct(summary.daily_return)} color={pnlColor(summary.daily_pnl)} />
         <CompactCard label="本周收益" value={signedMoney(summary.week_pnl)} sub={pct(summary.week_return)} color={pnlColor(summary.week_pnl)} />
@@ -125,7 +123,7 @@ export default function Overview() {
       </div>
 
       {/* Row 2: Hero + portfolio metrics — 3-col with hero card */}
-      <div className={GRID.hero}>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
         <HeroCard summary={summary} />
         <MetricCard fade icon={Wallet} label="持仓成本" value={money(summary.total_cost)} />
         <MetricCard fade icon={Wallet} label="持仓基金数" value={`${summary.holding_count} 只`} sub={`净值日期 ${summary.as_of_date ?? "未更新"}`} />
@@ -134,7 +132,7 @@ export default function Overview() {
       {/* Row 3: Transaction summary + max concentration — 2-col */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
         <Card className="card-hover">
-          <CardContent className="p-3 sm:p-4 md:p-5">
+          <CardContent className="p-4 md:p-5">
             <p className="text-xs font-medium text-muted-foreground">累计买入 / 卖出 / 分红</p>
             <p className="mt-1 text-sm md:text-base font-bold tabular-nums">
               <span className="text-primary">{money(summary.total_buy)}</span>
@@ -149,12 +147,12 @@ export default function Overview() {
       </div>
 
       {/* Row 4: Charts — bar chart spans 2 cols, pies 1 col each */}
-      <div className={GRID.charts}>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 md:gap-4">
         <Card className="card-hover lg:col-span-2">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">板块分布</CardTitle></CardHeader>
           <CardContent>
             {sectorDist && sectorDist.length > 0 ? (
-              <ChartContainer height={240} mobileHeight={200}>
+              <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={sectorDist.slice(0, 12)} layout="vertical" margin={{ left: 10, right: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
                   <XAxis type="number" tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
@@ -162,7 +160,7 @@ export default function Overview() {
                   <Bar dataKey="market_value" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} barSize={14} />
                   <Tooltip content={<ChartTooltip nameKey="sector" />} cursor={{ fill: 'hsl(var(--primary))', opacity: 0.08 }} />
                 </BarChart>
-              </ChartContainer>
+              </ResponsiveContainer>
             ) : <EmptyState title="暂无数据" size="lg" />}
           </CardContent>
         </Card>
@@ -171,14 +169,14 @@ export default function Overview() {
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">资产类型</CardTitle></CardHeader>
           <CardContent>
             {typeDist && typeDist.length > 0 ? (
-              <ChartContainer height={240} mobileHeight={200}>
+              <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
                   <Pie data={typeDist} dataKey="market_value" nameKey="fund_type" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
                     {typeDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip nameKey="fund_type" />} />
                 </PieChart>
-              </ChartContainer>
+              </ResponsiveContainer>
             ) : <EmptyState title="暂无数据" size="lg" />}
           </CardContent>
         </Card>
@@ -187,14 +185,14 @@ export default function Overview() {
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">渠道分布</CardTitle></CardHeader>
           <CardContent>
             {channelDist && channelDist.length > 0 ? (
-              <ChartContainer height={240} mobileHeight={200}>
+              <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
                   <Pie data={channelDist.map(d => ({ ...d, channel: d.channel || "未标注" }))} dataKey="market_value" nameKey="channel" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
                     {channelDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip nameKey="channel" />} />
                 </PieChart>
-              </ChartContainer>
+              </ResponsiveContainer>
             ) : <EmptyState title="暂无数据" size="lg" />}
           </CardContent>
         </Card>

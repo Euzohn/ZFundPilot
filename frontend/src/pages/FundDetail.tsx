@@ -20,8 +20,6 @@ import ConfirmDialog from "@/components/ConfirmDialog"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
-import ChartContainer from "@/components/ChartContainer"
-import { GRID } from "@/lib/grid"
 
 export default function FundDetail() {
   const { code } = useParams<{ code: string }>()
@@ -186,7 +184,7 @@ const handleDelete = async (txId: number) => {
       </div>
 
       {/* Summary metrics */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <MetricCard size="sm" label="持有份额" value={totalShares.toFixed(2)} />
         <MetricCard size="sm" label="持仓成本" value={money(totalCost)} />
         <MetricCard size="sm" label="持仓均价" value={navStr(avgCost)} />
@@ -256,7 +254,7 @@ const handleDelete = async (txId: number) => {
         </CardHeader>
         <CardContent>
           {chartData.length >= 2 ? (
-            <ChartContainer height={280} mobileHeight={200}>
+            <ResponsiveContainer width="100%" height={280}>
               <ComposedChart data={chartData} margin={{ left: 10, right: 10, top: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="date" fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
@@ -325,7 +323,7 @@ const handleDelete = async (txId: number) => {
                   }}
                 />
               </ComposedChart>
-            </ChartContainer>
+            </ResponsiveContainer>
           ) : (
             <EmptyState title="净值历史不足，先到「净值更新」抓取数据。" size="lg" />
           )}

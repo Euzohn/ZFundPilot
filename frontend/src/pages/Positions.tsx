@@ -136,18 +136,18 @@ export default function Positions() {
       <>
       <div className="flex items-center justify-between flex-wrap gap-2">
         <PageHeader title="持仓明细" />
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-[120px] max-w-[200px]">
+        <div className="flex items-center gap-2">
+          <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="搜索名称/代码/板块"
-              className="h-8 w-full pl-7 text-xs"
+              className="h-8 w-44 pl-7 text-xs"
             />
           </div>
-          <Select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="h-8 text-xs min-w-[100px] max-w-[140px]">
+          <Select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="h-8 text-xs w-32">
             <option value="">全部渠道</option>
             {availableChannels.map((c) => <option key={c} value={c}>{c}</option>)}
           </Select>
@@ -246,22 +246,18 @@ export default function Positions() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-7 px-2 text-xs text-gain border-gain/30 hover:bg-gain/5 tap-target"
-                            title="买入"
+                            className="h-7 px-2 text-xs text-gain border-gain/30 hover:bg-gain/5"
                             onClick={() => navigate(`/transactions?code=${code}&action=buy`)}
                           >
-                            <TrendingUp className="h-3 w-3 sm:mr-1" />
-                            <span className="hidden sm:inline">买入</span>
+                            <TrendingUp className="h-3 w-3" />
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-7 px-2 text-xs text-loss border-loss/30 hover:bg-loss/5 tap-target"
-                            title="卖出"
+                            className="h-7 px-2 text-xs text-loss border-loss/30 hover:bg-loss/5"
                             onClick={() => navigate(`/transactions?code=${code}&action=sell${m.channel ? `&channel=${encodeURIComponent(m.channel)}` : ""}`)}
                           >
-                            <TrendingDown className="h-3 w-3 sm:mr-1" />
-                            <span className="hidden sm:inline">卖出</span>
+                            <TrendingDown className="h-3 w-3" />
                           </Button>
                         </div>
                       </TableCell>

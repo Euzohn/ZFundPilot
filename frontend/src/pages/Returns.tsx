@@ -18,8 +18,6 @@ import { ChevronUp, ChevronDown, BarChart3, CalendarDays } from "lucide-react"
 import { getChannelColors, getChannelColorsAsync, getPalette } from "@/lib/channelColors"
 import { RANGE_LABELS, RANGE_DAYS } from "@/lib/rangeLabels"
 import { makeSortHeader } from "@/components/SortHeader"
-import ChartContainer from "@/components/ChartContainer"
-import { GRID } from "@/lib/grid"
 
 const PALETTE = getPalette()
 
@@ -218,7 +216,7 @@ export default function Returns() {
       <PageHeader title="收益分析" />
 
       {/* Metrics — 详细指标，不与总览重复 */}
-      <div className={GRID.metrics}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
           <p className="text-xs font-medium text-muted-foreground">持仓成本</p>
           <p className="mt-1 text-lg md:text-xl font-bold tabular-nums">{money(summary.total_cost)}</p>
@@ -296,7 +294,7 @@ export default function Returns() {
             {pnlMode === "day" && chartView === "calendar" ? (
               <PnLCalendar data={dailyDiffs} />
             ) : (
-              <ChartContainer height={pnlMode === "day" ? 200 : 240} mobileHeight={160}>
+              <ResponsiveContainer width="100%" height={pnlMode === "day" ? 200 : 240}>
                 <BarChart data={pnlData} margin={{ left: 10, right: 10, top: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="date" fontSize={10} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
@@ -308,7 +306,7 @@ export default function Returns() {
                     <Bar key={ch} dataKey={ch} stackId="a" fill={channelColors[ch] ?? PALETTE[i % PALETTE.length]} radius={i === channels.length - 1 ? [3, 3, 0, 0] : undefined} />
                   ))}
                 </BarChart>
-              </ChartContainer>
+              </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
@@ -329,7 +327,7 @@ export default function Returns() {
         </CardHeader>
         <CardContent>
           {filteredCurve.length >= 2 ? (
-            <ChartContainer height={300} mobileHeight={220}>
+            <ResponsiveContainer width="100%" height={300}>
               <ComposedChart data={filteredCurve} margin={{ left: 10, right: 5, top: 5 }}>
                 <defs>
                   <linearGradient id="valueGradient" x1="0" y1="0" x2="0" y2="1">
@@ -351,7 +349,7 @@ export default function Returns() {
                 <Line yAxisId="value" type="monotone" dataKey="profit" name="累计收益" stroke="var(--gain-500)" strokeWidth={2} dot={false} hide={hiddenKeys.has("profit")} />
                 <Line yAxisId="return" type="monotone" dataKey="total_return" name="累计收益率" stroke="hsl(var(--chart-5))" strokeWidth={2} dot={false} hide={hiddenKeys.has("total_return")} />
               </ComposedChart>
-            </ChartContainer>
+            </ResponsiveContainer>
           ) : (
             <p className="py-12 text-center text-sm text-muted-foreground">
               净值历史不足，先到「净值更新」抓取数据后再查看曲线。
@@ -419,7 +417,7 @@ export default function Returns() {
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-base">浮动收益率排序</CardTitle></CardHeader>
           <CardContent>
-            <ChartContainer height={Math.max(200, chartRows.length * 36)} mobileHeight={Math.max(160, chartRows.length * 28)}>
+            <ResponsiveContainer width="100%" height={Math.max(200, chartRows.length * 36)}>
               <BarChart data={chartRows} layout="vertical" margin={{ left: 10, right: 40, top: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
                 <XAxis type="number" tickFormatter={(v: number) => `${(v * 100).toFixed(1)}%`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
@@ -432,7 +430,7 @@ export default function Returns() {
                   ))}
                 </Bar>
               </BarChart>
-            </ChartContainer>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
       )}

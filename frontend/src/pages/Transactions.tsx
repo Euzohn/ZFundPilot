@@ -446,7 +446,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
           <div className="border-t border-border/60" />
 
           {/* ── 操作 / 日期 / 渠道 ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div>
               <Label className="mb-1.5 block text-xs text-muted-foreground">操作</Label>
               <Select value={action} onChange={(e) => setAction(e.target.value)} className="h-9">
@@ -480,7 +480,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
           <div className="border-t border-border/60" />
 
           {/* ── 金额 / 份额 / 净值 / 手续费 ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             {action === "buy" && (
               <>
                 <div>
@@ -578,7 +578,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
           <div className="border-t border-border/60" />
 
           {/* ── 自定义渠道 / 备注 ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <Label className="mb-1.5 block text-xs text-muted-foreground">自定义渠道（可选）</Label>
               <Input value={customChannel} onChange={(e) => setCustomChannel(e.target.value)} placeholder="覆盖上方选择" className="h-9" />
@@ -590,12 +590,12 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
           </div>
 
           <div className="flex gap-2 pt-1">
-            <Button type="submit" disabled={saving} className="flex-1 h-10 md:h-9">
+            <Button type="submit" disabled={saving} className="flex-1 h-9">
               {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : (isEditing ? <Pencil className="mr-1.5 h-4 w-4" /> : <Plus className="mr-1.5 h-4 w-4" />)}
               {saving ? "保存中..." : isEditing ? "更新交易" : "保存交易"}
             </Button>
             {isEditing && (
-              <Button type="button" variant="outline" onClick={() => { resetForm(); onDone() }} className="h-10 md:h-9">
+              <Button type="button" variant="outline" onClick={() => { resetForm(); onDone() }} className="h-9">
                 取消
               </Button>
             )}
@@ -764,21 +764,12 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
               <option value="dividend">分红</option>
               <option value="reinvest">再投资</option>
             </Select>
-            <div className="hidden sm:flex items-center gap-1">
+            <div className="flex items-center gap-1 ml-auto">
               {([["month", "本月"], ["30d", "近30天"], ["year", "本年"], ["all", "全部"], ["custom", "自定义"]] as const).map(([key, label]) => (
                 <Button key={key} size="sm" variant={dateRange === key ? "default" : "outline"} className="h-8 text-xs px-2.5" onClick={() => setDateRange(key)}>
                   {label}
                 </Button>
               ))}
-            </div>
-            <div className="sm:hidden">
-              <Select value={dateRange} onChange={(e) => setDateRange(e.target.value)} className="h-8 text-xs w-28">
-                <option value="month">本月</option>
-                <option value="30d">近30天</option>
-                <option value="year">本年</option>
-                <option value="all">全部</option>
-                <option value="custom">自定义</option>
-              </Select>
             </div>
             {dateRange === "custom" && (
               <div className="flex items-center gap-1.5 w-full sm:w-auto">

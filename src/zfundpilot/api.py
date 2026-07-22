@@ -610,6 +610,8 @@ def get_estimates() -> dict[str, Any]:
             if est.gsz and est.dwjz:
                 est_pnl = round(shares * (est.gsz - est.dwjz), 2)
                 prev_value = round(shares * est.dwjz, 2)
+                total_est_pnl += est_pnl
+                total_prev_value += prev_value
             elif info.get("latest_date") == today_str:
                 latest_nav = db.get_latest_nav(est.fund_code)
                 prev_nav = db.get_prev_nav(est.fund_code)
@@ -619,6 +621,8 @@ def get_estimates() -> dict[str, Any]:
                     est.gszzl = round((est.gsz - est.dwjz) / est.dwjz * 100, 2) if est.dwjz else 0
                     est_pnl = round(shares * (est.gsz - est.dwjz), 2)
                     prev_value = round(shares * est.dwjz, 2)
+                    total_est_pnl += est_pnl
+                    total_prev_value += prev_value
                 else:
                     est.gszzl = 0
                     est_pnl = 0

@@ -194,10 +194,12 @@ export default function NavUpdate() {
           <p className="text-sm text-muted-foreground">
             数据源：AkShare 优先，失败自动切换天天基金。首次抓取较慢。
           </p>
-          <Button onClick={handleUpdate} disabled={updating} className="w-full">
-            <RefreshCw className={`mr-2 h-4 w-4 ${updating ? "animate-spin" : ""}`} />
-            {updating ? "更新中..." : "更新全部基金净值"}
-          </Button>
+          {!updating && !results && (
+            <Button onClick={handleUpdate} className="w-full">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              更新全部基金净值
+            </Button>
+          )}
 
           {startError && (
             <p className="text-sm text-destructive">启动失败：{startError}</p>

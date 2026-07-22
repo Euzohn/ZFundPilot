@@ -22,6 +22,7 @@ import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
+import ChartContainer from "@/components/ChartContainer"
 
 const RISK_LABELS: Record<string, string> = {
   max_drawdown: "最大回撤", volatility: "年化波动率",
@@ -385,7 +386,7 @@ function NavChart({ navSeries }: { navSeries: Record<string, { date: string; val
   }
 
   return (
-    <ResponsiveContainer width="100%" height={400}>
+    <ChartContainer height={400} mobileHeight={260}>
       <LineChart data={merged}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
         <XAxis dataKey="date" fontSize={11} tick={{ fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} />
@@ -409,7 +410,7 @@ function NavChart({ navSeries }: { navSeries: Record<string, { date: string; val
           />
         ))}
       </LineChart>
-    </ResponsiveContainer>
+    </ChartContainer>
   )
 }
 
@@ -541,12 +542,12 @@ export default function FundCompare() {
           )}
 
           <Tabs defaultValue="info">
-            <TabsList className="grid w-full grid-cols-5 sm:inline-flex sm:w-auto">
-              <TabsTrigger value="info" className="gap-1"><Table2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">基本信息</span></TabsTrigger>
-              <TabsTrigger value="returns" className="gap-1"><TrendingUp className="h-3.5 w-3.5" /><span className="hidden sm:inline">收益表现</span></TabsTrigger>
-              <TabsTrigger value="risk" className="gap-1"><Activity className="h-3.5 w-3.5" /><span className="hidden sm:inline">风险指标</span></TabsTrigger>
-              <TabsTrigger value="chart" className="gap-1"><BarChart3 className="h-3.5 w-3.5" /><span className="hidden sm:inline">净值走势</span></TabsTrigger>
-              <TabsTrigger value="correlation" className="gap-1"><DollarSign className="h-3.5 w-3.5" /><span className="hidden sm:inline">相关性</span></TabsTrigger>
+            <TabsList className="flex w-full overflow-x-auto pb-2 -mb-2 sm:inline-flex sm:w-auto sm:overflow-visible sm:pb-0 sm:mb-0">
+              <TabsTrigger value="info" className="gap-1 shrink-0"><Table2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">基本信息</span><span className="sm:hidden">信息</span></TabsTrigger>
+              <TabsTrigger value="returns" className="gap-1 shrink-0"><TrendingUp className="h-3.5 w-3.5" /><span className="hidden sm:inline">收益表现</span><span className="sm:hidden">收益</span></TabsTrigger>
+              <TabsTrigger value="risk" className="gap-1 shrink-0"><Activity className="h-3.5 w-3.5" /><span className="hidden sm:inline">风险指标</span><span className="sm:hidden">风险</span></TabsTrigger>
+              <TabsTrigger value="chart" className="gap-1 shrink-0"><BarChart3 className="h-3.5 w-3.5" /><span className="hidden sm:inline">净值走势</span><span className="sm:hidden">走势</span></TabsTrigger>
+              <TabsTrigger value="correlation" className="gap-1 shrink-0"><DollarSign className="h-3.5 w-3.5" /><span className="hidden sm:inline">相关性</span><span className="sm:hidden">相关</span></TabsTrigger>
             </TabsList>
 
             <TabsContent value="info" className="mt-4">

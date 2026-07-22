@@ -361,7 +361,7 @@ export default function AIChat() {
   const configured = aiConfig?.base_url && aiConfig?.model
 
   return (
-    <div className="flex flex-col h-[calc(100vh-9rem)] md:h-[calc(100vh-8rem)] max-w-4xl mx-auto">
+    <div className="flex flex-col h-[calc(100dvh-9rem)] md:h-[calc(100dvh-8rem)] max-w-4xl mx-auto" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
       {/* Header */}
       <div className="flex items-center justify-between gap-2 border-b pb-2 md:pb-3">
         <div className="flex items-center gap-2 min-w-0">

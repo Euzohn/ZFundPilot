@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import LogoSpinner from "@/components/LogoSpinner"
 import LogoRipple from "@/components/LogoRipple"
 import ErrorState from "@/components/ErrorState"
+import { GRID } from "@/lib/grid"
 import { RefreshCw, CheckCircle2, XCircle, RotateCw, AlertTriangle } from "lucide-react"
 import { navStr, localDateStr } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
@@ -151,7 +152,7 @@ export default function NavUpdate() {
     <div className="space-y-6">
       <PageHeader title="净值更新" />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+      <div className={GRID.compact3}>
         <Card>
           <CardContent className="flex items-center justify-between p-4 md:p-6">
             <div>

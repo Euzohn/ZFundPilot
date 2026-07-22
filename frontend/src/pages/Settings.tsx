@@ -419,18 +419,18 @@ export default function Settings() {
       <PageHeader title="设置" tracking="tight" />
 
       <Tabs defaultValue="ai">
-        <TabsList className={cn("grid w-full sm:inline-flex sm:w-auto", authRequired ? "grid-cols-3" : "grid-cols-2")}>
+        <TabsList className={cn("flex w-full overflow-x-auto pb-2 -mb-2 sm:inline-flex sm:w-auto sm:overflow-visible sm:pb-0 sm:mb-0", authRequired ? "gap-1" : "gap-1")}>
           {authRequired && (
-            <TabsTrigger value="account" className="gap-1.5">
+            <TabsTrigger value="account" className="gap-1.5 shrink-0">
               <ShieldCheck className="h-4 w-4" />
               <span className="hidden sm:inline">账户与安全</span><span className="sm:hidden">账户</span>
             </TabsTrigger>
           )}
-          <TabsTrigger value="ai" className="gap-1.5">
+          <TabsTrigger value="ai" className="gap-1.5 shrink-0">
             <Bot className="h-4 w-4" />
             <span className="hidden sm:inline">AI 投顾</span><span className="sm:hidden">AI</span>
           </TabsTrigger>
-          <TabsTrigger value="prefs" className="gap-1.5">
+          <TabsTrigger value="prefs" className="gap-1.5 shrink-0">
             <SlidersHorizontal className="h-4 w-4" />
             <span className="hidden sm:inline">偏好设置</span><span className="sm:hidden">偏好</span>
           </TabsTrigger>
@@ -681,33 +681,33 @@ export default function Settings() {
             <CardContent className="space-y-4">
               <div className="space-y-1">
                 {channels.map((ch, i) => (
-                  <div key={ch} className="flex items-center gap-2 rounded-lg px-3 py-2 transition-colors hover:bg-muted/40">
+                  <div key={ch} className="flex items-center gap-1.5 sm:gap-2 rounded-lg px-2 sm:px-3 py-2 transition-colors hover:bg-muted/40">
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-muted text-xs font-medium text-muted-foreground">
                       {i + 1}
                     </span>
                     <button onClick={() => moveUp(i)} disabled={i === 0}
-                      className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                       <ChevronUp className="h-3.5 w-3.5" />
                     </button>
                     <button onClick={() => moveDown(i)} disabled={i === channels.length - 1}
-                      className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
+                      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                       <ChevronDown className="h-3.5 w-3.5" />
                     </button>
-                    <span className="flex-1 text-sm font-semibold">{ch}</span>
-                    {i === 0 && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">默认</span>}
-                    <div className="flex items-center gap-1">
-                      {palette.map(color => (
+                    <span className="flex-1 text-sm font-semibold min-w-0 truncate">{ch}</span>
+                    {i === 0 && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">默认</span>}
+                    <div className="hidden sm:flex items-center gap-1">
+                      {palette.slice(0, 5).map(color => (
                         <button key={color} onClick={() => handleColorChange(ch, color)}
-                          className={cn("h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+                          className={cn("h-5 w-5 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                             channelColors[ch] === color ? "border-border" : "border-transparent")}
                           style={{ background: color }} />
                       ))}
                     </div>
                     <input type="color" value={channelColors[ch] ?? "#3b82f6"}
                       onChange={(e) => handleColorChange(ch, e.target.value)}
-                      className="h-7 w-7 rounded cursor-pointer border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
+                      className="h-7 w-7 sm:h-7 sm:w-7 rounded cursor-pointer border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
                     <button onClick={() => remove(i)}
-                      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
+                      className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>

@@ -172,6 +172,41 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* 字体基准：连续平滑缩放 */
+html {
+  font-size: clamp(14px, 0.875rem + 0.25vw, 16px);
+}
+
+/* 移动端安全区 */
+body {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* 触达目标最小尺寸（全部交互元素） */
+@media (pointer: coarse) {
+  button, a, select, input[type="checkbox"], input[type="radio"], label,
+  .tap-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* 横向滚动指示器 */
+.overflow-x-auto, .overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.scroll-shadow {
+  background:
+    linear-gradient(to right, hsl(var(--background)) 0%, transparent 8px) 0 0 / 8px 100% no-repeat,
+    linear-gradient(to left, hsl(var(--background)) 0%, transparent 8px) 100% 0 / 8px 100% no-repeat,
+    linear-gradient(to right, hsl(var(--border)) 0%, transparent 4px) 0 0 / 4px 100% no-repeat,
+    linear-gradient(to left, hsl(var(--border)) 0%, transparent 4px) 100% 0 / 4px 100% no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}
+
 /* loading spinner */
 @keyframes spin {
   to { transform: rotate(360deg); }

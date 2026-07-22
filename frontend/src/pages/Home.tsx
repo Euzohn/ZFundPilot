@@ -96,8 +96,7 @@ function formatDateTime(d: Date) {
   const w = weekdays[d.getDay()]
   const h = String(d.getHours()).padStart(2, "0")
   const min = String(d.getMinutes()).padStart(2, "0")
-  const s = String(d.getSeconds()).padStart(2, "0")
-  return `${y}.${m}.${day} / ${w} / ${h}:${min}:${s}`
+  return `${y}.${m}.${day} / ${w} / ${h}:${min}`
 }
 
 function marketStatus(d: Date): "OPEN" | "CLOSED" {
@@ -173,7 +172,7 @@ export default function Home() {
       }
     }
     tick()
-    const timer = window.setInterval(tick, 1000)
+    const timer = window.setInterval(tick, 10000)
     return () => window.clearInterval(timer)
   }, [reducedMotion])
 
@@ -202,7 +201,7 @@ export default function Home() {
   const showScanlines = !reducedMotion
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-brand-bg-dark text-brand-text-light">
+    <div className="flex min-h-[100dvh] flex-col bg-brand-bg-dark text-brand-text-light" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
       {/* CRT scanlines */}
       {showScanlines && (
         <div
@@ -227,12 +226,12 @@ export default function Home() {
       </button>
 
       {/* Main content */}
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-6 py-16 md:py-20">
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16 md:py-20">
         {/* Hero — logo inline with title */}
-        <section className="fade-in-up mb-12 flex items-start gap-5">
+        <section className="fade-in-up mb-8 sm:mb-12 flex items-start gap-4 sm:gap-5">
           <svg
             viewBox="0 0 64 64"
-            className="mt-1 h-12 w-12 shrink-0 md:h-14 md:w-14 lg:h-16 lg:w-16"
+            className="mt-1 h-10 w-10 shrink-0 sm:h-12 sm:w-12 md:h-14 md:w-14"
             fill="none"
             role="img"
             aria-label="ZFundPilot logo"
@@ -258,7 +257,7 @@ export default function Home() {
           </svg>
           <div>
             <h1
-              className="text-5xl font-bold tracking-tighter leading-none md:text-6xl lg:text-7xl"
+              className="text-3xl font-bold tracking-tighter leading-none sm:text-4xl md:text-5xl lg:text-6xl"
               style={{ textShadow: "0 0 30px rgba(234,234,234,0.08)" }}
             >
               ZFUNDPILOT
@@ -275,13 +274,13 @@ export default function Home() {
         </section>
 
         {/* Metrics */}
-        <section className="fade-in-up mb-6 min-h-[120px]" style={{ animationDelay: "100ms" }} aria-busy={loading}>
+        <section className="fade-in-up mb-4 sm:mb-6 min-h-[100px]" style={{ animationDelay: "100ms" }} aria-busy={loading}>
           {loading ? (
             <div className="grid grid-cols-1 gap-px border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-4" aria-hidden="true">
               {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="bg-brand-bg-dark p-6">
-                  <div className={`h-3 w-20 bg-white/10 ${reducedMotion ? "" : "animate-pulse"}`} />
-                  <div className={`mt-3 h-7 w-28 bg-white/10 ${reducedMotion ? "" : "animate-pulse"}`} />
+                <div key={i} className="bg-brand-bg-dark p-4 sm:p-5 md:p-6">
+                  <div className={`h-3 w-16 sm:w-20 bg-white/10 ${reducedMotion ? "" : "animate-pulse"}`} />
+                  <div className={`mt-3 h-6 sm:h-7 w-24 sm:w-28 bg-white/10 ${reducedMotion ? "" : "animate-pulse"}`} />
                 </div>
               ))}
             </div>
@@ -298,29 +297,29 @@ export default function Home() {
             </div>
           ) : summary ? (
             <div className="grid grid-cols-1 gap-px border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="bg-brand-bg-dark p-6">
-                <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{summary.as_of_date === todayStr ? tr.dailyPnl : summary.as_of_date === yesterdayStr ? tr.yesterdayPnl : summary.as_of_date}</p>
-                <output className={`mt-2 block font-mono text-2xl font-bold tabular-nums ${pnlColorDark(summary.daily_pnl)}`}>
+              <div className="bg-brand-bg-dark p-4 sm:p-5 md:p-6">
+                <p className={`text-xs sm:text-sm tracking-wider text-white/40 ${labelFont}`}>{summary.as_of_date === todayStr ? tr.dailyPnl : summary.as_of_date === yesterdayStr ? tr.yesterdayPnl : summary.as_of_date}</p>
+                <output className={`mt-2 block font-mono text-xl sm:text-2xl font-bold tabular-nums ${pnlColorDark(summary.daily_pnl)}`}>
                   {signedMoney(summary.daily_pnl)}{" "}
                   <span className="text-sm font-normal text-white/40">({pct(summary.daily_return)})</span>
                 </output>
               </div>
-              <div className="bg-brand-bg-dark p-6">
-                <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.currentValue}</p>
-                <output className="mt-2 block font-mono text-2xl font-bold tabular-nums text-brand-text-light">
+              <div className="bg-brand-bg-dark p-4 sm:p-5 md:p-6">
+                <p className={`text-xs sm:text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.currentValue}</p>
+                <output className="mt-2 block font-mono text-xl sm:text-2xl font-bold tabular-nums text-brand-text-light">
                   {money(summary.total_value)}
                 </output>
               </div>
-              <div className="bg-brand-bg-dark p-6">
-                <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.totalPnl}</p>
-                <output className={`mt-2 block font-mono text-2xl font-bold tabular-nums ${pnlColorDark(summary.total_pnl)}`}>
+              <div className="bg-brand-bg-dark p-4 sm:p-5 md:p-6">
+                <p className={`text-xs sm:text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.totalPnl}</p>
+                <output className={`mt-2 block font-mono text-xl sm:text-2xl font-bold tabular-nums ${pnlColorDark(summary.total_pnl)}`}>
                   {signedMoney(summary.total_pnl)}{" "}
                   <span className="text-sm font-normal text-white/40">({pct(summary.total_return)})</span>
                 </output>
               </div>
-              <div className="bg-brand-bg-dark p-6">
-                <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.holdings}</p>
-                <output className="mt-2 block font-mono text-2xl font-bold tabular-nums text-brand-text-light">
+              <div className="bg-brand-bg-dark p-4 sm:p-5 md:p-6">
+                <p className={`text-xs sm:text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.holdings}</p>
+                <output className="mt-2 block font-mono text-xl sm:text-2xl font-bold tabular-nums text-brand-text-light">
                   {summary.holding_count} {tr.units}
                 </output>
               </div>
@@ -341,10 +340,10 @@ export default function Home() {
 
         {/* System status */}
         {summary && summary.holding_count > 0 && (
-          <section className="fade-in-up mb-12" style={{ animationDelay: "200ms" }}>
-            <div className="border border-white/10 bg-brand-bg-dark p-4">
+          <section className="fade-in-up mb-8 sm:mb-12" style={{ animationDelay: "200ms" }}>
+            <div className="border border-white/10 bg-brand-bg-dark p-3 sm:p-4">
               <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.systemStatus}</p>
-              <p className="mt-2 font-mono text-xs tracking-wider">
+              <p className="mt-2 font-mono text-[10px] sm:text-xs tracking-wider">
                 <span className="text-white/60">{tr.market}:</span>{" "}
                 <span className={mkt === "OPEN" ? "text-gain-400" : "text-brand-accent"}>
                   {mkt === "OPEN" ? tr.marketOpen : tr.marketClosed}
@@ -367,8 +366,8 @@ export default function Home() {
 
         {/* Navigation — asymmetric bento (TX + AI span 2 cols on desktop) */}
         <section className="fade-in-up" style={{ animationDelay: "300ms" }}>
-          <p className={`mb-4 text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.navigation}</p>
-          <div className="grid grid-cols-2 gap-px border border-white/10 bg-white/10 sm:grid-cols-4">
+          <p className={`mb-3 sm:mb-4 text-xs sm:text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.navigation}</p>
+          <div className="grid grid-cols-2 gap-1 sm:gap-px sm:grid-cols-4 border-0 sm:border sm:border-white/10 sm:bg-white/10">
             {quickActions.map(({ to, code, zh, en }, i) => {
               const item = lang === "zh" ? zh : en
               const isWide = i === 0 || i === 5
@@ -377,7 +376,7 @@ export default function Home() {
                   key={to}
                   type="button"
                   onClick={() => navigate(to)}
-                  className={`group relative bg-brand-bg-dark p-5 text-left transition-colors duration-200 hover:bg-brand-text-light hover:text-brand-bg-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg-dark active:scale-[0.98] sm:p-6 ${isWide ? "sm:col-span-2" : ""}`}
+                  className={`group relative bg-brand-bg-dark p-3 sm:p-5 md:p-6 text-left transition-colors duration-200 hover:bg-brand-text-light hover:text-brand-bg-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg-dark active:scale-[0.98] ${isWide ? "sm:col-span-2" : ""}`}
                 >
                   <span
                     aria-hidden="true"
@@ -387,8 +386,8 @@ export default function Home() {
                     aria-hidden="true"
                     className="pointer-events-none absolute right-1 bottom-1 h-2 w-2 border-r border-b border-brand-accent opacity-0 transition-opacity group-hover:opacity-100"
                   />
-                  <div className={`flex items-center gap-3 ${isWide ? "sm:flex-row sm:items-center" : "flex-col"}`}>
-                    <p className="font-mono text-2xl font-bold">{code}</p>
+                  <div className={`flex items-center gap-2 sm:gap-3 ${isWide ? "sm:flex-row sm:items-center" : "flex-col"}`}>
+                    <p className="font-mono text-xl sm:text-2xl font-bold">{code}</p>
                     <div className={isWide ? "sm:border-l sm:border-white/10 sm:pl-3" : ""}>
                       <p className={`text-sm ${labelFont}`}>{item.label}</p>
                       <p className={`mt-0.5 text-xs text-white/30 group-hover:text-black/50 ${descFont}`}>
@@ -405,7 +404,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="border-t border-white/10">
-        <div className="mx-auto max-w-5xl px-6 py-4">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
               <span aria-hidden="true" className="font-mono text-sm text-brand-accent">+</span>

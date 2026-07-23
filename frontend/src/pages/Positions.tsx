@@ -222,7 +222,7 @@ export default function Positions() {
                       <TableCell className="text-right tabular-nums">
                         {estimateMap[code] != null ? (() => {
                           const e = estimateMap[code]
-                          const scaledPnl = e.shares ? (m.shares / e.shares) * e.pnl : e.pnl
+                          const scaledPnl = e.pnl
                           return (
                             <div className="flex flex-col items-end">
                               <span className={cn(pnlColor(e.gszzl / 100), !e.ok && "opacity-70")}>
@@ -272,10 +272,9 @@ export default function Positions() {
                   const totalCost = sortedRows.reduce((s, [, m]) => s + m.cost, 0)
                   const totalPnl = sortedRows.reduce((s, [, m]) => s + m.pnl, 0)
                   const totalRet = totalCost ? totalValue / totalCost - 1 : null
-                  const totalEstPnl = sortedRows.reduce((s, [code, m]) => {
+                  const totalEstPnl = sortedRows.reduce((s, [code]) => {
                     const e = estimateMap[code]
-                    if (!e?.shares) return s
-                    return s + (m.shares / e.shares) * e.pnl
+                    return e ? s + e.pnl : s
                   }, 0)
                   const hasFilteredEstimate = sortedRows.some(([code]) => estimateMap[code] != null)
                   return (

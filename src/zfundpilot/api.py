@@ -598,8 +598,8 @@ def get_estimates() -> dict[str, Any]:
         info = merged.get(est.fund_code, {})
         shares = info.get("shares", 0)
         if est.ok:
-            # 盘中估算
-            est_pnl = round(shares * (est.gsz - est.dwjz), 2)
+            # 盘中估算：用 gszzl 百分比计算 pnl，确保与前端显示符号一致
+            est_pnl = round(shares * est.dwjz * est.gszzl / 100, 2) if est.dwjz else 0
             prev_value = round(shares * est.dwjz, 2)
             total_est_pnl += est_pnl
             total_prev_value += prev_value
@@ -608,7 +608,7 @@ def get_estimates() -> dict[str, Any]:
         else:
             # 已公布净值：用 API 数据；API 无数据时 DB 有今日净值才兜底
             if est.gsz and est.dwjz:
-                est_pnl = round(shares * (est.gsz - est.dwjz), 2)
+                est_pnl = round(shares * est.dwjz * est.gszzl / 100, 2) if est.dwjz else 0
                 prev_value = round(shares * est.dwjz, 2)
                 total_est_pnl += est_pnl
                 total_prev_value += prev_value
@@ -619,7 +619,7 @@ def get_estimates() -> dict[str, Any]:
                     est.dwjz = float(prev_nav["nav"])
                     est.gsz = float(latest_nav["nav"])
                     est.gszzl = round((est.gsz - est.dwjz) / est.dwjz * 100, 2) if est.dwjz else 0
-                    est_pnl = round(shares * (est.gsz - est.dwjz), 2)
+                    est_pnl = round(shares * est.dwjz * est.gszzl / 100, 2) if est.dwjz else 0
                     prev_value = round(shares * est.dwjz, 2)
                     total_est_pnl += est_pnl
                     total_prev_value += prev_value

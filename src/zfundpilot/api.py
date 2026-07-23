@@ -597,6 +597,17 @@ def get_estimates() -> dict[str, Any]:
     for est in estimates:
         info = merged.get(est.fund_code, {})
         shares = info.get("shares", 0)
+
+        # DB 数据优先：当日净值已入库则覆盖 AkShare 数据，与基金详情页一致
+        if info.get("latest_date") == today_str:
+            latest_nav = db.get_latest_nav(est.fund_code)
+            prev_nav = db.get_prev_nav(est.fund_code)
+            if latest_nav and prev_nav:
+                est.dwjz = float(prev_nav["nav"])
+                est.gsz = float(latest_nav["nav"])
+                est.gszzl = round((est.gsz - est.dwjz) / est.dwjz * 100, 2) if est.dwjz else 0
+                est.ok = False
+
         if est.ok:
             # 盘中估算：用 gszzl 百分比计算 pnl，确保与前端显示符号一致
             est_pnl = round(shares * est.dwjz * est.gszzl / 100, 2) if est.dwjz else 0
@@ -606,27 +617,12 @@ def get_estimates() -> dict[str, Any]:
             if est.gztime > latest_gztime:
                 latest_gztime = est.gztime
         else:
-            # 已公布净值：用 API 数据；API 无数据时 DB 有今日净值才兜底
+            # 已公布净值（DB 或 AkShare 数据）
             if est.gsz and est.dwjz:
                 est_pnl = round(shares * est.dwjz * est.gszzl / 100, 2) if est.dwjz else 0
                 prev_value = round(shares * est.dwjz, 2)
                 total_est_pnl += est_pnl
                 total_prev_value += prev_value
-            elif info.get("latest_date") == today_str:
-                latest_nav = db.get_latest_nav(est.fund_code)
-                prev_nav = db.get_prev_nav(est.fund_code)
-                if latest_nav and prev_nav:
-                    est.dwjz = float(prev_nav["nav"])
-                    est.gsz = float(latest_nav["nav"])
-                    est.gszzl = round((est.gsz - est.dwjz) / est.dwjz * 100, 2) if est.dwjz else 0
-                    est_pnl = round(shares * est.dwjz * est.gszzl / 100, 2) if est.dwjz else 0
-                    prev_value = round(shares * est.dwjz, 2)
-                    total_est_pnl += est_pnl
-                    total_prev_value += prev_value
-                else:
-                    est.gszzl = 0
-                    est_pnl = 0
-                    prev_value = 0
             else:
                 est.gszzl = 0
                 est_pnl = 0

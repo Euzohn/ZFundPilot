@@ -64,7 +64,7 @@ Local-first · Auto NAV updates · Return & risk analytics · Portfolio rebalanc
 - 📈 **Auto Portfolio Aggregation**: Aggregates by fund + channel using moving weighted average cost. Realized P&L transferred on sell
 - 🔄 **NAV Updates**: AkShare primary, Tiantian Fund fallback. Auto-fetch fund name/type/sector on code entry
 - 💰 **Return Analysis**: Unrealized/realized P&L, portfolio return curve (cumulative profit + return rate + legend toggle), return rate ranking, calendar view, stacked bar by channel
-- 📊 **Real-time Estimates**: Live fund change estimates during trading hours (Tiantian Fund fundgz API). Portfolio estimated P&L at a glance. Auto-invalidates when actual NAV is published
+- 📊 **Real-time Estimates**: Live fund change estimates during trading hours (AkShare fund_value_estimation_em). Portfolio estimated P&L at a glance. Auto-invalidates when actual NAV is published
 - 🔬 **Fund Compare**: Multi-dimensional side-by-side comparison (basic info, fees, scale, manager) + NAV curve overlay + correlation matrix for fund selection
 - 🔍 **Fund Filter**: Filter candidate funds from the full market universe by type/sector/keyword, add to comparison with one click
 - 🛡️ **Risk Analysis**: Max drawdown, annualized volatility, concentration (HHI), structure breakdown, risk flags
@@ -218,7 +218,7 @@ ZFundPilot/
 │   ├── models.py         # Data structures (Fund / Transaction / Position)
 │   ├── db.py             # SQLite database operations
 │   ├── fetch_fund.py     # NAV fetching + name/type/sector detection + fee lookup + keyword mapping
-│   ├── fetch_estimate.py # Real-time fund estimate (Tiantian Fund fundgz API)
+│   ├── fetch_estimate.py # Real-time fund estimate (AkShare fund_value_estimation_em)
 │   ├── compare.py        # Fund comparison (returns/risk/correlation multi-dimension calc)
 │   ├── fund_filter.py    # Fund filter (full market universe loading + multi-condition filtering)
 │   ├── analysis.py       # Transaction aggregation, return calculation, portfolio curve

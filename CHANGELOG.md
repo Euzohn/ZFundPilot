@@ -4,6 +4,20 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.9.1] - 2026-07-24
+
+### Fixed
+- 待确认买入（T+1 份额未知）不再产生虚假亏损：Position 新增 `pending_buy_cost` 字段，
+  待确认金额从 `total_cost` 分离，市值含 pending 但浮动盈亏不受影响（与 `build_portfolio_curve` 中已有的 `pending_value_delta` 逻辑对齐）
+- DB 覆盖路径 `est_pnl` 用精确净值差 `shares*(gsz-dwjz)` 计算，
+  消除 `gszzl` 四舍五入导致的与基金详情页差异
+- 买入按钮预填渠道：FundDetail / Positions 单渠道时自动传递 `channel` 参数，
+  与卖出按钮逻辑一致
+
+### Changed
+- 实时估值数据源由天天基金 fundgz API 迁移至 AkShare `fund_value_estimation_em()`，
+  覆盖全市场基金，30s 批量缓存
+
 ## [0.9.0] - 2026-07-22
 
 ### Added

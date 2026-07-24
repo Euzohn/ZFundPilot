@@ -163,7 +163,10 @@ const handleDelete = async (txId: number) => {
             size="sm"
             variant="outline"
             className="text-gain border-gain/30 hover:bg-gain/5"
-            onClick={() => navigate(`/transactions?code=${code}&action=buy`)}
+            onClick={() => {
+              const ch = openPositions.length === 1 ? `&channel=${encodeURIComponent(openPositions[0].channel)}` : ""
+              navigate(`/transactions?code=${code}&action=buy${ch}`)
+            }}
           >
             <TrendingUp className="h-4 w-4" /> 买入
           </Button>

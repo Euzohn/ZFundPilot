@@ -5,6 +5,8 @@ export const RANGE_LABELS: Record<string, string> = {
   "1y": "1年",
   "all": "全部",
   "hold": "持仓至今",
+  "tx": "交易区间",
+  "custom": "自定义",
 }
 
 export const PERIOD_LABELS: Record<string, string> = {

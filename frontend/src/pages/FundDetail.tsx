@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, navStr, pnlColor, localDateStr } from "@/lib/format"
@@ -25,7 +26,9 @@ export default function FundDetail() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
-  const [navRange, setNavRange] = useState<"1m" | "3m" | "6m" | "1y" | "hold">("1y")
+  const [navRange, setNavRange] = useState<"1m" | "3m" | "6m" | "1y" | "hold" | "tx" | "custom">("1y")
+  const [customStart, setCustomStart] = useState("")
+  const [customEnd, setCustomEnd] = useState("")
 
   const { data: fund, loading: fundLoading, error: fundError, reload: reloadFund } = useApi<Fund>(() => api.getFund(code!), [code])
   const { data: positions } = useApi<Position[]>(() => api.getPositions(true), [])
@@ -50,17 +53,35 @@ export default function FundDetail() {
 
     // 时间区间过滤
     let cutoff: string | null = null
+    let cutoffEnd: string | null = null
     if (navRange === "hold") {
       if (txs?.length) {
         cutoff = [...txs].map(t => t.date).sort()[0]
       }
+    } else if (navRange === "tx") {
+      // 交易区间：第一笔交易 → 最后一笔卖出
+      if (txs?.length) {
+        const sortedTxDates = [...txs].map(t => t.date).sort()
+        cutoff = sortedTxDates[0]
+        const sellDates = txs.filter(t => t.action === "sell").map(t => t.date).sort()
+        if (sellDates.length > 0) {
+          cutoffEnd = sellDates[sellDates.length - 1]
+        }
+      }
+    } else if (navRange === "custom") {
+      if (customStart) cutoff = customStart
+      if (customEnd) cutoffEnd = customEnd
     } else {
       const days = RANGE_DAYS[navRange]
-      const d = new Date()
-      d.setDate(d.getDate() - days)
-      cutoff = localDateStr(d)
+      if (days) {
+        const d = new Date()
+        d.setDate(d.getDate() - days)
+        cutoff = localDateStr(d)
+      }
     }
-    const filtered = cutoff ? sorted.filter(d => d.date >= cutoff) : sorted
+    const filtered = cutoff
+      ? sorted.filter(d => d.date >= cutoff && (!cutoffEnd || d.date <= cutoffEnd))
+      : sorted
 
     // 交易日期查找表：精确匹配净值日，非净值日（周末/筹备期）挂到最近净值日
     const navDateList = filtered.map(d => d.date)
@@ -247,13 +268,20 @@ const handleDelete = async (txId: number) => {
         <CardHeader className="pb-2 flex-row items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">净值走势</CardTitle>
           <div className="flex items-center gap-1">
-            {(["1m", "3m", "6m", "1y", "hold"] as const).map(r => (
+            {(["1m", "3m", "6m", "1y", "hold", "tx", "custom"] as const).map(r => (
               <Button key={r} size="sm" variant={navRange === r ? "default" : "outline"} className="h-6 px-2 text-[11px]"
                 onClick={() => setNavRange(r)}>
                 {RANGE_LABELS[r]}
               </Button>
             ))}
           </div>
+          {navRange === "custom" && (
+            <div className="flex items-center gap-2 mt-2">
+              <Input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="h-7 text-xs w-36" />
+              <span className="text-xs text-muted-foreground">至</span>
+              <Input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="h-7 text-xs w-36" />
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {chartData.length >= 2 ? (

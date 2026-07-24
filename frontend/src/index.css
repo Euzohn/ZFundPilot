@@ -114,6 +114,10 @@
     --brand-bg-dark: 0 0% 4%;
     --brand-text-light: 0 0% 92%;
 
+    input[type="date"] {
+      color-scheme: dark;
+    }
+
     --chart-1: 217 91% 60%;
     --chart-2: 142 71% 55%;
     --chart-3: 0 72% 60%;

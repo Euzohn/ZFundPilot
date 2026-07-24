@@ -141,6 +141,7 @@ class Position:
     channel: str = ""                 # 购买渠道
     held_shares: float = 0.0          # 当前持有份额
     total_cost: float = 0.0           # 当前持仓成本（已扣卖出结转）
+    pending_buy_cost: float = 0.0     # 待确认买入金额（份额未确认，按成本计入市值）
     avg_cost_nav: float | None = None  # 持仓均价
     latest_nav: float | None = None
     latest_date: str | None = None
@@ -161,8 +162,10 @@ class Position:
 
     @property
     def is_open(self) -> bool:
-        """是否仍有持仓（含待确认：有成本但份额未知）。"""
-        return self.held_shares > 1e-6 or self.total_cost > 1e-6
+        """是否仍有持仓（含待确认：有成本或待确认金额但份额未知）。"""
+        return (self.held_shares > 1e-6
+                or self.total_cost > 1e-6
+                or self.pending_buy_cost > 1e-6)
 
     def to_dict(self) -> dict:
         d = asdict(self)

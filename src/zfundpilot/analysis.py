@@ -100,7 +100,10 @@ def _build_positions_from_transactions(
         if tx.action == ACTION_BUY:
             if tx.shares:
                 pos.held_shares += tx.shares
-            pos.total_cost += tx.amount
+                pos.total_cost += tx.amount
+            else:
+                # 待确认买入：份额未知，金额计入 pending，避免虚假亏损
+                pos.pending_buy_cost += tx.amount or 0
             pos.buy_count += 1
         elif tx.action == ACTION_SELL:
             # 结转成本按当前均价
@@ -145,12 +148,14 @@ def _apply_market_value(pos: Position) -> None:
     if pos.held_shares > 0 and pos.latest_nav is not None:
         pos.market_value = pos.held_shares * pos.latest_nav
     else:
-        # 无净值时用成本兜底
-        pos.market_value = pos.total_cost
+        pos.market_value = 0.0
 
-    pos.unrealized_pnl = pos.market_value - pos.total_cost
-    pos.return_rate = (pos.market_value / pos.total_cost - 1
-                       if pos.total_cost > 1e-9 else None)
+    # 待确认买入金额按成本计入市值（份额未确认，无浮动盈亏）
+    pos.market_value += pos.pending_buy_cost
+
+    pos.unrealized_pnl = pos.market_value - pos.total_cost - pos.pending_buy_cost
+    pos.return_rate = (pos.market_value / (pos.total_cost + pos.pending_buy_cost) - 1
+                       if (pos.total_cost + pos.pending_buy_cost) > 1e-9 else None)
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +203,7 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
 
     open_positions = [p for p in positions if p.is_open]
 
-    total_cost = sum(p.total_cost for p in open_positions)
+    total_cost = sum(p.total_cost + p.pending_buy_cost for p in open_positions)
     total_value = sum(p.market_value for p in open_positions)
     unrealized = sum(p.unrealized_pnl for p in open_positions)
     realized = sum(p.realized_pnl for p in positions)  # 含已清仓的历史收益

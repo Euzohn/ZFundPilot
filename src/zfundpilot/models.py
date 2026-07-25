@@ -141,7 +141,7 @@ class Position:
     channel: str = ""                 # 购买渠道
     held_shares: float = 0.0          # 当前持有份额
     total_cost: float = 0.0           # 当前持仓成本（已扣卖出结转）
-    pending_buy_cost: float = 0.0     # 待确认买入金额（份额未确认，按成本计入市值）
+    pending_buy_cost: float = 0.0     # 待确认买入金额（份额未确认，不参与市值/盈亏计算，仅用于 is_open 判断）
     avg_cost_nav: float | None = None  # 持仓均价
     latest_nav: float | None = None
     latest_date: str | None = None

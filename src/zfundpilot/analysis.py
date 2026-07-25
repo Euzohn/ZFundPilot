@@ -150,12 +150,9 @@ def _apply_market_value(pos: Position) -> None:
     else:
         pos.market_value = 0.0
 
-    # 待确认买入金额按成本计入市值（份额未确认，无浮动盈亏）
-    pos.market_value += pos.pending_buy_cost
-
-    pos.unrealized_pnl = pos.market_value - pos.total_cost - pos.pending_buy_cost
-    pos.return_rate = (pos.market_value / (pos.total_cost + pos.pending_buy_cost) - 1
-                       if (pos.total_cost + pos.pending_buy_cost) > 1e-9 else None)
+    pos.unrealized_pnl = pos.market_value - pos.total_cost
+    pos.return_rate = (pos.market_value / pos.total_cost - 1
+                       if pos.total_cost > 1e-9 else None)
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +200,7 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
 
     open_positions = [p for p in positions if p.is_open]
 
-    total_cost = sum(p.total_cost + p.pending_buy_cost for p in open_positions)
+    total_cost = sum(p.total_cost for p in open_positions)
     total_value = sum(p.market_value for p in open_positions)
     unrealized = sum(p.unrealized_pnl for p in open_positions)
     realized = sum(p.realized_pnl for p in positions)  # 含已清仓的历史收益

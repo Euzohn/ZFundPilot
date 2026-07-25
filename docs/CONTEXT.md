@@ -105,7 +105,7 @@ ZFundPilot/
   - 卖出: `amount = shares × nav - fee`
   - 分红/再投资: 无手续费
 - **Position**: 由 transactions 汇总计算（移动加权平均成本法）
-  - `pending_buy_cost`: 待确认买入金额（T+1 份额未知时，金额计入此字段而非 `total_cost`，避免虚假亏损）
+  - `pending_buy_cost`: 待确认买入金额（T+1 份额未知时，金额计入此字段而非 `total_cost`，不参与市值/盈亏/收益率计算，仅用于 `is_open` 判断）
   - `is_open`: `held_shares > 1e-6 or total_cost > 1e-6 or pending_buy_cost > 1e-6`（含 T+1 待确认）
 - **PortfolioSummary**: 组合层面汇总（含 daily/week/month/year P&L）
 
@@ -153,8 +153,8 @@ ZFundPilot/
 
 ### analysis.py — 收益计算
 
-- `calculate_positions()`: 从 transactions 汇总持仓（待确认买入金额计入 `pending_buy_cost`，市值 = 已确认份额×净值 + pending，浮动盈亏不受待确认影响）
-- `calculate_summary()`: 组合层面汇总（`total_cost` 含 `pending_buy_cost`）
+- `calculate_positions()`: 从 transactions 汇总持仓（待确认买入金额计入 `pending_buy_cost`，不参与市值/盈亏/收益率计算）
+- `calculate_summary()`: 组合层面汇总（`total_cost` 不含 `pending_buy_cost`）
 - `build_portfolio_curve()`: 组合收益曲线（待确认买入用 `pending_value_delta` 占位市值，避免虚假亏损）
 - `build_channel_daily_pnl()`: 按渠道拆分的每日收益（堆叠柱状图）
 - 内存 TTL 缓存（60s），8 个写入端点自动清除缓存
@@ -345,7 +345,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### v0.9.1
 
-- 修复：待确认买入（T+1 份额未知）不再产生虚假亏损 — Position 新增 `pending_buy_cost` 字段，待确认金额从 `total_cost` 分离，市值含 pending 但浮动盈亏不受影响
+- 修复：待确认买入（T+1 份额未知）不再产生虚假亏损 — Position 新增 `pending_buy_cost` 字段，待确认金额从 `total_cost` 分离，不参与市值/盈亏/收益率计算，仅用于 `is_open` 判断
 - 修复：DB 覆盖路径 `est_pnl` 用精确净值差 `shares*(gsz-dwjz)` 计算，消除 `gszzl` 四舍五入导致的与基金详情页差异
 - 修复：买入按钮预填渠道（FundDetail / Positions 单渠道时自动传递 `channel` 参数，与卖出按钮一致）
 - 变更：实时估值数据源由天天基金 fundgz API 迁移至 AkShare `fund_value_estimation_em()`，覆盖全市场基金

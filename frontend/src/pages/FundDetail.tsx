@@ -143,14 +143,13 @@ export default function FundDetail() {
   // 汇总（跨渠道合并）
   const totalShares = openPositions.reduce((s, p) => s + p.held_shares, 0)
   const totalCost = openPositions.reduce((s, p) => s + p.total_cost, 0)
-  const totalCostForReturn = openPositions.reduce((s, p) => s + p.total_cost + (p.pending_buy_cost ?? 0), 0)
   const totalValue = openPositions.reduce((s, p) => s + p.market_value, 0)
   const totalUnrealized = openPositions.reduce((s, p) => s + p.unrealized_pnl, 0)
   const totalRealized = fundPositions.reduce((s, p) => s + p.realized_pnl, 0)
   const avgCost = totalShares > 0 ? totalCost / totalShares : null
   const latestNav = openPositions[0]?.latest_nav ?? null
   const latestDate = openPositions[0]?.latest_date ?? null
-  const returnRate = totalCostForReturn > 0 ? totalValue / totalCostForReturn - 1 : null
+  const returnRate = totalCost > 0 ? totalValue / totalCost - 1 : null
   const showEstimate = fundEstimate?.ok && (!latestDate || latestDate <= fundEstimate.jzrq)
 
   const handleEdit = (tx: Transaction) => {

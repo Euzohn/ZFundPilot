@@ -26,7 +26,6 @@ export interface Position {
   channel: string
   held_shares: number
   total_cost: number
-  pending_buy_cost: number
   avg_cost_nav: number | null
   latest_nav: number | null
   latest_date: string | null

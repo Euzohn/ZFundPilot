@@ -61,11 +61,12 @@ export default function Positions() {
     : []
 
   // 按基金合并（跨渠道）
-  const merged: Record<string, { name: string; type: string; sector: string; value: number; cost: number; pnl: number; shares: number; avgCost: number | null; latestNav: number | null; channels: number; latestDate: string | null; channel: string | null }> = {}
+  const merged: Record<string, { name: string; type: string; sector: string; value: number; cost: number; pendingCost: number; pnl: number; shares: number; avgCost: number | null; latestNav: number | null; channels: number; latestDate: string | null; channel: string | null }> = {}
   for (const p of view.filter((p) => p.is_open)) {
-    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, value: 0, cost: 0, pnl: 0, shares: 0, avgCost: null, latestNav: p.latest_nav, channels: 0, latestDate: p.latest_date, channel: p.channel }
+    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, value: 0, cost: 0, pendingCost: 0, pnl: 0, shares: 0, avgCost: null, latestNav: p.latest_nav, channels: 0, latestDate: p.latest_date, channel: p.channel }
     m.value += p.market_value
     m.cost += p.total_cost
+    m.pendingCost += p.pending_buy_cost ?? 0
     m.pnl += p.unrealized_pnl
     m.shares += p.held_shares
     m.channels += 1
@@ -186,7 +187,7 @@ export default function Positions() {
               </TableHeader>
               <TableBody>
                 {sortedRows.map(([code, m]) => {
-                  const ret = m.cost ? m.value / m.cost - 1 : null
+                  const ret = (m.cost + m.pendingCost) ? m.value / (m.cost + m.pendingCost) - 1 : null
                   const breakevenGain = m.avgCost && m.latestNav && m.latestNav < m.avgCost ? m.avgCost / m.latestNav - 1 : null
                   return (
                     <TableRow
@@ -269,7 +270,7 @@ export default function Positions() {
                 })}
                 {(() => {
                   const totalValue = sortedRows.reduce((s, [, m]) => s + m.value, 0)
-                  const totalCost = sortedRows.reduce((s, [, m]) => s + m.cost, 0)
+                  const totalCost = sortedRows.reduce((s, [, m]) => s + m.cost + m.pendingCost, 0)
                   const totalPnl = sortedRows.reduce((s, [, m]) => s + m.pnl, 0)
                   const totalRet = totalCost ? totalValue / totalCost - 1 : null
                   const totalEstPnl = sortedRows.reduce((s, [code, m]) => {

@@ -1,0 +1,200 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="380" viewBox="0 0 1200 380"
+     role="img" aria-labelledby="title desc">
+  <title id="title">ZFundPilot — 个人基金分析与风险管理系统</title>
+  <desc id="desc">暗色终端风格 hero，左侧为项目名称和描述，右侧为模拟组合总览面板。</desc>
+
+  <defs>
+    <linearGradient id="hero-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0A0A0A"/>
+      <stop offset="100%" stop-color="#111111"/>
+    </linearGradient>
+    <linearGradient id="panel-glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(59,130,246,0.08)"/>
+      <stop offset="100%" stop-color="rgba(59,130,246,0)"/>
+    </linearGradient>
+    <linearGradient id="logo-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F1F3D"/>
+      <stop offset="100%" stop-color="#3B82F6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="380" rx="16" fill="url(#hero-bg)"/>
+
+  <!-- Subtle grid pattern -->
+  <g stroke="#1A1A1A" stroke-width="0.5" opacity="0.4">
+    <line x1="0" y1="0" x2="0" y2="380"/>
+    <line x1="60" y1="0" x2="60" y2="380"/>
+    <line x1="120" y1="0" x2="120" y2="380"/>
+    <line x1="180" y1="0" x2="180" y2="380"/>
+    <line x1="240" y1="0" x2="240" y2="380"/>
+    <line x1="300" y1="0" x2="300" y2="380"/>
+    <line x1="360" y1="0" x2="360" y2="380"/>
+    <line x1="420" y1="0" x2="420" y2="380"/>
+    <line x1="480" y1="0" x2="480" y2="380"/>
+    <line x1="540" y1="0" x2="540" y2="380"/>
+    <line x1="600" y1="0" x2="600" y2="380"/>
+    <line x1="660" y1="0" x2="660" y2="380"/>
+    <line x1="720" y1="0" x2="720" y2="380"/>
+    <line x1="780" y1="0" x2="780" y2="380"/>
+    <line x1="840" y1="0" x2="840" y2="380"/>
+    <line x1="900" y1="0" x2="900" y2="380"/>
+    <line x1="960" y1="0" x2="960" y2="380"/>
+    <line x1="1020" y1="0" x2="1020" y2="380"/>
+    <line x1="1080" y1="0" x2="1080" y2="380"/>
+    <line x1="1140" y1="0" x2="1140" y2="380"/>
+    <line x1="1200" y1="0" x2="1200" y2="380"/>
+    <line x1="0" y1="0" x2="1200" y2="0"/>
+    <line x1="0" y1="60" x2="1200" y2="60"/>
+    <line x1="0" y1="120" x2="1200" y2="120"/>
+    <line x1="0" y1="180" x2="1200" y2="180"/>
+    <line x1="0" y1="240" x2="1200" y2="240"/>
+    <line x1="0" y1="300" x2="1200" y2="300"/>
+    <line x1="0" y1="360" x2="1200" y2="360"/>
+  </g>
+
+  <!-- ===== LEFT: TITLE BLOCK ===== -->
+  <g transform="translate(48, 0)">
+
+    <!-- Bracket corner motif (top-left) -->
+    <path d="M 20 48 L 20 68 M 20 48 L 40 48" stroke="#FF2A2A" stroke-width="2" fill="none" opacity="0.6"/>
+    <path d="M 20 340 L 20 320 M 20 340 L 40 340" stroke="#FF2A2A" stroke-width="2" fill="none" opacity="0.6"/>
+
+    <!-- Z Compass logo (small, top area) -->
+    <g transform="translate(20, 72)" opacity="0.5">
+      <rect x="0" y="0" width="28" height="28" rx="6" fill="url(#logo-grad)"/>
+      <polygon points="14,2 16,12 14,14 12,12" fill="white" fill-opacity="0.42"/>
+      <polygon points="26,14 16,16 14,14 16,12" fill="white" fill-opacity="0.42"/>
+      <polygon points="14,26 12,16 14,14 16,16" fill="white" fill-opacity="0.34"/>
+      <polygon points="2,14 12,12 14,14 12,16" fill="white" fill-opacity="0.34"/>
+      <circle cx="14" cy="14" r="5" fill="white"/>
+      <path d="M 10 12 L 18 12 L 10 16 L 17 15" stroke="#F59E0B" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </g>
+
+    <!-- Project name -->
+    <text x="60" y="108" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="56" font-weight="700" fill="#EAEAEA" letter-spacing="-1">ZFundPilot</text>
+
+    <!-- Subtitle -->
+    <text x="60" y="148" font-family="-apple-system, BlinkMacSystemFont, PingFang SC, sans-serif" font-size="24" font-weight="500" fill="#A1A1AA" letter-spacing="0.5">个人基金分析与风险管理系统</text>
+
+    <!-- Tagline -->
+    <text x="60" y="182" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#71717A">本地运行 · 自动更新净值 · 计算收益与风险</text>
+
+    <!-- Metadata badges -->
+    <g transform="translate(60, 220)">
+      <rect x="0" y="0" width="80" height="24" rx="4" fill="#1A1A1A" stroke="#3B82F6" stroke-opacity="0.3" stroke-width="0.5"/>
+      <text x="40" y="16" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#3B82F6" text-anchor="middle">Python</text>
+
+      <rect x="92" y="0" width="68" height="24" rx="4" fill="#1A1A1A" stroke="#22C55E" stroke-opacity="0.3" stroke-width="0.5"/>
+      <text x="126" y="16" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#22C55E" text-anchor="middle">FastAPI</text>
+
+      <rect x="172" y="0" width="60" height="24" rx="4" fill="#1A1A1A" stroke="#61DAFB" stroke-opacity="0.3" stroke-width="0.5"/>
+      <text x="202" y="16" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#61DAFB" text-anchor="middle">React</text>
+
+      <rect x="244" y="0" width="60" height="24" rx="4" fill="#1A1A1A" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5"/>
+      <text x="274" y="16" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#F59E0B" text-anchor="middle">Docker</text>
+
+      <rect x="316" y="0" width="50" height="24" rx="4" fill="#1A1A1A" stroke="#EAEAEA" stroke-opacity="0.2" stroke-width="0.5"/>
+      <text x="341" y="16" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#71717A" text-anchor="middle">MIT</text>
+    </g>
+
+    <!-- Cursor blink indicator -->
+    <rect x="60" y="304" width="8" height="14" rx="1" fill="#FF2A2A" opacity="0.8">
+      <animate attributeName="opacity" values="0.8;0.1;0.8" dur="1.2s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+
+  <!-- ===== RIGHT: TERMINAL PANEL ===== -->
+  <g transform="translate(620, 48)">
+    <!-- Panel background -->
+    <rect x="0" y="0" width="532" height="284" rx="8" fill="#141414" stroke="#27272A" stroke-width="1"/>
+
+    <!-- Panel top bar -->
+    <rect x="0" y="0" width="532" height="32" rx="8" fill="#1A1A1A"/>
+    <rect x="0" y="24" width="532" height="8" fill="#1A1A1A"/>
+
+    <!-- Window dots -->
+    <circle cx="16" cy="16" r="4" fill="#FF5F56"/>
+    <circle cx="32" cy="16" r="4" fill="#FFBD2E"/>
+    <circle cx="48" cy="16" r="4" fill="#27C93F"/>
+
+    <!-- Panel title -->
+    <text x="266" y="21" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#71717A" text-anchor="middle">组合总览</text>
+
+    <!-- Panel content -->
+    <g transform="translate(20, 52)">
+      <!-- Header labels -->
+      <text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#52525B">FUND</text>
+      <text x="200" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#52525B" text-anchor="end">NAV</text>
+      <text x="280" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#52525B" text-anchor="end">SHARES</text>
+      <text x="380" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#52525B" text-anchor="end">P&amp;L</text>
+      <text x="492" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#52525B" text-anchor="end">COST</text>
+
+      <!-- Separator line -->
+      <line x1="0" y1="10" x2="492" y2="10" stroke="#27272A" stroke-width="0.5"/>
+
+      <!-- Row 1: 易方达蓝筹 -->
+      <text x="0" y="34" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#EAEAEA">005827 易方达蓝筹</text>
+      <text x="200" y="34" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#EAEAEA" text-anchor="end">1.6824</text>
+      <text x="280" y="34" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#EAEAEA" text-anchor="end">5,932</text>
+      <text x="380" y="34" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#22C55E" text-anchor="end">+8,245</text>
+      <text x="492" y="34" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#71717A" text-anchor="end">10,000</text>
+
+      <!-- Row 2: 招商中证白酒 -->
+      <text x="0" y="60" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#EAEAEA">161725 招商中证白酒</text>
+      <text x="200" y="60" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#EAEAEA" text-anchor="end">0.9345</text>
+      <text x="280" y="60" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#EAEAEA" text-anchor="end">8,021</text>
+      <text x="380" y="60" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#FF2A2A" text-anchor="end">-2,410</text>
+      <text x="492" y="60" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#71717A" text-anchor="end">7,500</text>
+
+      <!-- Row 3 -->
+      <text x="0" y="86" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#EAEAEA">110011 易方达中小盘</text>
+      <text x="200" y="86" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#EAEAEA" text-anchor="end">4.5231</text>
+      <text x="280" y="86" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#EAEAEA" text-anchor="end">3,315</text>
+      <text x="380" y="86" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#22C55E" text-anchor="end">+5,670</text>
+      <text x="492" y="86" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#71717A" text-anchor="end">15,000</text>
+
+      <!-- Row 4 -->
+      <text x="0" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#EAEAEA">002190 农银新能源</text>
+      <text x="200" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#EAEAEA" text-anchor="end">2.3418</text>
+      <text x="280" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#EAEAEA" text-anchor="end">4,275</text>
+      <text x="380" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#22C55E" text-anchor="end">+3,820</text>
+      <text x="492" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#71717A" text-anchor="end">10,000</text>
+
+      <!-- Separator -->
+      <line x1="0" y1="130" x2="492" y2="130" stroke="#27272A" stroke-width="0.5"/>
+
+      <!-- Summary row -->
+      <text x="0" y="154" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="600" fill="#EAEAEA">合计</text>
+      <text x="380" y="154" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="600" fill="#22C55E" text-anchor="end">+15,325</text>
+      <text x="492" y="154" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="600" fill="#EAEAEA" text-anchor="end">42,500</text>
+
+      <!-- Summary row 2: total market value -->
+      <text x="0" y="180" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#52525B">总市值</text>
+      <text x="80" y="180" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#EAEAEA">¥57,825</text>
+
+      <text x="200" y="180" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#52525B">收益率</text>
+      <text x="280" y="180" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#22C55E">+36.1%</text>
+
+      <text x="380" y="180" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#52525B">持仓</text>
+      <text x="430" y="180" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#EAEAEA">4 只</text>
+
+      <!-- Latest NAV date -->
+      <text x="0" y="210" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#52525B">净值更新</text>
+      <text x="80" y="210" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" fill="#71717A">2026-07-25</text>
+
+      <!-- Status indicators -->
+      <circle cx="0" cy="234" r="3" fill="#22C55E"/>
+      <text x="10" y="238" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" fill="#22C55E">定时更新已启用</text>
+
+      <circle cx="200" cy="234" r="3" fill="#3B82F6"/>
+      <text x="210" y="238" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="10" fill="#3B82F6">今日估值可用</text>
+    </g>
+  </g>
+
+  <!-- Red accent line at bottom -->
+  <line x1="48" y1="364" x2="504" y2="364" stroke="#FF2A2A" stroke-width="1" opacity="0.4"/>
+  <rect x="48" y="362" width="4" height="4" rx="1" fill="#FF2A2A" opacity="0.6"/>
+
+</svg>

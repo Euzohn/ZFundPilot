@@ -4,7 +4,7 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [0.10.0] - 2026-07-26
 
 ### Added
 - 定投策略回测：新增 `backtest.py` 模块 + `POST /api/backtest/dca` 端点 + `/backtest` 页面。

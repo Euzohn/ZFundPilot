@@ -47,7 +47,7 @@ from .models import Fund, Transaction
 logger = logging.getLogger(__name__)
 _TZ = ZoneInfo("Asia/Shanghai")
 
-app = FastAPI(title="ZFundPilot API", version="0.9.1")
+app = FastAPI(title="ZFundPilot API", version="0.10.0")
 
 _nav_update_state: dict[str, Any] = {
     "running": False,

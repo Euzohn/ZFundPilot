@@ -81,7 +81,7 @@ nohup uvicorn zfundpilot.api:app --host 0.0.0.0 --port 8000 > zfundpilot.log 2>&
 |------|--------|------|
 | `ZFUNDPILOT_HOME` | 项目根目录 | 数据目录（`data/` 所在位置） |
 | `ZFUNDPILOT_USERNAME` | `admin` | **仅首次启动**时用于初始化登录用户名。首次启动后用户名存储在 `data/auth.json`，之后可通过设置页在线修改 |
-| `ZFUNDPILOT_PASSWORD` | 空 | **仅首次启动**时用于初始化密码哈希。首次启动后密码以 SHA-256 哈希存储在 `data/auth.json`，之后可通过设置页在线修改密码 |
+| `ZFUNDPILOT_PASSWORD` | 空 | **仅首次启动**时用于初始化密码哈希。首次启动后密码以 bcrypt 哈希存储在 `data/auth.json`，之后可通过设置页在线修改密码 |
 | `ZFUNDPILOT_SECRET` | 自动生成 | **仅首次启动**时用于初始化 token 签名密钥。首次启动后自动生成随机密钥并存储在 `data/auth.json` |
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式（工作日 21:00）。可在设置页面暂停/启用 |
 
@@ -234,7 +234,34 @@ server {
 
 ### 3.9 多实例部署（多人独立使用）
 
-ZFundPilot 是单用户设计，多人共用需**每人一个独立容器**，数据完全隔离：
+ZFundPilot 是单用户设计，多人共用需**每人一个独立容器**，数据完全隔离。
+
+> ⚠️ **多实例必改三项**：`container_name`、端口、数据目录，三者任一相同都会冲突。`docker-compose.yml` 默认写死 `container_name: zfundpilot`，第二个实例必须改名（如 `zfundpilot_b`）或删掉该行让 Compose 自动命名（`{目录名}_zfundpilot_1`）。
+
+> 💡 关于 `.env`：两个实例若由**同一个人**使用，`.env` 可不改（密码相同无妨、`ZFUNDPILOT_SECRET` 留空时各自首次启动自动生成不同密钥、NAV cron 同时跑无冲突）。只有**多人独立账号**才需不同的 `ZFUNDPILOT_USERNAME` / `ZFUNDPILOT_PASSWORD`。
+
+#### 方式一：独立目录（最简单，推荐）
+
+整个项目复制到新目录，源码各自一份，数据目录天然隔离，只需改两处：
+
+```bash
+cp -r /opt/ZFundPilot /opt/ZFundPilot2
+cd /opt/ZFundPilot2
+
+# 1. docker-compose.yml：container_name 改成 zfundpilot_b（或删掉该行）
+# 2. docker-compose.override.yml：端口改成 "8082:8000"
+
+docker compose up -d --build
+```
+
+| 实例 | 目录 | container_name | 端口 | 数据目录 |
+|------|------|----------------|------|---------|
+| 1 | `/opt/ZFundPilot` | `zfundpilot` | `8081:8000` | `./data` |
+| 2 | `/opt/ZFundPilot2` | `zfundpilot_b` | `8082:8000` | `./data`（新目录下） |
+
+#### 方式二：同一源码 + 多 compose 文件（省磁盘）
+
+源码只一份，每个用户一个独立 compose 文件：
 
 ```bash
 # 用户 A
@@ -290,6 +317,12 @@ docker compose -f compose.userB.yml up -d
 git pull
 for f in compose.user*.yml; do docker compose -f "$f" up -d --build; done
 ```
+
+#### 故障排查
+
+- **启动后出现 `zfundpilot-zfundpilot-1` 这种自动命名的容器**：说明 `container_name` 冲突——第二个实例没拿到预期名字，Docker 退而用 `{项目名}_{服务名}_1`。把第二个实例的 `container_name` 改成不同的名字即可。
+- **第二个实例启动后第一个不能访问了**：同上，`container_name` 相同导致冲突，第二个把第一个挤掉了。改 `container_name` 后重启两个实例。
+- **查看运行中的实例**：`docker ps --format 'table {{.Names}}\t{{.Ports}}\t{{.Status}}'`
 
 ---
 

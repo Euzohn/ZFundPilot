@@ -21,7 +21,7 @@ import EmptyState from "@/components/EmptyState"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2, Receipt, ArrowUpDown } from "lucide-react"
-import { getChannels, getChannelsAsync } from "@/lib/channels"
+import { getChannels, getChannelsAsync, saveChannels } from "@/lib/channels"
 import { ACTION_LABELS } from "@/lib/actionLabels"
 import { makeSortHeader } from "@/components/SortHeader"
 import ConfirmDialog from "@/components/ConfirmDialog"
@@ -400,6 +400,13 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
       } else {
         await api.addTransaction(payload)
         toast.success(`${ACTION_LABELS[action]} ${code.trim()} 已保存`)
+      }
+      // 自动添加自定义渠道到系统列表
+      const finalChannel = customChannel.trim() || channel
+      if (finalChannel && !channels.includes(finalChannel)) {
+        const next = [...channels, finalChannel]
+        setChannels(next)
+        saveChannels(next).catch(() => {})
       }
       resetForm()
       onDone(code.trim())

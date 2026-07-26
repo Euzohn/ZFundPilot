@@ -30,6 +30,7 @@ from . import __version__ as APP_VERSION
 from . import (
     ai,
     analysis,
+    backtest,
     compare,
     config,
     data_io,
@@ -866,6 +867,40 @@ def get_risk_report() -> dict[str, Any]:
 def get_rebalance_advice() -> list[dict[str, str]]:
     advice = rebalance.generate_advice()
     return [{"category": a.category, "text": a.text} for a in advice]
+
+
+# ---------------------------------------------------------------------------
+# 定投回测
+# ---------------------------------------------------------------------------
+class DcaBacktestRequest(BaseModel):
+    fund_codes: list[str]
+    start_date: str          # YYYY-MM-DD
+    end_date: str            # YYYY-MM-DD
+    amount_per_period: float
+    cadence: str = "month"   # month / biweek / week
+    include_lumpsum: bool = True
+
+
+@app.post("/api/backtest/dca")
+def run_dca_backtest(req: DcaBacktestRequest) -> dict[str, Any]:
+    if not req.fund_codes:
+        raise HTTPException(400, "请至少选择一只基金")
+    if req.amount_per_period <= 0:
+        raise HTTPException(400, "每期金额必须大于 0")
+    if req.start_date >= req.end_date:
+        raise HTTPException(400, "起始日期必须早于结束日期")
+    if req.cadence not in ("month", "biweek", "week"):
+        raise HTTPException(400, "频率仅支持 month / biweek / week")
+
+    results = backtest.run_dca_backtest(
+        fund_codes=req.fund_codes,
+        start_date=req.start_date,
+        end_date=req.end_date,
+        amount_per_period=req.amount_per_period,
+        cadence=req.cadence,
+        include_lumpsum=req.include_lumpsum,
+    )
+    return {"results": [r.to_dict() for r in results], "ok": True, "message": ""}
 
 
 # ---------------------------------------------------------------------------

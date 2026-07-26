@@ -1,6 +1,7 @@
 import type {
   Advice,
   AuditLog,
+  BacktestResult,
   ChannelPnLPoint,
   CompareResponse,
   CurvePoint,
@@ -299,5 +300,19 @@ export const api = {
     request<CompareResponse>("/funds/compare", {
       method: "POST",
       body: JSON.stringify({ codes }),
+    }),
+
+  // DCA backtest
+  runDcaBacktest: (params: {
+    fund_codes: string[]
+    start_date: string
+    end_date: string
+    amount_per_period: number
+    cadence: string
+    include_lumpsum: boolean
+  }) =>
+    request<{ results: BacktestResult[]; ok: boolean; message: string }>("/backtest/dca", {
+      method: "POST",
+      body: JSON.stringify(params),
     }),
 }

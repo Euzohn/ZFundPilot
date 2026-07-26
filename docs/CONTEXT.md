@@ -47,6 +47,7 @@ ZFundPilot/
 │   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）
 │   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI）
 │   ├── rebalance.py         # 再平衡建议
+│   ├── backtest.py          # 定投策略回测（DCA + 一次性投入对比 + XIRR）
 │   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
 │   ├── scheduler.py         # APScheduler 定时净值更新
 │   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）
@@ -62,6 +63,7 @@ ZFundPilot/
 │   │   ├── Returns.tsx      # 收益分析（曲线/排名/日历）
 │   │   ├── Risk.tsx         # 风险评估
 │   │   ├── FundCompare.tsx  # 基金对比（多维度同框对比 + 相关性矩阵）
+│   │   ├── Backtest.tsx     # 定投回测（DCA vs 一次性投入 + 累计曲线 + 每期明细）
 │   │   ├── AIChat.tsx       # AI 投顾对话
 │   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 交易标记）
 │   │   ├── Settings.tsx     # 设置（账户/AI/偏好）
@@ -144,6 +146,15 @@ ZFundPilot/
 - 加密格式: `enc:<base64-token>`，无前缀的旧版明文自动兼容（加载时原样返回，下次保存时自动加密）
 - `config._load_ai_config()` / `_save_ai_config()` 自动调用 `crypto.decrypt()` / `crypto.encrypt()`，运行时内存中 `AI_API_KEY` 为明文
 
+### backtest.py — 定投策略回测
+
+- `run_dca_backtest(fund_codes, start, end, amount, cadence, include_lumpsum)`: 对每只基金模拟定投 + 一次性投入
+- 定投频率：月（每月1号）/ 双周（每14天）/ 周（每7天），扣款日遇非交易日跳到下一个有净值的交易日
+- 计入申购费（`fetch_fund.calc_purchase_fee`）和赎回费（FIFO 按持有期匹配费率档）
+- 指标：XIRR 年化（二分法）、最大回撤（复用 `risk.calculate_max_drawdown`）、夏普比率（无风险利率 3%）
+- 净值数据不足时自动调 `fetch_fund.update_fund_nav` 拉取
+- `BacktestResult` dataclass 含曲线（`curve`）和每期明细（`periods_detail`）
+
 ### fetch_fund.py — 净值获取
 
 - `fetch_nav_history(fund_code)`: AkShare 优先（`ak.fund_open_fund_info_em`），天天基金 `pingzhongdata` fallback
@@ -185,7 +196,7 @@ ZFundPilot/
 ### 路由（App.tsx）
 
 - `/` → `<Home />`（独立全屏页，不在 Layout 内，无侧边栏）
-- `/overview`、`/transactions`、`/nav`、`/positions`、`/returns`、`/risk`、`/compare`、`/ai`、`/settings` → 在 `<Layout />` 内（含侧边栏）
+- `/overview`、`/transactions`、`/nav`、`/positions`、`/returns`、`/risk`、`/compare`、`/backtest`、`/ai`、`/settings` → 在 `<Layout />` 内（含侧边栏）
 
 ### 首页（Home.tsx）
 

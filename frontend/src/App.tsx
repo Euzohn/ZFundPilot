@@ -13,6 +13,7 @@ import Risk from "@/pages/Risk"
 import AIChat from "@/pages/AIChat"
 import Settings from "@/pages/Settings"
 import FundCompare from "@/pages/FundCompare"
+import Backtest from "@/pages/Backtest"
 import Login from "@/pages/Login"
 import { api } from "@/api/client"
 import { getToken } from "@/lib/auth"
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="risk" element={<Risk />} />
         <Route path="ai" element={<AIChat />} />
         <Route path="compare" element={<FundCompare />} />
+        <Route path="backtest" element={<Backtest />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>

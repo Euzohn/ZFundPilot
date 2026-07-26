@@ -7,6 +7,10 @@
 ## [Unreleased]
 
 ### Added
+- 定投策略回测：新增 `backtest.py` 模块 + `POST /api/backtest/dca` 端点 + `/backtest` 页面。
+  支持指定基金 + 时间区间 + 定投频率（月/双周/周）+ 金额，用历史净值回测期末资产，
+  对比「定投 vs 一次性投入」双方案。计入申购费和赎回费（复用费率表），
+  计算 XIRR 年化、最大回撤、夏普比率（无风险利率 3%）。净值缺失自动拉取。
 - AI API key 加密存储：新增 `crypto.py` 模块（Fernet: AES-128-CBC + HMAC-SHA256），
   `ai_config.json` 中的 `api_key` 落盘前自动加密（`enc:` 前缀），加载时自动解密。
   主密钥独立存于 `data/secret.key`（首启自动生成，权限 0o600），旧版明文 API key 自动兼容迁移。

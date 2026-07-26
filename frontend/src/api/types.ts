@@ -327,3 +327,51 @@ export interface FilterResponse {
   ok: boolean
   message: string
 }
+
+// ── 定投回测 ──
+export interface BacktestResult {
+  fund_code: string
+  fund_name: string
+  strategy: string         // "dca" / "lumpsum"
+  period_start: string
+  period_end: string
+  cadence: string          // "month" / "biweek" / "week"
+  amount_per_period: number
+  total_periods: number
+  invested_capital: number
+  total_fees: number
+  final_value: number
+  redemption_fee: number
+  net_final_value: number
+  total_return: number
+  annualized_return: number | null
+  max_drawdown: number | null
+  sharpe_ratio: number | null
+  curve: BacktestCurvePoint[]
+  periods_detail: BacktestPeriodDetail[]
+}
+
+export interface BacktestCurvePoint {
+  date: string
+  invested: number
+  value: number
+  return: number
+}
+
+export interface BacktestPeriodDetail {
+  planned_date: string
+  actual_date: string
+  nav: number
+  amount: number
+  fee: number
+  invested: number
+  shares: number
+  cumulative_shares: number
+  cumulative_invested: number
+}
+
+export interface DcaBacktestResponse {
+  results: BacktestResult[]
+  ok: boolean
+  message: string
+}

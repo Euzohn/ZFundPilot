@@ -201,3 +201,41 @@ class PortfolioSummary:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+@dataclass
+class BacktestResult:
+    """定投/一次性投入回测结果（单只基金 × 单策略）。
+
+    strategy: "dca"（定投）或 "lumpsum"（一次性投入）
+    curve: [{date, invested, value, return}, ...] 每日数据点
+    periods_detail: 每期买入明细（仅 dca 有，lumpsum 为空）
+    """
+    fund_code: str
+    fund_name: str
+    strategy: str                    # "dca" / "lumpsum"
+    period_start: str
+    period_end: str
+    cadence: str = ""                # "month" / "biweek" / "week"（lumpsum 为空）
+    amount_per_period: float = 0.0
+    total_periods: int = 0
+    invested_capital: float = 0.0    # 总投入金额（含手续费）
+    total_fees: float = 0.0          # 总手续费（申购 + 赎回）
+    final_value: float = 0.0         # 期末市值（未扣赎回费）
+    redemption_fee: float = 0.0       # 期末赎回费
+    net_final_value: float = 0.0     # 实际到手 = final_value - redemption_fee
+    total_return: float = 0.0        # (net_final_value - invested_capital) / invested_capital
+    annualized_return: float | None = None   # XIRR 年化
+    max_drawdown: float | None = None
+    sharpe_ratio: float | None = None
+    curve: list[dict] = None          # type: ignore[assignment]
+    periods_detail: list[dict] = None  # type: ignore[assignment]
+
+    def __post_init__(self):
+        if self.curve is None:
+            self.curve = []
+        if self.periods_detail is None:
+            self.periods_detail = []
+
+    def to_dict(self) -> dict:
+        return asdict(self)

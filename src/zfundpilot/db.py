@@ -417,6 +417,18 @@ def get_nav_history(fund_code: str) -> list[sqlite3.Row]:
         ).fetchall()
 
 
+def get_nav_history_by_period(
+    fund_code: str, start_date: str, end_date: str
+) -> list[sqlite3.Row]:
+    """按 fund_code + 日期区间查询净值（date ASC，含端点）。"""
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM nav_history WHERE fund_code=? AND date>=? AND date<=? "
+            "ORDER BY date ASC",
+            (fund_code, start_date, end_date),
+        ).fetchall()
+
+
 def get_nav_on_or_after(fund_code: str, date_str: str) -> sqlite3.Row | None:
     """返回某日期当天或之后最近的一条净值。"""
     with get_connection() as conn:

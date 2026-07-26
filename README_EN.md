@@ -79,6 +79,8 @@ Local-first · Auto NAV updates · Return & risk analytics · Portfolio rebalanc
 - 🎨 **Color Theme Switch**: Toggle between "Green-up/Red-down (International)" and "Red-up/Green-down (A-share)". Synced server-side
 - 🌓 **Dark Mode**: light / dark / system three-way toggle, defaults to system preference, can be manually locked in Settings, all pages adapted for both modes
 - 🔐 **Password Auth**: Username + password login, HMAC-signed token, bcrypt password hashing. In-app username and password changes with login rate limiting
+- 📈 **DCA Backtest**: Simulate DCA (monthly/biweekly/weekly) vs lump-sum investment with historical NAV data. Calculates XIRR annualized return, max drawdown, and Sharpe ratio. Includes purchase and redemption fees
+- 🔒 **API Key Encryption**: AI API key encrypted at rest (Fernet AES-128-CBC + HMAC-SHA256). Master key auto-generated at `data/secret.key`. Legacy plaintext keys auto-migrated on save
 
 ## Requirements
 

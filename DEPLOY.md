@@ -334,4 +334,14 @@ for f in compose.user*.yml; do docker compose -f "$f" up -d --build; done
 cp data/fund.db data/fund.db.bak
 ```
 
+此外 `data/` 目录下还有自动生成的文件：
+- `secret.key`：加密主密钥（首启自动生成，丢失后加密的 API key 无法解密，需在 Settings 重新填写）
+- `auth.json`：用户名 / 密码哈希 / token 签名密钥
+
+建议定期备份整个 `data/` 目录：
+
+```bash
+cp -r data data.bak.$(date +%Y%m%d)
+```
+
 也可通过前端「交易管理 → CSV 导入/导出」导出交易流水为 CSV。

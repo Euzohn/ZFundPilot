@@ -152,12 +152,21 @@ def _save_auth_data(data: dict) -> None:
         json.dump(data, f, indent=2)
 
 
+def _persist_auth() -> None:
+    """将当前认证状态（用户名/密码哈希/签名密钥）写入 auth.json。"""
+    _save_auth_data({
+        "username": AUTH_USERNAME,
+        "password_hash": AUTH_PASSWORD_HASH,
+        "secret": AUTH_SECRET,
+    })
+
+
 def update_password(new_password: str) -> None:
     """更新密码哈希并刷新 token 签名密钥（使所有已有 token 立即失效）。"""
     global AUTH_PASSWORD_HASH, AUTH_SECRET
     AUTH_PASSWORD_HASH = _hash_password(new_password)
     AUTH_SECRET = _secrets.token_hex(32)
-    _save_auth_data({"username": AUTH_USERNAME, "password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
+    _persist_auth()
 
 
 def migrate_password_hash(new_password: str) -> None:
@@ -167,7 +176,7 @@ def migrate_password_hash(new_password: str) -> None:
     """
     global AUTH_PASSWORD_HASH
     AUTH_PASSWORD_HASH = _hash_password(new_password)
-    _save_auth_data({"username": AUTH_USERNAME, "password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
+    _persist_auth()
 
 
 def update_username(new_username: str) -> None:
@@ -175,7 +184,7 @@ def update_username(new_username: str) -> None:
     global AUTH_USERNAME, AUTH_SECRET
     AUTH_USERNAME = new_username
     AUTH_SECRET = _secrets.token_hex(32)
-    _save_auth_data({"username": AUTH_USERNAME, "password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
+    _persist_auth()
 
 
 # 初始化：优先从 auth.json 读取，回退到环境变量（首次迁移）
@@ -190,12 +199,12 @@ if _auth_data and _auth_data.get("password_hash"):
     # 迁移：已有 auth.json 但无 username → 默认 "admin"
     AUTH_USERNAME: str = _auth_data.get("username", "") or _env_username or "admin"
     if "username" not in _auth_data:
-        _save_auth_data({"username": AUTH_USERNAME, "password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
+        _persist_auth()
 elif _env_password:
     AUTH_PASSWORD_HASH = _hash_password(_env_password)
     AUTH_SECRET = _env_secret or _secrets.token_hex(32)
     AUTH_USERNAME = _env_username or "admin"
-    _save_auth_data({"username": AUTH_USERNAME, "password_hash": AUTH_PASSWORD_HASH, "secret": AUTH_SECRET})
+    _persist_auth()
 else:
     AUTH_PASSWORD_HASH = ""
     AUTH_SECRET = ""
@@ -212,7 +221,11 @@ AUTH_TOKEN_MAX_AGE = 7 * 24 * 3600
 TRUSTED_PROXIES: list[ipaddress.IPv4Network] = []
 _env_trusted = os.environ.get("ZFUNDPILOT_TRUSTED_PROXIES", "")
 if _env_trusted:
-    TRUSTED_PROXIES = [ipaddress.IPv4Network(cidr.strip()) for cidr in _env_trusted.split(",") if cidr.strip()]
+    TRUSTED_PROXIES = [
+        ipaddress.IPv4Network(cidr.strip())
+        for cidr in _env_trusted.split(",")
+        if cidr.strip()
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -230,14 +243,24 @@ def _load_ai_config() -> dict:
         return {}
     try:
         with open(AI_CONFIG_PATH, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        # 解密 api_key（加密格式 enc:<token>，旧版明文自动兼容）
+        if data.get("api_key"):
+            from . import crypto
+            data["api_key"] = crypto.decrypt(data["api_key"])
+        return data
     except (json.JSONDecodeError, OSError):
         return {}
 
 
 def _save_ai_config(data: dict) -> None:
+    # 加密 api_key 后再落盘，避免密钥明文存储
+    to_save = dict(data)
+    if to_save.get("api_key"):
+        from . import crypto
+        to_save["api_key"] = crypto.encrypt(to_save["api_key"])
     with open(AI_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+        json.dump(to_save, f, indent=2)
 
 
 def update_ai_config(base_url: str, api_key: str, model: str, web_search: bool) -> None:

@@ -4,6 +4,19 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Added
+- AI API key 加密存储：新增 `crypto.py` 模块（Fernet: AES-128-CBC + HMAC-SHA256），
+  `ai_config.json` 中的 `api_key` 落盘前自动加密（`enc:` 前缀），加载时自动解密。
+  主密钥独立存于 `data/secret.key`（首启自动生成，权限 0o600），旧版明文 API key 自动兼容迁移。
+  新增 `cryptography>=42.0.0` 依赖。
+
+### Changed
+- DEPLOY.md 多实例部署文档完善：新增独立目录方式（推荐）、container_name 冲突警告、故障排查；
+  修正密码哈希说明（SHA-256 → bcrypt）
+- `.env.example` 密码哈希说明同步修正为 bcrypt
+
 ## [0.9.1] - 2026-07-24
 
 ### Fixed

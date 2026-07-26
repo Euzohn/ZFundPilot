@@ -47,6 +47,7 @@ ZFundPilot/
 │   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）
 │   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI）
 │   ├── rebalance.py         # 再平衡建议
+│   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
 │   ├── scheduler.py         # APScheduler 定时净值更新
 │   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）
 │   └── data_io.py           # CSV 导入/导出
@@ -133,8 +134,15 @@ ZFundPilot/
 
 - 路径: `ZFUNDPILOT_HOME` 环境变量 → 项目根 → `data/` 目录
 - 认证: `auth.json` 存储 `{username, password_hash, secret}`；`ZFUNDPILOT_USERNAME`/`ZFUNDPILOT_PASSWORD` 仅首次迁移；密码哈希为 bcrypt（兼容旧 SHA-256）；`ZFUNDPILOT_TRUSTED_PROXIES` 控制代理信任网段
-- AI: `ai_config.json` 存储 `{base_url, api_key, model, web_search}`
+- AI: `ai_config.json` 存储 `{base_url, api_key, model, web_search}`，其中 `api_key` 加密存储（见 `crypto.py`）
 - 定时: `ZFUNDPILOT_NAV_CRON` 环境变量（默认 `0 21 * * 1-5`）
+
+### crypto.py — 敏感字段加密
+
+- Fernet 对称加密（AES-128-CBC + HMAC-SHA256），用于配置文件中敏感字段（如 AI API key）的加密存储
+- 主密钥独立存于 `data/secret.key`（首启自动生成，32 字节随机，文件权限 0o600），与 `auth.json` 的 `AUTH_SECRET` 解耦
+- 加密格式: `enc:<base64-token>`，无前缀的旧版明文自动兼容（加载时原样返回，下次保存时自动加密）
+- `config._load_ai_config()` / `_save_ai_config()` 自动调用 `crypto.decrypt()` / `crypto.encrypt()`，运行时内存中 `AI_API_KEY` 为明文
 
 ### fetch_fund.py — 净值获取
 
@@ -349,6 +357,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - 修复：DB 覆盖路径 `est_pnl` 用精确净值差 `shares*(gsz-dwjz)` 计算，消除 `gszzl` 四舍五入导致的与基金详情页差异
 - 修复：买入按钮预填渠道（FundDetail / Positions 单渠道时自动传递 `channel` 参数，与卖出按钮一致）
 - 变更：实时估值数据源由天天基金 fundgz API 迁移至 AkShare `fund_value_estimation_em()`，覆盖全市场基金
+- 文档：DEPLOY.md 多实例部署完善（独立目录方式、container_name 冲突警告、故障排查），密码哈希说明修正（SHA-256 → bcrypt）
 
 ### v0.9.0
 

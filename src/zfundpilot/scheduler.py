@@ -46,7 +46,10 @@ def _run_nav_update() -> None:
             _last_results = []
             return
         results = fetch_fund.update_all_holdings_nav(codes=codes)
-        analysis.backfill_transaction_navs()
+        updated = analysis.backfill_transaction_navs()
+        if updated:
+            db.log_audit("nav_backfill", ip=None,
+                          detail={"count": len(updated), "items": updated})
         analysis.clear_analysis_cache()
         _last_results = [r.__dict__ for r in results]
         _last_run = datetime.now(_TZ)

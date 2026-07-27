@@ -67,6 +67,7 @@ const AUDIT_LOG_LABELS: Record<string, string> = {
   scheduler_toggle: "定时任务开关",
   scheduler_cron_change: "修改定时 Cron",
   t1_nav_fix: "T+1 净值修复",
+  nav_backfill: "净值回填交易",
 }
 
 function AuditLogPanel() {

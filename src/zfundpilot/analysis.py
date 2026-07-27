@@ -556,19 +556,20 @@ def _t1_nav_date(tx: Transaction) -> str:
     return (d + timedelta(days=1)).strftime("%Y-%m-%d")
 
 
-def backfill_transaction_navs() -> int:
+def backfill_transaction_navs() -> list[dict[str, Any]]:
     """回填缺失净值的交易记录。净值更新后自动调用。
 
     查找 nav IS NULL 的交易，按日期查净值，补全 nav 并计算缺失的份额/金额。
     T+1 交易（note 含 'T+1确认'）使用次日净值，而非当日。
     现金分红的 nav 是每份分红金额（非基金净值），不自动回填。
+
+    返回被更新的交易详情列表，每条含 tx_id/fund_code/date/nav/shares/amount。
     """
     txs = db.get_transactions_without_nav()
-    count = 0
+    updated: list[dict[str, Any]] = []
     for tx in txs:
         if tx.action == "dividend":
             continue
-        # T+1 交易用次日净值，普通交易用当日（或之后最近）净值
         nav_date = _t1_nav_date(tx) if _is_t1_transaction(tx) else tx.date
         nav_point = db.get_nav_on_or_after(tx.fund_code, nav_date)
         if not nav_point:
@@ -576,8 +577,15 @@ def backfill_transaction_navs() -> int:
         tx.nav = float(nav_point["nav"])
         tx.normalize()
         db.update_transaction(tx)
-        count += 1
-    return count
+        updated.append({
+            "tx_id": tx.id,
+            "fund_code": tx.fund_code,
+            "date": tx.date,
+            "nav": tx.nav,
+            "shares": tx.shares,
+            "amount": tx.amount,
+        })
+    return updated
 
 
 def recalculate_t1_transactions() -> list[dict[str, Any]]:

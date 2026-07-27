@@ -773,12 +773,13 @@ def calc_fund_fee(code: str, action: str = "buy",
 # 净值
 # ---------------------------------------------------------------------------
 @app.post("/api/nav/update")
-def update_nav() -> dict[str, Any]:
+def update_nav(request: Request) -> dict[str, Any]:
     if _nav_update_state["running"]:
         raise HTTPException(409, "净值更新正在进行中")
 
     positions = analysis.calculate_positions()
     codes = [p.fund_code for p in positions if p.is_open]
+    client_ip = _get_client_ip(request)
 
     def _run() -> None:
         _nav_update_state["running"] = True
@@ -794,8 +795,11 @@ def update_nav() -> dict[str, Any]:
                 _nav_update_state["current"] = code
 
             results = fetch_fund.update_all_holdings_nav(codes=codes, progress=_progress)
-            analysis.backfill_transaction_navs()
+            updated = analysis.backfill_transaction_navs()
             analysis.clear_analysis_cache()
+            if updated:
+                db.log_audit("nav_backfill", ip=client_ip,
+                              detail={"count": len(updated), "items": updated})
             _nav_update_state["results"] = [r.__dict__ for r in results]
         except Exception as exc:  # noqa: BLE001
             _nav_update_state["error"] = str(exc)

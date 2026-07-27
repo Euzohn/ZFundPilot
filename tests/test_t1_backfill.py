@@ -84,9 +84,9 @@ class TestBackfillT1:
             mock_db.get_nav_on_or_after.side_effect = mock_nav_on_or_after
             mock_db.update_transaction = MagicMock()
 
-            count = backfill_transaction_navs()
+            updated = backfill_transaction_navs()
 
-            assert count == 2
+            assert len(updated) == 2
             # T+1 交易用了次日净值 1.5
             assert t1_tx.nav == 1.5
             assert t1_tx.shares == round((1000 - 0) / 1.5, 2)  # 666.67
@@ -106,9 +106,9 @@ class TestBackfillT1:
             mock_db.get_nav_on_or_after.return_value = {"nav": 1.2}
             mock_db.update_transaction = MagicMock()
 
-            count = backfill_transaction_navs()
+            updated = backfill_transaction_navs()
 
-            assert count == 1
+            assert len(updated) == 1
             assert tx.nav == 1.2
             # 确认查的是当日 2025-01-15
             mock_db.get_nav_on_or_after.assert_called_with("001", "2025-01-15")

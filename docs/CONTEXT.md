@@ -342,11 +342,16 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ### Release 流程
 
 1. 确认所有改动已提交并推送
-2. 更新版本号:
+2. 更新版本号（共 4 处）:
    - `src/zfundpilot/__init__.py` → `__version__ = "x.y.z"`
    - `src/zfundpilot/api.py` → `FastAPI(version="x.y.z")`
-3. 更新 `CHANGELOG.md`（新版本段落）
+   - `pyproject.toml` → `version = "x.y.z"`
+   - `docs/CONTEXT.md` → 主标题版本 + 项目树注释 + api.py 描述 + 工作状态区
+3. 更新 `CHANGELOG.md`（`[Unreleased]` → `[x.y.z] - 日期`）
 4. 更新 `README.md` / `README_EN.md`（功能列表、项目结构等）
+5. 运行完整测试套件 + TypeScript 检查 + Vite build
+6. 提交版本 bump 并推送
+7. `git tag vx.y.z && git push --tags`
 5. Git tag: `git tag vx.y.z && git push origin vx.y.z`
 6. GitHub Release:
    - 标题: `vx.y.z` 或带描述性标题（如 `v0.5.0 — 首页改版 + 定时更新`）

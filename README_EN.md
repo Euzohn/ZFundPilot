@@ -78,6 +78,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **Fund Compare** — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix
 - **Fund Filter** — Filter from full market universe by type/sector/keyword, add to comparison with one click
 - **DCA Backtest** — Simulate DCA (monthly/biweekly/weekly) vs lump-sum with historical NAV data. Calculates XIRR, max drawdown, Sharpe ratio
+- **Auto-Invest Plan** — Set up daily/weekly/biweekly/monthly auto-buy, auto-skip non-trading days, auto-calculate fees, T+1 NAV backfill
 
 ### Risk & Optimization
 
@@ -141,6 +142,7 @@ ZFundPilot/
 │   ├── risk.py           # Risk analysis (drawdown/volatility/concentration)
 │   ├── rebalance.py      # Portfolio rebalancing advice
 │   ├── backtest.py       # DCA backtest
+│   ├── auto_invest.py    # Auto-invest plan execution
 │   ├── crypto.py         # Field encryption (Fernet)
 │   ├── data_io.py        # CSV import/export
 │   ├── api.py            # FastAPI REST API (37+ routes + auth middleware)

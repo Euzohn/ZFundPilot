@@ -7,8 +7,13 @@
 ## [Unreleased]
 
 ### Added
+- 定投计划自动执行：新增 `auto_invest.py` 模块 + `auto_invest_plans` 表 + 6 个 API 端点。
+  支持 4 种频率（每个交易日/每周/每双周/每月），遇非交易日自动顺延到最近交易日。
+  每次执行自动计算手续费，交易留 NULL 等 T+1 回填。定时任务每天 09:00 检查到期计划。
+  前端 Transactions 页新增第 4 个 Tab「定投计划」，支持卡片列表 + 弹窗表单 + 立即执行/暂停/删除。
 - 审计日志补全：新增交易、修改交易、CSV 导入（追加模式）写入审计日志
 - 审计日志前端可展开 detail：点击查看格式化 JSON，不再被截断
+- 净值回填审计日志：`backfill_transaction_navs()` 手动/定时更新净值后写入 `nav_backfill` 审计日志
 
 ### Fixed
 - T+1 交易净值回填 bug：`backfill_transaction_navs()` 对 T+1 交易（note 含 'T+1确认'）

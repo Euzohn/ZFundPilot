@@ -48,6 +48,7 @@ ZFundPilot/
 │   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI）
 │   ├── rebalance.py         # 再平衡建议
 │   ├── backtest.py          # 定投策略回测（DCA + 一次性投入对比 + XIRR）
+│   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延）
 │   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
 │   ├── scheduler.py         # APScheduler 定时净值更新
 │   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）
@@ -57,7 +58,7 @@ ZFundPilot/
 │   ├── pages/               # 12 个页面
 │   │   ├── Home.tsx         # 首页（brutalist 战术终端风格，中英双语切换）
 │   │   ├── Overview.tsx     # 组合总览
-│   │   ├── Transactions.tsx # 交易管理（录入/流水/CSV）
+│   │   ├── Transactions.tsx # 交易管理（录入/流水/CSV/定投计划）
 │   │   ├── NavUpdate.tsx    # 净值更新
 │   │   ├── Positions.tsx    # 持仓明细
 │   │   ├── Returns.tsx      # 收益分析（曲线/排名/日历）
@@ -162,6 +163,15 @@ ZFundPilot/
 - 净值数据不足时自动调 `fetch_fund.update_fund_nav` 拉取
 - `BacktestResult` dataclass 含曲线（`curve`）和每期明细（`periods_detail`）
 
+### auto_invest.py — 定投计划自动执行
+
+- 数据库 `auto_invest_plans` 表存储定投计划（基金/金额/频率/定投日/启用状态/下次执行日）
+- 4 种频率：`daily`（每个交易日）/ `week`（每周）/ `biweek`（每双周）/ `month`（每月）
+- `calculate_next_run(plan)`: 根据频率计算下次执行日，遇非交易日用 `db.get_nav_on_or_after` 顺延到最近的交易日
+- `execute_plan(plan, manual)`: 创建一笔买入交易（`nav=NULL`，等 T+1 回填），自动通过 `fetch_fund.calc_purchase_fee` 计算手续费，更新 `last_run`/`last_tx_id`。手动执行（`manual=True`）不更新 `next_run`
+- `run_all_due()`: 被 `scheduler.py` 每天 09:00 调用，检查所有 `enabled=1` 且 `next_run <= today` 的计划，逐个执行
+- API: 6 个端点 `POST/GET/PUT/DELETE /api/auto-invest/plans` + `/toggle` + `/execute`
+
 ### fetch_fund.py — 净值获取
 
 - `fetch_nav_history(fund_code)`: AkShare 优先（`ak.fund_open_fund_info_em`），天天基金 `pingzhongdata` fallback
@@ -192,6 +202,7 @@ ZFundPilot/
 - `max_instances=1` + `coalesce=True` + `misfire_grace_time=3600`
 - 开关状态存 `preferences` 表 key=`nav_auto_update`，默认启用
 - `_bootstrap_check`: 启动时检测今日 cron 是否已过，若已过则立即补跑
+- `auto_invest` 任务：每天 09:00 检查到期定投计划并执行（`auto_invest.run_all_due`），写审计日志
 - `_convert_dow()`: 标准 cron day_of_week 数值（0=周日, 1=周一）→ APScheduler 编号（0=周一, 6=周日），`re.sub(r'\d+', lambda m: str((int(m.group(0))-1)%7), dow)`。只在 day_of_week 为纯数字（无字母缩写）时执行转换
 - `_TZ = ZoneInfo("Asia/Shanghai")`: 所有 `datetime.now(_TZ)` 时区感知，不依赖系统时区
 - API: `GET /api/scheduler/status` + `PUT /api/scheduler/toggle` + `PUT /api/scheduler/cron`

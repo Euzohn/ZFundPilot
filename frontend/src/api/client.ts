@@ -1,6 +1,7 @@
 import type {
   Advice,
   AuditLog,
+  AutoInvestPlan,
   BacktestResult,
   ChannelPnLPoint,
   CompareResponse,
@@ -314,5 +315,43 @@ export const api = {
     request<{ results: BacktestResult[]; ok: boolean; message: string }>("/backtest/dca", {
       method: "POST",
       body: JSON.stringify(params),
+    }),
+
+  // Auto invest plans
+  getAutoInvestPlans: () => request<AutoInvestPlan[]>("/auto-invest/plans"),
+  createAutoInvestPlan: (plan: {
+    fund_code: string
+    amount: number
+    cadence: string
+    day_of_week?: number | null
+    day_of_month?: number | null
+    channel?: string
+    note?: string
+  }) => request<{ id: number }>("/auto-invest/plans", {
+    method: "POST",
+    body: JSON.stringify(plan),
+  }),
+  updateAutoInvestPlan: (id: number, plan: {
+    fund_code: string
+    amount: number
+    cadence: string
+    day_of_week?: number | null
+    day_of_month?: number | null
+    channel?: string
+    note?: string
+  }) => request<{ ok: boolean }>(`/auto-invest/plans/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(plan),
+  }),
+  deleteAutoInvestPlan: (id: number) =>
+    request<{ ok: boolean }>(`/auto-invest/plans/${id}`, { method: "DELETE" }),
+  toggleAutoInvestPlan: (id: number, enabled: boolean) =>
+    request<{ ok: boolean }>(`/auto-invest/plans/${id}/toggle`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    }),
+  executeAutoInvestPlan: (id: number) =>
+    request<{ ok: boolean; tx_id?: number }>(`/auto-invest/plans/${id}/execute`, {
+      method: "POST",
     }),
 }

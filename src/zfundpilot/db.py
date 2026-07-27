@@ -122,6 +122,23 @@ def init_db() -> None:
                 detail     TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts DESC);
+
+            CREATE TABLE IF NOT EXISTS auto_invest_plans (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                fund_code    TEXT NOT NULL,
+                amount       REAL NOT NULL,
+                cadence      TEXT NOT NULL,
+                day_of_week  INTEGER,
+                day_of_month INTEGER,
+                channel      TEXT DEFAULT '',
+                note         TEXT DEFAULT '定投',
+                enabled      INTEGER DEFAULT 1,
+                next_run     TEXT,
+                last_run     TEXT,
+                last_tx_id   INTEGER,
+                created_at   TEXT DEFAULT (datetime('now','localtime')),
+                updated_at   TEXT DEFAULT (datetime('now','localtime'))
+            );
             """
         )
     _migrate_add_columns()
@@ -585,6 +602,76 @@ def fetch_audit_logs(limit: int = 100) -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# 定投计划 CRUD
+# ---------------------------------------------------------------------------
+def add_auto_invest_plan(fund_code: str, amount: float, cadence: str,
+                          day_of_week: int | None = None,
+                          day_of_month: int | None = None,
+                          channel: str = "", note: str = "定投",
+                          next_run: str | None = None) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            """INSERT INTO auto_invest_plans
+               (fund_code,amount,cadence,day_of_week,day_of_month,channel,note,next_run)
+               VALUES(?,?,?,?,?,?,?,?)""",
+            (fund_code.strip(), amount, cadence, day_of_week, day_of_month,
+             channel, note, next_run),
+        )
+        return int(cur.lastrowid)
+
+
+def update_auto_invest_plan(plan_id: int, **kwargs) -> None:
+    if not kwargs:
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE auto_invest_plans SET updated_at=datetime('now','localtime') "
+                "WHERE id=?",
+                (plan_id,),
+            )
+        return
+    fields = ", ".join(f"{k}=?" for k in kwargs)
+    vals = list(kwargs.values()) + [plan_id]
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE auto_invest_plans SET {fields}, "
+            "updated_at=datetime('now','localtime') WHERE id=?",
+            vals,
+        )
+
+
+def delete_auto_invest_plan(plan_id: int) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM auto_invest_plans WHERE id=?", (plan_id,))
+
+
+def get_auto_invest_plans() -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM auto_invest_plans ORDER BY id DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_auto_invest_plan(plan_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM auto_invest_plans WHERE id=?", (plan_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_due_auto_invest_plans(today: str) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM auto_invest_plans WHERE enabled=1 "
+            "AND next_run IS NOT NULL AND next_run<=? "
+            "ORDER BY next_run ASC, id ASC",
+            (today,),
         ).fetchall()
     return [dict(r) for r in rows]
 

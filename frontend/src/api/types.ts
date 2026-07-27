@@ -375,3 +375,22 @@ export interface DcaBacktestResponse {
   ok: boolean
   message: string
 }
+
+// ── 定投计划 ──
+export interface AutoInvestPlan {
+  id: number
+  fund_code: string
+  fund_name?: string
+  amount: number
+  cadence: 'daily' | 'week' | 'biweek' | 'month'
+  day_of_week: number | null
+  day_of_month: number | null
+  channel: string
+  note: string
+  enabled: boolean
+  next_run: string | null
+  last_run: string | null
+  last_tx_id: number | null
+  created_at: string
+  updated_at: string
+}

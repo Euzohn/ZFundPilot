@@ -30,6 +30,7 @@ from . import __version__ as APP_VERSION
 from . import (
     ai,
     analysis,
+    auto_invest,
     backtest,
     compare,
     config,
@@ -1060,6 +1061,109 @@ def save_preferences(body: PreferencesBody) -> dict[str, bool]:
         db.upsert_preference("color_theme", body.color_theme)
     analysis.clear_analysis_cache()
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# 定投计划
+# ---------------------------------------------------------------------------
+class AutoInvestPlanCreate(BaseModel):
+    fund_code: str
+    amount: float
+    cadence: str
+    day_of_week: int | None = None
+    day_of_month: int | None = None
+    channel: str = ""
+    note: str = "定投"
+
+
+class AutoInvestPlanToggle(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/auto-invest/plans")
+def create_auto_invest_plan(request: Request, body: AutoInvestPlanCreate) -> dict[str, Any]:
+    _ensure_fund_exists(body.fund_code)
+    plan = {
+        "fund_code": body.fund_code,
+        "amount": body.amount,
+        "cadence": body.cadence,
+        "day_of_week": body.day_of_week,
+        "day_of_month": body.day_of_month,
+        "channel": body.channel,
+        "note": body.note,
+    }
+    plan["next_run"] = auto_invest.calculate_next_run(plan)
+    plan_id = db.add_auto_invest_plan(**plan)
+    db.log_audit("auto_invest_plan_create", ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                  detail={"plan_id": plan_id, "fund_code": body.fund_code,
+                          "cadence": body.cadence, "amount": body.amount})
+    return {"id": plan_id, **plan, "next_run": plan["next_run"]}
+
+
+@app.get("/api/auto-invest/plans")
+def list_auto_invest_plans() -> list[dict[str, Any]]:
+    plans = db.get_auto_invest_plans()
+    funds = {f.fund_code: f.fund_name for f in db.get_funds()}
+    for p in plans:
+        p["fund_name"] = funds.get(p["fund_code"], "")
+    return plans
+
+
+@app.put("/api/auto-invest/plans/{plan_id}")
+def update_auto_invest_plan(request: Request, plan_id: int, body: AutoInvestPlanCreate) -> dict[str, bool]:
+    old = db.get_auto_invest_plan(plan_id)
+    if not old:
+        raise HTTPException(404, "定投计划不存在")
+    _ensure_fund_exists(body.fund_code)
+    plan = {
+        "fund_code": body.fund_code,
+        "amount": body.amount,
+        "cadence": body.cadence,
+        "day_of_week": body.day_of_week,
+        "day_of_month": body.day_of_month,
+        "channel": body.channel,
+        "note": body.note,
+    }
+    plan["next_run"] = auto_invest.calculate_next_run(plan)
+    db.update_auto_invest_plan(plan_id, **plan)
+    db.log_audit("auto_invest_plan_update", ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                  detail={"plan_id": plan_id, "fund_code": body.fund_code,
+                          "cadence": body.cadence, "amount": body.amount})
+    return {"ok": True}
+
+
+@app.delete("/api/auto-invest/plans/{plan_id}")
+def delete_auto_invest_plan(request: Request, plan_id: int) -> dict[str, bool]:
+    db.delete_auto_invest_plan(plan_id)
+    db.log_audit("auto_invest_plan_delete", ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                  detail={"plan_id": plan_id})
+    return {"ok": True}
+
+
+@app.put("/api/auto-invest/plans/{plan_id}/toggle")
+def toggle_auto_invest_plan(request: Request, plan_id: int, body: AutoInvestPlanToggle) -> dict[str, bool]:
+    db.update_auto_invest_plan(plan_id, enabled=1 if body.enabled else 0)
+    db.log_audit("auto_invest_plan_toggle", ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                  detail={"plan_id": plan_id, "enabled": body.enabled})
+    return {"ok": True}
+
+
+@app.post("/api/auto-invest/plans/{plan_id}/execute")
+def execute_auto_invest_plan(request: Request, plan_id: int) -> dict[str, Any]:
+    plan = db.get_auto_invest_plan(plan_id)
+    if not plan:
+        raise HTTPException(404, "定投计划不存在")
+    result = auto_invest.execute_plan(plan, manual=True)
+    analysis.clear_analysis_cache()
+    db.log_audit("auto_invest_execute", ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                  detail={"plan_id": plan_id, "fund_code": plan["fund_code"],
+                          "amount": plan["amount"], "tx_id": result.get("tx_id")})
+    return {"ok": True, **result}
 
 
 # ---------------------------------------------------------------------------

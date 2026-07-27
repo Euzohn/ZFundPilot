@@ -68,6 +68,11 @@ const AUDIT_LOG_LABELS: Record<string, string> = {
   scheduler_cron_change: "修改定时 Cron",
   t1_nav_fix: "T+1 净值修复",
   nav_backfill: "净值回填交易",
+  auto_invest_plan_create: "创建定投计划",
+  auto_invest_plan_update: "修改定投计划",
+  auto_invest_plan_delete: "删除定投计划",
+  auto_invest_plan_toggle: "定投计划开关",
+  auto_invest_execute: "定投执行",
 }
 
 function AuditLogPanel() {

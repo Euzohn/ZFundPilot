@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react"
 import { useSearchParams, useLocation, useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { Transaction, CSVParseResult, FundMeta, Fund, Position, CalcFeeResponse } from "@/api/types"
+import type { Transaction, CSVParseResult, FundMeta, Fund, Position, CalcFeeResponse, AutoInvestPlan } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,7 +20,7 @@ import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2, Receipt, ArrowUpDown } from "lucide-react"
+import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2, Receipt, ArrowUpDown, Repeat } from "lucide-react"
 import { getChannels, getChannelsAsync, saveChannels } from "@/lib/channels"
 import { ACTION_LABELS } from "@/lib/actionLabels"
 import { makeSortHeader } from "@/components/SortHeader"
@@ -90,7 +90,7 @@ export default function Transactions() {
     <div className="space-y-6">
       <PageHeader title="交易管理" />
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3 sm:inline-flex sm:w-auto">
+        <TabsList className="grid w-full grid-cols-4 sm:inline-flex sm:w-auto">
           <TabsTrigger value="form" className="gap-1.5">
             <Plus className="h-4 w-4" /> <span className="hidden sm:inline">单笔录入</span><span className="sm:hidden">录入</span>
           </TabsTrigger>
@@ -99,6 +99,9 @@ export default function Transactions() {
           </TabsTrigger>
           <TabsTrigger value="csv" className="gap-1.5">
             <ArrowUpDown className="h-4 w-4" /> <span className="hidden sm:inline">CSV 导入/导出</span><span className="sm:hidden">CSV</span>
+          </TabsTrigger>
+          <TabsTrigger value="auto-invest" className="gap-1.5">
+            <Repeat className="h-4 w-4" /> <span className="hidden sm:inline">定投计划</span><span className="sm:hidden">定投</span>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="form">
@@ -113,6 +116,7 @@ export default function Transactions() {
           <TransactionList key={listReloadKey} onEdit={handleEdit} />
         </TabsContent>
         <TabsContent value="csv"><CSVImportExport /></TabsContent>
+        <TabsContent value="auto-invest"><AutoInvestPlansPanel /></TabsContent>
       </Tabs>
     </div>
   )
@@ -1034,6 +1038,265 @@ function CSVImportExport() {
           </Button>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// 定投计划
+// ---------------------------------------------------------------------------
+const CADENCE_LABELS: Record<string, string> = {
+  daily: "每个交易日",
+  week: "每周",
+  biweek: "每双周",
+  month: "每月",
+}
+
+function cadenceDesc(plan: AutoInvestPlan): string {
+  const base = CADENCE_LABELS[plan.cadence] || plan.cadence
+  if (plan.cadence === "daily") return base
+  if (plan.cadence === "month" && plan.day_of_month != null) return `${base}${plan.day_of_month}号`
+  if (plan.day_of_week != null) {
+    const days = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    return `${base}${days[plan.day_of_week] ?? ""}`
+  }
+  return base
+}
+
+function AutoInvestPlansPanel() {
+  const { data: plans, loading, error, reload } = useApi<AutoInvestPlan[]>(() => api.getAutoInvestPlans(), [])
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingPlan, setEditingPlan] = useState<AutoInvestPlan | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState<number | null>(null)
+  const [executing, setExecuting] = useState<number | null>(null)
+
+  const [code, setCode] = useState("")
+  const [amount, setAmount] = useState("")
+  const [cadence, setCadence] = useState("week")
+  const [dayOfWeek, setDayOfWeek] = useState("0")
+  const [dayOfMonth, setDayOfMonth] = useState("15")
+  const [channel, setChannel] = useState("")
+  const [note, setNote] = useState("定投")
+  const [channels] = useState<string[]>(() => getChannels())
+
+  const openCreate = () => {
+    setEditingPlan(null)
+    setCode(""); setAmount(""); setCadence("week"); setDayOfWeek("0")
+    setDayOfMonth("15"); setChannel(""); setNote("定投")
+    setDialogOpen(true)
+  }
+
+  const openEdit = (plan: AutoInvestPlan) => {
+    setEditingPlan(plan)
+    setCode(plan.fund_code)
+    setAmount(String(plan.amount))
+    setCadence(plan.cadence)
+    setDayOfWeek(String(plan.day_of_week ?? 0))
+    setDayOfMonth(String(plan.day_of_month ?? 15))
+    setChannel(plan.channel)
+    setNote(plan.note)
+    setDialogOpen(true)
+  }
+
+  const handleSave = async () => {
+    if (!code.trim() || !amount || parseFloat(amount) <= 0) {
+      toast.warning("请填写基金代码和金额"); return
+    }
+    setSaving(true)
+    try {
+      const body = {
+        fund_code: code.trim(),
+        amount: parseFloat(amount),
+        cadence,
+        day_of_week: cadence === "daily" ? null : (cadence === "month" ? null : parseInt(dayOfWeek)),
+        day_of_month: cadence === "month" ? parseInt(dayOfMonth) : null,
+        channel,
+        note,
+      }
+      if (editingPlan) {
+        await api.updateAutoInvestPlan(editingPlan.id, body)
+        toast.success("定投计划已更新")
+      } else {
+        await api.createAutoInvestPlan(body)
+        toast.success("定投计划已创建")
+      }
+      setDialogOpen(false)
+      reload()
+    } catch (e: any) {
+      toast.error(e.message || "保存失败")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleToggle = async (plan: AutoInvestPlan) => {
+    try {
+      await api.toggleAutoInvestPlan(plan.id, !plan.enabled)
+      toast.success(plan.enabled ? "已暂停" : "已启用")
+      reload()
+    } catch (e: any) {
+      toast.error(e.message || "操作失败")
+    }
+  }
+
+  const handleDelete = async (id: number) => {
+    try {
+      await api.deleteAutoInvestPlan(id)
+      toast.success("定投计划已删除")
+      setDeleting(null)
+      reload()
+    } catch (e: any) {
+      toast.error(e.message || "删除失败")
+    }
+  }
+
+  const handleExecute = async (plan: AutoInvestPlan) => {
+    setExecuting(plan.id)
+    try {
+      const res = await api.executeAutoInvestPlan(plan.id)
+      toast.success(`定投执行成功，交易 ID: ${res.tx_id}`)
+      reload()
+    } catch (e: any) {
+      toast.error(e.message || "执行失败")
+    } finally {
+      setExecuting(null)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">自动定期买入，每次创建一笔买入交易</p>
+        <Button size="sm" onClick={openCreate}>
+          <Plus className="mr-1 h-4 w-4" /> 新建定投
+        </Button>
+      </div>
+
+      {loading ? (
+        <LoadingState size="sm" />
+      ) : error ? (
+        <ErrorState message="加载失败" onRetry={reload} />
+      ) : !plans || plans.length === 0 ? (
+        <EmptyState title="暂无定投计划" description="点击「新建定投」开始设置自动买入" />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {plans.map((plan) => (
+            <Card key={plan.id} className={cn(plan.enabled ? "" : "opacity-60")}>
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="text-sm font-semibold">
+                      {plan.fund_name || plan.fund_code}
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground mt-0.5">{plan.fund_code}</p>
+                  </div>
+                  <Badge variant={plan.enabled ? "default" : "secondary"} className="text-[10px]">
+                    {plan.enabled ? "运行中" : "已暂停"}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="pb-3">
+                <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground mb-3">
+                  <span>每期 {money(plan.amount)}</span>
+                  <span>{cadenceDesc(plan)}</span>
+                  {plan.next_run && <span>下次执行: {plan.next_run}</span>}
+                  {plan.last_run && <span>上次执行: {plan.last_run}</span>}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openEdit(plan)}>
+                    <Pencil className="mr-1 h-3 w-3" /> 编辑
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleToggle(plan)}>
+                    {plan.enabled ? "暂停" : "启用"}
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleExecute(plan)} disabled={executing === plan.id}>
+                    <Loader2 className={cn("mr-1 h-3 w-3", executing === plan.id && "animate-spin")} />
+                    {executing === plan.id ? "执行中..." : "立即执行"}
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs text-loss-600 hover:text-loss-600" onClick={() => setDeleting(plan.id)}>
+                    <Trash2 className="mr-1 h-3 w-3" /> 删除
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(o) => { if (!o) setDeleting(null) }}
+        title="删除定投计划"
+        description="删除后不会影响已创建的买入交易。确定要删除吗？"
+        onConfirm={() => { if (deleting !== null) handleDelete(deleting) }}
+      />
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingPlan ? "编辑定投计划" : "新建定投计划"}</DialogTitle>
+            <DialogDescription>
+              设置自动买入的基金、金额和频率。每次执行时自动计算手续费。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>基金代码</Label>
+              <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="如 011612" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>每期金额（元）</Label>
+              <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="1000" min="0" step="0.01" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>定投频率</Label>
+              <Select value={cadence} onChange={(e) => setCadence(e.target.value)}>
+                <option value="daily">每个交易日</option>
+                <option value="week">每周</option>
+                <option value="biweek">每双周</option>
+                <option value="month">每月</option>
+              </Select>
+            </div>
+            {cadence === "week" || cadence === "biweek" ? (
+              <div className="space-y-1.5">
+                <Label>定投日（星期）</Label>
+                <Select value={dayOfWeek} onChange={(e) => setDayOfWeek(e.target.value)}>
+                  <option value="0">周一</option>
+                  <option value="1">周二</option>
+                  <option value="2">周三</option>
+                  <option value="3">周四</option>
+                  <option value="4">周五</option>
+                  <option value="5">周六</option>
+                  <option value="6">周日</option>
+                </Select>
+              </div>
+            ) : cadence === "month" ? (
+              <div className="space-y-1.5">
+                <Label>定投日（日期）</Label>
+                <Input type="number" value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} min="1" max="31" />
+              </div>
+            ) : null}
+            <div className="space-y-1.5">
+              <Label>渠道</Label>
+              <Select value={channel} onChange={(e) => setChannel(e.target.value)}>
+                <option value="">不指定</option>
+                {channels.map((c) => (<option key={c} value={c}>{c}</option>))}
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>备注</Label>
+              <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="定投" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "保存中..." : "保存"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

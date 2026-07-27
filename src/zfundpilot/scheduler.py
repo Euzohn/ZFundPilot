@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from . import config, db, fetch_fund, analysis
+from . import config, db, fetch_fund, analysis, auto_invest
 
 logging.basicConfig(
     level=logging.INFO,
@@ -88,6 +88,24 @@ def _parse_cron(expr: str) -> CronTrigger:
     )
 
 
+def _run_auto_invest() -> None:
+    """执行定投计划检查任务（由调度器调用，每天 09:00）。"""
+    logger.info("[scheduler] 定投计划检查开始")
+    try:
+        results = auto_invest.run_all_due()
+        if results:
+            ok = sum(1 for r in results if r.get("status") == "success")
+            fail = sum(1 for r in results if r.get("status") == "error")
+            db.log_audit("auto_invest_execute", ip=None,
+                          detail={"count": len(results), "ok": ok, "fail": fail,
+                                  "items": results})
+            logger.info("[scheduler] 定投执行: %d 成功, %d 失败", ok, fail)
+        else:
+            logger.info("[scheduler] 无到期定投计划")
+    except Exception:
+        logger.exception("[scheduler] 定投计划检查异常")
+
+
 def init_scheduler() -> None:
     """初始化并启动调度器。在 FastAPI startup 中调用。"""
     global _scheduler
@@ -103,6 +121,14 @@ def init_scheduler() -> None:
         _run_nav_update,
         trigger=trigger,
         id="nav_update",
+        max_instances=1,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+    _scheduler.add_job(
+        _run_auto_invest,
+        trigger=CronTrigger(hour=9, minute=0),
+        id="auto_invest",
         max_instances=1,
         misfire_grace_time=3600,
         coalesce=True,

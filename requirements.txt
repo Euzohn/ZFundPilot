@@ -1,4 +1,13 @@
-streamlit>=1.30.0
-pandas>=2.0.0
-akshare>=1.12.0
-plotly>=5.18.0
+# ZFundPilot 运行时依赖（Docker 构建用）
+# 修改此文件会触发 pip install 层重建，请仅在依赖变更时更新
+# 生成方式：pip freeze 后筛选直接依赖
+
+akshare==1.18.79
+pandas==2.2.3
+numpy==2.1.1
+fastapi==0.139.0
+uvicorn[standard]==0.40.0
+httpx==0.27.2
+APScheduler==3.11.3
+bcrypt==5.0.0
+cryptography==46.0.4

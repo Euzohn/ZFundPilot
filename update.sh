@@ -41,8 +41,8 @@ else
   echo ""
   echo "🔨 检测到更新，构建并启动容器..."
   docker compose up -d --build
+  # 清理悬空镜像（不清理 builder 缓存，保留层缓存加速增量构建）
   docker image prune -f
-  docker builder prune -f --keep-storage 1g
 fi
 echo ""
 

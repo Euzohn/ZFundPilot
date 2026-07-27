@@ -28,6 +28,13 @@ tmp/
 DEPLOY.md
 CONTRIBUTING.md
 CHANGELOG.md
+README.md
+README_EN.md
+docs/
+assets/
+
+# 测试
+tests/
 
 # 系统
 .DS_Store

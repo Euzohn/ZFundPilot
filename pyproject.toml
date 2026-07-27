@@ -22,11 +22,9 @@ classifiers = [
     "Topic :: Office/Business :: Financial :: Investment",
 ]
 dependencies = [
-    "streamlit>=1.30.0",
     "pandas>=2.0.0",
     "numpy>=1.24.0",
     "akshare>=1.12.0",
-    "plotly>=5.18.0",
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.29.0",
     "httpx>=0.27.0",

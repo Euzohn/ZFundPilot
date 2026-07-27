@@ -4,7 +4,7 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [0.11.0] - 2026-07-28
 
 ### Added
 - 定投计划自动执行：新增 `auto_invest.py` 模块 + `auto_invest_plans` 表 + 6 个 API 端点。

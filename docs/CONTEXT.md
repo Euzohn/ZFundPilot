@@ -13,7 +13,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.9.1`（git tag `v0.9.1`）
+- **版本**: `0.11.0`（git tag `v0.11.0`）
 - **License**: MIT
 
 ---
@@ -35,7 +35,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.9.0"
+│   ├── __init__.py          # __version__ = "0.11.0"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
@@ -133,7 +133,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.9.1")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.11.0")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
 - 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
@@ -379,6 +379,22 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ---
 
 ## 十二、当前工作状态
+
+### v0.11.0
+
+- 定投计划自动执行：`auto_invest.py` 新模块 + `auto_invest_plans` 表 + 6 个 API 端点 + 前端 Tab（4 种频率：交易日/周/双周/月，遇非交易日顺延，自动算手续费，T+1 回填净值）
+- 调度器新增 09:00 定时任务，每天检查到期定投并执行
+- 净值回填审计日志：`backfill_transaction_navs()` 返回更新详情，手动/定时更新净值后写入 `nav_backfill` 审计日志
+- 版本号同步：`pyproject.toml` 从 `0.7.0` 升到 `0.11.0`，修复长期滞后问题
+
+### v0.10.0
+
+- 定投策略回测：`backtest.py` 新模块 + `POST /api/backtest/dca` 端点 + `/backtest` 页面（DCA vs 一次性投入，XIRR 年化/最大回撤/夏普比率）
+- AI API key 加密存储：`crypto.py` 新模块（Fernet，AES-128-CBC + HMAC-SHA256），密钥独立存 `data/secret.key`
+- 板块/类型关键词映射：`keyword_maps` 偏好设置 + `PUT /api/keyword-maps` 端点 + Settings 页面编辑
+- 移动端预览优化：`update.sh` 新增 `docker logs` 查看容器日志、`docker inspect` 验证端口映射命令
+- 修复：Docker 容器时区 UTC 导致定时任务不运行（`Dockerfile` 设置 `TZ=Asia/Shanghai` + `scheduler.py` 时区感知）
+- 修复：T+1 净值回填 bug + 历史修复迁移 + 审计日志 + 测试
 
 ### v0.9.1
 

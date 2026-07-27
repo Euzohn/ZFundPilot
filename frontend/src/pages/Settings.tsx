@@ -57,12 +57,16 @@ const AUDIT_LOG_LABELS: Record<string, string> = {
   login_failed: "登录失败",
   change_password: "修改密码",
   change_username: "修改用户名",
+  add_transaction: "新增交易",
+  update_transaction: "修改交易",
   delete_transaction: "删除交易",
   delete_all_transactions: "清空流水",
   clear_then_import: "导入 CSV（清空）",
+  csv_import: "导入 CSV（追加）",
   update_ai_config: "修改 AI 配置",
   scheduler_toggle: "定时任务开关",
   scheduler_cron_change: "修改定时 Cron",
+  t1_nav_fix: "T+1 净值修复",
 }
 
 function AuditLogPanel() {
@@ -114,8 +118,17 @@ function AuditLogPanel() {
                     <TableCell className="text-xs font-mono">{log.ip || "—"}</TableCell>
                     <TableCell className="text-xs">{log.username || "—"}</TableCell>
                     <TableCell className="text-xs">{AUDIT_LOG_LABELS[log.action] || log.action}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
-                      {log.detail || "—"}
+                    <TableCell className="text-xs text-muted-foreground">
+                      {log.detail ? (
+                        <details className="group">
+                          <summary className="cursor-pointer list-none max-w-[280px] truncate hover:text-foreground">
+                            {log.detail}
+                          </summary>
+                          <pre className="mt-1 max-w-[400px] overflow-x-auto whitespace-pre-wrap break-all rounded bg-muted p-2 text-[10px] leading-relaxed">
+                            {JSON.stringify(JSON.parse(log.detail), null, 2)}
+                          </pre>
+                        </details>
+                      ) : "—"}
                     </TableCell>
                   </TableRow>
                 ))}

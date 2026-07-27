@@ -134,7 +134,7 @@ ZFundPilot/
 
 - 版本: `FastAPI(title="ZFundPilot API", version="0.9.1")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
-- 审计日志: `audit_log` 表记录敏感操作，`GET /api/audit` 查看最近 100 条
+- 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
 - 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
 - 关闭: `@app.on_event("shutdown")` → `scheduler.shutdown_scheduler()`
 - 静态文件: 生产模式挂载 `frontend/dist/` 到 `/`

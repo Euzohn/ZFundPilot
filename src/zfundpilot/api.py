@@ -435,7 +435,7 @@ def get_transactions(fund_code: str | None = None) -> list[dict[str, Any]]:
 
 
 @app.post("/api/transactions")
-def add_transaction(body: TransactionCreate) -> dict[str, Any]:
+def add_transaction(request: Request, body: TransactionCreate) -> dict[str, Any]:
     _ensure_fund_exists(body.fund_code)
     tx = Transaction(
         fund_code=body.fund_code,
@@ -455,11 +455,16 @@ def add_transaction(body: TransactionCreate) -> dict[str, Any]:
     if not db.get_latest_nav(body.fund_code):
         fetch_fund.update_fund_nav(body.fund_code)
     analysis.clear_analysis_cache()
+    db.log_audit("add_transaction", ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                  detail={"tx_id": tx_id, "fund_code": tx.fund_code,
+                          "action": tx.action, "date": tx.date,
+                          "amount": tx.amount, "shares": tx.shares})
     return {"id": tx_id, **tx.to_dict()}
 
 
 @app.put("/api/transactions/{tx_id}")
-def update_transaction(tx_id: int, body: TransactionCreate) -> dict[str, Any]:
+def update_transaction(request: Request, tx_id: int, body: TransactionCreate) -> dict[str, Any]:
     _ensure_fund_exists(body.fund_code)
     tx = Transaction(
         id=tx_id,
@@ -480,6 +485,11 @@ def update_transaction(tx_id: int, body: TransactionCreate) -> dict[str, Any]:
     if not db.get_latest_nav(body.fund_code):
         fetch_fund.update_fund_nav(body.fund_code)
     analysis.clear_analysis_cache()
+    db.log_audit("update_transaction", ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                  detail={"tx_id": tx_id, "fund_code": tx.fund_code,
+                          "action": tx.action, "date": tx.date,
+                          "amount": tx.amount, "shares": tx.shares})
     return {"ok": True, **tx.to_dict()}
 
 
@@ -954,6 +964,10 @@ def confirm_import(request: Request, body: CSVImportConfirm) -> dict[str, Any]:
     if body.clear_existing:
         db.delete_all_transactions()
         db.log_audit("clear_then_import", ip=_get_client_ip(request),
+                      username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                      detail={"import_count": len(body.transactions)})
+    else:
+        db.log_audit("csv_import", ip=_get_client_ip(request),
                       username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
                       detail={"import_count": len(body.transactions)})
     codes = {t.fund_code for t in body.transactions}

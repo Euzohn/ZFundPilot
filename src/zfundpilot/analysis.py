@@ -251,9 +251,9 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
             costs = curve["invested_cost"].tolist()
 
             def _find_start_idx(target_date: str) -> int | None:
-                """找曲线中 <= target_date 的最近一个点的索引。"""
+                """找曲线中 < target_date 的最近一个点的索引。"""
                 for i in range(len(dates) - 1, -1, -1):
-                    if dates[i] <= target_date:
+                    if dates[i] < target_date:
                         return i
                 return None
 
@@ -273,10 +273,13 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
                 if idx is not None:
                     start_val = values[idx]
                     start_cost = costs[idx]
-                    if start_val > 0:
-                        pnl = (end_val - start_val) - (end_cost - start_cost)
-                        setattr(summary, pnl_attr, round(pnl, 2))
-                        setattr(summary, ret_attr, pnl / start_val)
+                else:
+                    start_val = 0.0
+                    start_cost = 0.0
+                pnl = (end_val - start_val) - (end_cost - start_cost)
+                setattr(summary, pnl_attr, round(pnl, 2))
+                if start_val > 0:
+                    setattr(summary, ret_attr, pnl / start_val)
             if len(curve) >= 2:
                 pnl = (values[-1] - values[-2]) - (costs[-1] - costs[-2])
                 summary.daily_pnl = round(pnl, 2)

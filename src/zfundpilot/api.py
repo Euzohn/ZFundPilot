@@ -185,6 +185,20 @@ async def auth_middleware(request: Request, call_next):
 @app.on_event("startup")
 def _startup() -> None:
     db.init_db()
+    # 一次性修复历史 T+1 交易的错误净值回填
+    if db.get_preference("t1_nav_fix_done") is None:
+        fixed = analysis.recalculate_t1_transactions()
+        if fixed:
+            # stdout 打印（Docker logs 可见）
+            print(f"[T+1 NAV FIX] 修复 {len(fixed)} 笔交易:")
+            for f in fixed:
+                print(f"  tx#{f['tx_id']} {f['fund_code']} {f['date']}  "
+                      f"nav {f['old_nav']:.4f}→{f['new_nav']:.4f}  "
+                      f"shares {f['old_shares']:.2f}→{f['new_shares']:.2f}")
+            # 写审计日志（Settings 页可见）
+            db.log_audit("t1_nav_fix", detail={"fixed": fixed, "count": len(fixed)})
+            logger.info("修复了 %d 笔 T+1 交易的净值回填", len(fixed))
+        db.upsert_preference("t1_nav_fix_done", "1")
     scheduler.init_scheduler()
 
 

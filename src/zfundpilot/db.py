@@ -439,6 +439,15 @@ def get_nav_on_or_after(fund_code: str, date_str: str) -> sqlite3.Row | None:
         ).fetchone()
 
 
+def get_nav_on_date(fund_code: str, date_str: str) -> sqlite3.Row | None:
+    """返回某日期当天的净值（精确匹配，不含前后日期）。"""
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM nav_history WHERE fund_code=? AND date=?",
+            (fund_code, date_str),
+        ).fetchone()
+
+
 def get_nav_last_update() -> str | None:
     with get_connection() as conn:
         row = conn.execute("SELECT MAX(date) AS d FROM nav_history").fetchone()

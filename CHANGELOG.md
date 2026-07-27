@@ -4,6 +4,14 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Fixed
+- T+1 交易净值回填 bug：`backfill_transaction_navs()` 对 T+1 交易（note 含 'T+1确认'）
+  错误使用了交易当日净值，而非次日净值。现改为检测 T+1 标记后用 `date+1` 查净值。
+- 历史 T+1 错误数据自动迁移：启动时检测已错误回填的 T+1 交易（nav 来自当日而非次日），
+  用次日净值重新计算份额/金额。修复详情写入审计日志，一次性执行，幂等，通过 `preferences` 表标记完成。
+
 ## [0.10.0] - 2026-07-26
 
 ### Added

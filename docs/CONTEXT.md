@@ -117,7 +117,14 @@ ZFundPilot/
 - **买入 T+1**: amount 已知，shares 待净值确认（`shares = (amount - fee) / nav`）
 - **卖出 T+1**: shares 已知，fee + amount 待净值确认（`amount = shares × nav - fee`）
 - `effectiveNavDate`: 15:00 前用当日净值，15:00 后用次日净值
-- `_backfill_transaction_navs()`: 净值更新后自动回填缺失 nav 的交易（跳过分红）
+- `backfill_transaction_navs()`: 净值更新后自动回填缺失 nav 的交易（跳过分红）
+  - T+1 交易（note 含 'T+1确认'）用 `date+1` 查净值，普通交易用 `date`
+  - `_is_t1_transaction()` 检测 T+1 标记，`_t1_nav_date()` 返回次日日期
+- `recalculate_t1_transactions()`: 一次性修复历史 T+1 交易的错误净值回填
+  - 启动时自动执行（通过 `preferences` 表 key=`t1_nav_fix_done` 标记完成）
+  - 检测条件：note 含 'T+1确认' + nav 来自交易当日（错误）→ 用次日净值重算
+  - 返回修复详情列表（tx_id/fund_code/old_nav/new_nav/old_shares/new_shares）
+  - 修复结果写入 `audit_log`（action=`t1_nav_fix`，detail 含修复列表）+ stdout 打印
 
 ---
 
@@ -128,7 +135,7 @@ ZFundPilot/
 - 版本: `FastAPI(title="ZFundPilot API", version="0.9.1")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作，`GET /api/audit` 查看最近 100 条
-- 启动: `@app.on_event("startup")` → `db.init_db()` + `scheduler.init_scheduler()`
+- 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
 - 关闭: `@app.on_event("shutdown")` → `scheduler.shutdown_scheduler()`
 - 静态文件: 生产模式挂载 `frontend/dist/` 到 `/`
 

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import time
 from collections import OrderedDict
+from datetime import datetime, timedelta
 from typing import Any
 
 import pandas as pd
@@ -541,10 +542,22 @@ if __name__ == "__main__":
               f"浮动{p.unrealized_pnl:.1f} 已实现{p.realized_pnl:.1f} {tag}")
 
 
+def _is_t1_transaction(tx: Transaction) -> bool:
+    """检测交易是否为 T+1 确认（15:00 后下单，按次日净值确认）。"""
+    return bool(tx.note and "T+1确认" in tx.note)
+
+
+def _t1_nav_date(tx: Transaction) -> str:
+    """返回 T+1 交易应使用的净值日期（tx.date 的次日）。"""
+    d = datetime.strptime(tx.date, "%Y-%m-%d")
+    return (d + timedelta(days=1)).strftime("%Y-%m-%d")
+
+
 def backfill_transaction_navs() -> int:
     """回填缺失净值的交易记录。净值更新后自动调用。
 
     查找 nav IS NULL 的交易，按日期查净值，补全 nav 并计算缺失的份额/金额。
+    T+1 交易（note 含 'T+1确认'）使用次日净值，而非当日。
     现金分红的 nav 是每份分红金额（非基金净值），不自动回填。
     """
     txs = db.get_transactions_without_nav()
@@ -552,7 +565,9 @@ def backfill_transaction_navs() -> int:
     for tx in txs:
         if tx.action == "dividend":
             continue
-        nav_point = db.get_nav_on_or_after(tx.fund_code, tx.date)
+        # T+1 交易用次日净值，普通交易用当日（或之后最近）净值
+        nav_date = _t1_nav_date(tx) if _is_t1_transaction(tx) else tx.date
+        nav_point = db.get_nav_on_or_after(tx.fund_code, nav_date)
         if not nav_point:
             continue
         tx.nav = float(nav_point["nav"])
@@ -560,3 +575,64 @@ def backfill_transaction_navs() -> int:
         db.update_transaction(tx)
         count += 1
     return count
+
+
+def recalculate_t1_transactions() -> list[dict[str, Any]]:
+    """修复历史 T+1 交易的错误净值回填。
+
+    查找 note 含 'T+1确认' 且 nav 已回填的交易，
+    若 nav 来自交易当日（错误）而非次日（正确），则用次日净值重新计算。
+
+    返回修复详情列表，每条含 tx_id/fund_code/date/old_nav/new_nav/old_shares/new_shares 等。
+    幂等：已正确的交易不受影响。启动时自动执行一次。
+    """
+    fixed: list[dict[str, Any]] = []
+    with db.get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM transactions WHERE note LIKE '%T+1确认%' "
+            "AND nav IS NOT NULL ORDER BY date ASC, id ASC"
+        ).fetchall()
+    for row in rows:
+        tx = Transaction.from_row(row)
+        if tx.action == "dividend":
+            continue
+        # 检查当前 nav 是否来自交易当日（错误回填）
+        wrong_nav = db.get_nav_on_date(tx.fund_code, tx.date)
+        if not wrong_nav or abs(float(wrong_nav["nav"]) - (tx.nav or 0)) > 1e-6:
+            continue  # nav 不是来自当日，可能已正确，跳过
+        # 查找次日净值（正确净值）
+        t1_date = _t1_nav_date(tx)
+        correct_nav = db.get_nav_on_or_after(tx.fund_code, t1_date)
+        if not correct_nav:
+            continue
+        correct_nav_val = float(correct_nav["nav"])
+        if abs(correct_nav_val - (tx.nav or 0)) < 1e-6:
+            continue  # 次日净值与当日相同（极少见），无需修复
+        # 记录修复前的值
+        old_nav = tx.nav
+        old_shares = tx.shares
+        old_amount = tx.amount
+        # 用正确净值重新计算
+        tx.nav = correct_nav_val
+        # 清空 shares/amount 让 normalize 重新计算
+        if tx.action == "buy":
+            tx.shares = None  # 买入：用 (amount-fee)/nav 重算份额
+        elif tx.action == "sell":
+            tx.amount = None  # 卖出：用 shares*nav-fee 重算金额
+        elif tx.action == "reinvest":
+            tx.amount = None  # 再投资：用 shares*nav 重算金额
+        tx.normalize()
+        db.update_transaction(tx)
+        fixed.append({
+            "tx_id": tx.id,
+            "fund_code": tx.fund_code,
+            "action": tx.action,
+            "date": tx.date,
+            "old_nav": old_nav,
+            "new_nav": tx.nav,
+            "old_shares": old_shares,
+            "new_shares": tx.shares,
+            "old_amount": old_amount,
+            "new_amount": tx.amount,
+        })
+    return fixed

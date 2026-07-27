@@ -260,7 +260,7 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
             end_val = values[-1]
             end_cost = costs[-1]
             today = dt.date.today()
-            week_start = (today - dt.timedelta(days=today.weekday() + 7)).isoformat()
+            week_start = (today - dt.timedelta(days=today.weekday())).isoformat()
             month_start = today.replace(day=1).isoformat()
             year_start = today.replace(month=1, day=1).isoformat()
 

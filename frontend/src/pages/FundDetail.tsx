@@ -18,6 +18,7 @@ import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-reac
 import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
 import MetricCard from "@/components/MetricCard"
 import ConfirmDialog from "@/components/ConfirmDialog"
+import TransactionDetailDialog from "@/components/TransactionDetailDialog"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
@@ -26,6 +27,7 @@ export default function FundDetail() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const [viewingTx, setViewingTx] = useState<Transaction | null>(null)
   const [navRange, setNavRange] = useState<"1m" | "3m" | "6m" | "1y" | "hold" | "tx" | "custom">("1y")
   const [customStart, setCustomStart] = useState("")
   const [customEnd, setCustomEnd] = useState("")
@@ -384,7 +386,7 @@ const handleDelete = async (txId: number) => {
               </TableHeader>
               <TableBody>
                 {txs.map((t) => (
-                  <TableRow key={t.id}>
+                  <TableRow key={t.id} onClick={() => setViewingTx(t)} className="cursor-pointer">
                     <TableCell>{t.date}</TableCell>
                     <TableCell>
                       <Badge
@@ -402,10 +404,10 @@ const handleDelete = async (txId: number) => {
                     <TableCell className="text-sm text-muted-foreground">{t.note}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => handleEdit(t)}>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleEdit(t) }}>
                           <Pencil className="h-4 w-4 text-primary" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setConfirmDeleteId(t.id!)}>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(t.id!) }}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
@@ -418,6 +420,15 @@ const handleDelete = async (txId: number) => {
           {txs && txs.length > 0 && <p className="mt-3 text-sm text-muted-foreground">共 {txs.length} 笔交易</p>}
         </CardContent>
       </Card>
+
+      {/* 详情弹窗 */}
+      <TransactionDetailDialog
+        tx={viewingTx}
+        fundName={fund?.fund_name}
+        open={viewingTx != null}
+        onOpenChange={(open) => { if (!open) setViewingTx(null) }}
+        onEdit={(tx) => { setViewingTx(null); handleEdit(tx) }}
+      />
 
       {/* 删除确认弹窗 */}
       <ConfirmDialog

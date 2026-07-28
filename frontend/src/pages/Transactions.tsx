@@ -25,6 +25,7 @@ import { getChannels, getChannelsAsync, saveChannels } from "@/lib/channels"
 import { ACTION_LABELS } from "@/lib/actionLabels"
 import { makeSortHeader } from "@/components/SortHeader"
 import ConfirmDialog from "@/components/ConfirmDialog"
+import TransactionDetailDialog from "@/components/TransactionDetailDialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 
 function actionBadgeClass(action: string): string {
@@ -634,6 +635,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
   const [customStart, setCustomStart] = useState(() => localStorage.getItem("zfundpilot_tx_customStart") || "")
   const [customEnd, setCustomEnd] = useState(() => localStorage.getItem("zfundpilot_tx_customEnd") || "")
   const [visibleCount, setVisibleCount] = useState(50)
+  const [viewingTx, setViewingTx] = useState<Transaction | null>(null)
 
   // 持久化筛选范围
   useEffect(() => { localStorage.setItem("zfundpilot_tx_dateRange", dateRange) }, [dateRange])
@@ -818,7 +820,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
                 {visibleTxs?.map((t) => {
                 const fund = funds[t.fund_code]
                 return (
-                  <TableRow key={t.id}>
+                  <TableRow key={t.id} onClick={() => setViewingTx(t)} className="cursor-pointer">
                     <TableCell className="text-xs text-muted-foreground">{t.id}</TableCell>
                     <TableCell>{t.date}</TableCell>
                     <TableCell>
@@ -841,10 +843,10 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
                     <TableCell className="text-sm text-muted-foreground">{t.note}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => onEdit(t)}>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); onEdit(t) }}>
                           <Pencil className="h-4 w-4 text-primary" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => setConfirmDeleteId(t.id!)}>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(t.id!) }}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
@@ -870,6 +872,13 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
       </CardContent>
 
       {/* 删除单条确认弹窗 */}
+      <TransactionDetailDialog
+        tx={viewingTx}
+        fundName={viewingTx ? funds[viewingTx.fund_code]?.fund_name : undefined}
+        open={viewingTx != null}
+        onOpenChange={(open) => { if (!open) setViewingTx(null) }}
+        onEdit={(tx) => { setViewingTx(null); onEdit(tx) }}
+      />
       <ConfirmDialog
         open={confirmDeleteId != null}
         onOpenChange={(open) => { if (!open) setConfirmDeleteId(null) }}

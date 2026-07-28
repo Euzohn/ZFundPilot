@@ -69,7 +69,7 @@ ZFundPilot/
 │   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 交易标记）
 │   │   ├── Settings.tsx     # 设置（账户/AI/偏好）
 │   │   └── Login.tsx        # 登录
-│   ├── components/          # Layout + Logo 系列 + PnLCalendar + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/EmptyState/LoadingState/ThemeToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
+│   ├── components/          # Layout + Logo 系列 + PnLCalendar + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
 │   ├── api/                 # client.ts + types.ts
 │   └── lib/                 # auth/channels/channelColors/colorTheme/format/useApi
 ├── data/                    # SQLite 数据库 + auth.json + ai_config.json（gitignore）
@@ -387,6 +387,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### v0.11.1（开发中）
 
+- 交易记录点击查看详情：新建 `TransactionDetailDialog` 共享组件，Transactions 和 FundDetail
+  页面的交易列表行点击即可打开只读详情弹窗，展示所有交易字段，支持「编辑」跳转
 - 修复定投执行 T+1 判定 bug：`execute_plan()` 按当前时间判断 15:00 分界，不再永远加 `T+1确认` 标记
 
 ### v0.11.0

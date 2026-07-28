@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+### Added
+- 交易记录点击查看详情：新建 `TransactionDetailDialog` 共享组件，Transactions 和 FundDetail
+  页面的交易列表行点击即可打开只读详情弹窗，展示所有交易字段，支持「编辑」跳转。
+  暗色主题自动适配。
+
 ### Fixed
 - 定投执行 T+1 判定 bug：`execute_plan()` 原先永远加 `T+1确认` 标记，
   导致 09:00 定时执行的定投错误使用次日净值。现改为按当前时间判断：

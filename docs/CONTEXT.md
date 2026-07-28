@@ -168,7 +168,7 @@ ZFundPilot/
 - 数据库 `auto_invest_plans` 表存储定投计划（基金/金额/频率/定投日/启用状态/下次执行日）
 - 4 种频率：`daily`（每个交易日）/ `week`（每周）/ `biweek`（每双周）/ `month`（每月）
 - `calculate_next_run(plan)`: 根据频率计算下次执行日，遇非交易日用 `db.get_nav_on_or_after` 顺延到最近的交易日
-- `execute_plan(plan, manual)`: 创建一笔买入交易（`nav=NULL`，等 T+1 回填），自动通过 `fetch_fund.calc_purchase_fee` 计算手续费，更新 `last_run`/`last_tx_id`。手动执行（`manual=True`）不更新 `next_run`
+- `execute_plan(plan, manual)`: 创建一笔买入交易（`nav=NULL`，等回填），自动通过 `fetch_fund.calc_purchase_fee` 计算手续费，更新 `last_run`/`last_tx_id`。手动执行（`manual=True`）不更新 `next_run`。15:00 前不加 T+1 标记（用当天净值），15:00 后加 `T+1确认` 标记（用次日净值）
 - `run_all_due()`: 被 `scheduler.py` 每天 09:00 调用，检查所有 `enabled=1` 且 `next_run <= today` 的计划，逐个执行
 - API: 6 个端点 `POST/GET/PUT/DELETE /api/auto-invest/plans` + `/toggle` + `/execute`
 
@@ -384,6 +384,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ---
 
 ## 十二、当前工作状态
+
+### v0.11.1（开发中）
+
+- 修复定投执行 T+1 判定 bug：`execute_plan()` 按当前时间判断 15:00 分界，不再永远加 `T+1确认` 标记
 
 ### v0.11.0
 

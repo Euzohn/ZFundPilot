@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from . import db, fetch_fund, analysis
+from . import analysis, db, fetch_fund
 from .models import ACTION_BUY, Transaction
 
 logger = logging.getLogger(__name__)
@@ -102,13 +102,18 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
     amount = plan["amount"]
     channel = plan.get("channel", "")
     note = plan.get("note", "定投")
-    today = datetime.now(_TZ).strftime("%Y-%m-%d")
+    now = datetime.now(_TZ)
+    today = now.strftime("%Y-%m-%d")
+    is_after_three = now.hour >= 15
 
     # 自动计算手续费
     fee_result = fetch_fund.calc_purchase_fee(fund_code, amount)
     fee = fee_result.fee
 
-    full_note = f"{note} | T+1确认" if "T+1确认" not in note else note
+    if is_after_three:
+        full_note = f"{note} | T+1确认" if "T+1确认" not in note else note
+    else:
+        full_note = note
 
     tx = Transaction(
         fund_code=fund_code,
@@ -145,6 +150,7 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
         "amount": amount,
         "fee": fee,
         "date": today,
+        "after_three": is_after_three,
     }
 
 

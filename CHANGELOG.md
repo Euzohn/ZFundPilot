@@ -4,6 +4,13 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Fixed
+- 定投执行 T+1 判定 bug：`execute_plan()` 原先永远加 `T+1确认` 标记，
+  导致 09:00 定时执行的定投错误使用次日净值。现改为按当前时间判断：
+  15:00 前不加标记（用当天净值），15:00 后加 `T+1确认` 标记（用次日净值）。
+
 ## [0.11.0] - 2026-07-28
 
 ### Added

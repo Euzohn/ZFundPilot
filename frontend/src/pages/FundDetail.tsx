@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { money, pct, signedMoney, navStr, pnlColor, localDateStr } from "@/lib/format"
 import { actionLabel } from "@/lib/actionLabels"
 import { getRangeLabel, RANGE_DAYS } from "@/lib/rangeLabels"
+import { isMarketOpen } from "@/lib/market"
 import { toast } from "sonner"
 import { useLang } from "@/i18n/LanguageContext"
 import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
@@ -46,9 +47,13 @@ export default function FundDetail() {
   )
   const { data: fundEstimate, reload: reloadEstimate } = useApi<FundEstimate>(() => api.getFundEstimate(code!), [code])
   useEffect(() => {
-    const interval = setInterval(reloadEstimate, 60000)
+    if (!fundEstimate?.ok) return
+    const interval = setInterval(() => {
+      if (!isMarketOpen()) return
+      reloadEstimate()
+    }, 60000)
     return () => clearInterval(interval)
-  }, [reloadEstimate])
+  }, [reloadEstimate, fundEstimate])
 
   // 净值图表数据：时间区间过滤 + 每日收益计算（必须在 early return 之前）
   const chartData = useMemo(() => {

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
+import { isMarketOpen } from "@/lib/market"
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -83,12 +84,17 @@ export default function Overview() {
   const { data: sectorDist } = useApi<DistributionItem[]>(() => api.getDistribution("sector"))
 
   const { data: estimate, reload: reloadEstimate } = useApi<EstimateSummary>(() => api.getEstimate())
-  useEffect(() => {
-    const interval = setInterval(reloadEstimate, 60000)
-    return () => clearInterval(interval)
-  }, [reloadEstimate])
 
-  const hasEstimate = estimate && estimate.funds.some((f) => f.ok)
+  const hasEstimate = estimate?.funds.some(f => f.ok) ?? false
+
+  useEffect(() => {
+    if (!hasEstimate) return
+    const interval = setInterval(() => {
+      if (!isMarketOpen()) return
+      reloadEstimate()
+    }, 60000)
+    return () => clearInterval(interval)
+  }, [reloadEstimate, hasEstimate])
 
   if (se) return <ErrorState message={se} onRetry={reloadSummary} />
   if (sl || !summary) return <LoadingState />

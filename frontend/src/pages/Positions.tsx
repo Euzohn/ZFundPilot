@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
+import { isMarketOpen } from "@/lib/market"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
@@ -31,10 +32,17 @@ export default function Positions() {
   const [closedSortDir, setClosedSortDir] = useState<"asc" | "desc">("desc")
   const { data: positions, loading } = useApi(() => api.getPositions(true))
   const { data: estimate, reload: reloadEstimate } = useApi<EstimateSummary>(() => api.getEstimate())
+
+  const hasEstimate = estimate?.funds.some(f => f.ok) ?? false
+
   useEffect(() => {
-    const interval = setInterval(reloadEstimate, 60000)
+    if (!hasEstimate) return
+    const interval = setInterval(() => {
+      if (!isMarketOpen()) return
+      reloadEstimate()
+    }, 60000)
     return () => clearInterval(interval)
-  }, [reloadEstimate])
+  }, [reloadEstimate, hasEstimate])
 
   const estimateMap = useMemo(() => {
     if (!estimate) return {}
@@ -44,7 +52,6 @@ export default function Positions() {
     }
     return m
   }, [estimate])
-  const hasEstimate = estimate && estimate.funds.some((f) => f.ok)
 
   const availableChannels = useMemo(() => {
     if (!positions) return []

@@ -5,6 +5,7 @@ import { api } from "@/api/client"
 import type { PortfolioSummary } from "@/api/types"
 import { money, pct, signedMoney, localDateStr } from "@/lib/format"
 import { getColorTheme, getColorThemeAsync, applyColorTheme } from "@/lib/colorTheme"
+import { isMarketOpen } from "@/lib/market"
 import { useLang } from "@/i18n/LanguageContext"
 
 const GITHUB_URL = "https://github.com/Euzohn/ZFundPilot"
@@ -28,14 +29,6 @@ function formatDateTime(d: Date) {
   const min = String(d.getMinutes()).padStart(2, "0")
   const s = String(d.getSeconds()).padStart(2, "0")
   return `${y}.${m}.${day} / ${w} / ${h}:${min}:${s}`
-}
-
-function marketStatus(d: Date): "OPEN" | "CLOSED" {
-  const day = d.getDay()
-  if (day === 0 || day === 6) return "CLOSED"
-  const t = d.getHours() * 60 + d.getMinutes()
-  if ((t >= 570 && t <= 690) || (t >= 780 && t <= 900)) return "OPEN"
-  return "CLOSED"
 }
 
 function concentrationLabel(w: number | undefined, conc: { concHigh: string; concModerate: string; concLow: string }): string {
@@ -114,7 +107,7 @@ export default function Home() {
     return () => document.removeEventListener("visibilitychange", handleVisibility)
   }, [handleVisibility])
 
-  const mkt = useMemo(() => marketStatus(now), [now])
+  const mkt = useMemo(() => isMarketOpen(now), [now])
   const todayStr = useMemo(() => localDateStr(), [])
   const yesterdayStr = useMemo(() => localDateStr(new Date(Date.now() - 86400000)), [])
   const navStatus = summary?.as_of_date
@@ -259,8 +252,8 @@ export default function Home() {
               <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.systemStatus}</p>
               <p className="mt-2 font-mono text-xs tracking-wider">
                 <span className="text-white/60">{tr.market}:</span>{" "}
-                <span className={mkt === "OPEN" ? "text-gain-400" : "text-brand-accent"}>
-                  {mkt === "OPEN" ? tr.marketOpen : tr.marketClosed}
+                <span className={mkt ? "text-gain-400" : "text-brand-accent"}>
+                  {mkt ? tr.marketOpen : tr.marketClosed}
                 </span>
                 <span aria-hidden="true" className="mx-3 text-white/30">///</span>
                 <span className="text-white/60">{tr.nav}:</span>{" "}

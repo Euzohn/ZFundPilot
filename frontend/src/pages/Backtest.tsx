@@ -22,8 +22,39 @@ import { api } from "@/api/client"
 import type { BacktestResult } from "@/api/types"
 import { money, pct, pnlColor } from "@/lib/format"
 import { useLang } from "@/i18n/LanguageContext"
+import { useCountUp } from "@/hooks/useCountUp"
 
 const CADENCE_VALUES = ["month", "biweek", "week"] as const
+const formatSharpe = (n: number) => n.toFixed(2)
+
+function BacktestKpi({ result, strategy }: { result: BacktestResult; strategy: "dca" | "lumpsum" }) {
+  const { t } = useLang()
+
+  const invested = useCountUp(result.invested_capital, money)
+  const finalValue = useCountUp(result.net_final_value, money)
+  const annualReturn = useCountUp(result.annualized_return ?? 0, pct)
+  const sharpe = useCountUp(result.sharpe_ratio ?? 0, formatSharpe)
+
+  if (strategy === "dca") {
+    return (
+      <>
+        <MetricCard label={t.backtest.dcaTotalInvested} value={invested} sub={`${result.total_periods} ${t.backtest.periodsUnit} · ${t.common.fee} ${money(result.total_fees)}`} />
+        <MetricCard label={t.backtest.dcaFinalValue} value={finalValue} sub={`${t.backtest.returnLabel} ${pct(result.total_return)}`} color={pnlColor(result.total_return)} />
+        <MetricCard label={t.backtest.dcaAnnualReturn} value={result.annualized_return != null ? annualReturn : "—"} sub={`${t.backtest.maxDrawdown} ${pct(result.max_drawdown)}`} color={pnlColor(result.annualized_return)} />
+        <MetricCard label={t.backtest.dcaSharpe} value={result.sharpe_ratio != null ? sharpe : "—"} sub={t.backtest.riskFreeRate} />
+      </>
+    )
+  }
+
+  return (
+    <>
+      <MetricCard label={t.backtest.lumpSumStrategy} value={invested} sub={`${t.common.fee} ${money(result.total_fees)}`} />
+      <MetricCard label={t.backtest.lumpsumFinalValue} value={finalValue} sub={`${t.backtest.returnLabel} ${pct(result.total_return)}`} color={pnlColor(result.total_return)} />
+      <MetricCard label={t.backtest.lumpsumAnnualReturn} value={result.annualized_return != null ? annualReturn : "—"} sub={`${t.backtest.maxDrawdown} ${pct(result.max_drawdown)}`} color={pnlColor(result.annualized_return)} />
+      <MetricCard label={t.backtest.lumpsumSharpe} value={result.sharpe_ratio != null ? sharpe : "—"} sub={t.backtest.riskFreeRate} />
+    </>
+  )
+}
 
 function defaultStartDate(): string {
   const d = new Date()
@@ -271,58 +302,8 @@ export default function Backtest() {
                 {dca?.fund_name || code}（{code}）
               </h3>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {dca && (
-                  <>
-                    <MetricCard
-                      label={t.backtest.dcaTotalInvested}
-                      value={money(dca.invested_capital)}
-                      sub={`${dca.total_periods} ${t.backtest.periodsUnit} · ${t.common.fee} ${money(dca.total_fees)}`}
-                    />
-                    <MetricCard
-                      label={t.backtest.dcaFinalValue}
-                      value={money(dca.net_final_value)}
-                      sub={`${t.backtest.returnLabel} ${pct(dca.total_return)}`}
-                      color={pnlColor(dca.total_return)}
-                    />
-                    <MetricCard
-                      label={t.backtest.dcaAnnualReturn}
-                      value={pct(dca.annualized_return)}
-                      sub={`${t.backtest.maxDrawdown} ${pct(dca.max_drawdown)}`}
-                      color={pnlColor(dca.annualized_return)}
-                    />
-                    <MetricCard
-                      label={t.backtest.dcaSharpe}
-                      value={dca.sharpe_ratio != null ? dca.sharpe_ratio.toFixed(2) : "—"}
-                      sub={t.backtest.riskFreeRate}
-                    />
-                  </>
-                )}
-                {lumpsum && (
-                  <>
-                    <MetricCard
-                      label={t.backtest.lumpSumStrategy}
-                      value={money(lumpsum.invested_capital)}
-                      sub={`${t.common.fee} ${money(lumpsum.total_fees)}`}
-                    />
-                    <MetricCard
-                      label={t.backtest.lumpsumFinalValue}
-                      value={money(lumpsum.net_final_value)}
-                      sub={`${t.backtest.returnLabel} ${pct(lumpsum.total_return)}`}
-                      color={pnlColor(lumpsum.total_return)}
-                    />
-                    <MetricCard
-                      label={t.backtest.lumpsumAnnualReturn}
-                      value={pct(lumpsum.annualized_return)}
-                      sub={`${t.backtest.maxDrawdown} ${pct(lumpsum.max_drawdown)}`}
-                      color={pnlColor(lumpsum.annualized_return)}
-                    />
-                    <MetricCard
-                      label={t.backtest.lumpsumSharpe}
-                      value={lumpsum.sharpe_ratio != null ? lumpsum.sharpe_ratio.toFixed(2) : "—"}
-                      sub={t.backtest.riskFreeRate}
-                    />
-                  </>
-                )}
+                {dca && <BacktestKpi result={dca} strategy="dca" />}
+                {lumpsum && <BacktestKpi result={lumpsum} strategy="lumpsum" />}
               </div>
             </div>
           ))}

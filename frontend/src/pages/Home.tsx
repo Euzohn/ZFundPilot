@@ -7,8 +7,10 @@ import { money, pct, signedMoney, localDateStr } from "@/lib/format"
 import { getColorTheme, getColorThemeAsync, applyColorTheme } from "@/lib/colorTheme"
 import { isMarketOpen } from "@/lib/market"
 import { useLang } from "@/i18n/LanguageContext"
+import { useCountUp } from "@/hooks/useCountUp"
 
 const GITHUB_URL = "https://github.com/Euzohn/ZFundPilot"
+const formatInt = (n: number) => String(Math.round(n))
 
 function greeting(greetings: string[]) {
   const h = new Date().getHours()
@@ -118,6 +120,13 @@ export default function Home() {
 
   const showScanlines = !reducedMotion
 
+  const dailyPnl = useCountUp(summary?.daily_pnl ?? 0, signedMoney)
+  const dailyReturn = useCountUp(summary?.daily_return ?? 0, pct)
+  const totalValue = useCountUp(summary?.total_value ?? 0, money)
+  const totalPnl = useCountUp(summary?.total_pnl ?? 0, signedMoney)
+  const totalReturn = useCountUp(summary?.total_return ?? 0, pct)
+  const holdingCount = useCountUp(summary?.holding_count ?? 0, formatInt)
+
   return (
     <div className="flex min-h-[100dvh] flex-col bg-brand-bg-dark text-brand-text-light">
       {/* CRT scanlines */}
@@ -207,27 +216,27 @@ export default function Home() {
               <div className="bg-brand-bg-dark p-6">
                 <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{summary.as_of_date === todayStr ? tr.dailyPnl : summary.as_of_date === yesterdayStr ? tr.yesterdayPnl : summary.as_of_date}</p>
                 <output className={`mt-2 block font-mono text-2xl font-bold tabular-nums ${pnlColorDark(summary.daily_pnl)}`}>
-                  {signedMoney(summary.daily_pnl)}{" "}
-                  <span className="text-sm font-normal text-white/40">({pct(summary.daily_return)})</span>
+                  {dailyPnl}{" "}
+                  <span className="text-sm font-normal text-white/40">({dailyReturn})</span>
                 </output>
               </div>
               <div className="bg-brand-bg-dark p-6">
                 <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.currentValue}</p>
                 <output className="mt-2 block font-mono text-2xl font-bold tabular-nums text-brand-text-light">
-                  {money(summary.total_value)}
+                  {totalValue}
                 </output>
               </div>
               <div className="bg-brand-bg-dark p-6">
                 <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.totalPnl}</p>
                 <output className={`mt-2 block font-mono text-2xl font-bold tabular-nums ${pnlColorDark(summary.total_pnl)}`}>
-                  {signedMoney(summary.total_pnl)}{" "}
-                  <span className="text-sm font-normal text-white/40">({pct(summary.total_return)})</span>
+                  {totalPnl}{" "}
+                  <span className="text-sm font-normal text-white/40">({totalReturn})</span>
                 </output>
               </div>
               <div className="bg-brand-bg-dark p-6">
                 <p className={`text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.holdings}</p>
                 <output className="mt-2 block font-mono text-2xl font-bold tabular-nums text-brand-text-light">
-                  {summary.holding_count} {tr.units}
+                  {holdingCount} {tr.units}
                 </output>
               </div>
             </div>

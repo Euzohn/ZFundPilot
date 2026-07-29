@@ -12,7 +12,6 @@ import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import { pct, money } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { PERIOD_LABELS } from "@/lib/rangeLabels"
 import { useLang } from "@/i18n/LanguageContext"
 import { GitCompare, Search, X, BarChart3, Table2, TrendingUp, Activity, DollarSign, RefreshCw, ChevronDown, ChevronRight, Filter, Check, Plus } from "lucide-react"
 import {
@@ -571,7 +570,7 @@ export default function FundCompare() {
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">{t.compare.returnPerformance}</CardTitle></CardHeader>
                 <CardContent>
-                  <CompareTable funds={okFunds} labelMap={PERIOD_LABELS} valueKey="returns" format="pct" />
+                  <CompareTable funds={okFunds} labelMap={{ ...t.periodLabels }} valueKey="returns" format="pct" />
                 </CardContent>
               </Card>
             </TabsContent>

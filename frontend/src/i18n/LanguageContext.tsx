@@ -7,7 +7,16 @@ export type Translation = typeof _zhType
 
 const translations: Record<Lang, Translation> = { zh, en }
 
-let currentLang: Lang = "zh"
+const STORAGE_KEY = "zfundpilot_lang"
+
+let currentLang: Lang = (() => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY) as Lang | null
+    return saved === "en" || saved === "zh" ? saved : "zh"
+  } catch {
+    return "zh"
+  }
+})()
 
 export function getCurrentLang(): Lang {
   return currentLang
@@ -22,13 +31,13 @@ interface LanguageContextValue {
 
 const LanguageContext = createContext<LanguageContextValue | null>(null)
 
-const STORAGE_KEY = "zfundpilot_lang"
-
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY) as Lang | null
-      return saved === "en" || saved === "zh" ? saved : "zh"
+      const initial = saved === "en" || saved === "zh" ? saved : "zh"
+      currentLang = initial
+      return initial
     } catch {
       return "zh"
     }

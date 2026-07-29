@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { money, navStr } from "@/lib/format"
-import { ACTION_LABELS } from "@/lib/actionLabels"
+import { actionLabel } from "@/lib/actionLabels"
 import { Pencil, Receipt, Hash, Wallet, Banknote, PieChart, Percent, DollarSign, FileText } from "lucide-react"
 import { useLang } from "@/i18n/LanguageContext"
 
@@ -20,7 +20,7 @@ function actionBadge(tx: Transaction) {
   const extra = tx.action === "dividend" ? "text-primary border-primary/30 bg-primary/10" : tx.action === "reinvest" ? "text-info border-info/30 bg-info/10" : ""
   return (
     <Badge variant={variant} className={extra}>
-      {ACTION_LABELS[tx.action] ?? tx.action}
+      {actionLabel(tx.action)}
     </Badge>
   )
 }

@@ -16,7 +16,7 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, R
 import PnLCalendar from "@/components/PnLCalendar"
 import { ChevronUp, ChevronDown, BarChart3, CalendarDays } from "lucide-react"
 import { getChannelColors, getChannelColorsAsync, getPalette } from "@/lib/channelColors"
-import { RANGE_LABELS, RANGE_DAYS } from "@/lib/rangeLabels"
+import { getRangeLabel, RANGE_DAYS } from "@/lib/rangeLabels"
 import { makeSortHeader } from "@/components/SortHeader"
 import { useLang } from "@/i18n/LanguageContext"
 
@@ -273,7 +273,7 @@ export default function Returns() {
                   {(["3m", "6m", "1y", "all"] as const).map(r => (
                     <Button key={r} size="sm" variant={pnlAggRange === r ? "default" : "outline"} className="h-6 px-2 text-[11px]"
                       onClick={() => setPnlAggRange(r)}>
-                      {RANGE_LABELS[r]}
+                      {getRangeLabel(r)}
                     </Button>
                   ))}
                 </>
@@ -323,7 +323,7 @@ export default function Returns() {
             {(["1m", "3m", "6m", "1y", "all"] as const).map(r => (
               <Button key={r} size="sm" variant={curveRange === r ? "default" : "outline"} className="h-6 px-2 text-[11px]"
                 onClick={() => setCurveRange(r)}>
-                {RANGE_LABELS[r]}
+                {getRangeLabel(r)}
               </Button>
             ))}
           </div>

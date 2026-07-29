@@ -12,7 +12,7 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { toast } from "sonner"
 import { money, formatRelativeTime, formatTokens } from "@/lib/format"
-import { ACTION_LABELS } from "@/lib/actionLabels"
+import { actionLabel } from "@/lib/actionLabels"
 import LogoTyping from "@/components/LogoTyping"
 import EmptyState from "@/components/EmptyState"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -280,7 +280,7 @@ export default function AIChat() {
     setAdding(msgIndex)
     try {
       const res = await api.addTransaction(payload)
-      toast.success(t.aiChat.txSuccess.replace("{action}", ACTION_LABELS[tx.action] ?? t.aiChat.transaction).replace("{code}", tx.fund_code).replace("{id}", String(res.id)))
+      toast.success(t.aiChat.txSuccess.replace("{action}", actionLabel(tx.action)).replace("{code}", tx.fund_code).replace("{id}", String(res.id)))
       setTxStatus((prev) => ({ ...prev, [msgIndex]: { state: "added", id: res.id } }))
     } catch (e) {
       toast.error(`${t.aiChat.addFailed}: ${e}`)
@@ -798,7 +798,7 @@ function TxConfirmCard({
         <div className="flex items-center gap-1.5">
           <span className="text-muted-foreground">{t.common.actions}</span>
           <Badge variant={tx.action === "buy" ? "success" : tx.action === "sell" ? "destructive" : "outline"}>
-            {ACTION_LABELS[tx.action] ?? tx.action}
+            {actionLabel(tx.action)}
           </Badge>
         </div>
         <div className="flex items-center gap-1.5">

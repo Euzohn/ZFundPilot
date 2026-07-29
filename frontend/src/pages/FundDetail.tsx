@@ -11,8 +11,8 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, navStr, pnlColor, localDateStr } from "@/lib/format"
-import { ACTION_LABELS } from "@/lib/actionLabels"
-import { RANGE_LABELS, RANGE_DAYS } from "@/lib/rangeLabels"
+import { actionLabel } from "@/lib/actionLabels"
+import { getRangeLabel, RANGE_DAYS } from "@/lib/rangeLabels"
 import { toast } from "sonner"
 import { useLang } from "@/i18n/LanguageContext"
 import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
@@ -275,7 +275,7 @@ const handleDelete = async (txId: number) => {
             {(["1m", "3m", "6m", "1y", "hold", "tx", "custom"] as const).map(r => (
               <Button key={r} size="sm" variant={navRange === r ? "default" : "outline"} className="h-6 px-2 text-[11px]"
                 onClick={() => setNavRange(r)}>
-                {RANGE_LABELS[r]}
+                {getRangeLabel(r)}
               </Button>
             ))}
           </div>
@@ -313,7 +313,7 @@ const handleDelete = async (txId: number) => {
                           <div className="mt-1 space-y-0.5 border-t pt-1">
                             {txInfo.map((tx, i) => (
                               <p key={i} className={`text-xs tabular-nums ${tx.action === 'buy' ? 'text-gain' : tx.action === 'sell' ? 'text-loss' : tx.action === 'dividend' ? 'text-primary' : 'text-info'}`}>
-                                {ACTION_LABELS[tx.action] ?? tx.action}
+                                {actionLabel(tx.action)}
                                 {tx.date !== label && <span className="text-muted-foreground"> ({tx.date})</span>}
                                 {tx.amount ? ` ${money(tx.amount)}` : ''}
                                 {tx.shares ? ` ${tx.shares.toFixed(2)} ${t.fundDetail.sharesUnit}` : ''}
@@ -395,7 +395,7 @@ const handleDelete = async (txId: number) => {
                         variant={tx.action === "buy" ? "success" : tx.action === "sell" ? "destructive" : "outline"}
                         className={tx.action === "dividend" ? "text-primary border-primary/30 bg-primary/10" : tx.action === "reinvest" ? "text-info border-info/30 bg-info/10" : ""}
                       >
-                        {ACTION_LABELS[tx.action] ?? tx.action}
+                        {actionLabel(tx.action)}
                       </Badge>
                     </TableCell>
                     <TableCell>{tx.channel || t.fundDetail.untagged}</TableCell>

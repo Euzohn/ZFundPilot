@@ -95,6 +95,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **Password Auth** — Username + password login, HMAC-signed token, bcrypt password hashing, login rate limiting
 - **API Key Encryption** — AI API key encrypted at rest (Fernet AES-128-CBC + HMAC-SHA256)
 - **Audit Log** — Sensitive operations logged, viewable in Settings
+- **Language Switch** — Full UI supports Chinese/English toggle, switch from sidebar, data format (¥/$) adapts automatically
 - **Color Theme Switch** — Toggle between "Green-up/Red-down (International)" and "Red-up/Green-down (A-share)"
 - **Dark Mode** — light/dark/system three-way toggle, defaults to system preference
 - **Channel Color Customization** — Preset palette + custom color picker, synced server-side
@@ -156,10 +157,11 @@ ZFundPilot/
 │   └── sector_map.json   # Fund code → sector mapping (auto-maintained)
 ├── frontend/             # React + Vite + TypeScript + Tailwind + shadcn/ui
 │   ├── src/
-│   │   ├── pages/        # 12 pages
+│   │   ├── pages/        # 13 pages
 │   │   ├── components/   # Layout + shadcn/ui + business components
+│   │   ├── i18n/         # LanguageContext + zh.ts + en.ts translation files
 │   │   ├── api/          # Typed API client + streamChat (SSE)
-│   │   └── lib/          # Utilities
+│   │   └── lib/          # Utilities (format/actionLabels/rangeLabels lang-aware)
 │   └── dist/             # Build output (production mode)
 ├── assets/readme/        # README visual assets
 └── .env.example           # Environment variable template

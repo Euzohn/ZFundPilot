@@ -95,6 +95,7 @@ cd frontend && npm install && npm run dev
 - **密码认证** — 用户名 + 密码登录，HMAC 签名 token，bcrypt 密码哈希，登录速率限制防爆破
 - **API Key 加密存储** — AI API key 落盘自动加密（Fernet AES-128-CBC + HMAC-SHA256）
 - **审计日志** — 敏感操作记入日志，设置页可查看
+- **中英文切换** — 全站界面支持中英文切换，侧边栏一键切换，数据格式（¥/$、相对时间）自动适配
 - **涨跌颜色切换** — 支持「绿涨红跌（国际）」/「红涨红跌（A 股）」双主题，服务端同步
 - **暗色模式** — light/dark/system 三态切换，默认跟随系统偏好
 - **渠道颜色自定义** — 预设色板 + 自由选色，服务端同步
@@ -156,10 +157,11 @@ ZFundPilot/
 │   └── sector_map.json   # 基金代码→板块映射（自动维护）
 ├── frontend/             # React + Vite + TypeScript + Tailwind + shadcn/ui
 │   ├── src/
-│   │   ├── pages/        # 12 个页面
+│   │   ├── pages/        # 13 个页面
 │   │   ├── components/   # Layout + shadcn/ui + 业务组件
+│   │   ├── i18n/         # LanguageContext + zh.ts + en.ts 翻译文件
 │   │   ├── api/          # 类型化 API client + streamChat (SSE)
-│   │   └── lib/          # 工具函数
+│   │   └── lib/          # 工具函数（format/actionLabels/rangeLabels 按 lang 切换）
 │   └── dist/             # 构建产物（生产模式）
 ├── assets/readme/        # README 视觉素材
 └── .env.example           # 环境变量模板

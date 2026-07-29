@@ -9,11 +9,13 @@
 ## 表结构总览
 
 | 表 | 用途 | 主键 |
-|---|---|---|
+|---|---|---|---|
 | `funds` | 基金基础信息 | `fund_code` |
 | `transactions` | 交易流水（买入/卖出/分红/再投资） | `id` (自增) |
 | `nav_history` | 基金净值历史 | `id` (自增)，`UNIQUE(fund_code, date)` |
 | `portfolio_snapshots` | 组合每日快照 | `id` (自增)，`UNIQUE(date)` |
+| `audit_log` | 审计日志（敏感操作记录） | `id` (自增) |
+| `auto_invest_plans` | 定投计划 | `id` (自增) |
 | `ai_usage` | AI token 用量记录 | `id` (自增) |
 | `preferences` | 偏好设置 key-value | `key` |
 
@@ -125,7 +127,47 @@
 
 ---
 
-## 5. ai_usage — AI token 用量记录
+## 5. audit_log — 审计日志
+
+敏感操作记录，用于安全审计和设置页面查看。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | 自增主键 |
+| `ts` | TEXT | NOT NULL | 操作时间（UTC ISO 8601） |
+| `ip` | TEXT |  | 客户端 IP |
+| `username` | TEXT |  | 操作用户名 |
+| `action` | TEXT | NOT NULL | 操作类型（如 add_transaction / login_success / auto_invest_execute） |
+| `detail` | TEXT |  | 操作详情（JSON 字符串） |
+
+索引：`idx_audit_ts` on `ts DESC`。
+
+---
+
+## 6. auto_invest_plans — 定投计划
+
+定投计划的配置和执行状态。调度器每天 09:00 检查到期计划并执行。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | 自增主键 |
+| `fund_code` | TEXT | NOT NULL | 基金代码 |
+| `amount` | REAL | NOT NULL | 每次定投金额 |
+| `cadence` | TEXT | NOT NULL | 频率：`daily` / `week` / `biweek` / `month` |
+| `day_of_week` | INTEGER |  | 周定投日（0=周一 .. 6=周日） |
+| `day_of_month` | INTEGER |  | 月定投日（1-31） |
+| `channel` | TEXT | DEFAULT '' | 交易渠道 |
+| `note` | TEXT | DEFAULT '定投' | 备注 |
+| `enabled` | INTEGER | DEFAULT 1 | 是否启用（1=启用，0=停用） |
+| `next_run` | TEXT |  | 下次执行日期（YYYY-MM-DD） |
+| `last_run` | TEXT |  | 上次执行日期（YYYY-MM-DD） |
+| `last_tx_id` | INTEGER |  | 上次执行生成的交易 ID（关联 transactions.id） |
+| `created_at` | TEXT | DEFAULT datetime('now','localtime') | 创建时间 |
+| `updated_at` | TEXT | DEFAULT datetime('now','localtime') | 更新时间 |
+
+---
+
+## 7. ai_usage — AI token 用量记录
 
 每次 AI 对话的 token 消耗记录。用于用量统计和趋势展示。
 
@@ -143,7 +185,7 @@
 
 ---
 
-## 6. preferences — 偏好设置
+## 8. preferences — 偏好设置
 
 通用 key-value 存储，用于持久化用户偏好。各模块通过 `db.upsert_preference(key, value)` / `db.get_preference(key)` 读写。
 
@@ -217,8 +259,13 @@
 | `NavPoint` | models.py | 一条净值记录（fund_code/date/nav/accumulated_nav/source） |
 | `FetchResult` | fetch_fund.py | 净值抓取结果（fund_code/ok/written/message/latest_date/latest_nav） |
 | `FundMeta` | fetch_fund.py | 基金元信息（fund_code/fund_name/fund_type/sector） |
+| `FeeLot` | fetch_fund.py | 赎回费 FIFO 明细（lot_date/shares/fee_rate/fee） |
+| `CalcFeeResponse` | fetch_fund.py | 费率计算结果（fee/fee_rate/lots） |
 | `RiskReport` | risk.py | 风险报告（max_drawdown/volatility/hhi/flags 等） |
 | `RiskFlag` | risk.py | 风险提示条目（level/title/detail） |
+| `Advice` | rebalance.py | 结构优化建议（category/text） |
+| `BacktestResult` | backtest.py | 回测结果（含曲线 + 每期明细） |
+| `AutoInvestPlan` | auto_invest.py | 定投计划（fund_code/amount/cadence/next_run 等） |
 
 ---
 
@@ -226,7 +273,7 @@
 
 `db.init_db()` 在应用启动时调用（幂等），包含以下迁移：
 
-1. **建表**：所有 `CREATE TABLE IF NOT EXISTS`
+1. **建表**：所有 `CREATE TABLE IF NOT EXISTS`（含 `audit_log`、`auto_invest_plans`）
 2. **`_migrate_add_columns()`**: 为旧表补充新增列（如 `channel`）
 3. **`_migrate_relax_transactions_schema()`**: 重建 transactions 表，移除 `CHECK(action IN ('buy','sell'))` 约束和 `NOT NULL` 约束，支持 dividend/reinvest 和待确认交易
 4. **`_migrate_legacy_holdings()`**: 旧版 `holdings` 表数据迁移为一条买入流水

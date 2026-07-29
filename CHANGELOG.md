@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-29
+
 ### Added
 - 全站国际化（i18n）：新建 `LanguageContext` + `useLang()` hook + `zh.ts`/`en.ts`
   翻译文件，所有页面和共享组件支持中英文切换。侧边栏新增全局语言切换按钮。

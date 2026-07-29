@@ -22,8 +22,8 @@ import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2, Receipt, ArrowUpDown, Repeat } from "lucide-react"
 import { getChannels, getChannelsAsync, saveChannels } from "@/lib/channels"
-import { ACTION_LABELS } from "@/lib/actionLabels"
 import { makeSortHeader } from "@/components/SortHeader"
+import { useLang } from "@/i18n/LanguageContext"
 import ConfirmDialog from "@/components/ConfirmDialog"
 import TransactionDetailDialog from "@/components/TransactionDetailDialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
@@ -39,6 +39,7 @@ function actionBadgeClass(action: string): string {
 }
 
 export default function Transactions() {
+  const { t } = useLang()
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
@@ -89,20 +90,20 @@ export default function Transactions() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="交易管理" />
+      <PageHeader title={t.transactions.title} />
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-4 sm:inline-flex sm:w-auto">
           <TabsTrigger value="form" className="gap-1.5">
-            <Plus className="h-4 w-4" /> <span className="hidden sm:inline">单笔录入</span><span className="sm:hidden">录入</span>
+            <Plus className="h-4 w-4" /> <span className="hidden sm:inline">{t.transactions.singleEntry}</span><span className="sm:hidden">{t.transactions.singleEntryShort}</span>
           </TabsTrigger>
           <TabsTrigger value="list" className="gap-1.5">
-            <Receipt className="h-4 w-4" /> <span className="hidden sm:inline">交易流水</span><span className="sm:hidden">流水</span>
+            <Receipt className="h-4 w-4" /> <span className="hidden sm:inline">{t.transactions.transactionFlow}</span><span className="sm:hidden">{t.transactions.flowShort}</span>
           </TabsTrigger>
           <TabsTrigger value="csv" className="gap-1.5">
-            <ArrowUpDown className="h-4 w-4" /> <span className="hidden sm:inline">CSV 导入/导出</span><span className="sm:hidden">CSV</span>
+            <ArrowUpDown className="h-4 w-4" /> <span className="hidden sm:inline">{t.transactions.csvImportExport}</span><span className="sm:hidden">CSV</span>
           </TabsTrigger>
           <TabsTrigger value="auto-invest" className="gap-1.5">
-            <Repeat className="h-4 w-4" /> <span className="hidden sm:inline">定投计划</span><span className="sm:hidden">定投</span>
+            <Repeat className="h-4 w-4" /> <span className="hidden sm:inline">{t.transactions.autoInvestPlans}</span><span className="sm:hidden">{t.transactions.autoInvestShort}</span>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="form">
@@ -132,6 +133,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   onPrefillConsumed: () => void
   onDone: (fundCode?: string) => void
 }) {
+  const { t } = useLang()
   const [code, setCode] = useState("")
   const [meta, setMeta] = useState<FundMeta | null>(null)
   const [fetching, setFetching] = useState(false)
@@ -339,8 +341,8 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     try {
       const m = await api.fetchFundMeta(code.trim())
       setMeta(m)
-      if (m.ok && !silent) toast.success(`已识别：${m.fund_name}`)
-    } catch (e) { if (!silent) toast.error(`获取失败: ${e}`) }
+      if (m.ok && !silent) toast.success(t.transactions.fundRecognized.replace("{name}", m.fund_name))
+    } catch (e) { if (!silent) toast.error(`${t.transactions.fetchFailed}: ${e}`) }
     finally { setFetching(false) }
   }
 
@@ -360,8 +362,8 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!code.trim()) { toast.error("基金代码不能为空"); return }
-    if (!date) { toast.error("请选择成交日期"); return }
+    if (!code.trim()) { toast.error(t.transactions.fundCodeRequired); return }
+    if (!date) { toast.error(t.transactions.dateRequired); return }
 
     // 买入：优先手动输入的份额，无则用自动计算值
     const manualShares = parseFloat(shares) || null
@@ -373,17 +375,17 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
 
     // 买入至少有金额，卖出/再投资至少有份额，分红至少有金额（净值可能尚未公布，留空则待确认）
     if ((action === "buy" || action === "dividend") && !finalAmount) {
-      toast.error(action === "buy" ? "请填写买入金额" : "请填写分红金额")
+      toast.error(action === "buy" ? t.transactions.buyAmountRequired : t.transactions.dividendAmountRequired)
       return
     }
     if ((action === "sell" || action === "reinvest") && !finalShares) {
-      toast.error(action === "sell" ? "请填写卖出份额" : "请填写红利份额")
+      toast.error(action === "sell" ? t.transactions.sellSharesRequired : t.transactions.reinvestSharesRequired)
       return
     }
 
     // 卖出不能超过持有份额
     if (action === "sell" && heldShares > 0 && finalShares && finalShares > heldShares) {
-      toast.error(`卖出份额不能超过持有份额（${heldShares.toFixed(2)} 份）`)
+      toast.error(t.transactions.sellExceedsHolding.replace("{n}", heldShares.toFixed(2)))
       return
     }
 
@@ -401,10 +403,10 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     try {
       if (isEditing && editingTx?.id) {
         await api.updateTransaction(editingTx.id, payload)
-        toast.success(`${ACTION_LABELS[action]} ${code.trim()} 已更新`)
+        toast.success(t.transactions.txUpdatedToast.replace("{action}", t.actionLabels[action as keyof typeof t.actionLabels] ?? action).replace("{code}", code.trim()))
       } else {
         await api.addTransaction(payload)
-        toast.success(`${ACTION_LABELS[action]} ${code.trim()} 已保存`)
+        toast.success(t.transactions.txSavedToast.replace("{action}", t.actionLabels[action as keyof typeof t.actionLabels] ?? action).replace("{code}", code.trim()))
       }
       // 自动添加自定义渠道到系统列表
       const finalChannel = customChannel.trim() || channel
@@ -415,7 +417,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
       }
       resetForm()
       onDone(code.trim())
-    } catch (e) { toast.error(`保存失败: ${e}`) }
+    } catch (e) { toast.error(`${t.common.saveFailed}: ${e}`) }
     finally { setSaving(false) }
   }
 
@@ -423,7 +425,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-base">
-          {isEditing ? `编辑交易 #${editingTx?.id}` : "单笔录入"}
+          {isEditing ? `${t.transactions.editTransaction} #${editingTx?.id}` : t.transactions.singleEntry}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -432,10 +434,10 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
           <div>
             <div className="flex gap-2">
               <div className="flex-1 max-w-[200px]">
-                <Label className="mb-1.5 block text-xs text-muted-foreground">基金代码</Label>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.fundCode}</Label>
                 <Input
                   value={code} onChange={(e) => setCode(e.target.value)} onBlur={handleCodeBlur}
-                  placeholder="如 011612" className="h-9"
+                  placeholder={t.transactions.fundCodePlaceholder} className="h-9"
                 />
               </div>
               <div className="pt-5">
@@ -460,29 +462,29 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
           {/* ── 操作 / 日期 / 渠道 ── */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div>
-              <Label className="mb-1.5 block text-xs text-muted-foreground">操作</Label>
+              <Label className="mb-1.5 block text-xs text-muted-foreground">{t.common.actions}</Label>
               <Select value={action} onChange={(e) => setAction(e.target.value)} className="h-9">
-                <option value="buy">买入</option>
-                <option value="sell">卖出</option>
-                <option value="dividend">分红</option>
-                <option value="reinvest">再投资</option>
+                <option value="buy">{t.transactions.buy}</option>
+                <option value="sell">{t.transactions.sell}</option>
+                <option value="dividend">{t.transactions.dividend}</option>
+                <option value="reinvest">{t.transactions.reinvest}</option>
               </Select>
             </div>
             <div className="sm:col-span-2">
-              <Label className="mb-1.5 block text-xs text-muted-foreground">成交日期</Label>
+              <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.tradeDate}</Label>
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9" />
               <div className="mt-1 flex items-center gap-3">
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  15:00 前按当日净值确认（T日），之后按下一交易日（T+1）
+                  {t.transactions.tradeDateHint}
                 </p>
                 <label className="shrink-0 flex items-center gap-1 text-[11px] cursor-pointer select-none">
                   <input type="checkbox" checked={afterThree} onChange={(e) => setAfterThree(e.target.checked)} className="rounded" />
-                  15:00 后
+                  {t.transactions.afterThreeOClock}
                 </label>
               </div>
             </div>
             <div>
-              <Label className="mb-1.5 block text-xs text-muted-foreground">渠道</Label>
+              <Label className="mb-1.5 block text-xs text-muted-foreground">{t.common.channel}</Label>
               <Select value={channel} onChange={(e) => setChannel(e.target.value)} className="h-9">
                 {channels.map((c) => <option key={c} value={c}>{c}</option>)}
               </Select>
@@ -496,12 +498,12 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             {action === "buy" && (
               <>
                 <div>
-                  <Label className="mb-1.5 block text-xs text-muted-foreground">金额（元）</Label>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.amountYuan}</Label>
                   <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="h-9" autoFocus={!isEditing} />
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
-                    份额 <span className="text-primary">可修改</span>
+                    {t.common.shares} <span className="text-primary">{t.transactions.editable}</span>
                   </Label>
                   <Input type="number" step="0.01" value={shares || autoShares} onChange={(e) => setShares(e.target.value)} className="h-9" placeholder={autoShares || "—"} />
                 </div>
@@ -511,7 +513,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
               <>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
-                    份额（份）{heldShares > 0 && <span className="text-muted-foreground/70 ml-1">持有 {heldShares.toFixed(2)}</span>}
+                    {t.common.shares}{heldShares > 0 && <span className="text-muted-foreground/70 ml-1">{t.transactions.holding.replace("{n}", heldShares.toFixed(2))}</span>}
                   </Label>
                   <Input type="number" step="0.01" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="0.00" className="h-9" autoFocus={!isEditing} />
                   {heldShares > 0 && (
@@ -519,13 +521,13 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.25).toFixed(2))}>1/4</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.5).toFixed(2))}>1/2</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.75).toFixed(2))}>3/4</Button>
-                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares(heldShares.toFixed(2))}>全部</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares(heldShares.toFixed(2))}>{t.common.all}</Button>
                     </div>
                   )}
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
-                    金额 <span className="text-primary">可修改</span>
+                    {t.common.amount} <span className="text-primary">{t.transactions.editable}</span>
                   </Label>
                   <Input type="number" step="0.01" value={amount || autoAmount} onChange={(e) => setAmount(e.target.value)} className="h-9" placeholder={autoAmount || "—"} />
                 </div>
@@ -533,20 +535,20 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             )}
             {action === "dividend" && (
               <div className="sm:col-span-2">
-                <Label className="mb-1.5 block text-xs text-muted-foreground">分红金额（元）</Label>
-                <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="到账现金" className="h-9" autoFocus={!isEditing} />
-                <p className="mt-1 text-[11px] text-muted-foreground">现金分红到账金额，会计入已实现收益</p>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.dividendAmountYuan}</Label>
+                <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={t.transactions.cashReceived} className="h-9" autoFocus={!isEditing} />
+                <p className="mt-1 text-[11px] text-muted-foreground">{t.transactions.dividendHint}</p>
               </div>
             )}
             {action === "reinvest" && (
               <>
                 <div>
-                  <Label className="mb-1.5 block text-xs text-muted-foreground">红利份额</Label>
-                  <Input type="number" step="0.01" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="新得份额" className="h-9" autoFocus={!isEditing} />
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.dividendShares}</Label>
+                  <Input type="number" step="0.01" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder={t.transactions.newSharesPlaceholder} className="h-9" autoFocus={!isEditing} />
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
-                    金额 <span className="text-primary">自动</span>
+                    {t.common.amount} <span className="text-primary">{t.transactions.automatic}</span>
                   </Label>
                   <Input type="number" step="0.01" value={autoAmount} readOnly className="h-9 bg-muted/50" placeholder="—" />
                 </div>
@@ -555,12 +557,12 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             {/* 净值：买入/卖出/再投资需要，分红不需要 */}
             {action !== "dividend" && (
               <div>
-                <Label className="mb-1.5 block text-xs text-muted-foreground">成交净值</Label>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.tradeNav}</Label>
                 <div className="relative">
                   <Input
                     type="number" step="0.0001" min="0" value={nav}
                     onChange={(e) => { setNav(e.target.value); setNavNotFound(false) }}
-                    placeholder={navLoading ? "查询中..." : "0.0000"}
+                    placeholder={navLoading ? t.transactions.querying : "0.0000"}
                     className={cn("h-9", navLoading && "pr-8", navNotFound && "border-warning/50")}
                   />
                   {navLoading && (
@@ -568,7 +570,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                   )}
                 </div>
                 <p className={cn("mt-1 text-[11px]", navNotFound ? "text-warning" : "text-muted-foreground")}>
-                  {navLoading ? "正在查询净值..." : navNotFound ? "该日期暂无净值，请手动输入" : "自动加载或手动填写"}
+                  {navLoading ? t.transactions.queryingNav : navNotFound ? t.transactions.navNotFoundHint : t.transactions.navAutoHint}
                 </p>
               </div>
             )}
@@ -576,7 +578,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
             {action !== "dividend" && action !== "reinvest" && (
               <div>
                 <Label className="mb-1.5 block text-xs text-muted-foreground">
-                  手续费（元）
+                  {t.transactions.feeYuan}
                   {feeCalcLoading && <Loader2 className="inline ml-1 h-3 w-3 animate-spin" />}
                 </Label>
                 <Input type="number" step="0.01" min="0" value={fee} onChange={(e) => handleFeeChange(e.target.value)} className="h-9" />
@@ -592,23 +594,23 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
           {/* ── 自定义渠道 / 备注 ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <Label className="mb-1.5 block text-xs text-muted-foreground">自定义渠道（可选）</Label>
-              <Input value={customChannel} onChange={(e) => setCustomChannel(e.target.value)} placeholder="覆盖上方选择" className="h-9" />
+              <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.customChannel}</Label>
+              <Input value={customChannel} onChange={(e) => setCustomChannel(e.target.value)} placeholder={t.transactions.customChannelPlaceholder} className="h-9" />
             </div>
             <div>
-              <Label className="mb-1.5 block text-xs text-muted-foreground">备注（可选）</Label>
-              <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="备注信息" className="h-9" />
+              <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.remarkOptional}</Label>
+              <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t.transactions.remarkPlaceholder} className="h-9" />
             </div>
           </div>
 
           <div className="flex gap-2 pt-1">
             <Button type="submit" disabled={saving} className="flex-1 h-9">
               {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : (isEditing ? <Pencil className="mr-1.5 h-4 w-4" /> : <Plus className="mr-1.5 h-4 w-4" />)}
-              {saving ? "保存中..." : isEditing ? "更新交易" : "保存交易"}
+              {saving ? t.transactions.saving : isEditing ? t.transactions.updateTransaction : t.transactions.saveTransaction}
             </Button>
             {isEditing && (
               <Button type="button" variant="outline" onClick={() => { resetForm(); onDone() }} className="h-9">
-                取消
+                {t.common.cancel}
               </Button>
             )}
           </div>
@@ -622,6 +624,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
 // 交易流水
 // ---------------------------------------------------------------------------
 function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
+  const { t } = useLang()
   const { data: txs, loading, error, reload } = useApi<Transaction[]>(() => api.getTransactions())
   const [funds, setFunds] = useState<Record<string, Fund>>({})
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -728,31 +731,31 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
   const handleDelete = async (id: number) => {
     try {
       await api.deleteTransaction(id)
-      toast.success("已删除")
+      toast.success(t.common.deleted)
       reload()
-    } catch (e) { toast.error(`删除失败: ${e}`) }
+    } catch (e) { toast.error(`${t.common.deleteFailed}: ${e}`) }
   }
 
   const handleClearAll = async () => {
     try {
       await api.deleteAllTransactions()
-      toast.success("已清空全部交易")
+      toast.success(t.transactions.allTransactionsCleared)
       setShowClearConfirm(false)
       setClearConfirmText("")
       reload()
-    } catch (e) { toast.error(`清空失败: ${e}`) }
+    } catch (e) { toast.error(`${t.transactions.clearFailed}: ${e}`) }
   }
 
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between">
-        <CardTitle className="text-base">交易流水</CardTitle>
+        <CardTitle className="text-base">{t.transactions.transactionFlow}</CardTitle>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={async () => { try { await api.exportCsv(); toast.success("已导出 CSV") } catch (e) { toast.error(String(e)) } }}>
-            <FileDown className="mr-1 h-4 w-4" /> 导出 CSV
+          <Button variant="outline" size="sm" onClick={async () => { try { await api.exportCsv(); toast.success(t.transactions.csvExported) } catch (e) { toast.error(String(e)) } }}>
+            <FileDown className="mr-1 h-4 w-4" /> {t.transactions.exportCsv}
           </Button>
           <Button variant="destructive" size="sm" onClick={() => { setShowClearConfirm(true); setClearConfirmText("") }}>
-            <Trash2 className="mr-1 h-4 w-4" /> 清空全部
+            <Trash2 className="mr-1 h-4 w-4" /> {t.transactions.clearAll}
           </Button>
         </div>
       </CardHeader>
@@ -766,19 +769,19 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="搜索代码/名称"
+                placeholder={t.transactions.searchCodeName}
                 className="h-8 w-40 pl-7 text-xs"
               />
             </div>
             <Select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} className="h-8 text-xs w-28">
-              <option value="">全部操作</option>
-              <option value="buy">买入</option>
-              <option value="sell">卖出</option>
-              <option value="dividend">分红</option>
-              <option value="reinvest">再投资</option>
+              <option value="">{t.transactions.allActions}</option>
+              <option value="buy">{t.transactions.buy}</option>
+              <option value="sell">{t.transactions.sell}</option>
+              <option value="dividend">{t.transactions.dividend}</option>
+              <option value="reinvest">{t.transactions.reinvest}</option>
             </Select>
             <div className="flex items-center gap-1 ml-auto">
-              {([["month", "本月"], ["30d", "近30天"], ["year", "本年"], ["all", "全部"], ["custom", "自定义"]] as const).map(([key, label]) => (
+              {([["month", t.transactions.thisMonth], ["30d", t.transactions.last30Days], ["year", t.transactions.thisYear], ["all", t.common.all], ["custom", t.transactions.custom]] as const).map(([key, label]) => (
                 <Button key={key} size="sm" variant={dateRange === key ? "default" : "outline"} className="h-8 text-xs px-2.5" onClick={() => setDateRange(key)}>
                   {label}
                 </Button>
@@ -787,7 +790,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
             {dateRange === "custom" && (
               <div className="flex items-center gap-1.5 w-full sm:w-auto">
                 <Input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="h-8 text-xs w-40" />
-                <span className="text-muted-foreground text-xs">至</span>
+                <span className="text-muted-foreground text-xs">{t.fundDetail.to}</span>
                 <Input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="h-8 text-xs w-40" />
               </div>
             )}
@@ -795,58 +798,58 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
         )}
 
         {!txs || txs.length === 0 ? (
-          <EmptyState title="暂无交易流水" />
+          <EmptyState title={t.transactions.noTransactionsFlow} />
         ) : filteredTxs && filteredTxs.length === 0 ? (
-          <EmptyState title="当前筛选范围无交易记录" />
+          <EmptyState title={t.transactions.noFilteredTransactions} />
         ) : (
 <Table>
               <TableHeader>
                 <TableRow>
                   <SortHeader field="id" className="w-16">ID</SortHeader>
-                  <SortHeader field="date">日期</SortHeader>
-                  <TableHead>操作</TableHead>
-                  <SortHeader field="fund_code">代码</SortHeader>
-                  <TableHead>名称</TableHead>
-                  <TableHead>渠道</TableHead>
-                  <SortHeader field="amount" className="text-right">金额</SortHeader>
-                  <SortHeader field="shares" className="text-right">份额</SortHeader>
-                  <SortHeader field="nav" className="text-right">净值</SortHeader>
-                  <SortHeader field="fee" className="text-right">手续费</SortHeader>
-                  <TableHead>备注</TableHead>
-                  <TableHead className="w-20">操作</TableHead>
+                  <SortHeader field="date">{t.common.date}</SortHeader>
+                  <TableHead>{t.common.actions}</TableHead>
+                  <SortHeader field="fund_code">{t.common.code}</SortHeader>
+                  <TableHead>{t.common.name}</TableHead>
+                  <TableHead>{t.common.channel}</TableHead>
+                  <SortHeader field="amount" className="text-right">{t.common.amount}</SortHeader>
+                  <SortHeader field="shares" className="text-right">{t.common.shares}</SortHeader>
+                  <SortHeader field="nav" className="text-right">{t.common.nav}</SortHeader>
+                  <SortHeader field="fee" className="text-right">{t.common.fee}</SortHeader>
+                  <TableHead>{t.common.note}</TableHead>
+                  <TableHead className="w-20">{t.common.actions}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleTxs?.map((t) => {
-                const fund = funds[t.fund_code]
+                {visibleTxs?.map((tx) => {
+                const fund = funds[tx.fund_code]
                 return (
-                  <TableRow key={t.id} onClick={() => setViewingTx(t)} className="cursor-pointer">
-                    <TableCell className="text-xs text-muted-foreground">{t.id}</TableCell>
-                    <TableCell>{t.date}</TableCell>
+                  <TableRow key={tx.id} onClick={() => setViewingTx(tx)} className="cursor-pointer">
+                    <TableCell className="text-xs text-muted-foreground">{tx.id}</TableCell>
+                    <TableCell>{tx.date}</TableCell>
                     <TableCell>
                       <Badge
-                        variant={t.action === "buy" ? "success" : t.action === "sell" ? "destructive" : "outline"}
-                        className={actionBadgeClass(t.action)}
+                        variant={tx.action === "buy" ? "success" : tx.action === "sell" ? "destructive" : "outline"}
+                        className={actionBadgeClass(tx.action)}
                       >
-                        {ACTION_LABELS[t.action] ?? t.action}
+                        {t.actionLabels[tx.action as keyof typeof t.actionLabels] ?? tx.action}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{t.fund_code}</TableCell>
-                    <TableCell>{fund?.fund_name ?? t.fund_code}</TableCell>
-                    <TableCell>{t.channel || "未标注"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{t.amount ? money(t.amount) : "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{t.shares?.toFixed(2) ?? "—"}</TableCell>
+                    <TableCell className="font-mono text-xs">{tx.fund_code}</TableCell>
+                    <TableCell>{fund?.fund_name ?? tx.fund_code}</TableCell>
+                    <TableCell>{tx.channel || t.common.unlabeled}</TableCell>
+                    <TableCell className="text-right tabular-nums">{tx.amount ? money(tx.amount) : "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{tx.shares?.toFixed(2) ?? "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {t.nav != null ? t.nav.toFixed(4) : t.action === "dividend" ? "—" : <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10">待确认</Badge>}
+                      {tx.nav != null ? tx.nav.toFixed(4) : tx.action === "dividend" ? "—" : <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10">{t.transactions.pendingConfirm}</Badge>}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{t.fee || "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{t.note}</TableCell>
+                    <TableCell className="text-right tabular-nums">{tx.fee || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{tx.note}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); onEdit(t) }}>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); onEdit(tx) }}>
                           <Pencil className="h-4 w-4 text-primary" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(t.id!) }}>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(tx.id!) }}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
@@ -860,11 +863,11 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
         {txs && txs.length > 0 && (
           <div className="mt-3 flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              共 {filteredTxs?.length ?? 0} 笔（筛选自 {txs.length} 笔）
+              {t.transactions.txCountSummary.replace("{filtered}", String(filteredTxs?.length ?? 0)).replace("{total}", String(txs.length))}
             </p>
             {filteredTxs && filteredTxs.length > visibleCount && (
               <Button variant="outline" size="sm" className="h-8" onClick={() => setVisibleCount((c) => c + 50)}>
-                加载更多
+                {t.transactions.loadMore}
               </Button>
             )}
           </div>
@@ -882,9 +885,9 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
       <ConfirmDialog
         open={confirmDeleteId != null}
         onOpenChange={(open) => { if (!open) setConfirmDeleteId(null) }}
-        title="确认删除"
-        description={<>确定要删除这笔交易记录吗？此操作<strong>不可撤销</strong>。</>}
-        confirmText="删除"
+        title={t.common.confirmDelete}
+        description={<>{t.fundDetail.confirmDeleteTxDesc}<strong>{t.fundDetail.irreversible}</strong></>}
+        confirmText={t.common.delete}
         tone="destructive"
         onConfirm={async () => {
           if (confirmDeleteId != null) await handleDelete(confirmDeleteId)
@@ -895,12 +898,12 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
       <Dialog open={showClearConfirm} onOpenChange={(open) => { if (!open) { setShowClearConfirm(false); setClearConfirmText("") } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-destructive">⚠️ 清空全部交易流水</DialogTitle>
+            <DialogTitle className="text-destructive">{t.transactions.clearAllTitle}</DialogTitle>
             <DialogDescription asChild>
               <div>
-                此操作将删除所有交易记录，<strong>不可撤销</strong>。
+                {t.transactions.clearAllDesc}
                 <p className="mt-3">
-                  请输入 <code className="rounded bg-muted px-1.5 py-0.5 text-sm font-mono">确认清空</code> 以确认：
+                  {t.transactions.typeToConfirm.replace("{phrase}", t.transactions.confirmClearPhrase)}
                 </p>
               </div>
             </DialogDescription>
@@ -908,16 +911,16 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
           <Input
             value={clearConfirmText}
             onChange={(e) => setClearConfirmText(e.target.value)}
-            placeholder="确认清空"
-            onKeyDown={(e) => { if (e.key === "Enter" && clearConfirmText === "确认清空") { e.preventDefault(); handleClearAll() } }}
+            placeholder={t.transactions.confirmClearPhrase}
+            onKeyDown={(e) => { if (e.key === "Enter" && clearConfirmText === t.transactions.confirmClearPhrase) { e.preventDefault(); handleClearAll() } }}
             autoFocus
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowClearConfirm(false); setClearConfirmText("") }}>
-              取消
+              {t.common.cancel}
             </Button>
-            <Button variant="destructive" disabled={clearConfirmText !== "确认清空"} onClick={handleClearAll}>
-              确认清空
+            <Button variant="destructive" disabled={clearConfirmText !== t.transactions.confirmClearPhrase} onClick={handleClearAll}>
+              {t.transactions.confirmClear}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -930,6 +933,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
 // CSV 导入/导出
 // ---------------------------------------------------------------------------
 function CSVImportExport() {
+  const { t } = useLang()
   const [parseResult, setParseResult] = useState<CSVParseResult | null>(null)
   const [parsing, setParsing] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -942,9 +946,9 @@ function CSVImportExport() {
     try {
       const result = await api.parseCsv(file)
       setParseResult(result)
-      if (result.transactions.length > 0) toast.success(`解析成功 ${result.transactions.length} 笔`)
-      if (result.errors.length > 0) toast.warning(`${result.errors.length} 条提示/警告`)
-    } catch (e) { toast.error(`解析失败: ${e}`) }
+      if (result.transactions.length > 0) toast.success(t.transactions.parseSuccess.replace("{n}", String(result.transactions.length)))
+      if (result.errors.length > 0) toast.warning(t.transactions.parseWarnings.replace("{n}", String(result.errors.length)))
+    } catch (e) { toast.error(`${t.transactions.parseFailed}: ${e}`) }
     finally { setParsing(false) }
   }
 
@@ -953,29 +957,29 @@ function CSVImportExport() {
     setImporting(true)
     try {
       const res = await api.confirmImport(parseResult.transactions, clearExisting, fetchMeta)
-      toast.success(`已导入 ${res.imported} 笔交易`)
+      toast.success(t.transactions.importSuccess.replace("{n}", String(res.imported)))
       setParseResult(null)
-    } catch (e) { toast.error(`导入失败: ${e}`) }
+    } catch (e) { toast.error(`${t.transactions.importFailed}: ${e}`) }
     finally { setImporting(false) }
   }
 
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader><CardTitle className="text-base">批量导入交易流水</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">{t.transactions.batchImportTitle}</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            必填列：<code className="rounded bg-muted px-1">fund_code</code>、
-            <code className="rounded bg-muted px-1">action</code>（买入/卖出/分红/再投资）、
+            {t.transactions.csvRequiredColumns}<code className="rounded bg-muted px-1">fund_code</code>、
+            <code className="rounded bg-muted px-1">action</code>{t.transactions.csvActionHint}、
             <code className="rounded bg-muted px-1">date</code>；
-            <code className="rounded bg-muted px-1">amount</code>/<code className="rounded bg-muted px-1">shares</code>/<code className="rounded bg-muted px-1">nav</code> 至少两项；支持中文表头。
+            <code className="rounded bg-muted px-1">amount</code>/<code className="rounded bg-muted px-1">shares</code>/<code className="rounded bg-muted px-1">nav</code> {t.transactions.csvAtLeastTwo}
           </p>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => api.downloadTemplate()}>
-              <Download className="mr-1 h-4 w-4" /> 下载 CSV 模板
+              <Download className="mr-1 h-4 w-4" /> {t.transactions.downloadTemplate}
             </Button>
             <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
-              <Upload className="h-4 w-4" /> {parsing ? "解析中..." : "上传 CSV 文件"}
+              <Upload className="h-4 w-4" /> {parsing ? t.transactions.parsing : t.transactions.uploadCsv}
               <input type="file" accept=".csv" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
             </label>
           </div>
@@ -983,7 +987,7 @@ function CSVImportExport() {
           {/* Parse errors */}
           {parseResult?.errors && parseResult.errors.length > 0 && (
             <div className="rounded-md border border-warning/30 bg-warning/10 p-3">
-              <p className="mb-1 text-sm font-medium text-warning">⚠️ {parseResult.errors.length} 条提示/警告</p>
+              <p className="mb-1 text-sm font-medium text-warning">⚠️ {t.transactions.parseWarnings.replace("{n}", String(parseResult.errors.length))}</p>
               <ul className="space-y-0.5 text-xs text-warning">
                 {parseResult.errors.map((e, i) => <li key={i}>{e}</li>)}
               </ul>
@@ -993,26 +997,26 @@ function CSVImportExport() {
           {/* Preview table */}
           {parseResult?.transactions && parseResult.transactions.length > 0 && (
             <div className="space-y-3">
-              <p className="text-sm font-medium">解析成功 {parseResult.transactions.length} 笔，预览：</p>
+              <p className="text-sm font-medium">{t.transactions.parseSuccessPreview.replace("{n}", String(parseResult.transactions.length))}</p>
               <div className="max-h-64 overflow-auto rounded-md border">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>代码</TableHead><TableHead>操作</TableHead><TableHead>日期</TableHead>
-                      <TableHead className="text-right">金额</TableHead><TableHead className="text-right">份额</TableHead>
-                      <TableHead className="text-right">净值</TableHead><TableHead>渠道</TableHead>
+                      <TableHead>{t.common.code}</TableHead><TableHead>{t.common.actions}</TableHead><TableHead>{t.common.date}</TableHead>
+                      <TableHead className="text-right">{t.common.amount}</TableHead><TableHead className="text-right">{t.common.shares}</TableHead>
+                      <TableHead className="text-right">{t.common.nav}</TableHead><TableHead>{t.common.channel}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {parseResult.transactions.map((t, i) => (
+                    {parseResult.transactions.map((tx, i) => (
                       <TableRow key={i}>
-                        <TableCell className="font-mono text-xs">{t.fund_code}</TableCell>
-                        <TableCell><Badge variant={t.action === "buy" ? "success" : t.action === "sell" ? "destructive" : "outline"} className={actionBadgeClass(t.action)}>{ACTION_LABELS[t.action] ?? t.action}</Badge></TableCell>
-                        <TableCell>{t.date}</TableCell>
-                        <TableCell className="text-right tabular-nums">{t.amount ? money(t.amount) : "—"}</TableCell>
-                        <TableCell className="text-right tabular-nums">{t.shares?.toFixed(2) ?? "—"}</TableCell>
-                        <TableCell className="text-right tabular-nums">{t.nav?.toFixed(4) ?? "—"}</TableCell>
-                        <TableCell>{t.channel || "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{tx.fund_code}</TableCell>
+                        <TableCell><Badge variant={tx.action === "buy" ? "success" : tx.action === "sell" ? "destructive" : "outline"} className={actionBadgeClass(tx.action)}>{t.actionLabels[tx.action as keyof typeof t.actionLabels] ?? tx.action}</Badge></TableCell>
+                        <TableCell>{tx.date}</TableCell>
+                        <TableCell className="text-right tabular-nums">{tx.amount ? money(tx.amount) : "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{tx.shares?.toFixed(2) ?? "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{tx.nav?.toFixed(4) ?? "—"}</TableCell>
+                        <TableCell>{tx.channel || "—"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -1021,18 +1025,18 @@ function CSVImportExport() {
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <label className="flex items-center gap-2 text-sm">
-                  <input type="radio" checked={!clearExisting} onChange={() => setClearExisting(false)} /> 追加到现有流水
+                  <input type="radio" checked={!clearExisting} onChange={() => setClearExisting(false)} /> {t.transactions.appendToExisting}
                 </label>
                 <label className="flex items-center gap-2 text-sm">
-                  <input type="radio" checked={clearExisting} onChange={() => setClearExisting(true)} /> 清空后重新导入
+                  <input type="radio" checked={clearExisting} onChange={() => setClearExisting(true)} /> {t.transactions.clearAndReimport}
                 </label>
                 <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={fetchMeta} onChange={(e) => setFetchMeta(e.target.checked)} /> 自动获取缺失基金信息
+                  <input type="checkbox" checked={fetchMeta} onChange={(e) => setFetchMeta(e.target.checked)} /> {t.transactions.autoFetchMeta}
                 </label>
               </div>
 
               <Button onClick={handleImport} disabled={importing}>
-                <Upload className="mr-1 h-4 w-4" /> {importing ? "导入中..." : "确认导入"}
+                <Upload className="mr-1 h-4 w-4" /> {importing ? t.transactions.importing : t.transactions.confirmImport}
               </Button>
             </div>
           )}
@@ -1040,10 +1044,10 @@ function CSVImportExport() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">导出交易流水</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base">{t.transactions.exportTitle}</CardTitle></CardHeader>
         <CardContent>
           <Button variant="outline" onClick={() => api.exportCsv()}>
-            <FileDown className="mr-1 h-4 w-4" /> 导出为 CSV
+            <FileDown className="mr-1 h-4 w-4" /> {t.transactions.exportAsCsv}
           </Button>
         </CardContent>
       </Card>
@@ -1054,25 +1058,9 @@ function CSVImportExport() {
 // ---------------------------------------------------------------------------
 // 定投计划
 // ---------------------------------------------------------------------------
-const CADENCE_LABELS: Record<string, string> = {
-  daily: "每个交易日",
-  week: "每周",
-  biweek: "每双周",
-  month: "每月",
-}
-
-function cadenceDesc(plan: AutoInvestPlan): string {
-  const base = CADENCE_LABELS[plan.cadence] || plan.cadence
-  if (plan.cadence === "daily") return base
-  if (plan.cadence === "month" && plan.day_of_month != null) return `${base}${plan.day_of_month}号`
-  if (plan.day_of_week != null) {
-    const days = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-    return `${base}${days[plan.day_of_week] ?? ""}`
-  }
-  return base
-}
 
 function AutoInvestPlansPanel() {
+  const { t } = useLang()
   const { data: plans, loading, error, reload } = useApi<AutoInvestPlan[]>(() => api.getAutoInvestPlans(), [])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingPlan, setEditingPlan] = useState<AutoInvestPlan | null>(null)
@@ -1086,13 +1074,27 @@ function AutoInvestPlansPanel() {
   const [dayOfWeek, setDayOfWeek] = useState("0")
   const [dayOfMonth, setDayOfMonth] = useState("15")
   const [channel, setChannel] = useState("")
-  const [note, setNote] = useState("定投")
+  const [note, setNote] = useState(t.transactions.autoInvest)
   const [channels] = useState<string[]>(() => getChannels())
+
+  const cadenceDesc = (plan: AutoInvestPlan): string => {
+    const base = plan.cadence === "daily" ? t.transactions.everyTradingDay
+      : plan.cadence === "week" ? t.transactions.weekly
+      : plan.cadence === "biweek" ? t.transactions.biweekly
+      : plan.cadence === "month" ? t.transactions.monthly
+      : plan.cadence
+    if (plan.cadence === "daily") return base
+    if (plan.cadence === "month" && plan.day_of_month != null) return `${base} ${plan.day_of_month}${t.transactions.dayOfMonthSuffix}`
+    if (plan.day_of_week != null) {
+      return `${base}${t.transactions.weekdays[plan.day_of_week] ?? ""}`
+    }
+    return base
+  }
 
   const openCreate = () => {
     setEditingPlan(null)
     setCode(""); setAmount(""); setCadence("week"); setDayOfWeek("0")
-    setDayOfMonth("15"); setChannel(""); setNote("定投")
+    setDayOfMonth("15"); setChannel(""); setNote(t.transactions.autoInvest)
     setDialogOpen(true)
   }
 
@@ -1110,7 +1112,7 @@ function AutoInvestPlansPanel() {
 
   const handleSave = async () => {
     if (!code.trim() || !amount || parseFloat(amount) <= 0) {
-      toast.warning("请填写基金代码和金额"); return
+      toast.warning(t.transactions.codeAndAmountRequired); return
     }
     setSaving(true)
     try {
@@ -1125,15 +1127,15 @@ function AutoInvestPlansPanel() {
       }
       if (editingPlan) {
         await api.updateAutoInvestPlan(editingPlan.id, body)
-        toast.success("定投计划已更新")
+        toast.success(t.transactions.planUpdated)
       } else {
         await api.createAutoInvestPlan(body)
-        toast.success("定投计划已创建")
+        toast.success(t.transactions.planCreated)
       }
       setDialogOpen(false)
       reload()
     } catch (e: any) {
-      toast.error(e.message || "保存失败")
+      toast.error(e.message || t.common.saveFailed)
     } finally {
       setSaving(false)
     }
@@ -1142,21 +1144,21 @@ function AutoInvestPlansPanel() {
   const handleToggle = async (plan: AutoInvestPlan) => {
     try {
       await api.toggleAutoInvestPlan(plan.id, !plan.enabled)
-      toast.success(plan.enabled ? "已暂停" : "已启用")
+      toast.success(plan.enabled ? t.transactions.paused : t.transactions.enabled)
       reload()
     } catch (e: any) {
-      toast.error(e.message || "操作失败")
+      toast.error(e.message || t.common.operationFailed)
     }
   }
 
   const handleDelete = async (id: number) => {
     try {
       await api.deleteAutoInvestPlan(id)
-      toast.success("定投计划已删除")
+      toast.success(t.transactions.planDeleted)
       setDeleting(null)
       reload()
     } catch (e: any) {
-      toast.error(e.message || "删除失败")
+      toast.error(e.message || t.common.deleteFailed)
     }
   }
 
@@ -1164,10 +1166,10 @@ function AutoInvestPlansPanel() {
     setExecuting(plan.id)
     try {
       const res = await api.executeAutoInvestPlan(plan.id)
-      toast.success(`定投执行成功，交易 ID: ${res.tx_id}`)
+      toast.success(t.transactions.planExecuteSuccess.replace("{id}", String(res.tx_id)))
       reload()
     } catch (e: any) {
-      toast.error(e.message || "执行失败")
+      toast.error(e.message || t.transactions.executeFailed)
     } finally {
       setExecuting(null)
     }
@@ -1176,18 +1178,18 @@ function AutoInvestPlansPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">自动定期买入，每次创建一笔买入交易</p>
+        <p className="text-sm text-muted-foreground">{t.transactions.autoInvestDesc}</p>
         <Button size="sm" onClick={openCreate}>
-          <Plus className="mr-1 h-4 w-4" /> 新建定投
+          <Plus className="mr-1 h-4 w-4" /> {t.transactions.newPlan}
         </Button>
       </div>
 
       {loading ? (
         <LoadingState size="sm" />
       ) : error ? (
-        <ErrorState message="加载失败" onRetry={reload} />
+        <ErrorState message={t.common.loadFailed} onRetry={reload} />
       ) : !plans || plans.length === 0 ? (
-        <EmptyState title="暂无定投计划" description="点击「新建定投」开始设置自动买入" />
+        <EmptyState title={t.transactions.noPlans} description={t.transactions.noPlansHintClick} />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {plans.map((plan) => (
@@ -1201,30 +1203,30 @@ function AutoInvestPlansPanel() {
                     <p className="text-xs text-muted-foreground mt-0.5">{plan.fund_code}</p>
                   </div>
                   <Badge variant={plan.enabled ? "default" : "secondary"} className="text-[10px]">
-                    {plan.enabled ? "运行中" : "已暂停"}
+                    {plan.enabled ? t.transactions.running : t.transactions.paused}
                   </Badge>
                 </div>
               </CardHeader>
               <CardContent className="pb-3">
                 <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground mb-3">
-                  <span>每期 {money(plan.amount)}</span>
+                  <span>{t.transactions.perRun} {money(plan.amount)}</span>
                   <span>{cadenceDesc(plan)}</span>
-                  {plan.next_run && <span>下次执行: {plan.next_run}</span>}
-                  {plan.last_run && <span>上次执行: {plan.last_run}</span>}
+                  {plan.next_run && <span>{t.transactions.nextRun}: {plan.next_run}</span>}
+                  {plan.last_run && <span>{t.transactions.lastRun}: {plan.last_run}</span>}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openEdit(plan)}>
-                    <Pencil className="mr-1 h-3 w-3" /> 编辑
+                    <Pencil className="mr-1 h-3 w-3" /> {t.common.edit}
                   </Button>
                   <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleToggle(plan)}>
-                    {plan.enabled ? "暂停" : "启用"}
+                    {plan.enabled ? t.transactions.pause : t.common.enable}
                   </Button>
                   <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleExecute(plan)} disabled={executing === plan.id}>
                     <Loader2 className={cn("mr-1 h-3 w-3", executing === plan.id && "animate-spin")} />
-                    {executing === plan.id ? "执行中..." : "立即执行"}
+                    {executing === plan.id ? t.transactions.executing : t.transactions.executeNow}
                   </Button>
                   <Button size="sm" variant="outline" className="h-7 text-xs text-loss-600 hover:text-loss-600" onClick={() => setDeleting(plan.id)}>
-                    <Trash2 className="mr-1 h-3 w-3" /> 删除
+                    <Trash2 className="mr-1 h-3 w-3" /> {t.common.delete}
                   </Button>
                 </div>
               </CardContent>
@@ -1236,72 +1238,66 @@ function AutoInvestPlansPanel() {
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(o) => { if (!o) setDeleting(null) }}
-        title="删除定投计划"
-        description="删除后不会影响已创建的买入交易。确定要删除吗？"
+        title={t.transactions.deletePlanTitle}
+        description={t.transactions.deletePlanDesc}
         onConfirm={() => { if (deleting !== null) handleDelete(deleting) }}
       />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{editingPlan ? "编辑定投计划" : "新建定投计划"}</DialogTitle>
+            <DialogTitle>{editingPlan ? t.transactions.editPlan : t.transactions.addPlan}</DialogTitle>
             <DialogDescription>
-              设置自动买入的基金、金额和频率。每次执行时自动计算手续费。
+              {t.transactions.planDialogDesc}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>基金代码</Label>
-              <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="如 011612" />
+              <Label>{t.transactions.fundCode}</Label>
+              <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder={t.transactions.fundCodePlaceholder} />
             </div>
             <div className="space-y-1.5">
-              <Label>每期金额（元）</Label>
+              <Label>{t.transactions.amountPerRunYuan}</Label>
               <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="1000" min="0" step="0.01" />
             </div>
             <div className="space-y-1.5">
-              <Label>定投频率</Label>
+              <Label>{t.transactions.cadence}</Label>
               <Select value={cadence} onChange={(e) => setCadence(e.target.value)}>
-                <option value="daily">每个交易日</option>
-                <option value="week">每周</option>
-                <option value="biweek">每双周</option>
-                <option value="month">每月</option>
+                <option value="daily">{t.transactions.everyTradingDay}</option>
+                <option value="week">{t.transactions.weekly}</option>
+                <option value="biweek">{t.transactions.biweekly}</option>
+                <option value="month">{t.transactions.monthly}</option>
               </Select>
             </div>
             {cadence === "week" || cadence === "biweek" ? (
               <div className="space-y-1.5">
-                <Label>定投日（星期）</Label>
+                <Label>{t.transactions.dayOfWeekLabel}</Label>
                 <Select value={dayOfWeek} onChange={(e) => setDayOfWeek(e.target.value)}>
-                  <option value="0">周一</option>
-                  <option value="1">周二</option>
-                  <option value="2">周三</option>
-                  <option value="3">周四</option>
-                  <option value="4">周五</option>
-                  <option value="5">周六</option>
-                  <option value="6">周日</option>
+                  {t.transactions.weekdays.map((d, i) => (<option key={i} value={String(i)}>{d}</option>))}
                 </Select>
               </div>
             ) : cadence === "month" ? (
               <div className="space-y-1.5">
-                <Label>定投日（日期）</Label>
+                <Label>{t.transactions.dayOfMonthLabel}</Label>
                 <Input type="number" value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} min="1" max="31" />
               </div>
             ) : null}
             <div className="space-y-1.5">
-              <Label>渠道</Label>
+              <Label>{t.common.channel}</Label>
               <Select value={channel} onChange={(e) => setChannel(e.target.value)}>
-                <option value="">不指定</option>
+                <option value="">{t.transactions.notSpecified}</option>
                 {channels.map((c) => (<option key={c} value={c}>{c}</option>))}
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>备注</Label>
-              <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="定投" />
+              <Label>{t.common.note}</Label>
+              <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t.transactions.autoInvest} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>{t.common.cancel}</Button>
             <Button onClick={handleSave} disabled={saving}>
-              {saving ? "保存中..." : "保存"}
+              {saving ? t.transactions.saving : t.common.save}
             </Button>
           </DialogFooter>
         </DialogContent>

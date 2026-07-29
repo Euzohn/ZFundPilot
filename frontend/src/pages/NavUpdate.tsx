@@ -14,12 +14,14 @@ import { navStr, localDateStr } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
+import { useLang } from "@/i18n/LanguageContext"
 
 export default function NavUpdate() {
   // 和持仓页同源：用 getPositions 取数据（含 latest_date / latest_nav）
   const { data: positions, loading, error, reload } = useApi<Position[]>(() => api.getPositions())
   const [status, setStatus] = useState<NavUpdateStatus | null>(null)
   const [startError, setStartError] = useState<string | null>(null)
+  const { t } = useLang()
 
   // 轮询拉取后端进度（从页面挂载时就开始，兼容恢复进行中的更新）
   useEffect(() => {
@@ -149,14 +151,14 @@ export default function NavUpdate() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="净值更新" />
+      <PageHeader title={t.navUpdate.title} />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
         <Card>
           <CardContent className="flex items-center justify-between p-4 md:p-6">
             <div>
-              <p className="text-sm text-muted-foreground">基金总数</p>
-              <p className="text-xl md:text-2xl font-bold">{rows.length} 只</p>
+              <p className="text-sm text-muted-foreground">{t.navUpdate.fundCount}</p>
+              <p className="text-xl md:text-2xl font-bold">{rows.length} {t.navUpdate.units}</p>
             </div>
             <RefreshCw className="h-8 w-8 text-primary" />
           </CardContent>
@@ -164,7 +166,7 @@ export default function NavUpdate() {
         <Card>
           <CardContent className="flex items-center justify-between p-4 md:p-6">
             <div>
-              <p className="text-sm text-muted-foreground">待更新基金数</p>
+              <p className="text-sm text-muted-foreground">{t.navUpdate.pendingUpdateCount}</p>
               <p className="text-xl md:text-2xl font-bold">
                 <span className={needsUpdate > 0 ? "text-warning" : "text-success"}>{needsUpdate}</span>
                 <span className="text-base text-muted-foreground"> / {rows.length}</span>
@@ -175,12 +177,12 @@ export default function NavUpdate() {
         </Card>
         <Card>
           <CardContent className="p-4 md:p-6">
-            <p className="text-sm text-muted-foreground">净值最近更新</p>
+            <p className="text-sm text-muted-foreground">{t.navUpdate.navLastUpdate}</p>
             <p className="text-xl md:text-2xl font-bold">
-              {lastUpdateDate || "未更新"}
+              {lastUpdateDate || t.navUpdate.notUpdated}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              {lastUpdateDate === todayStr ? "✅ 已是最新" : lastUpdateDate ? "⚠️ 非最新" : ""}
+              {lastUpdateDate === todayStr ? t.navUpdate.isLatest : lastUpdateDate ? t.navUpdate.notLatest : ""}
             </p>
           </CardContent>
         </Card>
@@ -188,28 +190,28 @@ export default function NavUpdate() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">批量更新</CardTitle>
+          <CardTitle className="text-base">{t.navUpdate.batchUpdate}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            数据源：AkShare 优先，失败自动切换天天基金。首次抓取较慢。
+            {t.navUpdate.dataSourceHint}
           </p>
           {!updating && (
             <Button onClick={handleUpdate} className="w-full">
               <RefreshCw className="mr-2 h-4 w-4" />
-              更新全部基金净值
+              {t.navUpdate.updateAllNav}
             </Button>
           )}
 
           {startError && (
-            <p className="text-sm text-destructive">启动失败：{startError}</p>
+            <p className="text-sm text-destructive">{t.navUpdate.startFailed}: {startError}</p>
           )}
 
           {updating && (
             <div className="flex flex-col items-center gap-3 py-4">
               <LogoRipple className="h-12 w-12" />
               <p className="text-sm text-muted-foreground">
-                正在拉取净值数据… ({status?.done ?? 0}/{status?.total ?? 0})
+                {t.navUpdate.fetchingNav} ({status?.done ?? 0}/{status?.total ?? 0})
               </p>
               {status?.current && (
                 <p className="font-mono text-xs text-muted-foreground/70">{status.current}</p>
@@ -218,18 +220,18 @@ export default function NavUpdate() {
           )}
 
           {!updating && status?.error && (
-            <p className="text-sm text-destructive">更新异常：{status.error}</p>
+            <p className="text-sm text-destructive">{t.navUpdate.updateError}: {status.error}</p>
           )}
 
           {results && (
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-4">
                 <span className="flex items-center gap-1 text-success">
-                  <CheckCircle2 className="h-4 w-4" /> 成功 {okCount} 只
+                  <CheckCircle2 className="h-4 w-4" /> {t.common.success} {okCount} {t.navUpdate.units}
                 </span>
                 {failCount > 0 && (
                   <span className="flex items-center gap-1 text-destructive">
-                    <XCircle className="h-4 w-4" /> 失败 {failCount} 只
+                    <XCircle className="h-4 w-4" /> {t.common.failed} {failCount} {t.navUpdate.units}
                   </span>
                 )}
               </div>
@@ -237,7 +239,7 @@ export default function NavUpdate() {
                 <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3">
                   {results.filter((r) => !r.ok).map((r) => (
                     <p key={r.fund_code} className="text-sm text-destructive">
-                      {r.fund_code}：{r.message}
+                      {`${r.fund_code}: ${r.message}`}
                     </p>
                   ))}
                 </div>
@@ -250,11 +252,11 @@ export default function NavUpdate() {
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="text-base">
-            各基金最新净值
-            {results && <span className="text-sm text-muted-foreground font-normal ml-2">（更新结果）</span>}
+            {t.navUpdate.fundNavList}
+            {results && <span className="text-sm text-muted-foreground font-normal ml-2">{t.navUpdate.updateResultLabel}</span>}
           </CardTitle>
           <Button variant="outline" size="sm" onClick={() => reload()} className="h-8">
-            <RotateCw className="mr-1 h-3.5 w-3.5" /> 刷新
+            <RotateCw className="mr-1 h-3.5 w-3.5" /> {t.common.refresh}
           </Button>
         </CardHeader>
         <CardContent>
@@ -263,15 +265,15 @@ export default function NavUpdate() {
           ) : error ? (
             <ErrorState message={error} onRetry={reload} />
           ) : sortedRows.length === 0 ? (
-            <EmptyState title="暂无基金数据，请先添加交易记录" />
+            <EmptyState title={t.navUpdate.noFundData} />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>基金名称</TableHead>
-                  <TableHead>最新日期</TableHead>
-                  <TableHead className="text-right">最新净值</TableHead>
-                  <TableHead className="text-center">状态</TableHead>
+                  <TableHead>{t.navUpdate.fundName}</TableHead>
+                  <TableHead>{t.navUpdate.latestDate}</TableHead>
+                  <TableHead className="text-right">{t.navUpdate.latestNav}</TableHead>
+                  <TableHead className="text-center">{t.navUpdate.status}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -292,20 +294,20 @@ export default function NavUpdate() {
                       <TableCell className="text-center">
                         {r.hasResult ? (
                           r.ok ? (
-                            <span title="更新成功"><CheckCircle2 className="h-4 w-4 text-success inline" /></span>
+                            <span title={t.navUpdate.updateSuccess}><CheckCircle2 className="h-4 w-4 text-success inline" /></span>
                           ) : (
                             <span title={r.message}><XCircle className="h-4 w-4 text-destructive inline" /></span>
                           )
                         ) : !r.date ? (
                           <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10 text-[11px] px-1.5 py-0">
-                            待更新
+                            {t.navUpdate.outdated}
                           </Badge>
                         ) : outdated ? (
                           <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10 text-[11px] px-1.5 py-0">
-                            过时
+                            {t.navUpdate.stale}
                           </Badge>
                         ) : (
-                          <span title="已是最新"><CheckCircle2 className="h-4 w-4 text-success inline" /></span>
+                          <span title={t.navUpdate.upToDate}><CheckCircle2 className="h-4 w-4 text-success inline" /></span>
                         )}
                       </TableCell>
                     </TableRow>

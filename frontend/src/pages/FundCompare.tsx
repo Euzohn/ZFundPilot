@@ -13,6 +13,7 @@ import ErrorState from "@/components/ErrorState"
 import { pct, money } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { PERIOD_LABELS } from "@/lib/rangeLabels"
+import { useLang } from "@/i18n/LanguageContext"
 import { GitCompare, Search, X, BarChart3, Table2, TrendingUp, Activity, DollarSign, RefreshCw, ChevronDown, ChevronRight, Filter, Check, Plus } from "lucide-react"
 import {
   LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
@@ -23,21 +24,17 @@ import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 
-const RISK_LABELS: Record<string, string> = {
-  max_drawdown: "最大回撤", volatility: "年化波动率",
-  sharpe: "夏普比率", calmar: "卡玛比率", win_rate: "胜率",
-}
-
 function InputSection({ onSubmit, loading }: { onSubmit: (codes: string[]) => void; loading: boolean }) {
+  const { t } = useLang()
   const [raw, setRaw] = useState("")
   const [error, setError] = useState("")
 
   const handleSubmit = () => {
     const codes = raw.split(/[,，\s\n]+/).map((s) => s.trim()).filter(Boolean)
-    if (codes.length === 0) { setError("请输入基金代码"); return }
-    if (codes.length > 20) { setError("一次最多对比 20 只基金"); return }
+    if (codes.length === 0) { setError(t.compare.enterCode); return }
+    if (codes.length > 20) { setError(t.compare.maxFunds); return }
     const invalid = codes.filter((c) => !/^\d{6}$/.test(c))
-    if (invalid.length > 0) { setError(`无效代码：${invalid.join(", ")}`); return }
+    if (invalid.length > 0) { setError(`${t.compare.invalidCode}${invalid.join(", ")}`); return }
     setError("")
     onSubmit(codes)
   }
@@ -49,12 +46,12 @@ function InputSection({ onSubmit, loading }: { onSubmit: (codes: string[]) => vo
           value={raw}
           onChange={(e) => { setRaw(e.target.value); setError("") }}
           onKeyDown={(e) => { if (e.key === "Enter") handleSubmit() }}
-          placeholder="输入基金代码，逗号/空格/换行分隔，如 000001, 161725"
+          placeholder={t.compare.inputPlaceholder}
           className="h-9 text-sm flex-1"
         />
         <Button size="sm" onClick={handleSubmit} disabled={loading}>
           {loading ? <RefreshCw className="mr-1 h-4 w-4 animate-spin" /> : <Search className="mr-1 h-4 w-4" />}
-          {loading ? "加载中..." : "对比"}
+          {loading ? t.common.loading : t.compare.compare}
         </Button>
       </div>
       {error && <p className="text-xs text-loss-600">{error}</p>}
@@ -63,6 +60,7 @@ function InputSection({ onSubmit, loading }: { onSubmit: (codes: string[]) => vo
 }
 
 function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) => void }) {
+  const { t } = useLang()
   const [open, setOpen] = useState(false)
   const [types, setTypes] = useState<string[]>([])
   const [sectors, setSectors] = useState<string[]>([])
@@ -98,7 +96,7 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
         setError(res.message)
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "筛选请求失败")
+      setError(e instanceof Error ? e.message : t.compare.filterFailed)
     } finally {
       setLoading(false)
     }
@@ -136,9 +134,9 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
         >
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           <Filter className="h-4 w-4" />
-          条件筛选
+          {t.compare.conditionFilter}
           {(types.length > 0 || sectors.length > 0 || keyword.trim()) && (
-            <Badge variant="secondary" className="ml-auto text-[10px]">筛选中</Badge>
+            <Badge variant="secondary" className="ml-auto text-[10px]">{t.compare.filtering}</Badge>
           )}
         </button>
 
@@ -146,7 +144,7 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
           <div className="mt-4 space-y-4">
             {/* Types */}
             <div>
-              <p className="mb-1.5 text-xs text-muted-foreground">资产类型</p>
+              <p className="mb-1.5 text-xs text-muted-foreground">{t.compare.assetType}</p>
               <div className="flex flex-wrap gap-2">
                 {availTypes.map((t) => (
                   <label
@@ -173,7 +171,7 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
 
             {/* Sectors */}
             <div>
-              <p className="mb-1.5 text-xs text-muted-foreground">板块</p>
+              <p className="mb-1.5 text-xs text-muted-foreground">{t.compare.sector}</p>
               <div className="flex max-h-32 flex-wrap gap-2 overflow-y-auto">
                 {availSectors.map((s) => (
                   <label
@@ -204,12 +202,12 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleSearch() }}
-                placeholder="基金名称或代码"
+                placeholder={t.compare.nameOrCode}
                 className="h-9 text-sm flex-1"
               />
               <Button size="sm" onClick={handleSearch} disabled={loading}>
                 {loading ? <RefreshCw className="mr-1 h-4 w-4 animate-spin" /> : <Search className="mr-1 h-4 w-4" />}
-                {loading ? "搜索中..." : "搜索"}
+                {loading ? t.compare.searching : t.common.search}
               </Button>
             </div>
 
@@ -220,11 +218,11 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
             {results.length > 0 && (
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">共 {total} 只，显示前 {results.length} 只</p>
+                  <p className="text-xs text-muted-foreground">{t.compare.resultCount.replace("{total}", String(total)).replace("{shown}", String(results.length))}</p>
                   {selected.size > 0 && (
                     <Button size="sm" variant="outline" onClick={handleAdd}>
                       <Plus className="mr-1 h-3.5 w-3.5" />
-                      加入对比 ({selected.size})
+                      {t.compare.addToCompare} ({selected.size})
                     </Button>
                   )}
                 </div>
@@ -233,10 +231,10 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
                     <TableHeader>
                       <TableRow className="bg-muted/50">
                         <TableHead className="w-8 px-2 py-2 text-left" />
-                        <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">代码</TableHead>
-                        <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">名称</TableHead>
-                        <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">类型</TableHead>
-                        <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">板块</TableHead>
+                        <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.code}</TableHead>
+                        <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.name}</TableHead>
+                        <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.type}</TableHead>
+                        <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">{t.compare.sector}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -263,7 +261,7 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
             )}
 
             {!loading && !error && results.length === 0 && total === 0 && (
-              <p className="text-xs text-muted-foreground">选择筛选条件后点击搜索</p>
+              <p className="text-xs text-muted-foreground">{t.compare.filterHint}</p>
             )}
           </div>
         )}
@@ -293,13 +291,14 @@ function CompareTable({ funds, labelMap, valueKey, format }: {
   valueKey: "returns" | "risk"
   format: "pct" | "number"
 }) {
+  const { t } = useLang()
   const keys = Object.keys(labelMap)
   return (
     <div className="overflow-x-auto rounded-md border">
       <Table className="w-full text-sm">
         <TableHeader>
           <TableRow className="bg-muted/50">
-            <TableHead className="sticky left-0 bg-muted/50 px-3 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">指标</TableHead>
+            <TableHead className="sticky left-0 bg-muted/50 px-3 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{t.compare.metric}</TableHead>
             {funds.map((f) => (
               <TableHead key={f.code} className="px-3 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">{f.name || f.code}</TableHead>
             ))}
@@ -326,26 +325,27 @@ function CompareTable({ funds, labelMap, valueKey, format }: {
 }
 
 function InfoTable({ funds }: { funds: FundCompareItem[] }) {
+  const { t } = useLang()
   const rows = [
-    { label: "代码", render: (f: FundCompareItem) => <span className="font-mono">{f.code}</span> },
-    { label: "名称", render: (f: FundCompareItem) => f.name || "—" },
-    { label: "类型", render: (f: FundCompareItem) => f.type },
-    { label: "板块", render: (f: FundCompareItem) => f.sector || "—" },
-    { label: "成立日期", render: (f: FundCompareItem) => f.inception_date || "—" },
-    { label: "规模(亿)", render: (f: FundCompareItem) => f.scale != null ? `${f.scale.toFixed(1)} 亿` : "—" },
-    { label: "基金经理", render: (f: FundCompareItem) => f.manager || "—" },
-    { label: "最新净值", render: (f: FundCompareItem) => f.latest_nav != null ? f.latest_nav.toFixed(4) : "—" },
-    { label: "净值日期", render: (f: FundCompareItem) => f.latest_date || "—" },
-    { label: "管理费", render: (f: FundCompareItem) => f.management_fee != null ? pct(f.management_fee) : "—" },
-    { label: "托管费", render: (f: FundCompareItem) => f.custodian_fee != null ? pct(f.custodian_fee) : "—" },
-    { label: "销售服务费", render: (f: FundCompareItem) => f.sales_fee != null ? pct(f.sales_fee) : "—" },
+    { label: t.common.code, render: (f: FundCompareItem) => <span className="font-mono">{f.code}</span> },
+    { label: t.common.name, render: (f: FundCompareItem) => f.name || "—" },
+    { label: t.common.type, render: (f: FundCompareItem) => f.type },
+    { label: t.compare.sector, render: (f: FundCompareItem) => f.sector || "—" },
+    { label: t.compare.inceptionDate, render: (f: FundCompareItem) => f.inception_date || "—" },
+    { label: t.compare.scale, render: (f: FundCompareItem) => f.scale != null ? `${f.scale.toFixed(1)} ${t.compare.scaleUnit}` : "—" },
+    { label: t.compare.manager, render: (f: FundCompareItem) => f.manager || "—" },
+    { label: t.positions.latestNav, render: (f: FundCompareItem) => f.latest_nav != null ? f.latest_nav.toFixed(4) : "—" },
+    { label: t.positions.navDate, render: (f: FundCompareItem) => f.latest_date || "—" },
+    { label: t.compare.managementFee, render: (f: FundCompareItem) => f.management_fee != null ? pct(f.management_fee) : "—" },
+    { label: t.compare.custodianFee, render: (f: FundCompareItem) => f.custodian_fee != null ? pct(f.custodian_fee) : "—" },
+    { label: t.compare.salesFee, render: (f: FundCompareItem) => f.sales_fee != null ? pct(f.sales_fee) : "—" },
   ]
   return (
     <div className="overflow-x-auto rounded-md border">
       <Table className="w-full text-sm">
         <TableHeader>
           <TableRow className="bg-muted/50">
-            <TableHead className="sticky left-0 bg-muted/50 px-3 py-2 text-left text-xs font-medium text-muted-foreground">指标</TableHead>
+            <TableHead className="sticky left-0 bg-muted/50 px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.compare.metric}</TableHead>
             {funds.map((f) => (
               <TableHead key={f.code} className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">{f.name || f.code}</TableHead>
             ))}
@@ -369,8 +369,9 @@ function InfoTable({ funds }: { funds: FundCompareItem[] }) {
 const NAV_CHART_COLORS = CHART_COLORS
 
 function NavChart({ navSeries }: { navSeries: Record<string, { date: string; value: number }[]> }) {
+  const { t } = useLang()
   const codes = Object.keys(navSeries).filter((c) => navSeries[c].length > 0)
-  if (codes.length === 0) return <EmptyState title="无净值数据" size="lg" />
+  if (codes.length === 0) return <EmptyState title={t.compare.noNavData} size="lg" />
 
   const merged = navSeries[codes[0]].map((p) => {
     const row: Record<string, string | number | null> = { date: p.date }
@@ -414,7 +415,8 @@ function NavChart({ navSeries }: { navSeries: Record<string, { date: string; val
 }
 
 function CorrelationMatrix({ funds, correlations }: { funds: FundCompareItem[]; correlations: (number | null)[][] }) {
-  if (!correlations || correlations.length < 2) return <EmptyState title="至少需要 2 只基金计算相关性" size="lg" />
+  const { t } = useLang()
+  if (!correlations || correlations.length < 2) return <EmptyState title={t.compare.correlationHint} size="lg" />
 
   const n = correlations.length
   return (
@@ -460,7 +462,7 @@ function CorrelationMatrix({ funds, correlations }: { funds: FundCompareItem[]; 
         </TableBody>
       </Table>
       <div className="mt-2 flex items-center justify-center gap-2 text-[10px] text-muted-foreground">
-        <span>负相关</span>
+        <span>{t.compare.negativeCorrelation}</span>
         <div className="flex h-3 w-32 rounded overflow-hidden border border-border">
           <div className="h-full flex-1" style={{ background: "hsl(var(--chart-2))" }} />
           <div className="h-full flex-1" style={{ background: "hsl(var(--chart-2) / 0.6)" }} />
@@ -468,19 +470,28 @@ function CorrelationMatrix({ funds, correlations }: { funds: FundCompareItem[]; 
           <div className="h-full flex-1" style={{ background: "hsl(var(--chart-3) / 0.6)" }} />
           <div className="h-full flex-1" style={{ background: "hsl(var(--chart-3))" }} />
         </div>
-        <span>正相关</span>
+        <span>{t.compare.positiveCorrelation}</span>
       </div>
     </div>
   )
 }
 
 export default function FundCompare() {
+  const { t } = useLang()
   const [searchParams, setSearchParams] = useSearchParams()
   const initialCodes = useMemo(() => {
     const q = searchParams.get("codes") || ""
     return q.split(",").filter(Boolean)
   }, [])
   const [codes, setCodes] = useState<string[]>(initialCodes)
+
+  const RISK_LABELS: Record<string, string> = {
+    max_drawdown: t.compare.maxDrawdown,
+    volatility: t.compare.annualVolatility,
+    sharpe: t.compare.sharpeRatio,
+    calmar: t.compare.calmarRatio,
+    win_rate: t.compare.winRate,
+  }
 
   const fetcher = useCallback(() => {
     if (codes.length === 0) return Promise.resolve(null)
@@ -501,7 +512,7 @@ export default function FundCompare() {
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <GitCompare className="h-5 w-5 text-primary" />
-        <PageHeader title="基金对比" tracking="tight" />
+        <PageHeader title={t.compare.title} tracking="tight" />
       </div>
 
       <FilterSection onAddToCompare={handleCompare} />
@@ -527,7 +538,7 @@ export default function FundCompare() {
       {!loading && !error && data && data.ok && okFunds.length === 0 && (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            输入基金代码开始对比
+            {t.compare.startCompare}
           </CardContent>
         </Card>
       )}
@@ -536,29 +547,29 @@ export default function FundCompare() {
         <>
           {failedFunds.length > 0 && (
             <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-              以下基金获取失败：{failedFunds.map((f) => `${f.code}(${f.message})`).join("；")}
+              {t.compare.fetchFailed}{failedFunds.map((f) => `${f.code}(${f.message})`).join("；")}
             </div>
           )}
 
           <Tabs defaultValue="info">
             <TabsList className="grid w-full grid-cols-5 sm:inline-flex sm:w-auto">
-              <TabsTrigger value="info" className="gap-1"><Table2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">基本信息</span></TabsTrigger>
-              <TabsTrigger value="returns" className="gap-1"><TrendingUp className="h-3.5 w-3.5" /><span className="hidden sm:inline">收益表现</span></TabsTrigger>
-              <TabsTrigger value="risk" className="gap-1"><Activity className="h-3.5 w-3.5" /><span className="hidden sm:inline">风险指标</span></TabsTrigger>
-              <TabsTrigger value="chart" className="gap-1"><BarChart3 className="h-3.5 w-3.5" /><span className="hidden sm:inline">净值走势</span></TabsTrigger>
-              <TabsTrigger value="correlation" className="gap-1"><DollarSign className="h-3.5 w-3.5" /><span className="hidden sm:inline">相关性</span></TabsTrigger>
+              <TabsTrigger value="info" className="gap-1"><Table2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.compare.basicInfo}</span></TabsTrigger>
+              <TabsTrigger value="returns" className="gap-1"><TrendingUp className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.compare.returnPerformance}</span></TabsTrigger>
+              <TabsTrigger value="risk" className="gap-1"><Activity className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.compare.riskCompare}</span></TabsTrigger>
+              <TabsTrigger value="chart" className="gap-1"><BarChart3 className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.compare.navTrend}</span></TabsTrigger>
+              <TabsTrigger value="correlation" className="gap-1"><DollarSign className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.compare.correlation}</span></TabsTrigger>
             </TabsList>
 
             <TabsContent value="info" className="mt-4">
               <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">基本信息</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">{t.compare.basicInfo}</CardTitle></CardHeader>
                 <CardContent><InfoTable funds={okFunds} /></CardContent>
               </Card>
             </TabsContent>
 
             <TabsContent value="returns" className="mt-4">
               <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">收益表现</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">{t.compare.returnPerformance}</CardTitle></CardHeader>
                 <CardContent>
                   <CompareTable funds={okFunds} labelMap={PERIOD_LABELS} valueKey="returns" format="pct" />
                 </CardContent>
@@ -567,7 +578,7 @@ export default function FundCompare() {
 
             <TabsContent value="risk" className="mt-4">
               <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">风险指标</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">{t.compare.riskCompare}</CardTitle></CardHeader>
                 <CardContent>
                   <CompareTable funds={okFunds} labelMap={RISK_LABELS} valueKey="risk" format="pct" />
                 </CardContent>
@@ -577,7 +588,7 @@ export default function FundCompare() {
             <TabsContent value="chart" className="mt-4">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">净值走势（归一化，基期=100）</CardTitle>
+                  <CardTitle className="text-sm">{t.compare.navTrendNormalized}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <NavChart navSeries={data.nav_series ?? {}} />
@@ -587,7 +598,7 @@ export default function FundCompare() {
 
             <TabsContent value="correlation" className="mt-4">
               <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-sm">相关性矩阵</CardTitle></CardHeader>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">{t.compare.correlation}</CardTitle></CardHeader>
                 <CardContent>
                   <CorrelationMatrix funds={okFunds} correlations={data.correlations ?? []} />
                 </CardContent>

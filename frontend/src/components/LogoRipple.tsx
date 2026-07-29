@@ -1,10 +1,12 @@
 import { useId } from "react"
+import { useLang } from "@/i18n/LanguageContext"
 
 /** B3 金环扩散 — 金色涟漪从中心向外扩散 + Z 色彩跳动 */
 export default function LogoRipple({ className = "h-12 w-12" }: { className?: string }) {
   const id = useId()
+  const { t } = useLang()
   return (
-    <svg viewBox="0 0 64 64" className={className} aria-label="刷新中">
+    <svg viewBox="0 0 64 64" className={className} aria-label={t.common.loading}>
       <defs>
         <linearGradient id={`ripple-bg-${id}`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#0F1F3D" />

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { Sun, Moon, Monitor } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getUiTheme, saveUiTheme, applyUiTheme, type UiTheme } from "@/lib/theme"
+import { useLang } from "@/i18n/LanguageContext"
 
 interface ThemeToggleProps {
   variant?: "icon" | "segmented"
@@ -11,18 +12,19 @@ interface ThemeToggleProps {
 
 const ORDER: UiTheme[] = ["light", "dark", "system"]
 
-const LABEL: Record<UiTheme, string> = {
-  light: "亮色",
-  dark: "暗色",
-  system: "跟随系统",
-}
-
 export default function ThemeToggle({ variant = "icon", className, label }: ThemeToggleProps) {
+  const { t } = useLang()
   const [theme, setTheme] = useState<UiTheme>(getUiTheme)
 
   useEffect(() => {
     applyUiTheme(theme)
   }, [theme])
+
+  const LABEL: Record<UiTheme, string> = {
+    light: t.theme.light,
+    dark: t.theme.dark,
+    system: t.theme.system,
+  }
 
   if (variant === "icon") {
     const Icon = theme === "light" ? Sun : theme === "dark" ? Moon : Monitor
@@ -38,8 +40,8 @@ export default function ThemeToggle({ variant = "icon", className, label }: Them
           "flex items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
           className,
         )}
-        title={`主题：${LABEL[theme]}（点击切换）`}
-        aria-label={`切换主题，当前为${LABEL[theme]}`}
+        title={`${t.theme.toggle}：${LABEL[theme]}`}
+        aria-label={`${t.theme.toggle}，${t.theme.current.replace("{val}", LABEL[theme])}`}
       >
         <Icon className="h-4 w-4 shrink-0" />
         {label && <span className="whitespace-nowrap">{label}</span>}
@@ -51,9 +53,9 @@ export default function ThemeToggle({ variant = "icon", className, label }: Them
     <div className={cn("inline-flex rounded-lg border border-border p-0.5", className)}>
       {(
         [
-          { v: "light", icon: Sun, label: "亮色" },
-          { v: "dark", icon: Moon, label: "暗色" },
-          { v: "system", icon: Monitor, label: "系统" },
+          { v: "light", icon: Sun, label: t.theme.light },
+          { v: "dark", icon: Moon, label: t.theme.dark },
+          { v: "system", icon: Monitor, label: t.theme.system },
         ] as const
       ).map(({ v, icon: Icon, label }) => (
         <button

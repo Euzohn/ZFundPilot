@@ -14,6 +14,7 @@ import { money, pct, signedMoney, navStr, pnlColor, localDateStr } from "@/lib/f
 import { ACTION_LABELS } from "@/lib/actionLabels"
 import { RANGE_LABELS, RANGE_DAYS } from "@/lib/rangeLabels"
 import { toast } from "sonner"
+import { useLang } from "@/i18n/LanguageContext"
 import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
 import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
 import MetricCard from "@/components/MetricCard"
@@ -24,6 +25,7 @@ import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 
 export default function FundDetail() {
+  const { t } = useLang()
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
@@ -161,9 +163,9 @@ export default function FundDetail() {
 const handleDelete = async (txId: number) => {
     try {
       await api.deleteTransaction(txId)
-      toast.success("已删除")
+      toast.success(t.common.deleted)
       reloadTxs()
-    } catch (e) { toast.error(`删除失败: ${e}`) }
+    } catch (e) { toast.error(`${t.common.deleteFailed}: ${e}`) }
   }
 
   return (
@@ -191,7 +193,7 @@ const handleDelete = async (txId: number) => {
               navigate(`/transactions?code=${code}&action=buy${ch}`)
             }}
           >
-            <TrendingUp className="h-4 w-4" /> 买入
+            <TrendingUp className="h-4 w-4" /> {t.transactions.buy}
           </Button>
           {openPositions.length > 0 && (
             <Button
@@ -203,7 +205,7 @@ const handleDelete = async (txId: number) => {
                 navigate(`/transactions?code=${code}&action=sell${ch}`)
               }}
             >
-              <TrendingDown className="h-4 w-4" /> 卖出
+              <TrendingDown className="h-4 w-4" /> {t.transactions.sell}
             </Button>
           )}
         </div>
@@ -211,37 +213,37 @@ const handleDelete = async (txId: number) => {
 
       {/* Summary metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <MetricCard size="sm" label="持有份额" value={totalShares.toFixed(2)} />
-        <MetricCard size="sm" label="持仓成本" value={money(totalCost)} />
-        <MetricCard size="sm" label="持仓均价" value={navStr(avgCost)} />
-        <MetricCard size="sm" label="最新净值" value={navStr(latestNav)} sub={showEstimate ? `${latestDate} · 估算 ${navStr(fundEstimate!.gsz)} ${pct(fundEstimate!.gszzl / 100)} · ${fundEstimate!.gztime.slice(5, 16)}` : latestDate ?? undefined} subColor={showEstimate ? pnlColor(fundEstimate!.gszzl / 100) : undefined} />
-        <MetricCard size="sm" label="当前市值" value={money(totalValue)} />
-        <MetricCard size="sm" label="浮动盈亏" value={signedMoney(totalUnrealized)} color={pnlColor(totalUnrealized)} />
-        <MetricCard size="sm" label="已实现盈亏" value={signedMoney(totalRealized)} color={pnlColor(totalRealized)} />
-        <MetricCard size="sm" label="收益率" value={pct(returnRate)} color={pnlColor(returnRate)} sub={latestNav != null && avgCost != null && latestNav < avgCost ? `回本 ${pct(avgCost / latestNav - 1)}` : undefined} subColor="text-warning" />
+        <MetricCard size="sm" label={t.fundDetail.heldShares} value={totalShares.toFixed(2)} />
+        <MetricCard size="sm" label={t.positions.cost} value={money(totalCost)} />
+        <MetricCard size="sm" label={t.fundDetail.avgCost} value={navStr(avgCost)} />
+        <MetricCard size="sm" label={t.positions.latestNav} value={navStr(latestNav)} sub={showEstimate ? `${latestDate} · ${t.fundDetail.estimate} ${navStr(fundEstimate!.gsz)} ${pct(fundEstimate!.gszzl / 100)} · ${fundEstimate!.gztime.slice(5, 16)}` : latestDate ?? undefined} subColor={showEstimate ? pnlColor(fundEstimate!.gszzl / 100) : undefined} />
+        <MetricCard size="sm" label={t.positions.marketValue} value={money(totalValue)} />
+        <MetricCard size="sm" label={t.fundDetail.unrealizedPnl} value={signedMoney(totalUnrealized)} color={pnlColor(totalUnrealized)} />
+        <MetricCard size="sm" label={t.fundDetail.realizedPnl} value={signedMoney(totalRealized)} color={pnlColor(totalRealized)} />
+        <MetricCard size="sm" label={t.positions.returnRate} value={pct(returnRate)} color={pnlColor(returnRate)} sub={latestNav != null && avgCost != null && latestNav < avgCost ? `${t.fundDetail.breakEven} ${pct(avgCost / latestNav - 1)}` : undefined} subColor="text-warning" />
       </div>
 
       {/* 各渠道持仓 */}
       {openPositions.length > 1 && (
         <Card className="card-hover">
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">各渠道持仓</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t.fundDetail.byChannel}</CardTitle></CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>渠道</TableHead>
-                  <TableHead className="text-right">份额</TableHead>
-                  <TableHead className="text-right">成本</TableHead>
-                  <TableHead className="text-right">均价</TableHead>
-                  <TableHead className="text-right">市值</TableHead>
-                  <TableHead className="text-right">浮动盈亏</TableHead>
-                  <TableHead className="w-20">操作</TableHead>
+                  <TableHead>{t.common.channel}</TableHead>
+                  <TableHead className="text-right">{t.common.shares}</TableHead>
+                  <TableHead className="text-right">{t.positions.cost}</TableHead>
+                  <TableHead className="text-right">{t.fundDetail.avgCost}</TableHead>
+                  <TableHead className="text-right">{t.positions.marketValue}</TableHead>
+                  <TableHead className="text-right">{t.fundDetail.unrealizedPnl}</TableHead>
+                  <TableHead className="w-20">{t.common.actions}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {openPositions.map((p) => (
                   <TableRow key={p.channel}>
-                    <TableCell>{p.channel || "未标注"}</TableCell>
+                    <TableCell>{p.channel || t.fundDetail.untagged}</TableCell>
                     <TableCell className="text-right tabular-nums">{p.held_shares.toFixed(2)}</TableCell>
                     <TableCell className="text-right tabular-nums">{money(p.total_cost)}</TableCell>
                     <TableCell className="text-right tabular-nums">{navStr(p.avg_cost_nav)}</TableCell>
@@ -268,7 +270,7 @@ const handleDelete = async (txId: number) => {
       {/* NAV history chart */}
       <Card className="card-hover">
         <CardHeader className="pb-2 flex-row items-center justify-between flex-wrap gap-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">净值走势</CardTitle>
+          <CardTitle className="text-sm font-medium text-muted-foreground">{t.fundDetail.navTrend}</CardTitle>
           <div className="flex items-center gap-1">
             {(["1m", "3m", "6m", "1y", "hold", "tx", "custom"] as const).map(r => (
               <Button key={r} size="sm" variant={navRange === r ? "default" : "outline"} className="h-6 px-2 text-[11px]"
@@ -280,7 +282,7 @@ const handleDelete = async (txId: number) => {
           {navRange === "custom" && (
             <div className="flex items-center gap-2 mt-2">
               <Input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="h-7 text-xs w-36" />
-              <span className="text-xs text-muted-foreground">至</span>
+              <span className="text-xs text-muted-foreground">{t.fundDetail.to}</span>
               <Input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="h-7 text-xs w-36" />
             </div>
           )}
@@ -304,17 +306,17 @@ const handleDelete = async (txId: number) => {
                         <p className="text-sm font-bold tabular-nums text-primary">{navStr(d.nav)}</p>
                         {d.pnl != null && d.pnl !== 0 && (
                           <p className={`text-xs tabular-nums ${d.pnl >= 0 ? "text-gain" : "text-loss"}`}>
-                            当日收益 {signedMoney(d.pnl)}
+                            {t.fundDetail.dailyPnl} {signedMoney(d.pnl)}
                           </p>
                         )}
                         {txInfo && txInfo.length > 0 && (
                           <div className="mt-1 space-y-0.5 border-t pt-1">
-                            {txInfo.map((t, i) => (
-                              <p key={i} className={`text-xs tabular-nums ${t.action === 'buy' ? 'text-gain' : t.action === 'sell' ? 'text-loss' : t.action === 'dividend' ? 'text-primary' : 'text-info'}`}>
-                                {ACTION_LABELS[t.action] ?? t.action}
-                                {t.date !== label && <span className="text-muted-foreground"> ({t.date})</span>}
-                                {t.amount ? ` ${money(t.amount)}` : ''}
-                                {t.shares ? ` ${t.shares.toFixed(2)} 份` : ''}
+                            {txInfo.map((tx, i) => (
+                              <p key={i} className={`text-xs tabular-nums ${tx.action === 'buy' ? 'text-gain' : tx.action === 'sell' ? 'text-loss' : tx.action === 'dividend' ? 'text-primary' : 'text-info'}`}>
+                                {ACTION_LABELS[tx.action] ?? tx.action}
+                                {tx.date !== label && <span className="text-muted-foreground"> ({tx.date})</span>}
+                                {tx.amount ? ` ${money(tx.amount)}` : ''}
+                                {tx.shares ? ` ${tx.shares.toFixed(2)} ${t.fundDetail.sharesUnit}` : ''}
                               </p>
                             ))}
                           </div>
@@ -323,7 +325,7 @@ const handleDelete = async (txId: number) => {
                     )
                   }}
                 />
-                {avgCost && <ReferenceLine yAxisId="nav" y={avgCost} stroke="hsl(var(--muted-foreground))" strokeDasharray="5 5" label={{ value: `均价 ${navStr(avgCost)}`, fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} />}
+                {avgCost && <ReferenceLine yAxisId="nav" y={avgCost} stroke="hsl(var(--muted-foreground))" strokeDasharray="5 5" label={{ value: `${t.fundDetail.avgCost} ${navStr(avgCost)}`, fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} />}
                 <Bar yAxisId="pnl" dataKey="pnl" radius={[2, 2, 0, 0]}>
                   {chartData.map((row, i) => (
                     <Cell key={i} fill={row.pnl >= 0 ? "var(--gain-500)" : "var(--loss-500)"} fillOpacity={0.5} />
@@ -358,56 +360,56 @@ const handleDelete = async (txId: number) => {
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
-            <EmptyState title="净值历史不足，先到「净值更新」抓取数据。" size="lg" />
+            <EmptyState title={t.fundDetail.navHistoryInsufficient} size="lg" />
           )}
         </CardContent>
       </Card>
 
       {/* Transaction history */}
       <Card className="card-hover">
-        <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">交易记录</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t.transactions.title}</CardTitle></CardHeader>
         <CardContent>
           {!txs || txs.length === 0 ? (
-            <EmptyState title="暂无交易记录" />
+            <EmptyState title={t.fundDetail.noTransactions} />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>日期</TableHead>
-                  <TableHead>操作</TableHead>
-                  <TableHead>渠道</TableHead>
-                  <TableHead className="text-right">金额</TableHead>
-                  <TableHead className="text-right">份额</TableHead>
-                  <TableHead className="text-right">净值</TableHead>
-                  <TableHead className="text-right">手续费</TableHead>
-                  <TableHead>备注</TableHead>
-                  <TableHead className="w-20">操作</TableHead>
+                  <TableHead>{t.common.date}</TableHead>
+                  <TableHead>{t.common.actions}</TableHead>
+                  <TableHead>{t.common.channel}</TableHead>
+                  <TableHead className="text-right">{t.common.amount}</TableHead>
+                  <TableHead className="text-right">{t.common.shares}</TableHead>
+                  <TableHead className="text-right">{t.common.nav}</TableHead>
+                  <TableHead className="text-right">{t.common.fee}</TableHead>
+                  <TableHead>{t.common.note}</TableHead>
+                  <TableHead className="w-20">{t.common.actions}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {txs.map((t) => (
-                  <TableRow key={t.id} onClick={() => setViewingTx(t)} className="cursor-pointer">
-                    <TableCell>{t.date}</TableCell>
+                {txs.map((tx) => (
+                  <TableRow key={tx.id} onClick={() => setViewingTx(tx)} className="cursor-pointer">
+                    <TableCell>{tx.date}</TableCell>
                     <TableCell>
                       <Badge
-                        variant={t.action === "buy" ? "success" : t.action === "sell" ? "destructive" : "outline"}
-                        className={t.action === "dividend" ? "text-primary border-primary/30 bg-primary/10" : t.action === "reinvest" ? "text-info border-info/30 bg-info/10" : ""}
+                        variant={tx.action === "buy" ? "success" : tx.action === "sell" ? "destructive" : "outline"}
+                        className={tx.action === "dividend" ? "text-primary border-primary/30 bg-primary/10" : tx.action === "reinvest" ? "text-info border-info/30 bg-info/10" : ""}
                       >
-                        {ACTION_LABELS[t.action] ?? t.action}
+                        {ACTION_LABELS[tx.action] ?? tx.action}
                       </Badge>
                     </TableCell>
-                    <TableCell>{t.channel || "未标注"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{t.amount ? money(t.amount) : "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{t.shares?.toFixed(2) ?? "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{t.nav?.toFixed(4) ?? "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{t.fee || "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{t.note}</TableCell>
+                    <TableCell>{tx.channel || t.fundDetail.untagged}</TableCell>
+                    <TableCell className="text-right tabular-nums">{tx.amount ? money(tx.amount) : "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{tx.shares?.toFixed(2) ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{tx.nav?.toFixed(4) ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{tx.fee || "—"}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{tx.note}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleEdit(t) }}>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); handleEdit(tx) }}>
                           <Pencil className="h-4 w-4 text-primary" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(t.id!) }}>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(tx.id!) }}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
@@ -417,7 +419,7 @@ const handleDelete = async (txId: number) => {
               </TableBody>
             </Table>
           )}
-          {txs && txs.length > 0 && <p className="mt-3 text-sm text-muted-foreground">共 {txs.length} 笔交易</p>}
+          {txs && txs.length > 0 && <p className="mt-3 text-sm text-muted-foreground">{t.fundDetail.txCount.replace("{n}", String(txs.length))}</p>}
         </CardContent>
       </Card>
 
@@ -434,9 +436,9 @@ const handleDelete = async (txId: number) => {
       <ConfirmDialog
         open={confirmDeleteId != null}
         onOpenChange={(open) => { if (!open) setConfirmDeleteId(null) }}
-        title="确认删除"
-        description={<>确定要删除这笔交易记录吗？此操作<strong>不可撤销</strong>。</>}
-        confirmText="删除"
+        title={t.fundDetail.confirmDeleteTitle}
+        description={<>{t.fundDetail.confirmDeleteTxDesc}<strong>{t.fundDetail.irreversible}</strong></>}
+        confirmText={t.common.delete}
         tone="destructive"
         onConfirm={async () => {
           if (confirmDeleteId != null) await handleDelete(confirmDeleteId)

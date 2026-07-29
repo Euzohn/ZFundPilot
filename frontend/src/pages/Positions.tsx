@@ -17,9 +17,11 @@ import EmptyState from "@/components/EmptyState"
 import { cn } from "@/lib/utils"
 import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search } from "lucide-react"
 import { makeSortHeader } from "@/components/SortHeader"
+import { useLang } from "@/i18n/LanguageContext"
 
 export default function Positions() {
   const navigate = useNavigate()
+  const { t } = useLang()
   const [showClosed, setShowClosed] = useState(() => localStorage.getItem("zfundpilot_showClosed") === "true")
   const [channelFilter, setChannelFilter] = useState(() => localStorage.getItem("zfundpilot_channelFilter") ?? "")
   const [searchQuery, setSearchQuery] = useState("")
@@ -131,11 +133,11 @@ export default function Positions() {
       {loading ? (
         <LoadingState />
       ) : !positions ? (
-        <div className="py-20 text-center text-destructive">加载失败</div>
+        <div className="py-20 text-center text-destructive">{t.common.loadFailed}</div>
       ) : (
       <>
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <PageHeader title="持仓明细" />
+        <PageHeader title={t.positions.title} />
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -143,16 +145,16 @@ export default function Positions() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索名称/代码/板块"
+              placeholder={t.positions.searchPlaceholder}
               className="h-8 w-44 pl-7 text-xs"
             />
           </div>
           <Select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="h-8 text-xs w-32">
-            <option value="">全部渠道</option>
+            <option value="">{t.positions.allChannels}</option>
             {availableChannels.map((c) => <option key={c} value={c}>{c}</option>)}
           </Select>
           <Button variant="outline" size="sm" onClick={() => setShowClosed(!showClosed)}>
-            {showClosed ? "隐藏已清仓" : "显示已清仓"}
+            {showClosed ? t.positions.hideClosed : t.positions.showClosed}
           </Button>
         </div>
       </div>
@@ -161,26 +163,26 @@ export default function Positions() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">
-            持仓列表
-            {maxDate && <span className="ml-2 text-xs font-normal">净值截至 {maxDate}</span>}
+            {t.positions.listTitle}
+            {maxDate && <span className="ml-2 text-xs font-normal">{t.positions.navAsOf} {maxDate}</span>}
           </CardTitle>
         </CardHeader>
         <CardContent>
             {sortedRows.length === 0 ? (
-            <EmptyState title="暂无持仓数据" />
+            <EmptyState title={t.positions.noPositions} />
           ) : (
             <Table>
               <TableHeader>
                   <TableRow>
-                    <SortHeader field="name">名称</SortHeader>
-                    <SortHeader field="type">类型</SortHeader>
-                    <SortHeader field="sector">板块</SortHeader>
-                    <SortHeader field="value" className="text-right">市值</SortHeader>
-                    <SortHeader field="pnl" className="text-right">浮动盈亏</SortHeader>
-                    <SortHeader field="return" className="text-right">收益率</SortHeader>
-                    <TableHead className="text-right">日内涨跌</TableHead>
-                    <SortHeader field="channels" className="text-right">渠道</SortHeader>
-                    <TableHead className="w-20">操作</TableHead>
+                    <SortHeader field="name">{t.common.name}</SortHeader>
+                    <SortHeader field="type">{t.common.type}</SortHeader>
+                    <SortHeader field="sector">{t.common.sector}</SortHeader>
+                    <SortHeader field="value" className="text-right">{t.positions.marketValue}</SortHeader>
+                    <SortHeader field="pnl" className="text-right">{t.positions.pnl}</SortHeader>
+                    <SortHeader field="return" className="text-right">{t.positions.returnRate}</SortHeader>
+                    <TableHead className="text-right">{t.positions.dailyChange}</TableHead>
+                    <SortHeader field="channels" className="text-right">{t.common.channel}</SortHeader>
+                    <TableHead className="w-20">{t.common.actions}</TableHead>
                     <TableHead className="w-8"></TableHead>
                   </TableRow>
               </TableHeader>
@@ -215,7 +217,7 @@ export default function Positions() {
                         <div className="flex flex-col items-end">
                           <span>{pct(ret)}</span>
                           {breakevenGain != null && (
-                            <span className="text-xs font-normal text-warning">回本 {pct(breakevenGain)}</span>
+                            <span className="text-xs font-normal text-warning">{t.positions.breakeven} {pct(breakevenGain)}</span>
                           )}
                         </div>
                       </TableCell>
@@ -227,7 +229,7 @@ export default function Positions() {
                             <div className="flex flex-col items-end">
                               <span className={cn(pnlColor(e.gszzl / 100), !e.ok && "opacity-70")}>
                                 {pct(e.gszzl / 100)}
-                                {e.ok && <span className="ml-0.5 text-[10px] opacity-50">估</span>}
+                                {e.ok && <span className="ml-0.5 text-[10px] opacity-50">{t.positions.estLabel}</span>}
                               </span>
                               {!e.ok && e.pnl !== 0 && (
                                 <span className={cn("text-xs font-normal", pnlColor(scaledPnl))}>
@@ -280,7 +282,7 @@ export default function Positions() {
                   const hasFilteredEstimate = sortedRows.some(([code]) => estimateMap[code] != null)
                   return (
                     <TableRow className="border-t-2 border-border bg-muted/80 [&>td]:py-2.5 [&>td]:font-bold [&>td]:text-sm">
-                      <TableCell colSpan={3} className="text-foreground">合计（{sortedRows.length} 只）</TableCell>
+                      <TableCell colSpan={3} className="text-foreground">{t.common.total}（{sortedRows.length} {t.common.units}）</TableCell>
                       <TableCell className="text-right tabular-nums text-foreground">{money(totalValue)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalPnl)}`}>{money(totalPnl)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
@@ -294,7 +296,7 @@ export default function Positions() {
               </TableBody>
             </Table>
           )}
-          <p className="mt-3 text-sm text-muted-foreground">共 {sortedRows.length} 只基金 · 点击行查看详情</p>
+          <p className="mt-3 text-sm text-muted-foreground">{t.positions.fundCountHint.replace("{n}", String(sortedRows.length))}</p>
         </CardContent>
       </Card>
 
@@ -302,7 +304,7 @@ export default function Positions() {
       {showClosed && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">已清仓记录</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t.positions.closedRecords}</CardTitle>
           </CardHeader>
           <CardContent>
             {(() => {
@@ -337,14 +339,14 @@ export default function Positions() {
                   </TableHead>
                 )
               }
-              if (closedSorted.length === 0) return <p className="py-4 text-center text-muted-foreground">无已清仓记录</p>
+              if (closedSorted.length === 0) return <p className="py-4 text-center text-muted-foreground">{t.positions.noClosedRecords}</p>
               return (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <ClosedSortHeader field="name">名称</ClosedSortHeader>
-                      <ClosedSortHeader field="realized" className="text-right">已实现盈亏</ClosedSortHeader>
-                      <ClosedSortHeader field="channels" className="text-right">渠道数</ClosedSortHeader>
+                      <ClosedSortHeader field="name">{t.common.name}</ClosedSortHeader>
+                      <ClosedSortHeader field="realized" className="text-right">{t.positions.realizedPnl}</ClosedSortHeader>
+                      <ClosedSortHeader field="channels" className="text-right">{t.positions.channelCount}</ClosedSortHeader>
                       <TableHead className="w-8"></TableHead>
                     </TableRow>
                   </TableHeader>

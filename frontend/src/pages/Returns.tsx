@@ -18,10 +18,12 @@ import { ChevronUp, ChevronDown, BarChart3, CalendarDays } from "lucide-react"
 import { getChannelColors, getChannelColorsAsync, getPalette } from "@/lib/channelColors"
 import { RANGE_LABELS, RANGE_DAYS } from "@/lib/rangeLabels"
 import { makeSortHeader } from "@/components/SortHeader"
+import { useLang } from "@/i18n/LanguageContext"
 
 const PALETTE = getPalette()
 
 function ChannelTooltip({ active, payload, label }: { active?: boolean; payload?: { dataKey: string; value: number; color: string }[]; label?: string }) {
+  const { t } = useLang()
   if (!active || !payload?.length) return null
   const total = payload.reduce((s, p) => s + p.value, 0)
   return (
@@ -35,7 +37,7 @@ function ChannelTooltip({ active, payload, label }: { active?: boolean; payload?
         </div>
       ))}
       <div className="mt-1 pt-1 border-t border-border flex justify-between">
-        <span className="text-muted-foreground">合计</span>
+        <span className="text-muted-foreground">{t.common.total}</span>
         <span className={`font-bold tabular-nums ${total >= 0 ? "text-gain" : "text-loss"}`}>{signedMoney(total)}</span>
       </div>
     </div>
@@ -56,6 +58,7 @@ export default function Returns() {
   const [curveRange, setCurveRange] = useState<"1m" | "3m" | "6m" | "1y" | "all">("1y")
   const [channelColors, setChannelColors] = useState<Record<string, string>>(() => getChannelColors())
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
+  const { t } = useLang()
 
   const toggleLegend = (e: any) => {
     const key = e.dataKey || e.value
@@ -213,24 +216,24 @@ export default function Returns() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="收益分析" />
+      <PageHeader title={t.returns.title} />
 
       {/* Metrics — 详细指标，不与总览重复 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
-          <p className="text-xs font-medium text-muted-foreground">持仓成本</p>
+          <p className="text-xs font-medium text-muted-foreground">{t.returns.holdingCost}</p>
           <p className="mt-1 text-lg md:text-xl font-bold tabular-nums">{money(summary.total_cost)}</p>
         </CardContent></Card>
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
-          <p className="text-xs font-medium text-muted-foreground">浮动盈亏</p>
+          <p className="text-xs font-medium text-muted-foreground">{t.returns.unrealizedPnl}</p>
           <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${pnlColor(summary.unrealized_pnl)}`}>{signedMoney(summary.unrealized_pnl)}</p>
         </CardContent></Card>
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
-          <p className="text-xs font-medium text-muted-foreground">已实现盈亏</p>
+          <p className="text-xs font-medium text-muted-foreground">{t.returns.realizedPnl}</p>
           <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${pnlColor(summary.realized_pnl)}`}>{signedMoney(summary.realized_pnl)}</p>
         </CardContent></Card>
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
-          <p className="text-xs font-medium text-muted-foreground">累计买入 / 卖出 / 分红</p>
+          <p className="text-xs font-medium text-muted-foreground">{t.returns.buySellDividend}</p>
           <p className="mt-1 text-sm md:text-base font-bold tabular-nums">
             <span className="text-primary">{money(summary.total_buy)}</span>
             <span className="text-muted-foreground mx-1">/</span>
@@ -245,9 +248,9 @@ export default function Returns() {
       {pnlData.length > 0 && (
         <Card className="card-hover">
           <CardHeader className="pb-2 flex-row items-center justify-between flex-wrap gap-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">收益波动</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t.returns.pnlFluctuation}</CardTitle>
             <div className="flex flex-wrap items-center gap-1">
-              {([["day", "日"], ["week", "周"], ["month", "月"], ["year", "年"]] as const).map(([key, label]) => (
+              {([["day", t.returns.day], ["week", t.returns.week], ["month", t.returns.month], ["year", t.returns.year]] as const).map(([key, label]) => (
                 <Button key={key} size="sm" variant={pnlMode === key ? "default" : "outline"} className="h-6 px-2 text-[11px]"
                   onClick={() => { setPnlMode(key); if (key !== "day") setChartView("bar") }}>
                   {label}
@@ -259,7 +262,7 @@ export default function Returns() {
                   {([7, 30, 90] as const).map((d) => (
                     <Button key={d} size="sm" variant={pnlDays === d ? "default" : "outline"} className="h-6 px-2 text-[11px]"
                       onClick={() => setPnlDays(d)}>
-                      {d}天
+                      {`${d}${t.returns.daysSuffix}`}
                     </Button>
                   ))}
                 </>
@@ -315,7 +318,7 @@ export default function Returns() {
       {/* Portfolio curve */}
       <Card className="card-hover">
         <CardHeader className="pb-2 flex-row items-center justify-between flex-wrap gap-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">组合收益曲线</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t.returns.portfolioCurve}</CardTitle>
           <div className="flex items-center gap-1">
             {(["1m", "3m", "6m", "1y", "all"] as const).map(r => (
               <Button key={r} size="sm" variant={curveRange === r ? "default" : "outline"} className="h-6 px-2 text-[11px]"
@@ -340,19 +343,19 @@ export default function Returns() {
                 <YAxis yAxisId="value" tickFormatter={(v: number) => `¥${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
                 <YAxis yAxisId="return" orientation="right" tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
                 <Tooltip formatter={(value: number, name: string) => {
-                  if (name === "累计收益率") return [`${(value * 100).toFixed(2)}%`, name]
+                  if (name === t.returns.totalReturnRate) return [`${(value * 100).toFixed(2)}%`, name]
                   return [money(value), name]
                 }} labelStyle={{ color: 'hsl(var(--foreground))' }} contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} onClick={toggleLegend} />
-                <Area yAxisId="value" type="monotone" dataKey="total_value" name="组合市值" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#valueGradient)" hide={hiddenKeys.has("total_value")} />
-                <Line yAxisId="value" type="monotone" dataKey="invested_cost" name="累计净投入" stroke="hsl(var(--chart-4))" strokeWidth={2} dot={false} hide={hiddenKeys.has("invested_cost")} />
-                <Line yAxisId="value" type="monotone" dataKey="profit" name="累计收益" stroke="var(--gain-500)" strokeWidth={2} dot={false} hide={hiddenKeys.has("profit")} />
-                <Line yAxisId="return" type="monotone" dataKey="total_return" name="累计收益率" stroke="hsl(var(--chart-5))" strokeWidth={2} dot={false} hide={hiddenKeys.has("total_return")} />
+                <Area yAxisId="value" type="monotone" dataKey="total_value" name={t.returns.portfolioValue} stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#valueGradient)" hide={hiddenKeys.has("total_value")} />
+                <Line yAxisId="value" type="monotone" dataKey="invested_cost" name={t.returns.investedCost} stroke="hsl(var(--chart-4))" strokeWidth={2} dot={false} hide={hiddenKeys.has("invested_cost")} />
+                <Line yAxisId="value" type="monotone" dataKey="profit" name={t.returns.totalReturn} stroke="var(--gain-500)" strokeWidth={2} dot={false} hide={hiddenKeys.has("profit")} />
+                <Line yAxisId="return" type="monotone" dataKey="total_return" name={t.returns.totalReturnRate} stroke="hsl(var(--chart-5))" strokeWidth={2} dot={false} hide={hiddenKeys.has("total_return")} />
               </ComposedChart>
             </ResponsiveContainer>
           ) : (
             <p className="py-12 text-center text-sm text-muted-foreground">
-              净值历史不足，先到「净值更新」抓取数据后再查看曲线。
+              {t.returns.curveNoDataHint}
             </p>
           )}
         </CardContent>
@@ -360,24 +363,24 @@ export default function Returns() {
 
       {/* Per-fund table */}
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">单基金收益明细</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle className="text-base">{t.returns.perFundDetail}</CardTitle></CardHeader>
         <CardContent>
           {openPositions.length === 0 ? (
-            <EmptyState title="暂无持仓数据" />
+            <EmptyState title={t.returns.noPositions} />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <SortHeader field="fund_code">代码</SortHeader>
-                  <SortHeader field="fund_name">名称</SortHeader>
-                  <SortHeader field="channel">渠道</SortHeader>
-                  <SortHeader field="total_cost" className="text-right">持仓成本</SortHeader>
-                  <SortHeader field="market_value" className="text-right">当前市值</SortHeader>
-                  <SortHeader field="unrealized_pnl" className="text-right">浮动盈亏</SortHeader>
-                  <SortHeader field="return_rate" className="text-right">收益率</SortHeader>
-                  <SortHeader field="realized_pnl" className="text-right">已实现</SortHeader>
-                  <SortHeader field="dividend_total" className="text-right">分红</SortHeader>
-                  <SortHeader field="weight" className="text-right">占比</SortHeader>
+                  <SortHeader field="fund_code">{t.common.code}</SortHeader>
+                  <SortHeader field="fund_name">{t.common.name}</SortHeader>
+                  <SortHeader field="channel">{t.common.channel}</SortHeader>
+                  <SortHeader field="total_cost" className="text-right">{t.returns.holdingCost}</SortHeader>
+                  <SortHeader field="market_value" className="text-right">{t.returns.currentValue}</SortHeader>
+                  <SortHeader field="unrealized_pnl" className="text-right">{t.returns.unrealizedPnl}</SortHeader>
+                  <SortHeader field="return_rate" className="text-right">{t.returns.return}</SortHeader>
+                  <SortHeader field="realized_pnl" className="text-right">{t.returns.realized}</SortHeader>
+                  <SortHeader field="dividend_total" className="text-right">{t.actionLabels.dividend}</SortHeader>
+                  <SortHeader field="weight" className="text-right">{t.returns.weight}</SortHeader>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -397,7 +400,7 @@ export default function Returns() {
                 ))}
                 {/* 汇总行 */}
                 <TableRow className="border-t-2 border-border bg-muted/50 font-medium">
-                  <TableCell colSpan={3} className="text-sm">合计（{openPositions.length} 只）</TableCell>
+                  <TableCell colSpan={3} className="text-sm">{t.returns.totalSummary.replace("{n}", String(openPositions.length))}</TableCell>
                   <TableCell className="text-right tabular-nums">{money(totals.total_cost)}</TableCell>
                   <TableCell className="text-right tabular-nums">{money(totals.market_value)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${pnlColor(totals.unrealized_pnl)}`}>{money(totals.unrealized_pnl)}</TableCell>
@@ -415,7 +418,7 @@ export default function Returns() {
       {/* Return ranking — horizontal bar chart with color coding */}
       {chartRows.length > 0 && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">浮动收益率排序</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">{t.returns.returnRanking}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={Math.max(200, chartRows.length * 36)}>
               <BarChart data={chartRows} layout="vertical" margin={{ left: 10, right: 40, top: 5 }}>

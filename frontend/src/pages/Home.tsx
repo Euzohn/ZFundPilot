@@ -5,87 +5,17 @@ import { api } from "@/api/client"
 import type { PortfolioSummary } from "@/api/types"
 import { money, pct, signedMoney, localDateStr } from "@/lib/format"
 import { getColorTheme, getColorThemeAsync, applyColorTheme } from "@/lib/colorTheme"
+import { useLang } from "@/i18n/LanguageContext"
 
 const GITHUB_URL = "https://github.com/Euzohn/ZFundPilot"
 
-type Lang = "zh" | "en"
-
-const t = {
-  zh: {
-    tagline: "个人基金分析与风险管理系统",
-    currentValue: "当前市值",
-    dailyPnl: "今日收益",
-    yesterdayPnl: "昨日收益",
-    totalPnl: "累计盈亏",
-    holdings: "持仓数量",
-    units: "只",
-    systemStatus: "系统状态",
-    market: "市场",
-    marketOpen: "开市",
-    marketClosed: "闭市",
-    nav: "净值",
-    navLatest: "最新",
-    concentration: "集中度",
-    concHigh: "高",
-    concModerate: "中",
-    concLow: "低",
-    navigation: "导航",
-    loading: "[ 加载数据中... ]",
-    noData: "[ 暂无数据 ]",
-    initiateTx: ">>> 添加第一笔交易",
-    error: "[ 数据加载失败 ]",
-    retry: ">>> 重试",
-    disclaimer: "/// 不提供交易信号 / 仅供参考 / 仅数据分析 ///",
-    greetings: ["深夜", "上午好", "中午好", "下午好", "晚上好"],
-    langLabel: "切换到英文",
-  },
-  en: {
-    tagline: "Personal Fund Analysis & Risk Management System",
-    currentValue: "CURRENT VALUE",
-    dailyPnl: "TODAY'S P&L",
-    yesterdayPnl: "YESTERDAY'S P&L",
-    totalPnl: "TOTAL P&L",
-    holdings: "HOLDINGS",
-    units: "UNITS",
-    systemStatus: "SYSTEM STATUS",
-    market: "MARKET",
-    marketOpen: "OPEN",
-    marketClosed: "CLOSED",
-    nav: "NAV",
-    navLatest: "CURRENT",
-    concentration: "CONCENTRATION",
-    concHigh: "HIGH",
-    concModerate: "MODERATE",
-    concLow: "LOW",
-    navigation: "NAVIGATION",
-    loading: "[ FETCHING DATA... ]",
-    noData: "[ NO DATA ]",
-    initiateTx: ">>> INITIATE FIRST TRANSACTION",
-    error: "[ DATA LOAD FAILED ]",
-    retry: ">>> RETRY",
-    disclaimer: "/// NO TRADE SIGNALS / NOT FINANCIAL ADVICE / DATA ONLY ///",
-    greetings: ["late night", "good morning", "good noon", "good afternoon", "good evening"],
-    langLabel: "Switch to Chinese",
-  },
-}
-
-const quickActions = [
-  { to: "/transactions", code: "TX", zh: { label: "交易记录", desc: "买入 / 卖出 / 分红" }, en: { label: "TRANSACTIONS", desc: "BUY / SELL / DIVIDEND FLOW" } },
-  { to: "/nav", code: "NV", zh: { label: "净值更新", desc: "获取最新净值数据" }, en: { label: "NAV UPDATE", desc: "FETCH NET VALUE DATA" } },
-  { to: "/positions", code: "PS", zh: { label: "持仓明细", desc: "持仓与成本" }, en: { label: "POSITIONS", desc: "HOLDINGS AND COST BASIS" } },
-  { to: "/returns", code: "RT", zh: { label: "收益分析", desc: "曲线与排名" }, en: { label: "RETURNS", desc: "CURVE AND RANKING" } },
-  { to: "/risk", code: "RK", zh: { label: "风险评估", desc: "回撤 / 波动率 / HHI" }, en: { label: "RISK ASSESS", desc: "DRAWDOWN / VOLATILITY / HHI" } },
-  { to: "/ai", code: "AI", zh: { label: "AI 顾问", desc: "大模型分析" }, en: { label: "AI ADVISOR", desc: "LLM POWERED ANALYSIS" } },
-]
-
-function greeting(lang: Lang) {
+function greeting(greetings: string[]) {
   const h = new Date().getHours()
-  const g = t[lang].greetings
-  if (h < 6) return g[0]
-  if (h < 12) return g[1]
-  if (h < 14) return g[2]
-  if (h < 18) return g[3]
-  return g[4]
+  if (h < 6) return greetings[0]
+  if (h < 12) return greetings[1]
+  if (h < 14) return greetings[2]
+  if (h < 18) return greetings[3]
+  return greetings[4]
 }
 
 function formatDateTime(d: Date) {
@@ -108,12 +38,11 @@ function marketStatus(d: Date): "OPEN" | "CLOSED" {
   return "CLOSED"
 }
 
-function concentrationLabel(w: number | undefined, lang: Lang): string {
+function concentrationLabel(w: number | undefined, conc: { concHigh: string; concModerate: string; concLow: string }): string {
   if (w == null) return "---"
-  const l = t[lang]
-  if (w > 0.5) return l.concHigh
-  if (w > 0.3) return l.concModerate
-  return l.concLow
+  if (w > 0.5) return conc.concHigh
+  if (w > 0.3) return conc.concModerate
+  return conc.concLow
 }
 
 function concentrationColor(w: number | undefined): string {
@@ -145,13 +74,13 @@ export default function Home() {
   const navigate = useNavigate()
   const { data: summary, loading, reload } = useApi<PortfolioSummary>(() => api.getSummary())
   const { data: authStatus } = useApi(() => api.getAuthStatus(), [])
+  const { lang, t } = useLang()
   const [now, setNow] = useState(new Date())
-  const [lang, setLang] = useState<Lang>(() => (localStorage.getItem("zfundpilot_lang") as Lang) || "zh")
   const reducedMotion = usePrefersReducedMotion()
 
   const clockRef = useRef<HTMLSpanElement>(null)
 
-  const tr = t[lang]
+  const tr = t.home
   const labelFont = lang === "zh" ? "font-sans" : "font-mono uppercase"
   const descFont = lang === "zh" ? "font-sans" : "font-mono uppercase tracking-wider"
 
@@ -177,7 +106,6 @@ export default function Home() {
     return () => window.clearInterval(timer)
   }, [reducedMotion])
 
-  // 页面获得焦点时自动刷新数据
   const handleVisibility = useCallback(() => {
     if (document.visibilityState === "visible") reload()
   }, [reload])
@@ -185,10 +113,6 @@ export default function Home() {
     document.addEventListener("visibilitychange", handleVisibility)
     return () => document.removeEventListener("visibilitychange", handleVisibility)
   }, [handleVisibility])
-
-  useEffect(() => {
-    localStorage.setItem("zfundpilot_lang", lang)
-  }, [lang])
 
   const mkt = useMemo(() => marketStatus(now), [now])
   const todayStr = useMemo(() => localDateStr(), [])
@@ -214,17 +138,6 @@ export default function Home() {
           }}
         />
       )}
-
-      {/* Language toggle */}
-      <button
-        type="button"
-        onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-        aria-label={tr.langLabel}
-        aria-pressed={lang === "en"}
-        className="fixed right-6 top-6 z-20 border border-white/20 px-3 py-1 font-mono text-xs uppercase tracking-wider text-white/60 transition-colors hover:border-brand-accent hover:text-brand-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg-dark active:scale-[0.98]"
-      >
-        {lang === "zh" ? "EN" : "中文"}
-      </button>
 
       {/* Main content */}
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-6 py-16 md:py-20">
@@ -269,7 +182,7 @@ export default function Home() {
             <p className="mt-4 font-mono text-xs tracking-wider text-white/40">
               <span ref={clockRef}>{formatDateTime(now)}</span>
               <span aria-hidden="true"> · </span>
-              <span>{greeting(lang)}</span>
+              <span>{greeting(tr.greetings)}</span>
             </p>
           </div>
         </section>
@@ -357,7 +270,7 @@ export default function Home() {
                 <span aria-hidden="true" className="mx-3 text-white/30">///</span>
                 <span className="text-white/60">{tr.concentration}:</span>{" "}
                 <span className={concentrationColor(summary.max_single_weight)}>
-                  {concentrationLabel(summary.max_single_weight, lang)}
+                  {concentrationLabel(summary.max_single_weight, tr)}
                   {summary.max_single_weight ? ` ${(summary.max_single_weight * 100).toFixed(1)}%` : ""}
                 </span>
               </p>
@@ -369,14 +282,15 @@ export default function Home() {
         <section className="fade-in-up" style={{ animationDelay: "300ms" }}>
           <p className={`mb-4 text-sm tracking-wider text-white/40 ${labelFont}`}>{tr.navigation}</p>
           <div className="grid grid-cols-2 gap-px border border-white/10 bg-white/10 sm:grid-cols-4">
-            {quickActions.map(({ to, code, zh, en }, i) => {
-              const item = lang === "zh" ? zh : en
+            {t.quickActions.map(({ label, desc }, i) => {
+              const codes = ["TX", "NV", "PS", "RT", "RK", "AI"]
+              const routes = ["/transactions", "/nav", "/positions", "/returns", "/risk", "/ai"]
               const isWide = i === 0 || i === 5
               return (
                 <button
-                  key={to}
+                  key={routes[i]}
                   type="button"
-                  onClick={() => navigate(to)}
+                  onClick={() => navigate(routes[i])}
                   className={`group relative bg-brand-bg-dark p-5 text-left transition-colors duration-200 hover:bg-brand-text-light hover:text-brand-bg-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg-dark active:scale-[0.98] sm:p-6 ${isWide ? "sm:col-span-2" : ""}`}
                 >
                   <span
@@ -388,11 +302,11 @@ export default function Home() {
                     className="pointer-events-none absolute right-1 bottom-1 h-2 w-2 border-r border-b border-brand-accent opacity-0 transition-opacity group-hover:opacity-100"
                   />
                   <div className={`flex items-center gap-3 ${isWide ? "sm:flex-row sm:items-center" : "flex-col"}`}>
-                    <p className="font-mono text-2xl font-bold">{code}</p>
+                    <p className="font-mono text-2xl font-bold">{codes[i]}</p>
                     <div className={isWide ? "sm:border-l sm:border-white/10 sm:pl-3" : ""}>
-                      <p className={`text-sm ${labelFont}`}>{item.label}</p>
+                      <p className={`text-sm ${labelFont}`}>{label}</p>
                       <p className={`mt-0.5 text-xs text-white/30 group-hover:text-black/50 ${descFont}`}>
-                        {item.desc}
+                        {desc}
                       </p>
                     </div>
                   </div>

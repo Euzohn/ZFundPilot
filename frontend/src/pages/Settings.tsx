@@ -22,6 +22,7 @@ import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import ThemeToggle from "@/components/ThemeToggle"
 import { toast } from "sonner"
+import { useLang } from "@/i18n/LanguageContext"
 import { cn } from "@/lib/utils"
 import type { AIUsageStats, AIUsageDaily, AuditLog, KeywordMaps, KeywordEntry, SchedulerStatus } from "@/api/types"
 import {
@@ -52,67 +53,68 @@ function Sparkline({ data }: { data: number[] }) {
   )
 }
 
-const AUDIT_LOG_LABELS: Record<string, string> = {
-  login_success: "登录成功",
-  login_failed: "登录失败",
-  change_password: "修改密码",
-  change_username: "修改用户名",
-  add_transaction: "新增交易",
-  update_transaction: "修改交易",
-  delete_transaction: "删除交易",
-  delete_all_transactions: "清空流水",
-  clear_then_import: "导入 CSV（清空）",
-  csv_import: "导入 CSV（追加）",
-  update_ai_config: "修改 AI 配置",
-  scheduler_toggle: "定时任务开关",
-  scheduler_cron_change: "修改定时 Cron",
-  t1_nav_fix: "T+1 净值修复",
-  nav_backfill: "净值回填交易",
-  auto_invest_plan_create: "创建定投计划",
-  auto_invest_plan_update: "修改定投计划",
-  auto_invest_plan_delete: "删除定投计划",
-  auto_invest_plan_toggle: "定投计划开关",
-  auto_invest_execute: "定投执行",
-}
-
 function AuditLogPanel() {
+  const { t } = useLang()
   const { data: logs, loading, error, reload } = useApi<AuditLog[]>(() => api.getAuditLogs(100), [])
+
+  const auditLabels: Record<string, string> = {
+    login_success: t.settings.auditLabels.login_success,
+    login_failed: t.settings.auditLabels.login_failed,
+    change_password: t.settings.auditLabels.change_password,
+    change_username: t.settings.auditLabels.change_username,
+    add_transaction: t.settings.auditLabels.add_transaction,
+    update_transaction: t.settings.auditLabels.update_transaction,
+    delete_transaction: t.settings.auditLabels.delete_transaction,
+    delete_all_transactions: t.settings.auditLabels.delete_all_transactions,
+    clear_then_import: t.settings.auditLabels.clear_then_import,
+    csv_import: t.settings.auditLabels.csv_import,
+    update_ai_config: t.settings.auditLabels.update_ai_config,
+    scheduler_toggle: t.settings.auditLabels.scheduler_toggle,
+    scheduler_cron_change: t.settings.auditLabels.scheduler_cron_change,
+    t1_nav_fix: t.settings.auditLabels.t1_nav_fix,
+    nav_backfill: t.settings.auditLabels.nav_backfill,
+    auto_invest_plan_create: t.settings.auditLabels.auto_invest_plan_create,
+    auto_invest_plan_update: t.settings.auditLabels.auto_invest_plan_update,
+    auto_invest_plan_delete: t.settings.auditLabels.auto_invest_plan_delete,
+    auto_invest_plan_toggle: t.settings.auditLabels.auto_invest_plan_toggle,
+    auto_invest_execute: t.settings.auditLabels.auto_invest_execute,
+  }
 
   return (
     <Card className="mt-4">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Clock className="h-5 w-5 text-primary" />
-          审计日志
+          {t.settings.auditLog}
         </CardTitle>
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">最近 100 条敏感操作记录</p>
+          <p className="text-sm text-muted-foreground">{t.settings.auditLogRecordsHint}</p>
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={reload} disabled={loading}>
             <RefreshCw className={cn("mr-1 h-3 w-3", loading && "animate-spin")} />
-            {loading ? "加载中..." : "刷新"}
+            {loading ? t.common.loading : t.common.refresh}
           </Button>
         </div>
       </CardHeader>
       <CardContent>
         {error ? (
           <div className="flex items-center gap-2 py-2">
-            <span className="text-xs text-loss-600">加载失败</span>
-            <button onClick={reload} className="text-xs text-primary hover:underline">重试</button>
+            <span className="text-xs text-loss-600">{t.common.loadFailed}</span>
+            <button onClick={reload} className="text-xs text-primary hover:underline">{t.common.retry}</button>
           </div>
         ) : !logs ? (
           <LoadingState size="sm" />
         ) : logs.length === 0 ? (
-          <EmptyState title="暂无审计日志" size="sm" />
+          <EmptyState title={t.settings.noAuditLogs} size="sm" />
         ) : (
           <div className="overflow-x-auto rounded-md border max-h-96 overflow-y-auto">
             <Table>
               <TableHeader className="sticky top-0 bg-background">
                 <TableRow>
-                  <TableHead className="text-xs">时间</TableHead>
+                  <TableHead className="text-xs">{t.settings.auditTime}</TableHead>
                   <TableHead className="text-xs">IP</TableHead>
-                  <TableHead className="text-xs">用户</TableHead>
-                  <TableHead className="text-xs">操作</TableHead>
-                  <TableHead className="text-xs">详情</TableHead>
+                  <TableHead className="text-xs">{t.settings.auditUser}</TableHead>
+                  <TableHead className="text-xs">{t.common.actions}</TableHead>
+                  <TableHead className="text-xs">{t.settings.auditDetail}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -123,7 +125,7 @@ function AuditLogPanel() {
                     </TableCell>
                     <TableCell className="text-xs font-mono">{log.ip || "—"}</TableCell>
                     <TableCell className="text-xs">{log.username || "—"}</TableCell>
-                    <TableCell className="text-xs">{AUDIT_LOG_LABELS[log.action] || log.action}</TableCell>
+                    <TableCell className="text-xs">{auditLabels[log.action] || log.action}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {log.detail ? (
                         <details className="group">
@@ -155,6 +157,7 @@ const PROVIDER_PRESETS = [
 ]
 
 export default function Settings() {
+  const { t } = useLang()
   // Channels
   const [channels, setChannels] = useState<string[]>(() => getChannels())
   const [newChannel, setNewChannel] = useState("")
@@ -186,14 +189,14 @@ export default function Settings() {
 
   const handleCronSave = async () => {
     const [h, m] = cronTime.split(":")
-    if (h == null || m == null) { toast.warning("时间格式不正确"); return }
+    if (h == null || m == null) { toast.warning(t.settings.invalidTimeFormat); return }
     const cron = `${parseInt(m)} ${parseInt(h)} * * ${cronWeekdaysOnly ? "1-5" : "*"}`
     setCronSaving(true)
     try {
       await api.setSchedulerCron(cron)
-      toast.success("定时时间已更新")
+      toast.success(t.settings.scheduleTimeUpdated)
       reloadScheduler()
-    } catch (e) { toast.error(`保存失败: ${e}`) }
+    } catch (e) { toast.error(`${t.common.saveFailed}: ${e}`) }
     finally { setCronSaving(false) }
   }
 
@@ -263,14 +266,14 @@ export default function Settings() {
   const add = async () => {
     const name = newChannel.trim()
     if (!name) return
-    if (channels.includes(name)) { toast.warning("该渠道已存在"); return }
+    if (channels.includes(name)) { toast.warning(t.settings.channelExists); return }
     const next = [...channels, name]
     setChannels(next); setNewChannel(""); await saveChannels(next)
   }
   const handleReset = async () => {
     const defaults = getDefaultChannels()
     setChannels(defaults); await saveChannels(defaults)
-    toast.success("已恢复默认渠道顺序")
+    toast.success(t.settings.channelsReset)
   }
 
   // --- Channel colors ---
@@ -283,7 +286,7 @@ export default function Settings() {
     const defaults = getDefaultChannelColors()
     setChannelColors(defaults)
     await saveChannelColors(defaults)
-    toast.success("已恢复默认渠道颜色")
+    toast.success(t.settings.channelColorsReset)
   }
 
   // --- Color theme ---
@@ -304,47 +307,47 @@ export default function Settings() {
     try {
       await api.toggleScheduler(!schedulerStatus.enabled)
       await reloadScheduler()
-      toast.success(schedulerStatus.enabled ? "定时更新已暂停" : "定时更新已启用")
-    } catch (e) { toast.error(`操作失败: ${e}`) }
+      toast.success(schedulerStatus.enabled ? t.settings.schedulePaused : t.settings.scheduleResumed)
+    } catch (e) { toast.error(`${t.common.operationFailed}: ${e}`) }
     finally { setSchedulerToggling(false) }
   }
 
   // --- Password ---
   const handleChangePassword = async () => {
-    if (!currentPwd) { toast.error("请输入当前密码"); return }
-    if (newPwd.length < 6) { toast.error("新密码至少 6 位"); return }
-    if (newPwd !== confirmPwd) { toast.error("两次输入的新密码不一致"); return }
+    if (!currentPwd) { toast.error(t.settings.currentPasswordRequired); return }
+    if (newPwd.length < 6) { toast.error(t.settings.passwordTooShort); return }
+    if (newPwd !== confirmPwd) { toast.error(t.settings.passwordMismatch); return }
     setChangingPwd(true)
     try {
       await api.changePassword(currentPwd, newPwd)
-      toast.success("密码已修改，请重新登录")
+      toast.success(t.settings.passwordChanged)
       setTimeout(() => { clearToken(); window.location.reload() }, 1500)
-    } catch (e) { toast.error(`修改失败: ${e}`) }
+    } catch (e) { toast.error(`${t.settings.changeFailed}: ${e}`) }
     finally { setChangingPwd(false) }
   }
 
   const handleChangeUsername = async () => {
-    if (newUsername.trim().length < 2) { toast.error("用户名至少 2 位"); return }
-    if (!usernamePwd) { toast.error("请输入当前密码"); return }
+    if (newUsername.trim().length < 2) { toast.error(t.settings.usernameTooShort); return }
+    if (!usernamePwd) { toast.error(t.settings.currentPasswordRequired); return }
     setChangingUsername(true)
     try {
       await api.changeUsername(usernamePwd, newUsername.trim())
-      toast.success("用户名已修改，请重新登录")
+      toast.success(t.settings.usernameChanged)
       setTimeout(() => { clearToken(); window.location.reload() }, 1500)
-    } catch (e) { toast.error(`修改失败: ${e}`) }
+    } catch (e) { toast.error(`${t.settings.changeFailed}: ${e}`) }
     finally { setChangingUsername(false) }
   }
 
   // --- AI config ---
   const handleSaveAI = async () => {
-    if (!aiBaseUrl.trim() || !aiModel.trim()) { toast.error("Base URL 和模型 ID 不能为空"); return }
+    if (!aiBaseUrl.trim() || !aiModel.trim()) { toast.error(t.settings.aiConfigRequired); return }
     setSavingAI(true)
     try {
       await api.updateAIConfig(aiBaseUrl.trim(), aiApiKey, aiModel.trim(), aiWebSearch)
       setAiApiKey("")
       reloadAIConfig()
-      toast.success("AI 配置已保存")
-    } catch (e) { toast.error(`保存失败: ${e}`) }
+      toast.success(t.settings.aiConfigSaved)
+    } catch (e) { toast.error(`${t.common.saveFailed}: ${e}`) }
     finally { setSavingAI(false) }
   }
 
@@ -354,10 +357,10 @@ export default function Settings() {
     try {
       const res = await api.testAIConnection()
       setTestResult(res)
-      if (res.ok) toast.success(`连接成功 · ${res.provider} · ${res.model}`)
-      else toast.error(`连接失败: ${res.error}`)
+      if (res.ok) toast.success(`${t.settings.connectionSuccess} · ${res.provider} · ${res.model}`)
+      else toast.error(`${t.settings.connectionFailed}: ${res.error}`)
     } catch (e) {
-      toast.error(`测试失败: ${e}`)
+      toast.error(`${t.settings.testFailed}: ${e}`)
     } finally {
       setTesting(false)
     }
@@ -367,8 +370,8 @@ export default function Settings() {
     setResettingSectors(true)
     try {
       const res = await api.resetSectors()
-      toast.success(`已重新计算 ${res.reset} 个基金的板块`)
-    } catch (e) { toast.error(`重置失败: ${e}`) }
+      toast.success(t.settings.sectorsReset.replace("{n}", String(res.reset)))
+    } catch (e) { toast.error(`${t.settings.resetFailed}: ${e}`) }
     finally { setResettingSectors(false) }
   }
 
@@ -395,8 +398,8 @@ export default function Settings() {
   const addCustomKeyword = async () => {
     const keyword = newKwKeyword.trim()
     const mapped = newKwMapped.trim()
-    if (!keyword || !mapped) { toast.warning("请填写关键词和映射值"); return }
-    if (kwCustom.some((e) => e.keyword === keyword)) { toast.warning("该关键词已存在"); return }
+    if (!keyword || !mapped) { toast.warning(t.settings.kwKeywordMappedRequired); return }
+    if (kwCustom.some((e) => e.keyword === keyword)) { toast.warning(t.settings.kwKeywordExists); return }
     const next = [...kwCustom, { keyword, mapped }]
     const typeCustom = kwTab === "sector" ? keywordMaps!.type_custom : next
     const sectorCustom = kwTab === "sector" ? next : keywordMaps!.sector_custom
@@ -428,30 +431,30 @@ export default function Settings() {
     const typeCustom = kwTab === "sector" ? keywordMaps!.type_custom : []
     const sectorCustom = kwTab === "sector" ? [] : keywordMaps!.sector_custom
     setKeywordMaps({ ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: [] })
-    try { await api.saveKeywordMaps(JSON.stringify(typeCustom), JSON.stringify(sectorCustom)); toast.success("已重置自定义关键词") } catch {}
+    try { await api.saveKeywordMaps(JSON.stringify(typeCustom), JSON.stringify(sectorCustom)); toast.success(t.settings.kwCustomReset) } catch {}
   }
 
   const authRequired = authStatus?.required
 
   return (
     <div className="space-y-6">
-      <PageHeader title="设置" tracking="tight" />
+      <PageHeader title={t.settings.title} tracking="tight" />
 
       <Tabs defaultValue="ai">
         <TabsList className={cn("grid w-full sm:inline-flex sm:w-auto", authRequired ? "grid-cols-3" : "grid-cols-2")}>
           {authRequired && (
             <TabsTrigger value="account" className="gap-1.5">
               <ShieldCheck className="h-4 w-4" />
-              <span className="hidden sm:inline">账户与安全</span><span className="sm:hidden">账户</span>
+              <span className="hidden sm:inline">{t.settings.accountSecurity}</span><span className="sm:hidden">{t.settings.account}</span>
             </TabsTrigger>
           )}
           <TabsTrigger value="ai" className="gap-1.5">
             <Bot className="h-4 w-4" />
-            <span className="hidden sm:inline">AI 投顾</span><span className="sm:hidden">AI</span>
+            <span className="hidden sm:inline">{t.settings.aiAdvisor}</span><span className="sm:hidden">{t.settings.ai}</span>
           </TabsTrigger>
           <TabsTrigger value="prefs" className="gap-1.5">
             <SlidersHorizontal className="h-4 w-4" />
-            <span className="hidden sm:inline">偏好设置</span><span className="sm:hidden">偏好</span>
+            <span className="hidden sm:inline">{t.settings.preferences}</span><span className="sm:hidden">{t.settings.prefs}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -462,36 +465,36 @@ export default function Settings() {
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <ShieldCheck className="h-5 w-5 text-primary" />
-                  账户与安全
+                  {t.settings.accountSecurity}
                 </CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  当前用户名：<span className="font-medium text-foreground">{authMe?.username || "—"}</span>
+                  {t.settings.currentUsername}<span className="font-medium text-foreground">{authMe?.username || "—"}</span>
                 </p>
               </CardHeader>
             <CardContent className="space-y-5">
               {aiConfigError && (
                 <div className="flex items-center gap-2 rounded-md border border-loss-200 bg-loss-50 px-3 py-2 text-xs">
-                  <span className="text-loss-700">AI 配置加载失败</span>
+                  <span className="text-loss-700">{t.settings.aiConfigLoadFailed}</span>
                   <button
                     onClick={reloadAIConfig}
                     className="text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                   >
-                    重试
+                    {t.common.retry}
                   </button>
                 </div>
               )}
                 {/* 修改用户名 */}
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium text-muted-foreground">修改用户名</Label>
+                  <Label className="text-xs font-medium text-muted-foreground">{t.settings.changeUsername}</Label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value)}
-                      className="h-8 text-xs" placeholder="新用户名（至少 2 位）" />
+                      className="h-8 text-xs" placeholder={t.settings.newUsernamePlaceholder} />
                     <Input type="password" value={usernamePwd} onChange={(e) => setUsernamePwd(e.target.value)}
-                      className="h-8 text-xs" placeholder="当前密码"
+                      className="h-8 text-xs" placeholder={t.settings.currentPassword}
                       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleChangeUsername() } }} />
                   </div>
                   <Button size="sm" onClick={handleChangeUsername} disabled={changingUsername} variant="outline">
-                    <UserCircle className="mr-1.5 h-3.5 w-3.5" /> {changingUsername ? "修改中..." : "修改用户名"}
+                    <UserCircle className="mr-1.5 h-3.5 w-3.5" /> {changingUsername ? t.settings.changing : t.settings.changeUsername}
                   </Button>
                 </div>
 
@@ -499,32 +502,32 @@ export default function Settings() {
 
                 {/* 修改密码 */}
                 <div className="space-y-2">
-                  <Label className="text-xs font-medium text-muted-foreground">修改密码</Label>
+                  <Label className="text-xs font-medium text-muted-foreground">{t.settings.changePassword}</Label>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <Label className="mb-1 block text-xs text-muted-foreground">当前密码</Label>
+                      <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.currentPassword}</Label>
                       <Input type="password" value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)}
-                        className="h-8 text-xs" placeholder="输入当前密码" />
+                        className="h-8 text-xs" placeholder={t.settings.currentPasswordPlaceholder} />
                     </div>
                     <div>
-                      <Label className="mb-1 block text-xs text-muted-foreground">新密码</Label>
+                      <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.newPassword}</Label>
                       <Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)}
-                        className="h-8 text-xs" placeholder="至少 6 位" />
+                        className="h-8 text-xs" placeholder={t.settings.passwordMinHint} />
                     </div>
                     <div>
-                      <Label className="mb-1 block text-xs text-muted-foreground">确认新密码</Label>
+                      <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.confirmNewPassword}</Label>
                       <Input type="password" value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)}
-                        className="h-8 text-xs" placeholder="再次输入新密码"
+                        className="h-8 text-xs" placeholder={t.settings.confirmPasswordPlaceholder}
                         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleChangePassword() } }} />
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" onClick={handleChangePassword} disabled={changingPwd} variant="outline">
-                      <KeyRound className="mr-1.5 h-3.5 w-3.5" /> {changingPwd ? "修改中..." : "修改密码"}
+                      <KeyRound className="mr-1.5 h-3.5 w-3.5" /> {changingPwd ? t.settings.changing : t.settings.changePassword}
                     </Button>
                     <Button size="sm" variant="outline" className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => { clearToken(); window.location.reload() }}>
-                      <LogOut className="mr-1.5 h-3.5 w-3.5" /> 退出登录
+                      <LogOut className="mr-1.5 h-3.5 w-3.5" /> {t.settings.logout}
                     </Button>
                   </div>
                 </div>
@@ -542,27 +545,27 @@ export default function Settings() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Bot className="h-5 w-5 text-primary" />
-                AI 投顾配置
+                {t.settings.aiAdvisorConfig}
               </CardTitle>
-              <p className="text-sm text-muted-foreground">配置 OpenAI 兼容 API 后，可在「AI 助手」页面对话并录入交易</p>
+              <p className="text-sm text-muted-foreground">{t.settings.aiConfigHint}</p>
             </CardHeader>
             <CardContent className="space-y-5">
               {/* API 配置 */}
               <div className="space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">API Base URL</Label>
+                    <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.aiBaseUrl}</Label>
                     <Input value={aiBaseUrl} onChange={(e) => setAiBaseUrl(e.target.value)}
                       className="h-8 text-xs" placeholder="https://api.moonshot.cn/v1" />
                   </div>
                   <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">API Key</Label>
+                    <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.aiApiKey}</Label>
                     <Input type="password" value={aiApiKey} onChange={(e) => setAiApiKey(e.target.value)}
                       className="h-8 text-xs"
-                      placeholder={aiConfig?.has_key ? "已配置，输入新值覆盖" : "sk-..."} />
+                      placeholder={aiConfig?.has_key ? t.settings.apiKeyConfigured : "sk-..."} />
                   </div>
                   <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">模型 ID</Label>
+                    <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.aiModel}</Label>
                     <Input value={aiModel} onChange={(e) => setAiModel(e.target.value)}
                       className="h-8 text-xs" placeholder="glm-4-plus / moonshot-v1-8k / deepseek-chat" />
                   </div>
@@ -570,7 +573,7 @@ export default function Settings() {
 
                 {/* 平台快捷预设 */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-muted-foreground">快捷填充：</span>
+                  <span className="text-xs text-muted-foreground">{t.settings.quickFill}</span>
                   {PROVIDER_PRESETS.map((p) => (
                     <button
                       key={p.name}
@@ -587,7 +590,7 @@ export default function Settings() {
                 <div className="flex flex-wrap items-center gap-3">
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
                     <Checkbox checked={aiWebSearch} onCheckedChange={(v) => setAiWebSearch(!!v)} />
-                    启用联网搜索
+                    {t.settings.enableWebSearch}
                   </label>
                   {aiWebSearch && aiBaseUrl && (
                     <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">
@@ -599,11 +602,11 @@ export default function Settings() {
                 {/* 操作按钮 */}
                 <div className="flex flex-wrap items-center gap-2">
                   <Button size="sm" onClick={handleSaveAI} disabled={savingAI}>
-                    <Save className="mr-1.5 h-3.5 w-3.5" /> {savingAI ? "保存中..." : "保存配置"}
+                    <Save className="mr-1.5 h-3.5 w-3.5" /> {savingAI ? t.settings.saving : t.settings.saveConfig}
                   </Button>
                   <Button size="sm" variant="outline" onClick={handleTestConnection} disabled={testing}>
                     {testing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Zap className="mr-1.5 h-3.5 w-3.5" />}
-                    {testing ? "测试中..." : "测试连接"}
+                    {testing ? t.settings.testing : t.settings.testConnection}
                   </Button>
                 </div>
 
@@ -614,7 +617,7 @@ export default function Settings() {
                     testResult.ok ? "bg-success/10 text-success border border-success/30" : "bg-destructive/10 text-destructive border border-destructive/30"
                   )}>
                     {testResult.ok
-                      ? <><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> 连接成功 · {testResult.provider} · {testResult.model}{testResult.has_search ? " · 联网搜索已启用" : ""}</>
+                      ? <><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> {t.settings.connectionSuccess} · {testResult.provider} · {testResult.model}{testResult.has_search ? ` · ${t.settings.webSearchEnabled}` : ""}</>
                       : <><XCircle className="h-3.5 w-3.5 shrink-0" /> {testResult.error}</>
                     }
                   </div>
@@ -627,11 +630,11 @@ export default function Settings() {
               {/* Token 用量 */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium">Token 用量</p>
+                  <p className="text-sm font-medium">{t.aiChat.tokenUsed}</p>
                   {usageStats && (
                     <p className="text-xs text-muted-foreground">
-                      今日 <span className="font-medium text-foreground">{formatTokens(usageStats.today)}</span>
-                      {" · "}累计 <span className="font-medium text-foreground">{formatTokens(usageStats.total)}</span>
+                      {t.aiChat.todayLabel} <span className="font-medium text-foreground">{formatTokens(usageStats.today)}</span>
+                      {" · "}{t.aiChat.totalLabel} <span className="font-medium text-foreground">{formatTokens(usageStats.total)}</span>
                     </p>
                   )}
                 </div>
@@ -642,12 +645,12 @@ export default function Settings() {
                     <Sparkline data={usageDaily.map((d) => d.tokens)} />
                     <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
                       <span>{usageDaily[0].date.slice(5)}</span>
-                      <span>近 7 天</span>
+                      <span>{t.settings.last7Days}</span>
                       <span>{usageDaily[usageDaily.length - 1].date.slice(5)}</span>
                     </div>
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground py-2">暂无用量数据</p>
+                  <p className="text-xs text-muted-foreground py-2">{t.settings.noUsageData}</p>
                 )}
 
                 {/* 最近调用表格 */}
@@ -656,12 +659,12 @@ export default function Settings() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="text-xs">时间</TableHead>
-                          <TableHead className="text-xs">模型</TableHead>
-                          <TableHead className="text-xs text-right">入</TableHead>
-                          <TableHead className="text-xs text-right">出</TableHead>
-                          <TableHead className="text-xs text-right">总</TableHead>
-                          <TableHead className="text-xs text-right">轮数</TableHead>
+                          <TableHead className="text-xs">{t.settings.auditTime}</TableHead>
+                          <TableHead className="text-xs">{t.settings.aiModel}</TableHead>
+                          <TableHead className="text-xs text-right">{t.aiChat.inputLabel}</TableHead>
+                          <TableHead className="text-xs text-right">{t.aiChat.outputLabel}</TableHead>
+                          <TableHead className="text-xs text-right">{t.common.total}</TableHead>
+                          <TableHead className="text-xs text-right">{t.aiChat.turnsUnit}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -693,9 +696,9 @@ export default function Settings() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <ShoppingCart className="h-5 w-5 text-primary" />
-                渠道管理
+                {t.settings.channelManagement}
               </CardTitle>
-              <p className="text-sm text-muted-foreground">顺序、颜色与增删</p>
+              <p className="text-sm text-muted-foreground">{t.settings.channelMgmtHint}</p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1">
@@ -713,7 +716,7 @@ export default function Settings() {
                       <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                     <span className="flex-1 text-sm font-semibold">{ch}</span>
-                    {i === 0 && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">默认</span>}
+                    {i === 0 && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{t.settings.defaultLabel}</span>}
                     <div className="flex items-center gap-1">
                       {palette.map(color => (
                         <button key={color} onClick={() => handleColorChange(ch, color)}
@@ -738,16 +741,16 @@ export default function Settings() {
                   <Input
                     value={newChannel}
                     onChange={(e) => setNewChannel(e.target.value)}
-                    placeholder="新增渠道名称"
+                    placeholder={t.settings.newChannelPlaceholder}
                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add() } }}
                     className="h-8 text-xs max-w-[180px]"
                   />
                   <Button variant="outline" size="sm" onClick={add} className="h-8 shrink-0">
-                    <Plus className="mr-1 h-3.5 w-3.5" /> 添加
+                    <Plus className="mr-1 h-3.5 w-3.5" /> {t.common.add}
                   </Button>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => { handleReset(); handleColorsReset() }} className="h-8 shrink-0">
-                  <RotateCcw className="mr-1 h-3.5 w-3.5" /> 恢复默认
+                  <RotateCcw className="mr-1 h-3.5 w-3.5" /> {t.settings.restoreDefaults}
                 </Button>
               </div>
             </CardContent>
@@ -758,12 +761,12 @@ export default function Settings() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Palette className="h-5 w-5 text-primary" />
-                显示设置
+                {t.settings.displaySettings}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <p className="text-sm font-semibold">涨跌颜色</p>
+                <p className="text-sm font-semibold">{t.settings.upDownColor}</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleThemeChange("international")}
@@ -775,9 +778,9 @@ export default function Settings() {
                         : "border-border bg-background text-muted-foreground hover:bg-accent"
                     )}
                   >
-                    <span className="text-success font-semibold">▲</span> 绿涨
-                    <span className="text-destructive font-semibold ml-2">▼</span> 红跌
-                    <span className="block text-[11px] text-muted-foreground mt-0.5">国际惯例</span>
+                    <span className="text-success font-semibold">▲</span> {t.settings.greenUp}
+                    <span className="text-destructive font-semibold ml-2">▼</span> {t.settings.redDown}
+                    <span className="block text-[11px] text-muted-foreground mt-0.5">{t.settings.internationalConvention}</span>
                   </button>
                   <button
                     onClick={() => handleThemeChange("china")}
@@ -789,16 +792,16 @@ export default function Settings() {
                         : "border-border bg-background text-muted-foreground hover:bg-accent"
                     )}
                   >
-                    <span className="text-destructive font-semibold">▲</span> 红涨
-                    <span className="text-success font-semibold ml-2">▼</span> 绿跌
-                    <span className="block text-[11px] text-muted-foreground mt-0.5">国内 A 股惯例</span>
+                    <span className="text-destructive font-semibold">▲</span> {t.settings.redUp}
+                    <span className="text-success font-semibold ml-2">▼</span> {t.settings.greenDown}
+                    <span className="block text-[11px] text-muted-foreground mt-0.5">{t.settings.chinaConvention}</span>
                   </button>
                 </div>
               </div>
               <div className="space-y-2">
-                <p className="text-sm font-semibold">外观主题</p>
+                <p className="text-sm font-semibold">{t.settings.appearanceTheme}</p>
                 <ThemeToggle variant="segmented" />
-                <p className="text-xs text-muted-foreground">跟随系统将根据 prefers-color-scheme 自动切换</p>
+                <p className="text-xs text-muted-foreground">{t.settings.themeHint}</p>
               </div>
             </CardContent>
           </Card>
@@ -808,19 +811,19 @@ export default function Settings() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Clock className="h-5 w-5 text-primary" />
-                定时净值更新
+                {t.settings.scheduledNavUpdate}
               </CardTitle>
-              <p className="text-sm text-muted-foreground">自动拉取最新净值</p>
+              <p className="text-sm text-muted-foreground">{t.settings.autoFetchNav}</p>
             </CardHeader>
             <CardContent>
               {schedulerError ? (
                 <div className="flex items-center gap-2 py-2">
-                  <span className="text-xs text-loss-600">加载失败</span>
+                  <span className="text-xs text-loss-600">{t.common.loadFailed}</span>
                   <button
                     onClick={reloadScheduler}
                     className="text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                   >
-                    重试
+                    {t.common.retry}
                   </button>
                 </div>
               ) : schedulerStatus ? (
@@ -836,7 +839,7 @@ export default function Settings() {
                           : "border-border bg-background text-muted-foreground hover:bg-accent"
                       )}
                     >
-                      {schedulerToggling ? "切换中..." : schedulerStatus.enabled ? "已启用" : "已暂停"}
+                      {schedulerToggling ? t.settings.switching : schedulerStatus.enabled ? t.settings.enabled : t.settings.paused}
                     </button>
                     <span className="text-xs text-muted-foreground font-mono">
                       cron: {schedulerStatus.cron}
@@ -844,27 +847,27 @@ export default function Settings() {
                   </div>
                   <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
                     {schedulerStatus.next_run && (
-                      <span>下次运行: <span className="font-semibold text-foreground">{schedulerStatus.next_run}</span></span>
+                      <span>{t.settings.nextRun}<span className="font-semibold text-foreground">{schedulerStatus.next_run}</span></span>
                     )}
                     {schedulerStatus.last_run && (
-                      <span>上次运行: <span className="font-semibold text-foreground">{schedulerStatus.last_run}</span></span>
+                      <span>{t.settings.lastRun}<span className="font-semibold text-foreground">{schedulerStatus.last_run}</span></span>
                     )}
                     {schedulerStatus.last_results && schedulerStatus.last_results.length > 0 && (
                       <span>
-                        上次结果:{" "}
+                        {t.settings.lastResult}{" "}
                         <span className="text-gain-600 font-semibold">
-                          {schedulerStatus.last_results.filter(r => r.ok).length} 成功
+                          {schedulerStatus.last_results.filter(r => r.ok).length} {t.common.success}
                         </span>
                         {" / "}
                         <span className="text-loss-600 font-semibold">
-                          {schedulerStatus.last_results.filter(r => !r.ok).length} 失败
+                          {schedulerStatus.last_results.filter(r => !r.ok).length} {t.common.failed}
                         </span>
                       </span>
                     )}
                   </div>
                   {/* 时间设置 */}
                   <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/60">
-                    <span className="text-xs text-muted-foreground">执行时间</span>
+                    <span className="text-xs text-muted-foreground">{t.settings.scheduleTime}</span>
                     <input
                       type="time"
                       value={cronTime}
@@ -876,10 +879,10 @@ export default function Settings() {
                         checked={cronWeekdaysOnly}
                         onCheckedChange={(v) => setCronWeekdaysOnly(!!v)}
                       />
-                      仅工作日
+                      {t.settings.weekdaysOnly}
                     </label>
                     <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleCronSave} disabled={cronSaving}>
-                      {cronSaving ? "保存中..." : "保存"}
+                      {cronSaving ? t.settings.saving : t.common.save}
                     </Button>
                   </div>
                 </div>
@@ -895,14 +898,14 @@ export default function Settings() {
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Search className="h-5 w-5 text-primary" />
-                  关键词映射
+                  {t.settings.keywordMapping}
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">添加自定义关键词，匹配时优先于默认规则</p>
+                <p className="text-sm text-muted-foreground">{t.settings.keywordMappingHint}</p>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Tab: 板块 / 类型 */}
                 <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
-                  {([["sector", "板块关键词"], ["type", "类型关键词"]] as const).map(([key, label]) => (
+                  {([["sector", t.settings.sectorKeywords], ["type", t.settings.typeKeywords]] as const).map(([key, label]) => (
                     <button
                       key={key}
                       type="button"
@@ -917,31 +920,31 @@ export default function Settings() {
                 {/* 添加自定义 */}
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="flex-1 min-w-[120px]">
-                    <Label className="mb-1 block text-xs text-muted-foreground">关键词</Label>
+                    <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.keyword}</Label>
                     <Input value={newKwKeyword} onChange={(e) => setNewKwKeyword(e.target.value)}
-                      placeholder="如 新能源车" className="h-8 text-xs"
+                      placeholder={t.settings.keywordPlaceholder} className="h-8 text-xs"
                       onKeyDown={(e) => { if (e.key === "Enter") addCustomKeyword() }} />
                   </div>
                   <div className="flex-1 min-w-[120px]">
-                    <Label className="mb-1 block text-xs text-muted-foreground">映射为</Label>
+                    <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.mapTo}</Label>
                     <Select
                       value={newKwMapped}
                       onChange={(e) => setNewKwMapped(e.target.value)}
                       className="h-8 text-xs shadow-sm"
                     >
-                      <option value="">选择{kwTab === "sector" ? "板块" : "类型"}</option>
+                      <option value="">{t.settings.selectLabel}{kwTab === "sector" ? t.common.sector : t.common.type}</option>
                       {kwAvailable.map((a) => <option key={a} value={a}>{a}</option>)}
                     </Select>
                   </div>
                   <Button size="sm" onClick={addCustomKeyword} className="h-8 shrink-0">
-                    <Plus className="mr-1 h-3.5 w-3.5" /> 添加
+                    <Plus className="mr-1 h-3.5 w-3.5" /> {t.common.add}
                   </Button>
                 </div>
 
                 {/* 自定义关键词列表 */}
                 {kwCustom.length > 0 && (
                   <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">自定义关键词（{kwCustom.length} 个）</p>
+                    <p className="text-xs font-medium text-muted-foreground">{t.settings.customKeywordsCount.replace("{n}", String(kwCustom.length))}</p>
                     {kwCustom.map((e, i) => (
                       <div key={i} className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-1.5">
                         <button onClick={() => moveCustomKeyword(i, -1)} disabled={i === 0}
@@ -972,14 +975,14 @@ export default function Settings() {
                     className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                   >
                     {kwShowDefaults ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                    {kwShowDefaults ? "收起" : "展开"}默认关键词（{kwDefaults.length} 个）
+                    {kwShowDefaults ? t.settings.collapse : t.settings.expand}{t.settings.defaultKeywordsCount.replace("{n}", String(kwDefaults.length))}
                   </button>
                   {kwShowDefaults && (
                     <div className="mt-2 space-y-2">
                       <Input
                         value={kwSearch}
                         onChange={(e) => setKwSearch(e.target.value)}
-                        placeholder="搜索关键词..."
+                        placeholder={t.settings.searchKeywordPlaceholder}
                         className="h-7 text-xs max-w-[200px]"
                       />
                       <div className="max-h-48 overflow-y-auto rounded border border-border/60 divide-y divide-border/60">
@@ -991,7 +994,7 @@ export default function Settings() {
                           </div>
                         ))}
                         {kwFilteredDefaults.length === 0 && (
-                          <p className="px-3 py-2 text-xs text-muted-foreground">无匹配结果</p>
+                          <p className="px-3 py-2 text-xs text-muted-foreground">{t.common.noResults}</p>
                         )}
                       </div>
                     </div>
@@ -1002,13 +1005,13 @@ export default function Settings() {
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={async () => {
                     setKeywordMaps({ ...keywordMaps, type_custom: [], sector_custom: [] })
-                    try { await api.saveKeywordMaps("[]", "[]"); toast.success("已重置所有自定义关键词") } catch {}
+                    try { await api.saveKeywordMaps("[]", "[]"); toast.success(t.settings.allCustomKwReset) } catch {}
                   }}>
-                    <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> 重置自定义
+                    <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> {t.settings.resetCustom}
                   </Button>
                   <Button size="sm" variant="outline" onClick={handleResetSectors} disabled={resettingSectors}>
                     <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", resettingSectors && "animate-spin")} />
-                    {resettingSectors ? "重置中..." : "重置板块映射"}
+                    {resettingSectors ? t.settings.resetting : t.settings.resetSectorMapping}
                   </Button>
                 </div>
               </CardContent>

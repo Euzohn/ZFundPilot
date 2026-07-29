@@ -22,40 +22,43 @@ import {
 import { cn } from "@/lib/utils"
 import { getColorTheme, getColorThemeAsync, applyColorTheme } from "@/lib/colorTheme"
 import ThemeToggle from "./ThemeToggle"
+import LanguageToggle from "./LanguageToggle"
+import { useLang } from "@/i18n/LanguageContext"
 
 const STORAGE_KEY = "zfundpilot_sidebar_collapsed"
 
 const navGroups = [
   {
-    label: "概览",
+    labelKey: "groupOverview" as const,
     items: [
-      { to: "/", label: "首页", icon: House },
-      { to: "/overview", label: "组合总览", icon: LayoutDashboard },
+      { to: "/", labelKey: "home" as const, icon: House },
+      { to: "/overview", labelKey: "overview" as const, icon: LayoutDashboard },
     ],
   },
   {
-    label: "交易与持仓",
+    labelKey: "groupTrading" as const,
     items: [
-      { to: "/transactions", label: "交易管理", icon: ArrowLeftRight },
-      { to: "/positions", label: "持仓明细", icon: Briefcase },
-      { to: "/nav", label: "净值更新", icon: RefreshCw },
+      { to: "/transactions", labelKey: "transactions" as const, icon: ArrowLeftRight },
+      { to: "/positions", labelKey: "positions" as const, icon: Briefcase },
+      { to: "/nav", labelKey: "navUpdate" as const, icon: RefreshCw },
     ],
   },
   {
-    label: "分析与工具",
+    labelKey: "groupAnalysis" as const,
     items: [
-      { to: "/returns", label: "收益分析", icon: TrendingUp },
-      { to: "/risk", label: "风险与建议", icon: ShieldCheck },
-      { to: "/compare", label: "基金对比", icon: GitCompare },
-      { to: "/backtest", label: "定投回测", icon: FlaskConical },
-      { to: "/ai", label: "AI 助手", icon: Bot },
+      { to: "/returns", labelKey: "returns" as const, icon: TrendingUp },
+      { to: "/risk", labelKey: "risk" as const, icon: ShieldCheck },
+      { to: "/compare", labelKey: "compare" as const, icon: GitCompare },
+      { to: "/backtest", labelKey: "backtest" as const, icon: FlaskConical },
+      { to: "/ai", labelKey: "aiChat" as const, icon: Bot },
     ],
   },
 ]
 
-const bottomNav = { to: "/settings", label: "设置", icon: SettingsIcon }
+const bottomNav = { to: "/settings", labelKey: "settings" as const, icon: SettingsIcon }
 
 function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
+  const { t } = useLang()
   const linkClass = (isActive: boolean) =>
     cn(
       "flex items-center rounded-lg text-sm font-medium transition-colors duration-200",
@@ -68,21 +71,21 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
   return (
     <nav className={cn("flex-1 overflow-y-auto py-2", collapsed ? "px-2" : "px-3")}>
       {navGroups.map((group) => (
-        <div key={group.label} className="mb-1">
+        <div key={group.labelKey} className="mb-1">
           {!collapsed && (
-            <p className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600">{group.label}</p>
+            <p className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600">{t.nav[group.labelKey]}</p>
           )}
-          {group.items.map(({ to, label, icon: Icon }) => (
+          {group.items.map(({ to, labelKey, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
               end={to === "/"}
               onClick={onNavigate}
               className={({ isActive }) => linkClass(isActive)}
-              title={collapsed ? label : undefined}
+              title={collapsed ? t.nav[labelKey] : undefined}
             >
               <Icon className="h-[18px] w-[18px] shrink-0" />
-              {!collapsed && <span className="whitespace-nowrap">{label}</span>}
+              {!collapsed && <span className="whitespace-nowrap">{t.nav[labelKey]}</span>}
             </NavLink>
           ))}
         </div>
@@ -92,10 +95,10 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
           to={bottomNav.to}
           onClick={onNavigate}
           className={({ isActive }) => linkClass(isActive)}
-          title={collapsed ? bottomNav.label : undefined}
+          title={collapsed ? t.nav[bottomNav.labelKey] : undefined}
         >
           <bottomNav.icon className="h-[18px] w-[18px] shrink-0" />
-          {!collapsed && <span className="whitespace-nowrap">{bottomNav.label}</span>}
+          {!collapsed && <span className="whitespace-nowrap">{t.nav[bottomNav.labelKey]}</span>}
         </NavLink>
       </div>
     </nav>
@@ -103,6 +106,7 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
 }
 
 export default function Layout() {
+  const { t } = useLang()
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(STORAGE_KEY) === "true" } catch { return false }
   })
@@ -132,7 +136,7 @@ export default function Layout() {
         <button
           onClick={() => setMobileOpen(true)}
           className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-          aria-label="打开菜单"
+          aria-label={t.nav.openMenu}
         >
           <Menu className="h-5 w-5" />
         </button>
@@ -178,7 +182,15 @@ export default function Layout() {
           </a>
           <ThemeToggle
             variant="icon"
-            label={collapsed ? undefined : "主题"}
+            label={collapsed ? undefined : t.nav.theme}
+            className={cn(
+              "mt-1 text-zinc-500 hover:bg-zinc-800 hover:text-white",
+              collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 px-3 py-2 text-xs",
+            )}
+          />
+          <LanguageToggle
+            variant="icon"
+            label={collapsed ? undefined : t.nav.language}
             className={cn(
               "mt-1 text-zinc-500 hover:bg-zinc-800 hover:text-white",
               collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 px-3 py-2 text-xs",
@@ -190,9 +202,9 @@ export default function Layout() {
               "mt-1 flex items-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
               collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 px-3 py-2 text-xs",
             )}
-            title={collapsed ? "展开侧边栏" : "收起侧边栏"}
+            title={collapsed ? t.nav.expandSidebar : t.nav.collapseSidebar}
           >
-            {collapsed ? <ChevronRight className="h-4 w-4" /> : <><ChevronLeft className="h-4 w-4" /> 收起侧边栏</>}
+            {collapsed ? <ChevronRight className="h-4 w-4" /> : <><ChevronLeft className="h-4 w-4" /> {t.nav.collapseSidebar}</>}
           </button>
         </div>
       </aside>
@@ -223,7 +235,7 @@ export default function Layout() {
           <button
             onClick={() => setMobileOpen(false)}
             className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-            aria-label="关闭菜单"
+            aria-label={t.nav.closeMenu}
           >
             <X className="h-5 w-5" />
           </button>

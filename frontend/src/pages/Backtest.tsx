@@ -21,12 +21,9 @@ import {
 import { api } from "@/api/client"
 import type { BacktestResult } from "@/api/types"
 import { money, pct, pnlColor } from "@/lib/format"
+import { useLang } from "@/i18n/LanguageContext"
 
-const CADENCE_OPTIONS = [
-  { value: "month", label: "每月" },
-  { value: "biweek", label: "双周" },
-  { value: "week", label: "每周" },
-]
+const CADENCE_VALUES = ["month", "biweek", "week"] as const
 
 function defaultStartDate(): string {
   const d = new Date()
@@ -40,6 +37,12 @@ function defaultEndDate(): string {
 }
 
 export default function Backtest() {
+  const { t } = useLang()
+  const cadenceLabels: Record<string, string> = {
+    month: t.backtest.monthly,
+    biweek: t.backtest.biweekly,
+    week: t.backtest.weekly,
+  }
   const [fundCodeInput, setFundCodeInput] = useState("")
   const [fundCodes, setFundCodes] = useState<string[]>([])
   const [startDate, setStartDate] = useState(defaultStartDate())
@@ -68,16 +71,16 @@ export default function Backtest() {
 
   const runBacktest = useCallback(async () => {
     if (fundCodes.length === 0) {
-      setError("请至少添加一只基金")
+      setError(t.backtest.fundRequired)
       return
     }
     const amt = parseFloat(amount)
     if (!amt || amt <= 0) {
-      setError("每期金额必须大于 0")
+      setError(t.backtest.amountRequired)
       return
     }
     if (startDate >= endDate) {
-      setError("起始日期必须早于结束日期")
+      setError(t.backtest.dateRangeInvalid)
       return
     }
 
@@ -140,8 +143,8 @@ export default function Backtest() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="定投回测"
-        subtitle="历史净值回测定投策略，对比一次性投入"
+        title={t.backtest.title}
+        subtitle={t.backtest.subtitle}
       />
 
       {/* 输入区 */}
@@ -149,16 +152,16 @@ export default function Backtest() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
-            回测参数
+            {t.backtest.params}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* 基金代码输入 */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">基金代码</label>
+            <label className="text-sm font-medium">{t.backtest.fundCode}</label>
             <div className="flex gap-2">
               <Input
-                placeholder="输入6位基金代码，逗号或空格分隔"
+                placeholder={t.backtest.fundCodePlaceholder}
                 value={fundCodeInput}
                 onChange={(e) => setFundCodeInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -169,7 +172,7 @@ export default function Backtest() {
                 }}
                 className="flex-1"
               />
-              <Button onClick={addFundCode} variant="secondary">添加</Button>
+              <Button onClick={addFundCode} variant="secondary">{t.common.add}</Button>
             </div>
             {fundCodes.length > 0 && (
               <div className="flex flex-wrap gap-2 pt-1">
@@ -194,7 +197,7 @@ export default function Backtest() {
           {/* 日期 + 金额 + 频率 */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">起始日期</label>
+              <label className="text-sm font-medium">{t.backtest.startDate}</label>
               <Input
                 type="date"
                 value={startDate}
@@ -202,7 +205,7 @@ export default function Backtest() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">结束日期</label>
+              <label className="text-sm font-medium">{t.backtest.endDate}</label>
               <Input
                 type="date"
                 value={endDate}
@@ -210,7 +213,7 @@ export default function Backtest() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">每期金额 (¥)</label>
+              <label className="text-sm font-medium">{t.backtest.amount} (¥)</label>
               <Input
                 type="number"
                 min="1"
@@ -220,10 +223,10 @@ export default function Backtest() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">定投频率</label>
+              <label className="text-sm font-medium">{t.backtest.cadence}</label>
               <Select value={cadence} onChange={(e) => setCadence(e.target.value)}>
-                {CADENCE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                {CADENCE_VALUES.map((v) => (
+                  <option key={v} value={v}>{cadenceLabels[v]}</option>
                 ))}
               </Select>
             </div>
@@ -236,11 +239,11 @@ export default function Backtest() {
                 checked={includeLumpsum}
                 onCheckedChange={(v) => setIncludeLumpsum(v === true)}
               />
-              对比一次性投入
+              {t.backtest.compareLumpsum}
             </label>
             <Button onClick={runBacktest} disabled={loading || fundCodes.length === 0}>
               <Play className="mr-1 h-4 w-4" />
-              {loading ? "回测中..." : "开始回测"}
+              {loading ? t.backtest.running : t.backtest.runBacktest}
             </Button>
           </div>
         </CardContent>
@@ -250,12 +253,12 @@ export default function Backtest() {
       {loading && (
         <div className="flex min-h-[30vh] flex-col items-center justify-center gap-2">
           <LoadingState size="md" />
-          <p className="text-sm text-muted-foreground">正在回测，可能需要拉取净值数据...</p>
+          <p className="text-sm text-muted-foreground">{t.backtest.runningHint}</p>
         </div>
       )}
       {error && <ErrorState message={error} />}
       {!loading && !error && !results && (
-        <EmptyState title="尚未回测" description="填写参数后点击「开始回测」" />
+        <EmptyState title={t.backtest.noResult} description={t.backtest.noResultHint} />
       )}
 
       {/* 结果 */}
@@ -271,52 +274,52 @@ export default function Backtest() {
                 {dca && (
                   <>
                     <MetricCard
-                      label="定投总投入"
+                      label={t.backtest.dcaTotalInvested}
                       value={money(dca.invested_capital)}
-                      sub={`${dca.total_periods} 期 · 手续费 ${money(dca.total_fees)}`}
+                      sub={`${dca.total_periods} ${t.backtest.periodsUnit} · ${t.common.fee} ${money(dca.total_fees)}`}
                     />
                     <MetricCard
-                      label="定投终值"
+                      label={t.backtest.dcaFinalValue}
                       value={money(dca.net_final_value)}
-                      sub={`收益 ${pct(dca.total_return)}`}
+                      sub={`${t.backtest.returnLabel} ${pct(dca.total_return)}`}
                       color={pnlColor(dca.total_return)}
                     />
                     <MetricCard
-                      label="定投年化"
+                      label={t.backtest.dcaAnnualReturn}
                       value={pct(dca.annualized_return)}
-                      sub={`最大回撤 ${pct(dca.max_drawdown)}`}
+                      sub={`${t.backtest.maxDrawdown} ${pct(dca.max_drawdown)}`}
                       color={pnlColor(dca.annualized_return)}
                     />
                     <MetricCard
-                      label="定投夏普"
+                      label={t.backtest.dcaSharpe}
                       value={dca.sharpe_ratio != null ? dca.sharpe_ratio.toFixed(2) : "—"}
-                      sub={`无风险利率 3%`}
+                      sub={t.backtest.riskFreeRate}
                     />
                   </>
                 )}
                 {lumpsum && (
                   <>
                     <MetricCard
-                      label="一次性投入"
+                      label={t.backtest.lumpSumStrategy}
                       value={money(lumpsum.invested_capital)}
-                      sub={`手续费 ${money(lumpsum.total_fees)}`}
+                      sub={`${t.common.fee} ${money(lumpsum.total_fees)}`}
                     />
                     <MetricCard
-                      label="一次性终值"
+                      label={t.backtest.lumpsumFinalValue}
                       value={money(lumpsum.net_final_value)}
-                      sub={`收益 ${pct(lumpsum.total_return)}`}
+                      sub={`${t.backtest.returnLabel} ${pct(lumpsum.total_return)}`}
                       color={pnlColor(lumpsum.total_return)}
                     />
                     <MetricCard
-                      label="一次性年化"
+                      label={t.backtest.lumpsumAnnualReturn}
                       value={pct(lumpsum.annualized_return)}
-                      sub={`最大回撤 ${pct(lumpsum.max_drawdown)}`}
+                      sub={`${t.backtest.maxDrawdown} ${pct(lumpsum.max_drawdown)}`}
                       color={pnlColor(lumpsum.annualized_return)}
                     />
                     <MetricCard
-                      label="一次性夏普"
+                      label={t.backtest.lumpsumSharpe}
                       value={lumpsum.sharpe_ratio != null ? lumpsum.sharpe_ratio.toFixed(2) : "—"}
-                      sub={`无风险利率 3%`}
+                      sub={t.backtest.riskFreeRate}
                     />
                   </>
                 )}
@@ -326,9 +329,9 @@ export default function Backtest() {
 
           <Tabs defaultValue="chart">
             <TabsList>
-              <TabsTrigger value="chart">累计曲线</TabsTrigger>
-              <TabsTrigger value="detail">每期明细</TabsTrigger>
-              <TabsTrigger value="compare">基金对比</TabsTrigger>
+              <TabsTrigger value="chart">{t.backtest.cumulativeCurve}</TabsTrigger>
+              <TabsTrigger value="detail">{t.backtest.periodDetail}</TabsTrigger>
+              <TabsTrigger value="compare">{t.backtest.fundCompare}</TabsTrigger>
             </TabsList>
 
             {/* 累计曲线 */}
@@ -336,7 +339,7 @@ export default function Backtest() {
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
-                    <CardTitle>累计市值曲线</CardTitle>
+                    <CardTitle>{t.backtest.cumulativeValueCurve}</CardTitle>
                     {groupedResults.length > 1 && (
                       <Select
                         value={chartFund}
@@ -365,7 +368,7 @@ export default function Backtest() {
                         <YAxis
                           yAxisId="left"
                           tick={{ fontSize: 11 }}
-                          tickFormatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(0)}万` : String(v)}
+                          tickFormatter={(v: number) => v >= 10000 ? `${(v / 10000).toFixed(0)}${t.common.tenThousand}` : String(v)}
                         />
                         <Tooltip
                           formatter={(v, name) => {
@@ -381,7 +384,7 @@ export default function Backtest() {
                               yAxisId="left"
                               type="monotone"
                               dataKey="lump_value"
-                              name="一次性市值"
+                              name={t.backtest.lumpsumValue}
                               stroke="#3b82f6"
                               strokeWidth={2}
                               dot={false}
@@ -391,7 +394,7 @@ export default function Backtest() {
                               yAxisId="left"
                               type="monotone"
                               dataKey="lump_invested"
-                              name="一次性投入"
+                              name={t.backtest.lumpSumStrategy}
                               stroke="#3b82f6"
                               strokeWidth={1}
                               strokeDasharray="4 2"
@@ -404,7 +407,7 @@ export default function Backtest() {
                           yAxisId="left"
                           type="monotone"
                           dataKey="dca_value"
-                          name="定投市值"
+                          name={t.backtest.dcaValue}
                           stroke="#10b981"
                           fill="#10b981"
                           fillOpacity={0.1}
@@ -416,7 +419,7 @@ export default function Backtest() {
                           yAxisId="left"
                           type="monotone"
                           dataKey="dca_invested"
-                          name="定投投入"
+                          name={t.backtest.dcaInvested}
                           stroke="#10b981"
                           strokeWidth={1}
                           strokeDasharray="4 2"
@@ -426,7 +429,7 @@ export default function Backtest() {
                       </ComposedChart>
                     </ResponsiveContainer>
                   ) : (
-                    <EmptyState title="数据不足" description="该基金在所选区间内净值数据不足以生成曲线" />
+                    <EmptyState title={t.backtest.insufficientData} description={t.backtest.insufficientDataHint} />
                   )}
                 </CardContent>
               </Card>
@@ -437,7 +440,7 @@ export default function Backtest() {
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
-                    <CardTitle>定投每期明细</CardTitle>
+                    <CardTitle>{t.backtest.dcaPeriodDetail}</CardTitle>
                     {groupedResults.length > 1 && (
                       <Select
                         value={chartFund}
@@ -459,15 +462,15 @@ export default function Backtest() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>计划日</TableHead>
-                            <TableHead>实际日</TableHead>
-                            <TableHead className="text-right">净值</TableHead>
-                            <TableHead className="text-right">金额</TableHead>
-                            <TableHead className="text-right">手续费</TableHead>
-                            <TableHead className="text-right">投入</TableHead>
-                            <TableHead className="text-right">份额</TableHead>
-                            <TableHead className="text-right">累计份额</TableHead>
-                            <TableHead className="text-right">累计投入</TableHead>
+                            <TableHead>{t.backtest.plannedDate}</TableHead>
+                            <TableHead>{t.backtest.actualDate}</TableHead>
+                            <TableHead className="text-right">{t.common.nav}</TableHead>
+                            <TableHead className="text-right">{t.common.amount}</TableHead>
+                            <TableHead className="text-right">{t.common.fee}</TableHead>
+                            <TableHead className="text-right">{t.backtest.invested}</TableHead>
+                            <TableHead className="text-right">{t.common.shares}</TableHead>
+                            <TableHead className="text-right">{t.backtest.cumulativeShares}</TableHead>
+                            <TableHead className="text-right">{t.backtest.cumulativeInvested}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -488,7 +491,7 @@ export default function Backtest() {
                       </Table>
                     </div>
                   ) : (
-                    <EmptyState title="无明细" description="该基金无定投明细数据" />
+                    <EmptyState title={t.backtest.noDetail} description={t.backtest.noDetailHint} />
                   )}
                 </CardContent>
               </Card>
@@ -498,22 +501,22 @@ export default function Backtest() {
             <TabsContent value="compare">
               <Card>
                 <CardHeader>
-                  <CardTitle>基金对比</CardTitle>
+                  <CardTitle>{t.backtest.fundCompare}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>基金</TableHead>
-                          <TableHead>策略</TableHead>
-                          <TableHead className="text-right">总投入</TableHead>
-                          <TableHead className="text-right">终值</TableHead>
-                          <TableHead className="text-right">收益率</TableHead>
-                          <TableHead className="text-right">年化</TableHead>
-                          <TableHead className="text-right">最大回撤</TableHead>
-                          <TableHead className="text-right">夏普</TableHead>
-                          <TableHead className="text-right">手续费</TableHead>
+                          <TableHead>{t.backtest.fund}</TableHead>
+                          <TableHead>{t.backtest.strategy}</TableHead>
+                          <TableHead className="text-right">{t.backtest.totalInvested}</TableHead>
+                          <TableHead className="text-right">{t.backtest.finalValue}</TableHead>
+                          <TableHead className="text-right">{t.backtest.returnRate}</TableHead>
+                          <TableHead className="text-right">{t.backtest.annualized}</TableHead>
+                          <TableHead className="text-right">{t.backtest.maxDrawdown}</TableHead>
+                          <TableHead className="text-right">{t.backtest.sharpe}</TableHead>
+                          <TableHead className="text-right">{t.common.fee}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -524,7 +527,7 @@ export default function Backtest() {
                             </TableCell>
                             <TableCell>
                               <span className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                                {r.strategy === "dca" ? "定投" : "一次性"}
+                                {r.strategy === "dca" ? t.backtest.dcaLabel : t.backtest.lumpsumLabel}
                               </span>
                             </TableCell>
                             <TableCell className="text-right tabular-nums">{money(r.invested_capital)}</TableCell>
@@ -556,7 +559,7 @@ export default function Backtest() {
 
           {/* 免责声明 */}
           <p className="text-xs text-muted-foreground">
-            * 历史回测结果不代表未来收益，仅供参考。手续费按基金公开费率计算，实际费率以交易渠道为准。
+            {t.backtest.disclaimer}
           </p>
         </div>
       )}

@@ -2,6 +2,7 @@ import { useState, useMemo } from "react"
 import { money } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { ChevronLeft, ChevronRight } from "lucide-react"
+import { useLang } from "@/i18n/LanguageContext"
 
 interface PnlDay {
   date: string
@@ -11,8 +12,6 @@ interface PnlDay {
 interface Props {
   data: PnlDay[]
 }
-
-const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"]
 
 function getPnlBg(pnl: number | null, maxAbs: number): string {
   if (pnl === null || pnl === 0) return "bg-muted/50"
@@ -33,6 +32,7 @@ function getPnlBg(pnl: number | null, maxAbs: number): string {
 }
 
 export default function PnLCalendar({ data }: Props) {
+  const { t } = useLang()
   const pnlMap = useMemo(() => {
     const m: Record<string, number> = {}
     for (const d of data) m[d.date] = d.pnl
@@ -60,7 +60,7 @@ export default function PnLCalendar({ data }: Props) {
     return new Date().getMonth()
   })
 
-  const monthLabel = `${viewYear}年${viewMonth + 1}月`
+  const monthLabel = t.components.monthLabel.replace("{y}", String(viewYear)).replace("{m}", String(viewMonth + 1))
 
   // 生成日历网格
   const cells = useMemo(() => {
@@ -105,7 +105,7 @@ export default function PnLCalendar({ data }: Props) {
           {monthDays > 0 && (
             <span className="ml-2 text-xs text-muted-foreground">
               <span className={monthSum >= 0 ? "text-gain" : "text-loss"}>{money(monthSum)}</span>
-              {" · "}盈{winDays}天 亏{monthDays - winDays}天
+              {" · "}{t.components.pnlCalendarWinLose.replace("{win}", String(winDays)).replace("{lose}", String(monthDays - winDays))}
             </span>
           )}
         </div>
@@ -116,7 +116,7 @@ export default function PnLCalendar({ data }: Props) {
 
       {/* Weekday headers */}
       <div className="grid grid-cols-7 gap-1">
-        {WEEKDAYS.map((w) => (
+        {t.components.weekdays.map((w) => (
           <div key={w} className="text-center text-[11px] font-medium text-muted-foreground pb-0.5">{w}</div>
         ))}
       </div>
@@ -136,7 +136,7 @@ export default function PnLCalendar({ data }: Props) {
               {cell.pnl !== null && (
                 <span className="text-[9px] leading-tight tabular-nums font-medium mt-0.5">
                   {cell.pnl >= 0 ? "+" : ""}{Math.abs(cell.pnl) >= 10000
-                    ? `${(cell.pnl / 10000).toFixed(1)}万`
+                    ? `${(cell.pnl / 10000).toFixed(1)}${t.common.tenThousand}`
                     : Math.abs(cell.pnl) >= 1000
                       ? `${(cell.pnl / 1000).toFixed(1)}k`
                       : cell.pnl.toFixed(0)}

@@ -17,18 +17,14 @@ import LogoTyping from "@/components/LogoTyping"
 import EmptyState from "@/components/EmptyState"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { useLang } from "@/i18n/LanguageContext"
 
 interface ChatMessage {
   role: "user" | "assistant"
   content: string
 }
 
-const QUICK_PROMPTS = [
-  { text: "分析当前组合的风险", icon: ShieldAlert },
-  { text: "给出调仓建议", icon: Lightbulb },
-  { text: "帮我录入一笔买入交易", icon: PlusCircle },
-  { text: "科技板块最近怎么样？", icon: Newspaper },
-]
+const QUICK_PROMPT_ICONS = [ShieldAlert, Lightbulb, PlusCircle, Newspaper]
 
 const SESSIONS_KEY = "zfundpilot_chat_sessions"
 const LEGACY_KEY = "zfundpilot_chat_messages"
@@ -62,9 +58,9 @@ function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + "…" : s
 }
 
-function deriveTitle(messages: ChatMessage[]): string {
+function deriveTitle(messages: ChatMessage[], fallback = ""): string {
   const first = messages.find((m) => m.role === "user")
-  if (!first) return "新对话"
+  if (!first) return fallback
   return truncate(first.content.replace(/\s+/g, " ").trim(), 24)
 }
 
@@ -147,10 +143,11 @@ function stripJsonBlock(content: string): string {
 }
 
 export default function AIChat() {
+  const { t } = useLang()
   const [restored] = useState(loadSessions)
   const [archive, setArchive] = useState<SessionMeta[]>(() => restored.archive)
   const [activeId, setActiveId] = useState(() => restored.activeId)
-  const [currentTitle, setCurrentTitle] = useState(() => restored.activeTitle || deriveTitle(restored.activeMessages))
+  const [currentTitle, setCurrentTitle] = useState(() => restored.activeTitle || deriveTitle(restored.activeMessages, t.aiChat.newChat))
   const [messages, setMessages] = useState<ChatMessage[]>(() => restored.activeMessages)
   const [input, setInput] = useState("")
   const [streaming, setStreaming] = useState(false)
@@ -252,7 +249,7 @@ export default function AIChat() {
     } catch (e) {
       setMessages((prev) => {
         const updated = [...prev]
-        updated[aiIndex] = { role: "assistant", content: `❌ 请求失败: ${e}` }
+        updated[aiIndex] = { role: "assistant", content: `❌ ${t.aiChat.requestFailed}: ${e}` }
         return updated
       })
     } finally {
@@ -264,11 +261,11 @@ export default function AIChat() {
 
   const handleConfirmTx = async (msgIndex: number, tx: ExtractedTx) => {
     if (!tx.fund_code || !tx.date) {
-      toast.error("基金代码和日期不能为空")
+      toast.error(t.aiChat.fundCodeDateRequired)
       return
     }
     const baseNote = tx.note.trim()
-    const note = (baseNote ? baseNote + (tx.after_three ? " | " : "") : "") + (tx.after_three ? "T+1确认" : "")
+    const note = (baseNote ? baseNote + (tx.after_three ? " | " : "") : "") + (tx.after_three ? t.transactions.t1Confirm : "")
     const payload: Transaction = {
       fund_code: tx.fund_code,
       action: tx.action,
@@ -283,10 +280,10 @@ export default function AIChat() {
     setAdding(msgIndex)
     try {
       const res = await api.addTransaction(payload)
-      toast.success(`${ACTION_LABELS[tx.action] ?? "交易"} ${tx.fund_code} 已添加（#${res.id}）`)
+      toast.success(t.aiChat.txSuccess.replace("{action}", ACTION_LABELS[tx.action] ?? t.aiChat.transaction).replace("{code}", tx.fund_code).replace("{id}", String(res.id)))
       setTxStatus((prev) => ({ ...prev, [msgIndex]: { state: "added", id: res.id } }))
     } catch (e) {
-      toast.error(`添加失败: ${e}`)
+      toast.error(`${t.aiChat.addFailed}: ${e}`)
     } finally {
       setAdding(null)
     }
@@ -300,7 +297,7 @@ export default function AIChat() {
     if (messages.length === 0) return archive
     const session: SessionMeta = {
       id: activeId,
-      title: currentTitle || deriveTitle(messages),
+      title: currentTitle || deriveTitle(messages, t.aiChat.newChat),
       messages,
       txStatus,
       systemPrompt,
@@ -394,7 +391,7 @@ export default function AIChat() {
                   type="button"
                   onClick={startEditTitle}
                   className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                  title="重命名"
+                  title={t.aiChat.rename}
                 >
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
@@ -402,10 +399,10 @@ export default function AIChat() {
               <PopoverContent className="w-72 max-w-[80vw]" align="start">
                 <div className="flex items-center gap-2 px-3 py-2 border-b">
                   <span className="text-sm font-medium truncate flex-1">{currentTitle}</span>
-                  <span className="text-[11px] text-muted-foreground shrink-0">当前</span>
+                  <span className="text-[11px] text-muted-foreground shrink-0">{t.aiChat.current}</span>
                 </div>
                 {archive.length === 0 ? (
-                  <EmptyState title="暂无历史对话" size="sm" />
+                  <EmptyState title={t.aiChat.noHistory} size="sm" />
                 ) : (
                   <div className="max-h-64 overflow-y-auto py-1">
                     {archive.map((s) => (
@@ -442,7 +439,7 @@ export default function AIChat() {
                               type="button"
                               onClick={(e) => { e.stopPropagation(); setTitleInput(s.title); setEditingArchiveId(s.id) }}
                               className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                              title="重命名"
+                              title={t.aiChat.rename}
                             >
                               <Pencil className="h-3 w-3" />
                             </button>
@@ -450,7 +447,7 @@ export default function AIChat() {
                               type="button"
                               onClick={(e) => { e.stopPropagation(); handleDeleteArchived(s.id) }}
                               className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                              title="删除此对话"
+                              title={t.aiChat.deleteChat}
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>
@@ -475,7 +472,7 @@ export default function AIChat() {
                 type="button"
                 onClick={startEditTitle}
                 className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                title="重命名"
+                title={t.aiChat.rename}
               >
                 <Pencil className="h-3.5 w-3.5" />
               </button>
@@ -488,13 +485,13 @@ export default function AIChat() {
             onClick={() => setIncludeContext(!includeContext)}
             disabled={streaming}
             className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] ${includeContext ? "border-primary/30 bg-primary/5 text-primary" : "border-border bg-card text-muted-foreground"}`}
-            title={includeContext ? "当前携带持仓明细" : "不携带持仓明细"}
+            title={includeContext ? t.aiChat.contextWithPositions : t.aiChat.contextWithoutPositions}
           >
             {includeContext ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-            <span>持仓明细</span>
+            <span>{t.aiChat.positionDetail}</span>
           </button>
-          <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={handleNewChat} disabled={streaming} title="开始新对话">
-            <Plus className="h-3.5 w-3.5 mr-1" /> 新对话
+          <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={handleNewChat} disabled={streaming} title={t.aiChat.startNewChat}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> {t.aiChat.newChat}
           </Button>
         </div>
       </div>
@@ -511,9 +508,9 @@ export default function AIChat() {
                 className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
               >
                 {showSysPrompt ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                <span>系统提示词</span>
+                <span>{t.aiChat.systemPrompt}</span>
                 <span className="text-[10px] text-muted-foreground/50">
-                  ({includeContext ? "含持仓明细" : "不含持仓明细"} · {systemPrompt.length} 字符)
+                  ({includeContext ? t.aiChat.withPositions : t.aiChat.withoutPositions} · {systemPrompt.length} {t.aiChat.charsUnit})
                 </span>
               </button>
               {showSysPrompt && (
@@ -532,13 +529,15 @@ export default function AIChat() {
                   <Bot className="h-8 w-8 text-primary" />
                 </div>
                 <div className="space-y-1">
-                  <p className="text-base font-semibold">AI 投资助手</p>
+                  <p className="text-base font-semibold">{t.aiChat.assistantTitle}</p>
                   <p className="text-sm text-muted-foreground max-w-sm">
-                    搜索实时市场资讯，结合你的持仓给出风险分析与调仓建议。也可描述交易让 AI 帮你录入。
+                    {t.aiChat.welcomeHint}
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-2 w-full max-w-md mt-2">
-                  {QUICK_PROMPTS.map(({ text, icon: Icon }) => (
+                  {t.aiChat.quickQuestions.map((text, i) => {
+                    const Icon = QUICK_PROMPT_ICONS[i] || Lightbulb
+                    return (
                     <button
                       key={text}
                       onClick={() => !streaming && handleSend(text)}
@@ -548,7 +547,8 @@ export default function AIChat() {
                       <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <span className="leading-tight">{text}</span>
                     </button>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -575,7 +575,7 @@ export default function AIChat() {
                     ) : streaming && i === messages.length - 1 ? (
                       <span className="inline-flex items-center gap-2 text-muted-foreground text-sm">
                         <LogoTyping className="h-5 w-5" />
-                        思考中...
+                        {t.aiChat.thinking}
                       </span>
                     ) : null}
                   </div>
@@ -609,7 +609,7 @@ export default function AIChat() {
                   <Search className="h-3.5 w-3.5 text-muted-foreground animate-pulse" />
                 </div>
                 <span className="inline-flex items-center rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
-                  搜索最新资讯中...
+                  {t.aiChat.searching}
                 </span>
               </div>
             )}
@@ -631,7 +631,7 @@ export default function AIChat() {
                 }}
                 disabled={streaming}
                 rows={1}
-                placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+                placeholder={t.aiChat.inputPlaceholder}
                 className="flex-1 resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
                 style={{ maxHeight: "120px" }}
               />
@@ -648,9 +648,9 @@ export default function AIChat() {
             <div className="flex items-center justify-between mt-1 px-1">
               <p className="text-[10px] text-muted-foreground/60">
                 {lastUsage
-                  ? `本次 ${formatTokens(lastUsage.total)} (入 ${formatTokens(lastUsage.prompt)} / 出 ${formatTokens(lastUsage.completion)})`
-                  : "回复后显示 token 消耗"}
-                {usageStats ? ` · 今日 ${formatTokens(usageStats.today)} · 累计 ${formatTokens(usageStats.total)}` : ""}
+                  ? `${t.aiChat.thisTime} ${formatTokens(lastUsage.total)} (${t.aiChat.inputLabel} ${formatTokens(lastUsage.prompt)} / ${t.aiChat.outputLabel} ${formatTokens(lastUsage.completion)})`
+                  : t.aiChat.tokenHint}
+                {usageStats ? ` · ${t.aiChat.todayLabel} ${formatTokens(usageStats.today)} · ${t.aiChat.totalLabel} ${formatTokens(usageStats.total)}` : ""}
               </p>
               {usageStats && usageStats.recent.length > 0 && (
                 <button
@@ -658,7 +658,7 @@ export default function AIChat() {
                   onClick={() => setShowUsage(true)}
                   className="text-[10px] text-muted-foreground/50 hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                 >
-                  用量明细
+                  {t.aiChat.usageDetail}
                 </button>
               )}
             </div>
@@ -669,7 +669,7 @@ export default function AIChat() {
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
             <Bot className="h-8 w-8 text-muted-foreground" />
           </div>
-          <p className="text-sm text-muted-foreground">请先到「设置」页面配置 AI 模型 API</p>
+          <p className="text-sm text-muted-foreground">{t.aiChat.configRequired}</p>
         </div>
       )}
 
@@ -677,8 +677,8 @@ export default function AIChat() {
       <Dialog open={showUsage && !!usageStats} onOpenChange={(open) => !open && setShowUsage(false)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>AI 用量明细</DialogTitle>
-            <DialogDescription>今日 {formatTokens(usageStats?.today ?? 0)} · 累计 {formatTokens(usageStats?.total ?? 0)}</DialogDescription>
+            <DialogTitle>{t.aiChat.usageDialogTitle}</DialogTitle>
+            <DialogDescription>{t.aiChat.todayLabel} {formatTokens(usageStats?.today ?? 0)} · {t.aiChat.totalLabel} {formatTokens(usageStats?.total ?? 0)}</DialogDescription>
           </DialogHeader>
           <div className="max-h-72 overflow-y-auto space-y-1">
             {usageStats?.recent.map((r) => (
@@ -689,15 +689,15 @@ export default function AIChat() {
                   <span className="truncate">{r.model || "-"}</span>
                 </div>
                 <span className="tabular-nums shrink-0 ml-2">
-                  {formatTokens(r.total_tokens)}(入 {formatTokens(r.prompt_tokens)} / 出 {formatTokens(r.completion_tokens)})
-                  <span className="text-muted-foreground ml-1">· {r.turns} 轮</span>
+                  {formatTokens(r.total_tokens)}({t.aiChat.inputLabel} {formatTokens(r.prompt_tokens)} / {t.aiChat.outputLabel} {formatTokens(r.completion_tokens)})
+                  <span className="text-muted-foreground ml-1">· {r.turns} {t.aiChat.turnsUnit}</span>
                 </span>
               </div>
             ))}
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setShowUsage(false)}>
-              关闭
+              {t.common.close}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -719,6 +719,7 @@ function TxConfirmCard({
   onConfirm: (tx: ExtractedTx) => void
   onDiscard: () => void
 }) {
+  const { t } = useLang()
   const [editDate, setEditDate] = useState(tx.date)
   const [afterThree, setAfterThree] = useState(tx.after_three)
   const [editFee, setEditFee] = useState(() => tx.fee ? String(tx.fee) : "")
@@ -767,14 +768,14 @@ function TxConfirmCard({
   if (status?.state === "added") {
     return (
       <div className="mt-2 inline-flex items-center gap-1.5 rounded-xl border border-gain-200 bg-gain-50 px-3 py-1.5 text-sm text-gain-700">
-        <Check className="h-3.5 w-3.5" /> 已添加交易 #{status.id}
+        <Check className="h-3.5 w-3.5" /> {t.aiChat.txAddedLabel}{status.id}
       </div>
     )
   }
   if (status?.state === "discarded") {
     return (
       <div className="mt-2 inline-flex items-center gap-1.5 rounded-xl border bg-muted px-3 py-1.5 text-sm text-muted-foreground">
-        <X className="h-3.5 w-3.5" /> 已丢弃
+        <X className="h-3.5 w-3.5" /> {t.aiChat.txDiscarded}
       </div>
     )
   }
@@ -791,21 +792,21 @@ function TxConfirmCard({
     <div className="mt-2 inline-block text-left w-full rounded-xl border border-primary/20 bg-primary/5 p-3">
       <div className="flex items-center gap-2 mb-2.5">
         <Plus className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium">待确认交易</span>
+        <span className="text-sm font-medium">{t.aiChat.pendingTx}</span>
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground">操作</span>
+          <span className="text-muted-foreground">{t.common.actions}</span>
           <Badge variant={tx.action === "buy" ? "success" : tx.action === "sell" ? "destructive" : "outline"}>
             {ACTION_LABELS[tx.action] ?? tx.action}
           </Badge>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground">代码</span>
+          <span className="text-muted-foreground">{t.common.code}</span>
           <span className="font-mono text-xs">{tx.fund_code || "-"}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground">日期</span>
+          <span className="text-muted-foreground">{t.common.date}</span>
           {tx.date ? (
             <span>{tx.date}</span>
           ) : (
@@ -818,40 +819,40 @@ function TxConfirmCard({
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground">渠道</span>
+          <span className="text-muted-foreground">{t.common.channel}</span>
           <span>{tx.channel || "-"}</span>
         </div>
         <div className="col-span-2 flex items-center gap-2">
-          <span className="text-muted-foreground">下单时间</span>
+          <span className="text-muted-foreground">{t.aiChat.orderTime}</span>
           <button
             type="button"
             onClick={() => setAfterThree(!afterThree)}
             className={`rounded-full border px-2.5 py-0.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] ${afterThree ? "border-accent/30 bg-accent/10 text-accent" : "border-border bg-card text-muted-foreground"}`}
           >
-            {afterThree ? "15:00 后（T+1 确认）" : "15:00 前（当日确认）"}
+            {afterThree ? t.aiChat.afterClose : t.aiChat.beforeClose}
           </button>
         </div>
         {finalTx.amount != null && (
           <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground">金额</span>
+            <span className="text-muted-foreground">{t.common.amount}</span>
             <span className="tabular-nums">{money(finalTx.amount)}</span>
-            {estimatedAmount != null && tx.action === "sell" && <span className="text-[10px] text-muted-foreground">(估算)</span>}
+            {estimatedAmount != null && tx.action === "sell" && <span className="text-[10px] text-muted-foreground">{t.aiChat.estimated}</span>}
           </div>
         )}
         {tx.shares != null && (
           <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground">份额</span>
+            <span className="text-muted-foreground">{t.common.shares}</span>
             <span className="tabular-nums">{tx.shares.toFixed(2)}</span>
           </div>
         )}
         {tx.nav != null && (
           <div className="flex items-center gap-1.5">
-            <span className="text-muted-foreground">净值</span>
+            <span className="text-muted-foreground">{t.common.nav}</span>
             <span className="tabular-nums">{tx.nav.toFixed(4)}</span>
           </div>
         )}
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground">手续费</span>
+          <span className="text-muted-foreground">{t.common.fee}</span>
           <Input
             type="number"
             step="0.01"
@@ -871,17 +872,17 @@ function TxConfirmCard({
       )}
       {tx.note && (
         <div className="mt-1.5 flex items-center gap-1.5 text-sm">
-          <span className="text-muted-foreground">备注</span>
+          <span className="text-muted-foreground">{t.common.note}</span>
           <span>{tx.note}</span>
         </div>
       )}
       <div className="flex gap-2 mt-3">
         <Button size="sm" className="h-7" onClick={() => onConfirm(finalTx)} disabled={!canConfirm}>
           {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Check className="h-3.5 w-3.5 mr-1" />}
-          {adding ? "添加中..." : "确认添加"}
+          {adding ? t.aiChat.adding : t.aiChat.confirmAdd}
         </Button>
         <Button size="sm" variant="outline" className="h-7" onClick={onDiscard} disabled={adding}>
-          <X className="h-3.5 w-3.5 mr-1" /> 丢弃
+          <X className="h-3.5 w-3.5 mr-1" /> {t.aiChat.discard}
         </Button>
       </div>
     </div>

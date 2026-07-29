@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { useLang } from "@/i18n/LanguageContext"
 import {
   AlertDialog,
   AlertDialogContent,
@@ -28,12 +29,15 @@ export default function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmText = "确定",
-  cancelText = "取消",
+  confirmText,
+  cancelText,
   onConfirm,
   tone = "default",
   loading = false,
 }: ConfirmDialogProps) {
+  const { t } = useLang()
+  const confirmTxt = confirmText ?? t.common.confirm
+  const cancelTxt = cancelText ?? t.common.cancel
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
@@ -42,7 +46,7 @@ export default function ConfirmDialog({
           {description && <AlertDialogDescription asChild><div>{description}</div></AlertDialogDescription>}
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={loading}>{cancelText}</AlertDialogCancel>
+          <AlertDialogCancel disabled={loading}>{cancelTxt}</AlertDialogCancel>
           <AlertDialogAction
             onClick={async (e) => {
               e.preventDefault()
@@ -55,7 +59,7 @@ export default function ConfirmDialog({
                 "bg-destructive text-destructive-foreground hover:bg-destructive/90",
             )}
           >
-            {loading ? "处理中..." : confirmText}
+            {loading ? t.common.processing : confirmTxt}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

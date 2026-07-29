@@ -69,9 +69,10 @@ ZFundPilot/
 │   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 交易标记）
 │   │   ├── Settings.tsx     # 设置（账户/AI/偏好）
 │   │   └── Login.tsx        # 登录
-│   ├── components/          # Layout + Logo 系列 + PnLCalendar + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
+│   ├── components/          # Layout + Logo 系列 + PnLCalendar + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
+│   ├── i18n/                # LanguageContext（Provider + useLang hook + getCurrentLang）+ zh.ts + en.ts
 │   ├── api/                 # client.ts + types.ts
-│   └── lib/                 # auth/channels/channelColors/colorTheme/format/useApi
+│   └── lib/                 # auth/channels/channelColors/colorTheme/format（按 lang 切换 ¥/$）/actionLabels/rangeLabels/useApi
 ├── data/                    # SQLite 数据库 + auth.json + ai_config.json（gitignore）
 ├── Dockerfile               # 多阶段构建
 ├── docker-compose.yml       # 单服务 + data 卷
@@ -387,6 +388,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### v0.11.1（开发中）
 
+- 全站国际化（i18n）：新建 `LanguageContext` + `useLang()` hook + `zh.ts`/`en.ts` 翻译文件，
+  所有页面和共享组件支持中英文切换。侧边栏新增全局语言切换按钮。
+  `format.ts` 的 `money()`/`formatRelativeTime()` 按 lang 选 `¥`/`$` 和对应语言文案；
+  `actionLabels`/`rangeLabels` 改为函数按 lang 返回
 - 交易记录点击查看详情：新建 `TransactionDetailDialog` 共享组件，Transactions 和 FundDetail
   页面的交易列表行点击即可打开只读详情弹窗，展示所有交易字段，支持「编辑」跳转
 - 修复定投执行 T+1 判定 bug：`execute_plan()` 按当前时间判断 15:00 分界，不再永远加 `T+1确认` 标记

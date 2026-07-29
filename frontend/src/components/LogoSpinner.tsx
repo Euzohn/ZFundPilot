@@ -1,10 +1,12 @@
 import { useId } from "react"
+import { useLang } from "@/i18n/LanguageContext"
 
 /** 加载动画 — 翻牌洗牌 (B11)：四片花瓣像扑克牌依次翻面旋转 + Z 闪烁 */
 export default function LogoSpinner({ className = "h-12 w-12" }: { className?: string }) {
   const id = useId()
+  const { t } = useLang()
   return (
-    <svg viewBox="0 0 64 64" className={className} aria-label="加载中">
+    <svg viewBox="0 0 64 64" className={className} aria-label={t.common.loading}>
       <defs>
         <linearGradient id={`spinner-bg-${id}`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#0F1F3D" />

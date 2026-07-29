@@ -7,6 +7,10 @@
 ## [Unreleased]
 
 ### Added
+- 全站国际化（i18n）：新建 `LanguageContext` + `useLang()` hook + `zh.ts`/`en.ts`
+  翻译文件，所有页面和共享组件支持中英文切换。侧边栏新增全局语言切换按钮。
+  `format.ts` 的 `money()`/`formatRelativeTime()` 按 lang 选 `¥`/`$` 和对应语言文案；
+  `actionLabels`/`rangeLabels` 改为函数按 lang 返回。
 - 交易记录点击查看详情：新建 `TransactionDetailDialog` 共享组件，Transactions 和 FundDetail
   页面的交易列表行点击即可打开只读详情弹窗，展示所有交易字段，支持「编辑」跳转。
   暗色主题自动适配。

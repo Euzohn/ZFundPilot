@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { money, navStr } from "@/lib/format"
 import { ACTION_LABELS } from "@/lib/actionLabels"
 import { Pencil, Receipt, Hash, Wallet, Banknote, PieChart, Percent, DollarSign, FileText } from "lucide-react"
+import { useLang } from "@/i18n/LanguageContext"
 
 interface Props {
   tx: Transaction | null
@@ -37,13 +38,14 @@ function Row({ icon: Icon, label, value, mono }: { icon: React.ComponentType<{ c
 }
 
 export default function TransactionDetailDialog({ tx, fundName, open, onOpenChange, onEdit }: Props) {
+  const { t } = useLang()
   if (!tx) return null
 
   const navValue = tx.action === "dividend"
     ? "—"
     : tx.nav != null
       ? navStr(tx.nav)
-      : <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10 text-[11px] px-1.5 py-0">待确认</Badge>
+      : <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10 text-[11px] px-1.5 py-0">{t.transactions.pendingConfirm}</Badge>
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -54,7 +56,7 @@ export default function TransactionDetailDialog({ tx, fundName, open, onOpenChan
               <Receipt className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <DialogTitle className="text-base">交易详情</DialogTitle>
+              <DialogTitle className="text-base">{t.components.transactionDetailTitle}</DialogTitle>
               <DialogDescription asChild>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="font-mono text-xs">{tx.fund_code}</span>
@@ -66,40 +68,40 @@ export default function TransactionDetailDialog({ tx, fundName, open, onOpenChan
         </DialogHeader>
 
         <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
-          <span className="text-xs text-muted-foreground/70">操作</span>
+          <span className="text-xs text-muted-foreground/70">{t.transactions.actionLabel}</span>
           {actionBadge(tx)}
           <span className="mx-1 text-muted-foreground/30">|</span>
-          <span className="text-xs text-muted-foreground/70">日期</span>
+          <span className="text-xs text-muted-foreground/70">{t.transactions.dateLabel}</span>
           <span className="text-sm">{tx.date}</span>
           <span className="mx-1 text-muted-foreground/30">|</span>
-          <span className="text-xs text-muted-foreground/70">渠道</span>
-          <span className="text-sm">{tx.channel || <span className="text-muted-foreground/60">未标注</span>}</span>
+          <span className="text-xs text-muted-foreground/70">{t.transactions.channelLabel}</span>
+          <span className="text-sm">{tx.channel || <span className="text-muted-foreground/60">{t.common.unlabeled}</span>}</span>
         </div>
 
         <div className="grid grid-cols-2 gap-2.5">
-          <Row icon={DollarSign} label="金额" value={tx.amount != null ? money(tx.amount) : "—"} mono />
-          <Row icon={PieChart} label="份额" value={tx.shares?.toFixed(2) ?? "—"} mono />
-          <Row icon={Hash} label="净值" value={navValue} mono />
-          <Row icon={Banknote} label="手续费" value={tx.fee ? money(tx.fee) : "—"} mono />
-          <Row icon={Wallet} label="渠道" value={tx.channel || <span className="text-muted-foreground/60">未标注</span>} />
-          <Row icon={Percent} label="操作" value={actionBadge(tx)} />
+          <Row icon={DollarSign} label={t.transactions.amountLabel} value={tx.amount != null ? money(tx.amount) : "—"} mono />
+          <Row icon={PieChart} label={t.transactions.sharesLabel} value={tx.shares?.toFixed(2) ?? "—"} mono />
+          <Row icon={Hash} label={t.transactions.navLabel} value={navValue} mono />
+          <Row icon={Banknote} label={t.transactions.feeLabel} value={tx.fee ? money(tx.fee) : "—"} mono />
+          <Row icon={Wallet} label={t.transactions.channelLabel} value={tx.channel || <span className="text-muted-foreground/60">{t.common.unlabeled}</span>} />
+          <Row icon={Percent} label={t.transactions.actionLabel} value={actionBadge(tx)} />
         </div>
 
         {tx.note && (
           <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
             <FileText className="h-4 w-4 shrink-0 text-muted-foreground/60 mt-0.5" />
             <div>
-              <p className="text-[11px] leading-none text-muted-foreground/70 mb-1">备注</p>
+              <p className="text-[11px] leading-none text-muted-foreground/70 mb-1">{t.transactions.noteLabel}</p>
               <p className="text-sm">{tx.note}</p>
             </div>
           </div>
         )}
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>关闭</Button>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>{t.common.close}</Button>
           {onEdit && (
             <Button onClick={() => { onEdit(tx); onOpenChange(false) }}>
-              <Pencil className="h-4 w-4 mr-1.5" /> 编辑
+              <Pencil className="h-4 w-4 mr-1.5" /> {t.common.edit}
             </Button>
           )}
         </DialogFooter>

@@ -1,10 +1,12 @@
 import { useId } from "react"
+import { useLang } from "@/i18n/LanguageContext"
 
 /** B8 光环打字 — Z 字循环书写擦除 + 金环反向公转 + 花瓣波浪明暗，AI 思考中专用 */
 export default function LogoTyping({ className = "h-8 w-8" }: { className?: string }) {
   const id = useId()
+  const { t } = useLang()
   return (
-    <svg viewBox="0 0 64 64" className={className} aria-label="AI思考中">
+    <svg viewBox="0 0 64 64" className={className} aria-label={t.aiChat.thinking}>
       <defs>
         <linearGradient id={`typing-bg-${id}`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#0F1F3D" />

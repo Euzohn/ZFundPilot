@@ -401,7 +401,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### v0.12.1（开发中）
 
-- （暂无）
+- 后端 i18n 结构化：risk.py `RiskFlag` + rebalance.py `Advice` + fetch_fund.py `CalcFeeResult`/`FundMeta`/`FetchResult`/`FeeRates` + fetch_estimate.py `FundEstimate` + compare.py `FundCompareItem`/`CompareResponse` + fund_filter.py `FilterResponse` 新增 `code`/`params` 字段，前端按 code 翻译
+- T+1 确认改用 `is_t1` 布尔字段：`transactions` 表新增 `is_t1 INTEGER DEFAULT 0` 列（迁移自动回填存量数据），`auto_invest.py` 设置 `is_t1=True` 而非追加 `"T+1确认"` 到 note 文本，`analysis.py` 查 `is_t1=1` 而非 `note LIKE '%T+1确认%'`
+- 前端翻译映射：新建 `lib/backendLabels.ts`（风险提示/建议/费率/消息 code 翻译）+ `lib/taxonomyLabels.ts`（基金类型/板块/渠道翻译），Risk.tsx/NavUpdate.tsx/FeeBreakdownCard.tsx 等组件按 code 渲染
+- 删除冗余 lib 文件：`rangeLabels.ts`/`actionLabels.ts` 的调用方改用 `t().rangeLabels`/`t().actionLabels`
 
 ### v0.11.0
 

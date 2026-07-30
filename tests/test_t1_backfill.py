@@ -18,22 +18,22 @@ from zfundpilot.models import ACTION_BUY, Transaction
 
 
 class TestT1Detection:
-    def test_t1_detected_from_note(self):
+    def test_t1_detected_from_field(self):
         tx = Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-01",
-                         amount=1000, note="T+1确认")
+                         amount=1000, is_t1=True)
         assert _is_t1_transaction(tx) is True
 
     def test_t1_with_other_note(self):
         tx = Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-01",
-                         amount=1000, note="加仓 | T+1确认")
+                         amount=1000, note="加仓", is_t1=True)
         assert _is_t1_transaction(tx) is True
 
     def test_non_t1_transaction(self):
         tx = Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-01",
-                         amount=1000, note="加仓")
+                         amount=1000, note="加仓", is_t1=False)
         assert _is_t1_transaction(tx) is False
 
-    def test_empty_note(self):
+    def test_default_not_t1(self):
         tx = Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-01",
                          amount=1000, note="")
         assert _is_t1_transaction(tx) is False
@@ -42,17 +42,17 @@ class TestT1Detection:
 class TestT1NavDate:
     def test_next_day(self):
         tx = Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-15",
-                         amount=1000, note="T+1确认")
+                         amount=1000, is_t1=True)
         assert _t1_nav_date(tx) == "2025-01-16"
 
     def test_month_boundary(self):
         tx = Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-31",
-                         amount=1000, note="T+1确认")
+                         amount=1000, is_t1=True)
         assert _t1_nav_date(tx) == "2025-02-01"
 
     def test_year_boundary(self):
         tx = Transaction(fund_code="001", action=ACTION_BUY, date="2025-12-31",
-                         amount=1000, note="T+1确认")
+                         amount=1000, is_t1=True)
         assert _t1_nav_date(tx) == "2026-01-01"
 
 
@@ -63,11 +63,11 @@ class TestBackfillT1:
         """T+1 买入应使用次日净值，而非当日。"""
         t1_tx = Transaction(
             id=1, fund_code="001", action=ACTION_BUY, date="2025-01-15",
-            amount=1000, note="T+1确认",
+            amount=1000, is_t1=True,
         )
         normal_tx = Transaction(
             id=2, fund_code="002", action=ACTION_BUY, date="2025-01-15",
-            amount=1000, note="",
+            amount=1000, is_t1=False,
         )
 
         with patch("zfundpilot.analysis.db") as mock_db:
@@ -98,7 +98,7 @@ class TestBackfillT1:
         """普通买入使用当日净值。"""
         tx = Transaction(
             id=1, fund_code="001", action=ACTION_BUY, date="2025-01-15",
-            amount=1000, note="",
+            amount=1000, is_t1=False,
         )
 
         with patch("zfundpilot.analysis.db") as mock_db:
@@ -128,7 +128,7 @@ class TestRecalculateT1:
         row = self._make_row({
             "id": 1, "fund_code": "001", "action": "buy", "date": "2025-01-15",
             "amount": 1000, "shares": 1000.0, "nav": 1.0, "fee": 0,
-            "channel": "", "note": "T+1确认",
+            "channel": "", "note": "定投", "is_t1": 1,
         })
 
         with patch("zfundpilot.analysis.db") as mock_db:
@@ -163,7 +163,7 @@ class TestRecalculateT1:
         row = self._make_row({
             "id": 1, "fund_code": "001", "action": "buy", "date": "2025-01-15",
             "amount": 1000, "shares": 666.67, "nav": 1.5, "fee": 0,
-            "channel": "", "note": "T+1确认",
+            "channel": "", "note": "定投", "is_t1": 1,
         })
 
         with patch("zfundpilot.analysis.db") as mock_db:
@@ -187,7 +187,7 @@ class TestRecalculateT1:
         row = self._make_row({
             "id": 1, "fund_code": "001", "action": "buy", "date": "2025-01-15",
             "amount": 1000, "shares": 1000.0, "nav": 1.0, "fee": 0,
-            "channel": "", "note": "普通买入",
+            "channel": "", "note": "普通买入", "is_t1": 0,
         })
 
         with patch("zfundpilot.analysis.db") as mock_db:
@@ -206,7 +206,7 @@ class TestRecalculateT1:
         row = self._make_row({
             "id": 1, "fund_code": "001", "action": "buy", "date": "2025-01-15",
             "amount": 1000, "shares": 1000.0, "nav": 1.0, "fee": 0,
-            "channel": "", "note": "T+1确认",
+            "channel": "", "note": "定投", "is_t1": 1,
         })
 
         with patch("zfundpilot.analysis.db") as mock_db:

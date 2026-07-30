@@ -13,6 +13,7 @@ import { ShieldAlert, AlertTriangle, Info, Lightbulb } from "lucide-react"
 import type { ReactNode } from "react"
 import MetricCard from "@/components/MetricCard"
 import { useLang } from "@/i18n/LanguageContext"
+import { translateRiskFlag, translateAdvice } from "@/lib/backendLabels"
 
 const FLAG_STYLES: Record<string, { icon: ReactNode; variant: "destructive" | "warning" | "default" }> = {
   danger: { icon: <ShieldAlert className="h-5 w-5 text-destructive" />, variant: "destructive" },
@@ -51,14 +52,15 @@ export default function Risk() {
         <CardContent className="space-y-3">
           {report.flags.map((f, i) => {
             const style = FLAG_STYLES[f.level] ?? FLAG_STYLES.info
+            const { title, detail } = translateRiskFlag(f)
             return (
               <div key={i} className="flex items-start gap-3 rounded-md border p-3">
                 {style.icon}
                 <div>
                   <p className="font-medium">
-                    <Badge variant={style.variant} className="mr-2">{f.title}</Badge>
+                    <Badge variant={style.variant} className="mr-2">{title}</Badge>
                   </p>
-                  <p className="mt-1 text-sm text-muted-foreground">{f.detail}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
                 </div>
               </div>
             )
@@ -77,17 +79,20 @@ export default function Risk() {
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">{t.risk.adviceDisclaimer}</p>
           {al && advice && advice.length > 0 ? (
-            advice.map((a, i) => (
+            advice.map((a, i) => {
+              const { category, text } = translateAdvice(a)
+              return (
               <div key={i} className="flex items-start gap-3 rounded-md border p-3">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
                   {i + 1}
                 </span>
                 <div>
-                  <Badge variant="outline" className="mr-2">{a.category}</Badge>
-                  <span className="text-sm text-muted-foreground">{a.text}</span>
+                  <Badge variant="outline" className="mr-2">{category}</Badge>
+                  <span className="text-sm text-muted-foreground">{text}</span>
                 </div>
               </div>
-            ))
+              )
+            })
           ) : (
             <EmptyState title={t.risk.noSuggestions} size="sm" />
           )}

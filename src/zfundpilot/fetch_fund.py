@@ -257,6 +257,7 @@ class FetchResult:
     ok: bool
     written: int = 0
     message: str = ""
+    code: str = ""
     latest_date: str | None = None
     latest_nav: float | None = None
 
@@ -270,6 +271,7 @@ class FundMeta:
     sector: str = ""
     ok: bool = False
     message: str = ""
+    code: str = ""
 
 
 def _http_get(url: str, timeout: int = 15) -> str:
@@ -406,16 +408,16 @@ def fetch_fund_meta(fund_code: str) -> FundMeta:
     """
     fund_code = fund_code.strip()
     if not fund_code:
-        return FundMeta(fund_code, ok=False, message="基金代码为空")
+        return FundMeta(fund_code, ok=False, message="基金代码为空", code="code_empty")
 
     try:
         txt = _http_get(f"https://fund.eastmoney.com/pingzhongdata/{fund_code}.js")
     except Exception as exc:  # noqa: BLE001
-        return FundMeta(fund_code, ok=False, message=f"网络请求失败：{exc}")
+        return FundMeta(fund_code, ok=False, message=f"网络请求失败：{exc}", code="network_error")
 
     m_name = re.search(r'fS_name\s*=\s*"([^"]*)"', txt)
     if not m_name or not m_name.group(1):
-        return FundMeta(fund_code, ok=False, message="未找到该基金，请检查代码")
+        return FundMeta(fund_code, ok=False, message="未找到该基金，请检查代码", code="not_found")
 
     name = m_name.group(1)
     fund_type = _guess_fund_type("", name)
@@ -426,7 +428,7 @@ def fetch_fund_meta(fund_code: str) -> FundMeta:
 
     return FundMeta(fund_code=fund_code, fund_name=name,
                     fund_type=fund_type, sector=sector,
-                    ok=True, message="成功")
+                    ok=True, message="成功", code="ok")
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +528,7 @@ def update_fund_nav(fund_code: str) -> FetchResult:
     try:
         points = fetch_nav_history(fund_code)
     except Exception as exc:  # noqa: BLE001
-        return FetchResult(fund_code, ok=False, message=str(exc))
+        return FetchResult(fund_code, ok=False, message=str(exc), code="fetch_error")
 
     written = db.upsert_nav_batch(points)
     latest = max(points, key=lambda p: p.date)
@@ -535,6 +537,7 @@ def update_fund_nav(fund_code: str) -> FetchResult:
         ok=True,
         written=written,
         message="成功",
+        code="ok",
         latest_date=latest.date,
         latest_nav=latest.nav,
     )
@@ -596,6 +599,7 @@ class FeeRates:
     sales_fee: float | None = None        # 销售服务费（年化）
     ok: bool = False
     message: str = ""
+    code: str = ""
 
 
 @dataclass
@@ -615,6 +619,7 @@ class CalcFeeResult:
     fee: float = 0.0
     rate: float = 0.0
     label: str = ""
+    code: str = ""               # stable machine code for i18n
     amount: float = 0.0           # 预估交易金额（卖出时 = shares × nav - fee）
     nav: float | None = None      # 计算使用的净值
     lots: list[dict] | None = None  # 仅卖出时有批次明细
@@ -729,7 +734,7 @@ def _parse_holding_period(text: str) -> tuple[int, int | None]:
 
 def _fetch_fee_rates_from_html(fund_code: str) -> FeeRates:
     """直接抓取天天基金费率页面 HTML 解析。比 AkShare 更可靠。"""
-    result = FeeRates(fund_code=fund_code, ok=True, message="成功")
+    result = FeeRates(fund_code=fund_code, ok=True, message="成功", code="ok")
 
     url = f"https://fundf10.eastmoney.com/jjfl_{fund_code}.html"
     html = _http_get(url)
@@ -949,7 +954,7 @@ def fetch_fund_fee_rates(fund_code: str) -> FeeRates:
     try:
         rates = _fetch_fee_rates_from_html(fund_code)
     except Exception as exc:
-        rates = FeeRates(fund_code=fund_code, ok=False, message=str(exc))
+        rates = FeeRates(fund_code=fund_code, ok=False, message=str(exc), code="fetch_error")
 
     _fee_cache[fund_code] = {"ts": now, "data": rates}
     return rates
@@ -959,7 +964,7 @@ def calc_purchase_fee(fund_code: str, amount: float) -> CalcFeeResult:
     """计算买入手续费。"""
     rates = fetch_fund_fee_rates(fund_code)
     if not rates.ok or not rates.purchase:
-        return CalcFeeResult(fee=0, rate=0, label="费率未知", amount=amount)
+        return CalcFeeResult(fee=0, rate=0, label="费率未知", code="fee_unknown", amount=amount)
 
     # 按金额匹配分档
     for tier in rates.purchase:
@@ -970,19 +975,19 @@ def calc_purchase_fee(fund_code: str, amount: float) -> CalcFeeResult:
         if tier.is_fixed:
             fee = tier.fixed_fee
             label = tier.label
-            return CalcFeeResult(fee=fee, rate=0, label=label, amount=amount)
+            return CalcFeeResult(fee=fee, rate=0, label=label, code="purchase_fixed", amount=amount)
         fee = round(amount * tier.rate, 2)
         pct = f"{tier.rate * 100:.2f}%"
         label = f"申购费率 {pct}"
-        return CalcFeeResult(fee=fee, rate=tier.rate, label=label, amount=amount)
+        return CalcFeeResult(fee=fee, rate=tier.rate, label=label, code="purchase_rate", amount=amount)
 
     # 超出最大档：用最后一档
     last = rates.purchase[-1]
     if last.is_fixed:
-        return CalcFeeResult(fee=last.fixed_fee, rate=0, label=last.label, amount=amount)
+        return CalcFeeResult(fee=last.fixed_fee, rate=0, label=last.label, code="purchase_fixed", amount=amount)
     fee = round(amount * last.rate, 2)
     pct = f"{last.rate * 100:.2f}%"
-    return CalcFeeResult(fee=fee, rate=last.rate, label=f"申购费率 {pct}", amount=amount)
+    return CalcFeeResult(fee=fee, rate=last.rate, label=f"申购费率 {pct}", code="purchase_rate", amount=amount)
 
 
 def calc_redemption_fee(
@@ -997,13 +1002,13 @@ def calc_redemption_fee(
     """
     rates = fetch_fund_fee_rates(fund_code)
     if not rates.ok or not rates.redemption:
-        return CalcFeeResult(fee=0, rate=0, label="费率未知")
+        return CalcFeeResult(fee=0, rate=0, label="费率未知", code="fee_unknown")
 
     # 查找卖出确认净值（卖出日期当天或之后最近的一条）
     sell_nav_row = db.get_nav_on_or_after(fund_code, sell_date)
     if not sell_nav_row:
         # T+1 待确认：净值尚未公布，无法计算手续费
-        return CalcFeeResult(fee=0, rate=0, label="待确认净值后计算手续费")
+        return CalcFeeResult(fee=0, rate=0, label="待确认净值后计算手续费", code="pending_nav")
     sell_nav = float(sell_nav_row["nav"])
 
     # 获取该基金所有买入记录（按日期升序）
@@ -1012,6 +1017,7 @@ def calc_redemption_fee(
 
     if not buy_lots:
         return CalcFeeResult(fee=0, rate=0, label="无买入记录，无法计算持有期",
+                             code="no_buy_record",
                              amount=round(sell_shares * sell_nav, 2), nav=sell_nav)
 
     sell_dt = _parse_date(sell_date)
@@ -1079,6 +1085,7 @@ def calc_redemption_fee(
         fee=total_fee,
         rate=effective_rate,
         label=label,
+        code="redemption_rate",
         amount=total_amount,
         nav=sell_nav,
         lots=[{"buy_date": l.buy_date, "buy_shares": l.buy_shares,

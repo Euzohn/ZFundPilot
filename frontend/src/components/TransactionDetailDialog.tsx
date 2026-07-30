@@ -3,7 +3,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { money, navStr } from "@/lib/format"
-import { actionLabel } from "@/lib/actionLabels"
 import { Pencil, Receipt, Hash, Wallet, Banknote, PieChart, Percent, DollarSign, FileText } from "lucide-react"
 import { useLang } from "@/i18n/LanguageContext"
 
@@ -15,12 +14,12 @@ interface Props {
   onEdit?: (tx: Transaction) => void
 }
 
-function actionBadge(tx: Transaction) {
+function actionBadge(tx: Transaction, actionLabels: Record<string, string>) {
   const variant = tx.action === "buy" ? "success" : tx.action === "sell" ? "destructive" : "outline"
   const extra = tx.action === "dividend" ? "text-primary border-primary/30 bg-primary/10" : tx.action === "reinvest" ? "text-info border-info/30 bg-info/10" : ""
   return (
     <Badge variant={variant} className={extra}>
-      {actionLabel(tx.action)}
+      {actionLabels[tx.action] ?? tx.action}
     </Badge>
   )
 }
@@ -69,7 +68,7 @@ export default function TransactionDetailDialog({ tx, fundName, open, onOpenChan
 
         <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
           <span className="text-xs text-muted-foreground/70">{t.transactions.actionLabel}</span>
-          {actionBadge(tx)}
+          {actionBadge(tx, t.actionLabels)}
           <span className="mx-1 text-muted-foreground/30">|</span>
           <span className="text-xs text-muted-foreground/70">{t.transactions.dateLabel}</span>
           <span className="text-sm">{tx.date}</span>
@@ -84,7 +83,7 @@ export default function TransactionDetailDialog({ tx, fundName, open, onOpenChan
           <Row icon={Hash} label={t.transactions.navLabel} value={navValue} mono />
           <Row icon={Banknote} label={t.transactions.feeLabel} value={tx.fee ? money(tx.fee) : "—"} mono />
           <Row icon={Wallet} label={t.transactions.channelLabel} value={tx.channel || <span className="text-muted-foreground/60">{t.common.unlabeled}</span>} />
-          <Row icon={Percent} label={t.transactions.actionLabel} value={actionBadge(tx)} />
+          <Row icon={Percent} label={t.transactions.actionLabel} value={actionBadge(tx, t.actionLabels)} />
         </div>
 
         {tx.note && (

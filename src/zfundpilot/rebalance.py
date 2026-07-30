@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from . import analysis
 from .config import RiskThresholds as RT
@@ -17,8 +18,10 @@ from .risk import RiskReport, build_risk_report
 @dataclass
 class Advice:
     """一条结构建议。"""
-    category: str    # 集中度 / 结构 / 风格 / 板块
-    text: str
+    code: str                  # stable machine code for i18n
+    params: dict[str, Any]     # dynamic values for interpolation
+    category: str              # Chinese category (backward compat)
+    text: str                  # Chinese display text (backward compat)
 
 
 def _sector_distribution(positions: list[Position]):
@@ -39,11 +42,14 @@ def generate_advice(
     advice: list[Advice] = []
 
     if not positions:
-        return [Advice("提示", "当前没有持仓数据，先添加基金后再查看结构建议。")]
+        return [Advice("no_holding", {}, "提示", "当前没有持仓数据，先添加基金后再查看结构建议。")]
 
     # 1) 单基金集中度
     if report.max_single_weight >= RT.SINGLE_FUND_HIGH:
         advice.append(Advice(
+            "concentration_high",
+            {"name": report.max_single_name, "weight": report.max_single_weight,
+             "threshold": RT.SINGLE_FUND_HIGH},
             "集中度",
             f"单只基金「{report.max_single_name}」占比达 "
             f"{report.max_single_weight:.1%}，结构上高度依赖单一标的，"
@@ -51,6 +57,8 @@ def generate_advice(
         ))
     elif report.max_single_weight >= RT.SINGLE_FUND_WARN:
         advice.append(Advice(
+            "concentration_mid",
+            {"name": report.max_single_name, "weight": report.max_single_weight},
             "集中度",
             f"最大单基金「{report.max_single_name}」占比 "
             f"{report.max_single_weight:.1%}，集中度中等偏高，可适度均衡。",
@@ -59,12 +67,16 @@ def generate_advice(
     # 2) 权益/防守结构
     if report.equity_weight >= RT.EQUITY_WARN:
         advice.append(Advice(
+            "equity_heavy",
+            {"weight": report.equity_weight, "threshold": RT.EQUITY_WARN},
             "结构",
             f"权益类资产占比 {report.equity_weight:.1%}，组合偏成长/进攻；"
             f"若希望降低波动，可提高债券等低波动资产比例。",
         ))
     if report.bond_weight < RT.BOND_MIN:
         advice.append(Advice(
+            "bond_low",
+            {"weight": report.bond_weight, "threshold": RT.BOND_MIN},
             "结构",
             f"债券型占比仅 {report.bond_weight:.1%}，防守型资产偏低，"
             f"组合缺乏下行缓冲，可考虑提升至 {RT.BOND_MIN:.0%} 以上。",
@@ -73,6 +85,8 @@ def generate_advice(
     # 3) 海外暴露
     if report.qdii_weight >= RT.QDII_WARN:
         advice.append(Advice(
+            "qdii_high",
+            {"weight": report.qdii_weight, "threshold": RT.QDII_WARN},
             "风格",
             f"QDII/海外资产占比 {report.qdii_weight:.1%}，海外与汇率暴露较高，"
             f"注意与 A 股资产的相关性及汇率波动。",
@@ -91,12 +105,16 @@ def generate_advice(
 
         if top["sector"] != "其它" and top["weight"] >= 0.20:
             advice.append(Advice(
+                "sector_concentrated",
+                {"sector": top["sector"], "weight": float(top["weight"])},
                 "板块",
                 f"最大板块「{top['sector']}」占比 {top['weight']:.1%}，"
                 f"板块集中度较高，单一主题回调时影响明显。",
             ))
         if tech_weight >= 0.50:
             advice.append(Advice(
+                "tech_heavy",
+                {"weight": float(tech_weight)},
                 "板块",
                 f"科技/成长相关板块合计约 {tech_weight:.1%}，"
                 f"风格高度集中于科技成长，可考虑增加低相关性资产以平衡。",
@@ -104,8 +122,9 @@ def generate_advice(
 
     if not advice:
         advice.append(Advice(
-            "结构", "当前组合结构相对均衡，暂无明显的结构性调整建议，"
-                     "可保持并持续跟踪。",
+            "balanced", {}, "结构",
+            "当前组合结构相对均衡，暂无明显的结构性调整建议，"
+            "可保持并持续跟踪。",
         ))
     return advice
 

@@ -47,6 +47,7 @@ class FilterResponse:
     total: int
     ok: bool = True
     message: str = ""
+    code: str = ""
 
 
 def _fetch_universe_from_web() -> list[dict]:
@@ -115,7 +116,7 @@ def filter_funds(
     """按条件筛选基金候选池。"""
     universe = load_fund_universe()
     if not universe:
-        return FilterResponse(funds=[], total=0, ok=False, message="基金池加载失败，请稍后重试")
+        return FilterResponse(funds=[], total=0, ok=False, message="基金池加载失败，请稍后重试", code="universe_failed")
 
     matched = universe
     if types:

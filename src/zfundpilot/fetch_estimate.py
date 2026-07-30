@@ -39,6 +39,7 @@ class FundEstimate:
     gztime: str = ""        # 数据时间
     ok: bool = False
     message: str = ""
+    code: str = ""          # stable machine code for i18n
 
 
 def _safe_float(val: object) -> float:
@@ -140,21 +141,21 @@ def fetch_estimate(fund_code: str) -> FundEstimate:
     """获取单只基金的实时估值。不抛异常。"""
     fund_code = fund_code.strip()
     if not fund_code:
-        return FundEstimate(fund_code, ok=False, message="基金代码为空")
+        return FundEstimate(fund_code, ok=False, message="基金代码为空", code="code_empty")
     for est in _get_all_estimates():
         if est.fund_code == fund_code:
             return est
-    return FundEstimate(fund_code, ok=False, message="未找到")
+    return FundEstimate(fund_code, ok=False, message="未找到", code="not_found")
 
 
 def fetch_estimates(fund_codes: list[str]) -> list[FundEstimate]:
     """批量获取基金估值。"""
     all_ests = _get_all_estimates()
     if not all_ests:
-        return [FundEstimate(code, ok=False, message="获取失败") for code in fund_codes]
+        return [FundEstimate(code, ok=False, message="获取失败", code="fetch_failed") for code in fund_codes]
     est_map = {e.fund_code: e for e in all_ests}
     return [
-        est_map.get(code, FundEstimate(code, ok=False, message="未找到"))
+        est_map.get(code, FundEstimate(code, ok=False, message="未找到", code="not_found"))
         for code in fund_codes
     ]
 

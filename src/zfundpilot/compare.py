@@ -10,12 +10,12 @@ import asyncio
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 
 import pandas as pd
 
-from . import config, fetch_fund
-from .fetch_fund import fetch_nav_history, fetch_fund_fee_rates, fetch_fund_meta
+from . import fetch_fund
+from .fetch_fund import fetch_fund_fee_rates, fetch_fund_meta, fetch_nav_history
 from .models import NavPoint
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,7 @@ class FundCompareItem:
     latest_date: str | None = None
     ok: bool = True
     message: str = ""
+    msg_code: str = ""
 
 
 @dataclass
@@ -59,6 +60,7 @@ class CompareResponse:
     nav_series: dict[str, list[dict[str, float | str]]] = None
     ok: bool = True
     message: str = ""
+    msg_code: str = ""
 
 
 def _nav_to_series(points: list[NavPoint]) -> pd.Series:
@@ -220,9 +222,9 @@ def _build_fund_item(fund_code: str) -> FundCompareItem:
     try:
         meta = _get_cached_meta(fund_code)
         if not meta.get("ok"):
-            return FundCompareItem(code=fund_code, ok=False, message=meta.get("message", "获取基本信息失败"))
+            return FundCompareItem(code=fund_code, ok=False, message=meta.get("message", "获取基本信息失败"), msg_code="meta_failed")
     except Exception as exc:
-        return FundCompareItem(code=fund_code, ok=False, message=str(exc))
+        return FundCompareItem(code=fund_code, ok=False, message=str(exc), msg_code="meta_error")
 
     nav = _get_cached_nav(fund_code)
     archive = _get_fund_archive(fund_code)
@@ -291,10 +293,10 @@ def compare_funds(fund_codes: list[str]) -> CompareResponse:
     """并发对比多只基金。"""
     codes = list(dict.fromkeys(c.strip() for c in fund_codes if c.strip()))
     if not codes:
-        return CompareResponse(ok=False, message="基金代码列表为空")
+        return CompareResponse(ok=False, message="基金代码列表为空", msg_code="codes_empty")
 
     if len(codes) > 20:
-        return CompareResponse(ok=False, message="一次最多对比 20 只基金")
+        return CompareResponse(ok=False, message="一次最多对比 20 只基金", msg_code="too_many")
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -305,7 +307,7 @@ def compare_funds(fund_codes: list[str]) -> CompareResponse:
 
     ok_items = [f for f in items if f.ok]
     if not ok_items:
-        return CompareResponse(funds=items, ok=False, message="所有基金获取失败")
+        return CompareResponse(funds=items, ok=False, message="所有基金获取失败", msg_code="all_failed")
 
     correlations = None
     if len(ok_items) >= 2:
@@ -339,7 +341,7 @@ async def _async_compare(codes: list[str]) -> list[FundCompareItem]:
     items: list[FundCompareItem] = []
     for i, r in enumerate(results):
         if isinstance(r, Exception):
-            items.append(FundCompareItem(code=codes[i], ok=False, message=str(r)))
+            items.append(FundCompareItem(code=codes[i], ok=False, message=str(r), msg_code="exception"))
         else:
             items.append(r)
     return items

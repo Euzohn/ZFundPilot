@@ -16,6 +16,7 @@ export interface Transaction {
   fee: number
   channel: string
   note: string
+  is_t1?: boolean
 }
 
 export interface Position {
@@ -98,11 +99,15 @@ export interface RiskReport {
 
 export interface RiskFlag {
   level: string
+  code: string
+  params: Record<string, unknown>
   title: string
   detail: string
 }
 
 export interface Advice {
+  code: string
+  params: Record<string, unknown>
   category: string
   text: string
 }
@@ -112,6 +117,7 @@ export interface FetchResult {
   ok: boolean
   written: number
   message: string
+  code: string
   latest_date: string | null
   latest_nav: number | null
 }
@@ -200,6 +206,7 @@ export interface CalcFeeResponse {
   fee: number
   rate: number
   label: string
+  code: string
   amount: number
   nav: number | null
   lots: FeeLot[] | null
@@ -251,6 +258,7 @@ export interface FundEstimateItem {
   prev_value: number
   ok: boolean
   message: string
+  code: string
 }
 
 export interface EstimateSummary {
@@ -270,6 +278,7 @@ export interface FundEstimate {
   gztime: string
   ok: boolean
   message: string
+  code: string
 }
 
 // ── 审计日志 ──
@@ -300,6 +309,7 @@ export interface FundCompareItem {
   latest_date: string | null
   ok: boolean
   message: string
+  msg_code: string
 }
 
 export interface CompareResponse {
@@ -308,6 +318,7 @@ export interface CompareResponse {
   nav_series: Record<string, { date: string; value: number }[]> | null
   ok: boolean
   message: string
+  msg_code: string
 }
 
 // ── 基金筛选 ──
@@ -326,6 +337,7 @@ export interface FilterResponse {
   total: number
   ok: boolean
   message: string
+  code: string
 }
 
 // ── 定投回测 ──

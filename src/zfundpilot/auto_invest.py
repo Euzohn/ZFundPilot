@@ -119,11 +119,6 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
     fee_result = fetch_fund.calc_purchase_fee(fund_code, amount)
     fee = fee_result.fee
 
-    if is_after_three:
-        full_note = f"{note} | T+1确认" if "T+1确认" not in note else note
-    else:
-        full_note = note
-
     tx = Transaction(
         fund_code=fund_code,
         action=ACTION_BUY,
@@ -133,7 +128,8 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
         nav=None,
         fee=fee,
         channel=channel,
-        note=full_note,
+        note=note,
+        is_t1=is_after_three,
     )
     tx_id = db.add_transaction(tx)
     analysis.clear_analysis_cache()

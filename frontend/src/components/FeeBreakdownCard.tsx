@@ -4,6 +4,7 @@ import { money } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { ChevronDown, ChevronUp, Info } from "lucide-react"
 import { useLang } from "@/i18n/LanguageContext"
+import { translateFeeLabel } from "@/lib/backendLabels"
 
 interface Props {
   result: CalcFeeResponse
@@ -11,14 +12,17 @@ interface Props {
   className?: string
 }
 
+const HIDDEN_CODES = new Set(["fee_unknown", "amount_empty", "shares_empty", "date_empty", "unsupported_action"])
+
 export default function FeeBreakdownCard({ result, action, className }: Props) {
   const { t } = useLang()
   const [open, setOpen] = useState(false)
 
-  if (!result.label || result.label === "费率未知" || result.label === "金额为空" || result.label === "份额为空" || result.label === "日期为空") {
+  if (!result.label || HIDDEN_CODES.has(result.code)) {
     return null
   }
 
+  const label = translateFeeLabel(result.code, result.label)
   const hasLots = result.lots && result.lots.length > 0
 
   return (
@@ -26,7 +30,7 @@ export default function FeeBreakdownCard({ result, action, className }: Props) {
       <div className="flex items-center gap-1.5 text-muted-foreground">
         <Info className="h-3 w-3 shrink-0" />
         <span>
-          {result.label}
+          {label}
           {result.fee > 0 && (
             <span className="ml-1 font-medium text-foreground">
               → {money(result.fee)}

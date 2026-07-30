@@ -83,7 +83,7 @@ class TestExecutePlanT1Logic:
     """验证 execute_plan 的 15:00 T+1 判定逻辑。"""
 
     def test_before_15_no_t1(self):
-        """09:00 执行 → note 不含 T+1确认。"""
+        """09:00 执行 → is_t1=False。"""
         mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
         with _PatchEnv(mock_dt) as env:
             result = execute_plan(_make_plan(), manual=True)
@@ -91,18 +91,18 @@ class TestExecutePlanT1Logic:
             assert result["ok"] is True
             tx = env.mock_db.add_transaction.call_args[0][0]
             assert tx.note == "定投"
-            assert "T+1确认" not in tx.note
+            assert tx.is_t1 is False
             assert tx.nav is None
             assert tx.shares is None
 
     def test_after_15_adds_t1(self):
-        """20:00 执行 → note 含 T+1确认。"""
+        """20:00 执行 → is_t1=True。"""
         mock_dt = datetime(2026, 1, 5, 20, 0, tzinfo=_TZ)
         with _PatchEnv(mock_dt) as env:
             result = execute_plan(_make_plan(), manual=True)
             assert result["after_three"] is True
             tx = env.mock_db.add_transaction.call_args[0][0]
-            assert "T+1确认" in tx.note
+            assert tx.is_t1 is True
             assert tx.nav is None
 
     def test_boundary_15_is_t1(self):
@@ -112,7 +112,7 @@ class TestExecutePlanT1Logic:
             result = execute_plan(_make_plan(), manual=True)
             assert result["after_three"] is True
             tx = env.mock_db.add_transaction.call_args[0][0]
-            assert "T+1确认" in tx.note
+            assert tx.is_t1 is True
 
     def test_boundary_14_59_no_t1(self):
         """14:59 → 不算 T+1（边界）。"""
@@ -121,17 +121,17 @@ class TestExecutePlanT1Logic:
             result = execute_plan(_make_plan(), manual=True)
             assert result["after_three"] is False
             tx = env.mock_db.add_transaction.call_args[0][0]
-            assert "T+1确认" not in tx.note
+            assert tx.is_t1 is False
 
-    def test_note_already_has_t1(self):
-        """note 已含 T+1确认 时不重复添加。"""
+    def test_note_preserved_with_t1(self):
+        """note 不被 T+1 标记污染，is_t1 独立记录。"""
         mock_dt = datetime(2026, 1, 5, 20, 0, tzinfo=_TZ)
         with _PatchEnv(mock_dt) as env:
-            result = execute_plan(_make_plan(note="定投 | T+1确认"), manual=True)
+            result = execute_plan(_make_plan(note="加仓"), manual=True)
             assert result["after_three"] is True
             tx = env.mock_db.add_transaction.call_args[0][0]
-            assert tx.note == "定投 | T+1确认"
-            assert tx.note.count("T+1确认") == 1
+            assert tx.note == "加仓"
+            assert tx.is_t1 is True
 
 
 class TestExecutePlanManual:

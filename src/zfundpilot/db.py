@@ -146,13 +146,21 @@ def init_db() -> None:
 
 
 def _migrate_add_columns() -> None:
-    """为已存在的旧表补充新增列（如 channel）。幂等。"""
+    """为已存在的旧表补充新增列。幂等。"""
     with get_connection() as conn:
         cols = {r["name"] for r in
                 conn.execute("PRAGMA table_info(transactions)").fetchall()}
         if "channel" not in cols:
             conn.execute(
                 "ALTER TABLE transactions ADD COLUMN channel TEXT DEFAULT ''"
+            )
+        if "is_t1" not in cols:
+            conn.execute(
+                "ALTER TABLE transactions ADD COLUMN is_t1 INTEGER DEFAULT 0"
+            )
+            # 回填：note 含 "T+1确认" 的旧交易标记为 is_t1
+            conn.execute(
+                "UPDATE transactions SET is_t1=1 WHERE note LIKE '%T+1确认%'"
             )
 
 
@@ -186,11 +194,13 @@ def _migrate_relax_transactions_schema() -> None:
                 fee        REAL DEFAULT 0,
                 channel    TEXT DEFAULT '',
                 note       TEXT DEFAULT '',
+                is_t1      INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT (datetime('now','localtime'))
             );
             INSERT INTO transactions_new
-                (id, fund_code, action, date, amount, shares, nav, fee, channel, note, created_at)
-            SELECT id, fund_code, action, date, amount, shares, nav, fee, channel, note, created_at
+                (id, fund_code, action, date, amount, shares, nav, fee, channel, note, is_t1, created_at)
+            SELECT id, fund_code, action, date, amount, shares, nav, fee, channel, note,
+                   CASE WHEN note LIKE '%T+1确认%' THEN 1 ELSE 0 END, created_at
             FROM transactions;
             DROP TABLE transactions;
             ALTER TABLE transactions_new RENAME TO transactions;
@@ -293,11 +303,11 @@ def add_transaction(tx: Transaction) -> int:
     with get_connection() as conn:
         cur = conn.execute(
             """
-            INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note)
-            VALUES(?,?,?,?,?,?,?,?,?)
+            INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note,is_t1)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)
             """,
             (tx.fund_code.strip(), tx.action, tx.date, tx.amount, tx.shares,
-             tx.nav, tx.fee, tx.channel, tx.note),
+             tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1)),
         )
         return int(cur.lastrowid)
 
@@ -311,11 +321,11 @@ def update_transaction(tx: Transaction) -> None:
             """
             UPDATE transactions SET
                 fund_code=?, action=?, date=?, amount=?, shares=?, nav=?,
-                fee=?, channel=?, note=?
+                fee=?, channel=?, note=?, is_t1=?
             WHERE id=?
             """,
             (tx.fund_code.strip(), tx.action, tx.date, tx.amount, tx.shares,
-             tx.nav, tx.fee, tx.channel, tx.note, tx.id),
+             tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1), tx.id),
         )
 
 

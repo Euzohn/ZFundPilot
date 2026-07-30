@@ -74,6 +74,7 @@ class Transaction:
     fee: float = 0.0                  # 手续费
     channel: str = ""                 # 购买渠道
     note: str = ""
+    is_t1: bool = False              # T+1 确认（15:00 后下单，按次日净值确认）
     id: int | None = None
 
     def normalize(self) -> Transaction:

@@ -199,15 +199,9 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
       setCustomChannel(editingTx.channel ?? "")
     }
 
-    // 备注：拆分 T+1确认 标记
-    const noteStr = editingTx.note ?? ""
-    const hasT1 = noteStr.includes("T+1确认")
-    setAfterThree(hasT1)
-    const cleanNote = noteStr
-      .replace(/\s*\|\s*T\+1确认\s*$/, "")
-      .replace(/^T\+1确认\s*$/, "")
-      .trim()
-    setNote(cleanNote)
+    // 备注 + T+1 标记（is_t1 字段，不再在 note 里追加文本）
+    setNote((editingTx.note ?? "").trim())
+    setAfterThree(!!editingTx.is_t1)
 
     // 尝试回填基金信息
     if (editingTx.fund_code) {
@@ -396,7 +390,8 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
       nav: finalNav,
       fee: parseFloat(fee) || 0,
       channel: customChannel.trim() || channel,
-      note: (note.trim() ? note.trim() + (afterThree ? " | " : "") : "") + (afterThree ? "T+1确认" : ""),
+      note: note.trim(),
+      is_t1: afterThree,
     }
 
     setSaving(true)

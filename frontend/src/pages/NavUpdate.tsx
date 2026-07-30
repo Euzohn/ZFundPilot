@@ -15,6 +15,7 @@ import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { useLang } from "@/i18n/LanguageContext"
+import { translateMessage } from "@/lib/backendLabels"
 
 export default function NavUpdate() {
   // 和持仓页同源：用 getPositions 取数据（含 latest_date / latest_nav）
@@ -129,10 +130,10 @@ export default function NavUpdate() {
     if (results) {
       return rows.map((r) => {
         const u = results.find((r2) => r2.fund_code === r.fund_code)
-        return { ...r, hasResult: !!u, ok: u?.ok, message: u?.message ?? "" }
+        return { ...r, hasResult: !!u, ok: u?.ok, message: u?.message ?? "", code: u?.code ?? "" }
       })
     }
-    return rows.map((r) => ({ ...r, hasResult: false, ok: undefined, message: "" }))
+    return rows.map((r) => ({ ...r, hasResult: false, ok: undefined, message: "", code: "" }))
   }, [rows, results])
 
   // 排序：待更新在前（无净值 > 净值过时），已更新在后
@@ -239,7 +240,7 @@ export default function NavUpdate() {
                 <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3">
                   {results.filter((r) => !r.ok).map((r) => (
                     <p key={r.fund_code} className="text-sm text-destructive">
-                      {`${r.fund_code}: ${r.message}`}
+                      {`${r.fund_code}: ${translateMessage(r.code, r.message)}`}
                     </p>
                   ))}
                 </div>
@@ -296,7 +297,7 @@ export default function NavUpdate() {
                           r.ok ? (
                             <span title={t.navUpdate.updateSuccess}><CheckCircle2 className="h-4 w-4 text-success inline" /></span>
                           ) : (
-                            <span title={r.message}><XCircle className="h-4 w-4 text-destructive inline" /></span>
+                            <span title={translateMessage(r.code, r.message)}><XCircle className="h-4 w-4 text-destructive inline" /></span>
                           )
                         ) : !r.date ? (
                           <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10 text-[11px] px-1.5 py-0">

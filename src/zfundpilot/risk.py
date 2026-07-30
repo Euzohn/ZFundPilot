@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -25,9 +26,11 @@ from .models import Position
 @dataclass
 class RiskFlag:
     """一条风险提示。"""
-    level: str      # info / warning / danger
-    title: str
-    detail: str
+    level: str               # info / warning / danger
+    code: str                # stable machine code for i18n
+    params: dict[str, Any]  # dynamic values for interpolation
+    title: str               # Chinese display text (backward compat)
+    detail: str              # Chinese display text (backward compat)
 
 
 @dataclass
@@ -127,13 +130,19 @@ def generate_risk_flags(report: RiskReport) -> list[RiskFlag]:
     # 集中度
     if report.max_single_weight >= RT.SINGLE_FUND_HIGH:
         flags.append(RiskFlag(
-            "danger", "单基金集中度过高",
+            "danger", "single_fund_high",
+            {"name": report.max_single_name, "weight": report.max_single_weight,
+             "threshold": RT.SINGLE_FUND_HIGH},
+            "单基金集中度过高",
             f"{report.max_single_name} 占比 {report.max_single_weight:.1%}，"
             f"超过 {RT.SINGLE_FUND_HIGH:.0%}，建议控制单一基金暴露。",
         ))
     elif report.max_single_weight >= RT.SINGLE_FUND_WARN:
         flags.append(RiskFlag(
-            "warning", "单基金集中度偏高",
+            "warning", "single_fund_warn",
+            {"name": report.max_single_name, "weight": report.max_single_weight,
+             "threshold": RT.SINGLE_FUND_WARN},
+            "单基金集中度偏高",
             f"{report.max_single_name} 占比 {report.max_single_weight:.1%}，"
             f"超过 {RT.SINGLE_FUND_WARN:.0%}。",
         ))
@@ -141,7 +150,9 @@ def generate_risk_flags(report: RiskReport) -> list[RiskFlag]:
     # 权益占比
     if report.equity_weight >= RT.EQUITY_WARN:
         flags.append(RiskFlag(
-            "warning", "权益/成长风格偏重",
+            "warning", "equity_heavy",
+            {"weight": report.equity_weight, "threshold": RT.EQUITY_WARN},
+            "权益/成长风格偏重",
             f"权益类资产占比 {report.equity_weight:.1%}，"
             f"超过 {RT.EQUITY_WARN:.0%}，组合波动可能较大。",
         ))
@@ -149,7 +160,9 @@ def generate_risk_flags(report: RiskReport) -> list[RiskFlag]:
     # 债券占比
     if report.bond_weight < RT.BOND_MIN:
         flags.append(RiskFlag(
-            "warning", "防守型资产偏低",
+            "warning", "bond_low",
+            {"weight": report.bond_weight, "threshold": RT.BOND_MIN},
+            "防守型资产偏低",
             f"债券型占比仅 {report.bond_weight:.1%}，"
             f"低于 {RT.BOND_MIN:.0%}，组合缺乏缓冲。",
         ))
@@ -157,7 +170,9 @@ def generate_risk_flags(report: RiskReport) -> list[RiskFlag]:
     # QDII 占比
     if report.qdii_weight >= RT.QDII_WARN:
         flags.append(RiskFlag(
-            "info", "海外暴露较高",
+            "info", "qdii_high",
+            {"weight": report.qdii_weight, "threshold": RT.QDII_WARN},
+            "海外暴露较高",
             f"QDII 占比 {report.qdii_weight:.1%}，"
             f"超过 {RT.QDII_WARN:.0%}，注意汇率与海外市场波动。",
         ))
@@ -165,7 +180,9 @@ def generate_risk_flags(report: RiskReport) -> list[RiskFlag]:
     # 回撤
     if report.max_drawdown is not None and report.max_drawdown <= RT.DRAWDOWN_HIGH:
         flags.append(RiskFlag(
-            "danger", "历史回撤较大",
+            "danger", "drawdown_high",
+            {"value": report.max_drawdown, "threshold": RT.DRAWDOWN_HIGH},
+            "历史回撤较大",
             f"组合最大回撤 {report.max_drawdown:.1%}，"
             f"低于 {RT.DRAWDOWN_HIGH:.0%}，属高风险区间。",
         ))
@@ -173,14 +190,19 @@ def generate_risk_flags(report: RiskReport) -> list[RiskFlag]:
     # 波动率
     if report.volatility is not None and report.volatility >= RT.VOLATILITY_HIGH:
         flags.append(RiskFlag(
-            "info", "波动率偏高",
+            "info", "volatility_high",
+            {"value": report.volatility, "threshold": RT.VOLATILITY_HIGH},
+            "波动率偏高",
             f"组合年化波动率约 {report.volatility:.1%}，"
             f"超过 {RT.VOLATILITY_HIGH:.0%}。",
         ))
 
     if not flags:
-        flags.append(RiskFlag("info", "暂无明显风险提示",
-                              "当前组合各项风险指标处于设定阈值内。"))
+        flags.append(RiskFlag(
+            "info", "no_risk", {},
+            "暂无明显风险提示",
+            "当前组合各项风险指标处于设定阈值内。",
+        ))
     return flags
 
 

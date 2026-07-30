@@ -547,7 +547,7 @@ if __name__ == "__main__":
 
 def _is_t1_transaction(tx: Transaction) -> bool:
     """检测交易是否为 T+1 确认（15:00 后下单，按次日净值确认）。"""
-    return bool(tx.note and "T+1确认" in tx.note)
+    return bool(tx.is_t1)
 
 
 def _t1_nav_date(tx: Transaction) -> str:
@@ -560,7 +560,7 @@ def backfill_transaction_navs() -> list[dict[str, Any]]:
     """回填缺失净值的交易记录。净值更新后自动调用。
 
     查找 nav IS NULL 的交易，按日期查净值，补全 nav 并计算缺失的份额/金额。
-    T+1 交易（note 含 'T+1确认'）使用次日净值，而非当日。
+    T+1 交易（is_t1=1）使用次日净值，而非当日。
     现金分红的 nav 是每份分红金额（非基金净值），不自动回填。
 
     返回被更新的交易详情列表，每条含 tx_id/fund_code/date/nav/shares/amount。
@@ -591,7 +591,7 @@ def backfill_transaction_navs() -> list[dict[str, Any]]:
 def recalculate_t1_transactions() -> list[dict[str, Any]]:
     """修复历史 T+1 交易的错误净值回填。
 
-    查找 note 含 'T+1确认' 且 nav 已回填的交易，
+    查找 is_t1=1 且 nav 已回填的交易，
     若 nav 来自交易当日（错误）而非次日（正确），则用次日净值重新计算。
 
     返回修复详情列表，每条含 tx_id/fund_code/date/old_nav/new_nav/old_shares/new_shares 等。
@@ -600,7 +600,7 @@ def recalculate_t1_transactions() -> list[dict[str, Any]]:
     fixed: list[dict[str, Any]] = []
     with db.get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM transactions WHERE note LIKE '%T+1确认%' "
+            "SELECT * FROM transactions WHERE is_t1=1 "
             "AND nav IS NOT NULL ORDER BY date ASC, id ASC"
         ).fetchall()
     for row in rows:

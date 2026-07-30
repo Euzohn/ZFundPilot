@@ -748,22 +748,25 @@ def calc_fund_fee(code: str, action: str = "buy",
     if action == "buy":
         amt = amount or 0
         if amt <= 0:
-            return {"fee": 0, "rate": 0, "label": "金额为空", "lots": None}
+            return {"fee": 0, "rate": 0, "label": "金额为空", "code": "amount_empty", "lots": None}
         result = fetch_fund.calc_purchase_fee(code, amt)
     elif action == "sell":
         sh = shares or 0
         if sh <= 0:
-            return {"fee": 0, "rate": 0, "label": "份额为空", "lots": None}
+            return {"fee": 0, "rate": 0, "label": "份额为空", "code": "shares_empty", "lots": None}
         if not date:
-            return {"fee": 0, "rate": 0, "label": "日期为空", "lots": None}
+            return {"fee": 0, "rate": 0, "label": "日期为空", "code": "date_empty", "lots": None}
         result = fetch_fund.calc_redemption_fee(code, date, sh)
     else:
-        return {"fee": 0, "rate": 0, "label": "不支持的操作", "lots": None}
+        return {"fee": 0, "rate": 0, "label": "不支持的操作", "code": "unsupported_action", "lots": None}
 
     return {
         "fee": result.fee,
         "rate": result.rate,
         "label": result.label,
+        "code": result.code,
+        "amount": result.amount,
+        "nav": result.nav,
         "lots": result.lots,
     }
 

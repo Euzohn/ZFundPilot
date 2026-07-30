@@ -129,7 +129,10 @@ class Transaction:
     def from_row(cls, row) -> Transaction:
         data = dict(row)
         known = {f for f in cls.__dataclass_fields__}  # type: ignore[attr-defined]
-        return cls(**{k: v for k, v in data.items() if k in known})
+        kwargs = {k: v for k, v in data.items() if k in known}
+        if "is_t1" in kwargs:
+            kwargs["is_t1"] = bool(kwargs["is_t1"])
+        return cls(**kwargs)
 
 
 @dataclass

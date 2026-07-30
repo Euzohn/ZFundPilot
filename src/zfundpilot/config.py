@@ -11,6 +11,7 @@ import ipaddress
 import json
 import os
 import secrets as _secrets
+import time
 from zoneinfo import ZoneInfo
 
 import bcrypt
@@ -295,6 +296,7 @@ TIMEZONE_STR = os.environ.get("ZFUNDPILOT_TIMEZONE", "Asia/Shanghai")
 TIMEZONE = ZoneInfo(TIMEZONE_STR)
 # 确保 SQLite datetime('now','localtime') 与 Python 时区一致
 os.environ["TZ"] = TIMEZONE_STR
+time.tzset()
 
 # 净值自动更新 cron 表达式，默认工作日 21:00
 # 可通过 ZFUNDPILOT_NAV_CRON 环境变量覆盖

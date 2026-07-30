@@ -385,6 +385,7 @@ class TransactionCreate(BaseModel):
     fee: float = 0.0
     channel: str = ""
     note: str = ""
+    is_t1: bool = False
 
 
 class SectorUpdate(BaseModel):
@@ -446,6 +447,7 @@ def add_transaction(request: Request, body: TransactionCreate) -> dict[str, Any]
         fee=body.fee,
         channel=body.channel,
         note=body.note,
+        is_t1=body.is_t1,
     )
     tx.normalize()
     if not tx.is_valid():
@@ -476,6 +478,7 @@ def update_transaction(request: Request, tx_id: int, body: TransactionCreate) ->
         fee=body.fee,
         channel=body.channel,
         note=body.note,
+        is_t1=body.is_t1,
     )
     tx.normalize()
     if not tx.is_valid():
@@ -748,17 +751,21 @@ def calc_fund_fee(code: str, action: str = "buy",
     if action == "buy":
         amt = amount or 0
         if amt <= 0:
-            return {"fee": 0, "rate": 0, "label": "金额为空", "code": "amount_empty", "lots": None}
+            return {"fee": 0, "rate": 0, "label": "金额为空",
+                    "code": "amount_empty", "amount": 0, "nav": None, "lots": None}
         result = fetch_fund.calc_purchase_fee(code, amt)
     elif action == "sell":
         sh = shares or 0
         if sh <= 0:
-            return {"fee": 0, "rate": 0, "label": "份额为空", "code": "shares_empty", "lots": None}
+            return {"fee": 0, "rate": 0, "label": "份额为空",
+                    "code": "shares_empty", "amount": 0, "nav": None, "lots": None}
         if not date:
-            return {"fee": 0, "rate": 0, "label": "日期为空", "code": "date_empty", "lots": None}
+            return {"fee": 0, "rate": 0, "label": "日期为空",
+                    "code": "date_empty", "amount": 0, "nav": None, "lots": None}
         result = fetch_fund.calc_redemption_fee(code, date, sh)
     else:
-        return {"fee": 0, "rate": 0, "label": "不支持的操作", "code": "unsupported_action", "lots": None}
+        return {"fee": 0, "rate": 0, "label": "不支持的操作",
+                "code": "unsupported_action", "amount": 0, "nav": None, "lots": None}
 
     return {
         "fee": result.fee,

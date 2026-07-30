@@ -12,7 +12,7 @@ interface Props {
   className?: string
 }
 
-const HIDDEN_CODES = new Set(["fee_unknown", "amount_empty", "shares_empty", "date_empty", "unsupported_action"])
+const HIDDEN_CODES = new Set(["fee_unknown", "amount_empty", "shares_empty", "date_empty", "unsupported_action", "pending_nav", "no_buy_record"])
 
 export default function FeeBreakdownCard({ result, action, className }: Props) {
   const { t } = useLang()

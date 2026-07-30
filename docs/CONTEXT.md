@@ -168,7 +168,7 @@ ZFundPilot/
 
 - 数据库 `auto_invest_plans` 表存储定投计划（基金/金额/频率/定投日/启用状态/下次执行日）
 - 4 种频率：`daily`（每个交易日）/ `week`（每周）/ `biweek`（每双周）/ `month`（每月）
-- `calculate_next_run(plan)`: 根据频率计算下次执行日，遇非交易日用 `db.get_nav_on_or_after` 顺延到最近的交易日
+- `calculate_next_run(plan)`: 根据频率计算下次执行日，遇非交易日顺延到最近的交易日（有净值数据时用净值数据推断；将来日期无净值数据时至少跳过周末）。`from_date` 缺省时取 `max(next_run, today)`，跳过停机期间错过的期数
 - `execute_plan(plan, manual)`: 创建一笔买入交易（`nav=NULL`，等回填），自动通过 `fetch_fund.calc_purchase_fee` 计算手续费，更新 `last_run`/`last_tx_id`。手动执行（`manual=True`）不更新 `next_run`。15:00 前不加 T+1 标记（用当天净值），15:00 后加 `T+1确认` 标记（用次日净值）
 - `run_all_due()`: 被 `scheduler.py` 每天 09:00 调用，检查所有 `enabled=1` 且 `next_run <= today` 的计划，逐个执行
 - API: 6 个端点 `POST/GET/PUT/DELETE /api/auto-invest/plans` + `/toggle` + `/execute`
@@ -198,14 +198,16 @@ ZFundPilot/
 
 ### scheduler.py — 定时任务
 
-- APScheduler `BackgroundScheduler`，时区 `Asia/Shanghai`
+- APScheduler `BackgroundScheduler`，时区来自 `config.TIMEZONE`（环境变量 `ZFUNDPILOT_TIMEZONE`，默认 `Asia/Shanghai`）
 - 默认 cron: `0 21 * * 1-5`（工作日 21:00）
 - `max_instances=1` + `coalesce=True` + `misfire_grace_time=3600`
 - 开关状态存 `preferences` 表 key=`nav_auto_update`，默认启用
 - `_bootstrap_check`: 启动时检测今日 cron 是否已过，若已过则立即补跑
 - `auto_invest` 任务：每天 09:00 检查到期定投计划并执行（`auto_invest.run_all_due`），写审计日志
+- `_run_auto_invest` 加 `threading.Lock` 防止 bootstrap/cron/API 三入口并发重复执行
+- `_bootstrap_auto_invest`: 启动时若已过 09:00 且今日未执行过，立即补跑
 - `_convert_dow()`: 标准 cron day_of_week 数值（0=周日, 1=周一）→ APScheduler 编号（0=周一, 6=周日），`re.sub(r'\d+', lambda m: str((int(m.group(0))-1)%7), dow)`。只在 day_of_week 为纯数字（无字母缩写）时执行转换
-- `_TZ = ZoneInfo("Asia/Shanghai")`: 所有 `datetime.now(_TZ)` 时区感知，不依赖系统时区
+- `config.TIMEZONE`: 所有 `datetime.now()` 调用使用此时区，不依赖系统时区
 - API: `GET /api/scheduler/status` + `PUT /api/scheduler/toggle` + `PUT /api/scheduler/cron`
 
 ---
@@ -257,6 +259,7 @@ ZFundPilot/
 | `ZFUNDPILOT_PASSWORD` | 空 | 仅首次启动初始化密码（留空则无认证），密码哈希用 bcrypt |
 | `ZFUNDPILOT_SECRET` | 自动生成 | 仅首次启动初始化 token 签名密钥 |
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式 |
+| `ZFUNDPILOT_TIMEZONE` | `Asia/Shanghai` | 系统时区（IANA 名称），影响定时任务、交易日期、日志时间戳 |
 | `ZFUNDPILOT_TRUSTED_PROXIES` | 空 | 信任代理网段（CIDR 逗号分隔），仅在反代后配置 |
 
 ---

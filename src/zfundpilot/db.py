@@ -17,7 +17,6 @@ import sqlite3
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from . import config
 from .models import Fund, NavPoint, Transaction
@@ -592,7 +591,7 @@ def log_audit(action: str, ip: str | None = None,
     with get_connection() as conn:
         conn.execute(
             "INSERT INTO audit_log(ts, ip, username, action, detail) VALUES(?,?,?,?,?)",
-            (datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(), ip, username, action,
+            (datetime.now(config.TIMEZONE).isoformat(), ip, username, action,
              json.dumps(detail, ensure_ascii=False) if detail else None),
         )
 

@@ -19,12 +19,11 @@ import threading
 import time
 from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 
 from . import __version__ as APP_VERSION
 from . import (
@@ -46,7 +45,6 @@ from . import (
 from .models import Fund, Transaction
 
 logger = logging.getLogger(__name__)
-_TZ = ZoneInfo("Asia/Shanghai")
 
 app = FastAPI(title="ZFundPilot API", version="0.12.0")
 
@@ -619,7 +617,7 @@ def get_estimates() -> dict[str, Any]:
     total_est_pnl = 0.0
     total_prev_value = 0.0
     latest_gztime = ""
-    today_str = datetime.now(_TZ).strftime("%Y-%m-%d")
+    today_str = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
     for est in estimates:
         info = merged.get(est.fund_code, {})
         shares = info.get("shares", 0)
@@ -1074,6 +1072,27 @@ class AutoInvestPlanCreate(BaseModel):
     day_of_month: int | None = None
     channel: str = ""
     note: str = "定投"
+
+    @field_validator("cadence")
+    @classmethod
+    def validate_cadence(cls, v: str) -> str:
+        if v not in auto_invest.CADENCES:
+            raise ValueError(f"频率仅支持 {' / '.join(auto_invest.CADENCES)}")
+        return v
+
+    @model_validator(mode="after")
+    def validate_day_fields(self) -> AutoInvestPlanCreate:
+        if self.cadence in ("week", "biweek"):
+            if self.day_of_week is None:
+                raise ValueError("week/biweek 频率需指定 day_of_week")
+            if not 0 <= self.day_of_week <= 6:
+                raise ValueError("day_of_week 范围 0-6（0=周一）")
+        if self.cadence == "month":
+            if self.day_of_month is None:
+                raise ValueError("month 频率需指定 day_of_month")
+            if not 1 <= self.day_of_month <= 31:
+                raise ValueError("day_of_month 范围 1-31")
+        return self
 
 
 class AutoInvestPlanToggle(BaseModel):

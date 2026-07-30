@@ -11,6 +11,7 @@ import ipaddress
 import json
 import os
 import secrets as _secrets
+from zoneinfo import ZoneInfo
 
 import bcrypt
 
@@ -288,6 +289,13 @@ AI_WEB_SEARCH: bool = _ai_config.get("web_search", True)
 # ---------------------------------------------------------------------------
 # 定时任务配置
 # ---------------------------------------------------------------------------
+# 时区配置，默认东八区（Asia/Shanghai）
+# 影响：定时任务触发时间、datetime.now()、SQLite localtime
+TIMEZONE_STR = os.environ.get("ZFUNDPILOT_TIMEZONE", "Asia/Shanghai")
+TIMEZONE = ZoneInfo(TIMEZONE_STR)
+# 确保 SQLite datetime('now','localtime') 与 Python 时区一致
+os.environ["TZ"] = TIMEZONE_STR
+
 # 净值自动更新 cron 表达式，默认工作日 21:00
 # 可通过 ZFUNDPILOT_NAV_CRON 环境变量覆盖
 NAV_CRON = os.environ.get("ZFUNDPILOT_NAV_CRON", "0 21 * * 1-5")

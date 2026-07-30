@@ -12,23 +12,27 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
-from . import analysis, db, fetch_fund
+from . import analysis, config, db, fetch_fund
 from .models import ACTION_BUY, Transaction
 
 logger = logging.getLogger(__name__)
-_TZ = ZoneInfo("Asia/Shanghai")
 CADENCES = ("daily", "week", "biweek", "month")
 
 
 def _next_trading_day(fund_code: str, from_date: str) -> str:
     """从 from_date 起找下一个有净值数据的交易日。
 
-    无净值数据时回退到 from_date 本身（净值尚未更新，执行时 nav=None 由 backfill 补）。
+    有净值数据 → 返回实际交易日（过去日期场景）。
+    无净值数据（将来日期） → 至少跳过周末，周一返回。
     """
     nav = db.get_nav_on_or_after(fund_code, from_date)
-    return nav["date"] if nav else from_date
+    if nav:
+        return nav["date"]
+    d = datetime.strptime(from_date, "%Y-%m-%d").date()
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d.isoformat()
 
 
 def _next_weekday(from_date: str, target_dow: int) -> str:
@@ -57,14 +61,16 @@ def calculate_next_run(plan: dict, from_date: str | None = None) -> str | None:
     """计算定投计划的下次执行日期。
 
     遇非交易日顺延到下一个有净值数据的交易日。
+    from_date 缺省时取 max(next_run, today)，跳过停机期间错过的期数。
     """
     if from_date is None:
-        from_date = plan.get("next_run") or datetime.now(_TZ).strftime("%Y-%m-%d")
+        today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
+        from_date = max(plan.get("next_run") or today, today)
     fund_code = plan["fund_code"]
     cadence = plan["cadence"]
 
     if cadence == "daily":
-        d = datetime.strptime(from_date, "%Y-%m-%d") + timedelta(days=1)
+        d = datetime.strptime(from_date, "%Y-%m-%d").date() + timedelta(days=1)
         return _next_trading_day(fund_code, d.isoformat())
 
     if cadence in ("week", "biweek"):
@@ -105,7 +111,7 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
     amount = plan["amount"]
     channel = plan.get("channel", "")
     note = plan.get("note", "定投")
-    now = datetime.now(_TZ)
+    now = datetime.now(config.TIMEZONE)
     today = now.strftime("%Y-%m-%d")
     is_after_three = now.hour >= 15
 
@@ -162,7 +168,7 @@ def run_all_due() -> list[dict[str, Any]]:
 
     返回执行结果列表。
     """
-    today = datetime.now(_TZ).strftime("%Y-%m-%d")
+    today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
     plans = db.get_due_auto_invest_plans(today)
     results: list[dict[str, Any]] = []
     for p in plans:

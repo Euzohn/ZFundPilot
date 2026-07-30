@@ -16,12 +16,11 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import akshare as ak
 import pandas as pd
 
-_TZ = ZoneInfo("Asia/Shanghai")
+from . import config
 
 _batch_cache: dict[str, tuple[float, list[FundEstimate]]] = {}
 _BATCH_KEY = "__batch__"
@@ -84,7 +83,7 @@ def _parse_dataframe(df: pd.DataFrame) -> list[FundEstimate]:
 
     # 从列名提取日期
     prev_date = prev_nav_col.split("-单位净值")[0] if prev_nav_col else ""
-    gztime = datetime.now(_TZ).strftime("%Y-%m-%d %H:%M")
+    gztime = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d %H:%M")
 
     results: list[FundEstimate] = []
     for _, row in df.iterrows():
@@ -123,7 +122,7 @@ def _parse_dataframe(df: pd.DataFrame) -> list[FundEstimate]:
 
 
 def _get_all_estimates() -> list[FundEstimate]:
-    """获取全市场基金估值（带缓存）。"""
+    """获取全市场基金估值（带缓存，失败时负面缓存 10s 防止打爆上游）。"""
     cached = _batch_cache.get(_BATCH_KEY)
     if cached and time.time() - cached[0] < _CACHE_TTL:
         return cached[1]
@@ -133,6 +132,7 @@ def _get_all_estimates() -> list[FundEstimate]:
         _batch_cache[_BATCH_KEY] = (time.time(), all_ests)
         return all_ests
     except Exception:  # noqa: BLE001
+        _batch_cache[_BATCH_KEY] = (time.time(), [])
         return []
 
 

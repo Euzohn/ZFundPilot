@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from . import config, db, fetch_fund, analysis, auto_invest
+from . import analysis, auto_invest, config, db, fetch_fund
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,12 +23,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-_TZ = ZoneInfo("Asia/Shanghai")
-
 _scheduler: BackgroundScheduler | None = None
 _last_run: datetime | None = None
 _last_results: list[dict[str, Any]] | None = None
 _last_auto_invest_run: datetime | None = None
+_auto_invest_lock = threading.Lock()
 
 _PREF_KEY_ENABLED = "nav_auto_update"
 _PREF_KEY_CRON = "nav_cron"
@@ -43,7 +42,7 @@ def _run_nav_update() -> None:
         codes = [p.fund_code for p in positions if p.is_open]
         if not codes:
             logger.info("[scheduler] 无持仓基金，跳过")
-            _last_run = datetime.now(_TZ)
+            _last_run = datetime.now(config.TIMEZONE)
             _last_results = []
             return
         results = fetch_fund.update_all_holdings_nav(codes=codes)
@@ -53,13 +52,13 @@ def _run_nav_update() -> None:
                           detail={"count": len(updated), "items": updated})
         analysis.clear_analysis_cache()
         _last_results = [r.__dict__ for r in results]
-        _last_run = datetime.now(_TZ)
+        _last_run = datetime.now(config.TIMEZONE)
         ok = sum(1 for r in results if r.ok)
         fail = len(results) - ok
         logger.info("[scheduler] 净值更新完成: %d 成功, %d 失败", ok, fail)
     except Exception:
         logger.exception("[scheduler] 定时净值更新任务异常")
-        _last_run = datetime.now(_TZ)
+        _last_run = datetime.now(config.TIMEZONE)
         _last_results = None
 
 
@@ -86,28 +85,30 @@ def _parse_cron(expr: str) -> CronTrigger:
         day=parts[2],
         month=parts[3],
         day_of_week=dow,
+        timezone=config.TIMEZONE,
     )
 
 
 def _run_auto_invest() -> None:
     """执行定投计划检查任务（由调度器调用，每天 09:00）。"""
     global _last_auto_invest_run
-    logger.info("[scheduler] 定投计划检查开始")
-    try:
-        results = auto_invest.run_all_due()
-        _last_auto_invest_run = datetime.now(_TZ)
-        if results:
-            ok = sum(1 for r in results if r.get("status") == "success")
-            fail = sum(1 for r in results if r.get("status") == "error")
-            db.log_audit("auto_invest_execute", ip=None,
-                          detail={"count": len(results), "ok": ok, "fail": fail,
-                                  "items": results})
-            logger.info("[scheduler] 定投执行: %d 成功, %d 失败", ok, fail)
-        else:
-            logger.info("[scheduler] 无到期定投计划")
-    except Exception:
-        logger.exception("[scheduler] 定投计划检查异常")
-        _last_auto_invest_run = datetime.now(_TZ)
+    with _auto_invest_lock:
+        logger.info("[scheduler] 定投计划检查开始")
+        try:
+            results = auto_invest.run_all_due()
+            _last_auto_invest_run = datetime.now(config.TIMEZONE)
+            if results:
+                ok = sum(1 for r in results if r.get("status") == "success")
+                fail = sum(1 for r in results if r.get("status") == "error")
+                db.log_audit("auto_invest_execute", ip=None,
+                              detail={"count": len(results), "ok": ok, "fail": fail,
+                                      "items": results})
+                logger.info("[scheduler] 定投执行: %d 成功, %d 失败", ok, fail)
+            else:
+                logger.info("[scheduler] 无到期定投计划")
+        except Exception:
+            logger.exception("[scheduler] 定投计划检查异常")
+            _last_auto_invest_run = datetime.now(config.TIMEZONE)
 
 
 def init_scheduler() -> None:
@@ -116,7 +117,7 @@ def init_scheduler() -> None:
     if _scheduler is not None:
         return
 
-    _scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
+    _scheduler = BackgroundScheduler(timezone=config.TIMEZONE_STR)
     cron_expr = _get_cron()
     trigger = _parse_cron(cron_expr)
 
@@ -131,7 +132,7 @@ def init_scheduler() -> None:
     )
     _scheduler.add_job(
         _run_auto_invest,
-        trigger=CronTrigger(hour=9, minute=0),
+        trigger=CronTrigger(hour=9, minute=0, timezone=config.TIMEZONE),
         id="auto_invest",
         max_instances=1,
         misfire_grace_time=3600,
@@ -152,7 +153,7 @@ def _bootstrap_auto_invest() -> None:
     global _last_auto_invest_run
     if _last_auto_invest_run is not None:
         return
-    now = datetime.now(_TZ)
+    now = datetime.now(config.TIMEZONE)
     if now.hour < 9:
         return
     today = now.strftime("%Y-%m-%d")
@@ -167,7 +168,7 @@ def _bootstrap_check(trigger: CronTrigger) -> None:
     """启动时检测：如果今日 cron 时间已过且尚未运行过，立即执行。"""
     if _last_run is not None:
         return
-    now = datetime.now(_TZ)
+    now = datetime.now(config.TIMEZONE)
     next_fire = trigger.get_next_fire_time(None, now)
     if next_fire is None or next_fire.date() == now.date():
         return

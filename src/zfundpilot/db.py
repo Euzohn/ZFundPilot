@@ -304,7 +304,7 @@ def add_transaction(tx: Transaction) -> int:
         cur = conn.execute(
             """
             INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note,is_t1)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?)
+            VALUES(?,?,?,?,?,?,?,?,?,?)
             """,
             (tx.fund_code.strip(), tx.action, tx.date, tx.amount, tx.shares,
              tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1)),

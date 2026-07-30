@@ -1029,7 +1029,6 @@ def calc_redemption_fee(
         if remaining <= 0:
             break
         lot_shares = lot.shares or 0
-        lot_nav = lot.nav or 0  # 买入净值（仅展示参考）
         used = min(lot_shares, remaining)
         days = (sell_dt - _parse_date(lot.date)).days
         if days < 0:
@@ -1076,7 +1075,7 @@ def calc_redemption_fee(
     total_fee = round(total_fee, 2)
 
     # 有效费率 = 总费用 / 总卖出金额
-    total_sold_amount = sum(l.used_shares * sell_nav for l in lots_detail)
+    total_sold_amount = sum(lot.used_shares * sell_nav for lot in lots_detail)
     effective_rate = total_fee / total_sold_amount if total_sold_amount > 0 else 0
 
     label = f"赎回费率 {effective_rate * 100:.2f}%"
@@ -1088,9 +1087,9 @@ def calc_redemption_fee(
         code="redemption_rate",
         amount=total_amount,
         nav=sell_nav,
-        lots=[{"buy_date": l.buy_date, "buy_shares": l.buy_shares,
-               "used_shares": l.used_shares, "days_held": l.days_held,
-               "rate": l.rate, "fee": l.fee} for l in lots_detail],
+        lots=[{"buy_date": lot.buy_date, "buy_shares": lot.buy_shares,
+               "used_shares": lot.used_shares, "days_held": lot.days_held,
+               "rate": lot.rate, "fee": lot.fee} for lot in lots_detail],
     )
 
 

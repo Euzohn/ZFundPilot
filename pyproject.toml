@@ -57,6 +57,7 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["zfundpilot"]

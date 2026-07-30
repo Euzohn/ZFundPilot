@@ -25,6 +25,18 @@ from typing import Any
 
 import pandas as pd
 
+from . import db
+from .models import (
+    ACTION_BUY,
+    ACTION_DIVIDEND,
+    ACTION_REINVEST,
+    ACTION_SELL,
+    Fund,
+    PortfolioSummary,
+    Position,
+    Transaction,
+)
+
 _cache: dict[str, tuple[float, Any]] = {}
 _CACHE_TTL = 60  # 秒
 
@@ -44,18 +56,6 @@ def _cache_get(key: str) -> Any | None:
 
 def _cache_set(key: str, val: Any) -> None:
     _cache[key] = (time.time(), val)
-
-from . import db
-from .models import (
-    ACTION_BUY,
-    ACTION_DIVIDEND,
-    ACTION_REINVEST,
-    ACTION_SELL,
-    Fund,
-    PortfolioSummary,
-    Position,
-    Transaction,
-)
 
 
 # ---------------------------------------------------------------------------

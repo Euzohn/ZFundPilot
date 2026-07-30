@@ -107,7 +107,7 @@ def _get_cached_meta(fund_code: str) -> dict:
 
 def _get_fund_archive(fund_code: str) -> dict:
     """从天天基金档案页获取成立日期、规模、基金经理。
-    
+
     这是额外的数据源，失败不影响整体对比。
     """
     fallback = {"inception": "", "scale": None, "manager": ""}

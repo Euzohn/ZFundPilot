@@ -22,10 +22,13 @@ _TZ = ZoneInfo("Asia/Shanghai")
 CADENCES = ("daily", "week", "biweek", "month")
 
 
-def _next_trading_day(fund_code: str, from_date: str) -> str | None:
-    """从 from_date 起找下一个有净值数据的交易日。"""
+def _next_trading_day(fund_code: str, from_date: str) -> str:
+    """从 from_date 起找下一个有净值数据的交易日。
+
+    无净值数据时回退到 from_date 本身（净值尚未更新，执行时 nav=None 由 backfill 补）。
+    """
     nav = db.get_nav_on_or_after(fund_code, from_date)
-    return nav["date"] if nav else None
+    return nav["date"] if nav else from_date
 
 
 def _next_weekday(from_date: str, target_dow: int) -> str:

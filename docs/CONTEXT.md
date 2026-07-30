@@ -13,7 +13,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.12.0`（git tag `v0.12.0`）
+- **版本**: `0.12.1`（git tag `v0.12.1`）
 - **License**: MIT
 
 ---
@@ -35,7 +35,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.12.0"
+│   ├── __init__.py          # __version__ = "0.12.1"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
@@ -139,7 +139,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.12.0")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.12.1")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
 - 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
@@ -404,15 +404,20 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
   页面的交易列表行点击即可打开只读详情弹窗，展示所有交易字段，支持「编辑」跳转
 - 修复定投执行 T+1 判定 bug：`execute_plan()` 按当前时间判断 15:00 分界，不再永远加 `T+1确认` 标记
 
-### v0.12.1（开发中）
+### v0.12.1 - 2026-07-30
 
 - 后端 i18n 结构化：risk.py `RiskFlag` + rebalance.py `Advice` + fetch_fund.py `CalcFeeResult`/`FundMeta`/`FetchResult`/`FeeRates` + fetch_estimate.py `FundEstimate` + compare.py `FundCompareItem`/`CompareResponse` + fund_filter.py `FilterResponse` 新增 `code`/`params` 字段，前端按 code 翻译
 - T+1 确认改用 `is_t1` 布尔字段：`transactions` 表新增 `is_t1 INTEGER DEFAULT 0` 列（迁移自动回填存量数据），`auto_invest.py` 设置 `is_t1=True` 而非追加 `"T+1确认"` 到 note 文本，`analysis.py` 查 `is_t1=1` 而非 `note LIKE '%T+1确认%'`
 - 前端翻译映射：新建 `lib/backendLabels.ts`（风险提示/建议/费率/消息 code 翻译）+ `lib/taxonomyLabels.ts`（基金类型/板块/渠道翻译），Risk.tsx/NavUpdate.tsx/FeeBreakdownCard.tsx 等组件按 code 渲染
 - 前端残留 i18n 补全：Positions/FundDetail/FundCompare/Overview 调用 translateFundType/translateSector/translateChannel，Settings.tsx AI 供应商名双语，api/client.ts 401 双语
+- 6 项高优修复：CronTrigger 时区、定投补跑锁、错过期不追补、API 字段校验、周末跳过、估值负面缓存
+- 时区可配置：新增 `ZFUNDPILOT_TIMEZONE` 环境变量
+- 定投缺少启动补跑机制
 - CI/CD 工作流：`.github/workflows/ci.yml`，push/PR 自动 ruff + pytest（3.10/3.11/3.12）+ tsc + build
 - 测试基础设施：`tests/conftest.py`（make_plan/make_tx_row fixtures + PatchAutoInvest 共享类）
-- Bug 修复：`TransactionCreate` 加 `is_t1` 字段（修复手动创建/编辑交易 T+1 标记丢失）；`config.py` 加 `time.tzset()` 确保 SQLite 时区同步；`api.py` calc-fee 早期返回补齐 `amount`+`nav`；`models.py` `from_row()` 转换 `is_t1` int→bool；`FeeBreakdownCard` `HIDDEN_CODES` 补全
+- Bug 修复：`TransactionCreate` 加 `is_t1` 字段（修复手动创建/编辑交易 T+1 标记丢失）；`config.py` 加 `time.tzset()` 确保 SQLite 时区同步；`api.py` calc-fee 早期返回补齐 `amount`+`nav`；`models.py` `from_row()` 转换 `is_t1` int→bool；`FeeBreakdownCard` `HIDDEN_CODES` 补全；`LanguageContext` 切换语言时同步更新 `currentLang`；`add_transaction` SQL 占位符数不匹配
+
+### v0.12.2（开发中）
 
 ### v0.11.0
 

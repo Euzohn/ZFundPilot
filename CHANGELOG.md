@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-07-30
+
 ### Added
 - 时区可配置：新增 `ZFUNDPILOT_TIMEZONE` 环境变量（默认 `Asia/Shanghai`），影响定时任务触发时间、
   交易日期、审计日志时间戳。`config.py` 集中定义 `TIMEZONE`，同步设置 `os.environ["TZ"]` 供 SQLite 使用，

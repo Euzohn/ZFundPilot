@@ -22,7 +22,7 @@ import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import ThemeToggle from "@/components/ThemeToggle"
 import { toast } from "sonner"
-import { useLang, getCurrentLang } from "@/i18n/LanguageContext"
+import { useLang, type Lang } from "@/i18n/LanguageContext"
 import { cn } from "@/lib/utils"
 import type { AIUsageStats, AIUsageDaily, AuditLog, KeywordMaps, KeywordEntry, SchedulerStatus } from "@/api/types"
 import {
@@ -40,8 +40,7 @@ const PROVIDER_NAMES: Record<string, { zh: string; en: string }> = {
   generic: { zh: "通用 OpenAI 兼容", en: "Generic OpenAI Compatible" },
 }
 
-function detectProvider(baseUrl: string): string {
-  const lang = getCurrentLang()
+function detectProvider(baseUrl: string, lang: Lang): string {
   const url = baseUrl.toLowerCase()
   let key = "generic"
   if (url.includes("moonshot") || url.includes("kimi")) key = "kimi"
@@ -167,7 +166,7 @@ const PROVIDER_PRESETS = [
 ]
 
 export default function Settings() {
-  const { t } = useLang()
+  const { t, lang } = useLang()
   // Channels
   const [channels, setChannels] = useState<string[]>(() => getChannels())
   const [newChannel, setNewChannel] = useState("")
@@ -591,7 +590,7 @@ export default function Settings() {
                       onClick={() => { setAiBaseUrl(p.baseUrl); setAiModel(p.model) }}
                       className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                     >
-                      {p.name[getCurrentLang()]}
+                      {p.name[lang]}
                     </button>
                   ))}
                 </div>
@@ -604,7 +603,7 @@ export default function Settings() {
                   </label>
                   {aiWebSearch && aiBaseUrl && (
                     <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-                      {detectProvider(aiBaseUrl)}
+                      {detectProvider(aiBaseUrl, lang)}
                     </span>
                   )}
                 </div>

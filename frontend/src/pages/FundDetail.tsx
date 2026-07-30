@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { money, pct, signedMoney, navStr, pnlColor, localDateStr } from "@/lib/format"
 import { RANGE_DAYS } from "@/lib/rangeLabels"
 import { isMarketOpen } from "@/lib/market"
+import { translateFundType, translateSector } from "@/lib/taxonomyLabels"
 import { toast } from "sonner"
 import { useLang } from "@/i18n/LanguageContext"
 import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
@@ -183,8 +184,8 @@ const handleDelete = async (txId: number) => {
           <div className="flex items-center gap-3 flex-wrap">
             <PageHeader title={fund?.fund_name ?? code} tracking="tight" truncate className="min-w-0" />
             <span className="font-mono text-sm text-muted-foreground">{code}</span>
-            {fund?.fund_type && <Badge variant="secondary">{fund.fund_type}</Badge>}
-            {fund?.sector && <Badge variant="outline">{fund.sector}</Badge>}
+            {fund?.fund_type && <Badge variant="secondary">{translateFundType(fund.fund_type)}</Badge>}
+            {fund?.sector && <Badge variant="outline">{translateSector(fund.sector)}</Badge>}
           </div>
         </div>
         <div className="flex gap-2 shrink-0">

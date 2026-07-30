@@ -18,6 +18,7 @@ import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { useLang } from "@/i18n/LanguageContext"
+import { translateFundType, translateChannel } from "@/lib/taxonomyLabels"
 
 function CompactCard({ label, value, sub, color }: {
   label: string; value: string; sub?: string; color?: string
@@ -180,7 +181,7 @@ export default function Overview() {
             {typeDist && typeDist.length > 0 ? (
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
-                  <Pie data={typeDist} dataKey="market_value" nameKey="fund_type" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
+                  <Pie data={typeDist.map(d => ({ ...d, fund_type: translateFundType(String(d.fund_type)) }))} dataKey="market_value" nameKey="fund_type" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
                     {typeDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip nameKey="fund_type" />} />
@@ -196,7 +197,7 @@ export default function Overview() {
             {channelDist && channelDist.length > 0 ? (
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
-                  <Pie data={channelDist.map(d => ({ ...d, channel: d.channel || t.common.unlabeled }))} dataKey="market_value" nameKey="channel" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
+                  <Pie data={channelDist.map(d => ({ ...d, channel: translateChannel(String(d.channel || t.common.unlabeled)) }))} dataKey="market_value" nameKey="channel" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
                     {channelDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip nameKey="channel" />} />

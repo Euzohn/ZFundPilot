@@ -26,8 +26,11 @@ import type {
   SchedulerStatus,
 } from "./types"
 import { getToken, clearToken } from "@/lib/auth"
+import { getCurrentLang } from "@/i18n/LanguageContext"
 
 const BASE = "/api"
+
+const ERR_401 = { zh: "未登录或登录已过期", en: "Not authenticated or session expired" }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const token = getToken()
@@ -42,7 +45,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   if (res.status === 401) {
     clearToken()
     window.location.reload()
-    throw new Error("未登录或登录已过期")
+    throw new Error(ERR_401[getCurrentLang()])
   }
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
@@ -128,7 +131,7 @@ export const api = {
     if (res.status === 401) {
       clearToken()
       window.location.reload()
-      throw new Error("未登录或登录已过期")
+      throw new Error(ERR_401[getCurrentLang()])
     }
     if (!res.ok) {
       throw new Error(await res.text().catch(() => res.statusText))

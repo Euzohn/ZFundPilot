@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { translateFundType, translateSector } from "@/lib/taxonomyLabels"
+import { translateMessage } from "@/lib/backendLabels"
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import { pct, money } from "@/lib/format"
@@ -92,7 +94,7 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
         setResults(res.funds)
         setTotal(res.total)
       } else {
-        setError(res.message)
+        setError(translateMessage(res.code, res.message))
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t.compare.filterFailed)
@@ -249,8 +251,8 @@ function FilterSection({ onAddToCompare }: { onAddToCompare: (codes: string[]) =
                           </TableCell>
                           <TableCell className="px-2 py-1.5 font-mono text-xs">{f.code}</TableCell>
                           <TableCell className="max-w-[200px] truncate px-2 py-1.5 text-xs" title={f.name}>{f.name}</TableCell>
-                          <TableCell className="px-2 py-1.5 text-xs">{f.type}</TableCell>
-                          <TableCell className="px-2 py-1.5 text-xs">{f.sector}</TableCell>
+                          <TableCell className="px-2 py-1.5 text-xs">{translateFundType(f.type)}</TableCell>
+                          <TableCell className="px-2 py-1.5 text-xs">{f.sector ? translateSector(f.sector) : "—"}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -328,8 +330,8 @@ function InfoTable({ funds }: { funds: FundCompareItem[] }) {
   const rows = [
     { label: t.common.code, render: (f: FundCompareItem) => <span className="font-mono">{f.code}</span> },
     { label: t.common.name, render: (f: FundCompareItem) => f.name || "—" },
-    { label: t.common.type, render: (f: FundCompareItem) => f.type },
-    { label: t.compare.sector, render: (f: FundCompareItem) => f.sector || "—" },
+    { label: t.common.type, render: (f: FundCompareItem) => translateFundType(f.type) },
+    { label: t.compare.sector, render: (f: FundCompareItem) => f.sector ? translateSector(f.sector) : "—" },
     { label: t.compare.inceptionDate, render: (f: FundCompareItem) => f.inception_date || "—" },
     { label: t.compare.scale, render: (f: FundCompareItem) => f.scale != null ? `${f.scale.toFixed(1)} ${t.compare.scaleUnit}` : "—" },
     { label: t.compare.manager, render: (f: FundCompareItem) => f.manager || "—" },
@@ -530,7 +532,7 @@ export default function FundCompare() {
 
       {!loading && !error && data && !data.ok && (
         <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">{data.message}</CardContent>
+          <CardContent className="py-12 text-center text-muted-foreground">{translateMessage(data.msg_code, data.message)}</CardContent>
         </Card>
       )}
 
@@ -546,7 +548,7 @@ export default function FundCompare() {
         <>
           {failedFunds.length > 0 && (
             <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-              {t.compare.fetchFailed}{failedFunds.map((f) => `${f.code}(${f.message})`).join("；")}
+              {t.compare.fetchFailed}{failedFunds.map((f) => `${f.code}(${translateMessage(f.msg_code, f.message)})`).join("；")}
             </div>
           )}
 

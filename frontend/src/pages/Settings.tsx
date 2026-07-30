@@ -22,7 +22,7 @@ import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import ThemeToggle from "@/components/ThemeToggle"
 import { toast } from "sonner"
-import { useLang } from "@/i18n/LanguageContext"
+import { useLang, getCurrentLang } from "@/i18n/LanguageContext"
 import { cn } from "@/lib/utils"
 import type { AIUsageStats, AIUsageDaily, AuditLog, KeywordMaps, KeywordEntry, SchedulerStatus } from "@/api/types"
 import {
@@ -32,13 +32,23 @@ import {
   Search, X, Palette, UserCircle, Clock,
 } from "lucide-react"
 
+const PROVIDER_NAMES: Record<string, { zh: string; en: string }> = {
+  kimi: { zh: "Kimi (月之暗面)", en: "Kimi (Moonshot)" },
+  glm: { zh: "智谱 GLM", en: "Zhipu GLM" },
+  qwen: { zh: "通义千问 (百炼)", en: "Qwen (Bailian)" },
+  deepseek: { zh: "DeepSeek", en: "DeepSeek" },
+  generic: { zh: "通用 OpenAI 兼容", en: "Generic OpenAI Compatible" },
+}
+
 function detectProvider(baseUrl: string): string {
+  const lang = getCurrentLang()
   const url = baseUrl.toLowerCase()
-  if (url.includes("moonshot") || url.includes("kimi")) return "Kimi (月之暗面)"
-  if (url.includes("bigmodel") || url.includes("zhipu") || url.includes("glm")) return "智谱 GLM"
-  if (url.includes("dashscope") || url.includes("aliyun") || url.includes("aliyuncs") || url.includes("maas")) return "通义千问 (百炼)"
-  if (url.includes("deepseek")) return "DeepSeek"
-  return "通用 OpenAI 兼容"
+  let key = "generic"
+  if (url.includes("moonshot") || url.includes("kimi")) key = "kimi"
+  else if (url.includes("bigmodel") || url.includes("zhipu") || url.includes("glm")) key = "glm"
+  else if (url.includes("dashscope") || url.includes("aliyun") || url.includes("aliyuncs") || url.includes("maas")) key = "qwen"
+  else if (url.includes("deepseek")) key = "deepseek"
+  return PROVIDER_NAMES[key][lang]
 }
 
 function Sparkline({ data }: { data: number[] }) {
@@ -150,10 +160,10 @@ function AuditLogPanel() {
 }
 
 const PROVIDER_PRESETS = [
-  { name: "智谱 GLM", baseUrl: "https://open.bigmodel.cn/v1", model: "glm-4-plus" },
-  { name: "Kimi", baseUrl: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
-  { name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
-  { name: "通义千问", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
+  { name: { zh: "智谱 GLM", en: "Zhipu GLM" }, baseUrl: "https://open.bigmodel.cn/v1", model: "glm-4-plus" },
+  { name: { zh: "Kimi", en: "Kimi" }, baseUrl: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
+  { name: { zh: "DeepSeek", en: "DeepSeek" }, baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  { name: { zh: "通义千问", en: "Qwen" }, baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
 ]
 
 export default function Settings() {
@@ -576,12 +586,12 @@ export default function Settings() {
                   <span className="text-xs text-muted-foreground">{t.settings.quickFill}</span>
                   {PROVIDER_PRESETS.map((p) => (
                     <button
-                      key={p.name}
+                      key={p.name.zh}
                       type="button"
                       onClick={() => { setAiBaseUrl(p.baseUrl); setAiModel(p.model) }}
                       className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                     >
-                      {p.name}
+                      {p.name[getCurrentLang()]}
                     </button>
                   ))}
                 </div>

@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
 import { isMarketOpen } from "@/lib/market"
+import { translateFundType, translateSector } from "@/lib/taxonomyLabels"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
@@ -209,8 +210,8 @@ export default function Positions() {
                           <span className="font-mono text-xs text-muted-foreground">{code}</span>
                         </div>
                       </TableCell>
-                      <TableCell><Badge variant="outline">{m.type}</Badge></TableCell>
-                      <TableCell>{m.sector ? <Badge variant="secondary" className="font-normal">{m.sector}</Badge> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>
+                      <TableCell><Badge variant="outline">{translateFundType(m.type)}</Badge></TableCell>
+                      <TableCell>{m.sector ? <Badge variant="secondary" className="font-normal">{translateSector(m.sector)}</Badge> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>
 <TableCell className="text-right tabular-nums font-medium">
                         <div className="flex flex-col items-end">
                           <span>{money(m.value)}</span>

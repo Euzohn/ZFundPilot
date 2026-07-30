@@ -16,8 +16,12 @@
 - 前端翻译映射：新建 `lib/backendLabels.ts`（风险提示/建议/费率/消息 code → 中英文翻译）
   + `lib/taxonomyLabels.ts`（基金类型/板块/渠道 → 中英文翻译），
   Risk.tsx/NavUpdate.tsx/FeeBreakdownCard.tsx 等组件按 code 渲染。
+- 前端残留 i18n 补全：Positions/FundDetail/FundCompare/Overview 调用 translateFundType/translateSector/translateChannel
+  翻译类型/板块/渠道标签，Settings.tsx AI 供应商名双语，api/client.ts 401 错误消息双语。
 - 定投计划 API 字段校验：`AutoInvestPlanCreate` 加 Pydantic `field_validator` + `model_validator`，
   cadence 限 4 种，week/biweek 需 day_of_week(0-6)，month 需 day_of_month(1-31)。
+- CI/CD 工作流：新建 `.github/workflows/ci.yml`，push/PR 自动运行 ruff check + pytest（3.10/3.11/3.12 matrix）+ tsc + build。
+- 测试基础设施：新建 `tests/conftest.py`，提供 `make_plan`/`make_tx_row` fixtures + `PatchAutoInvest` 共享类。
 
 ### Changed
 - T+1 确认改用 `is_t1` 布尔字段：`transactions` 表新增 `is_t1 INTEGER DEFAULT 0` 列
@@ -26,6 +30,10 @@
 - 删除冗余 lib 文件调用：`rangeLabels.ts`/`actionLabels.ts` 的调用方改用 `t().rangeLabels`/`t().actionLabels`。
 - `CronTrigger` 显式传 `timezone=config.TIMEZONE`，不再依赖宿主机时区。
 - `_run_auto_invest()` 加 `threading.Lock`，防 bootstrap/cron/API 三入口并发重复执行。
+- `api.py` `TransactionCreate` 加 `is_t1` 字段，create/update 端点传导 `is_t1`，修复手动编辑交易清除 T+1 标记的 bug。
+- `config.py` 加 `time.tzset()`，确保 `os.environ["TZ"]` 生效，SQLite 时区与 Python 一致。
+- `models.py` `Transaction.from_row()` 转换 `is_t1` int→bool，确保 JSON 序列化输出 `true`/`false`。
+- ruff 忽略 E501（行超长），`analysis.py` imports 移顶，`fetch_fund.py` 清理未用变量。
 
 ### Fixed
 - 定投错过期不再追补：`calculate_next_run` 锚定 `max(next_run, today)`，跳过停机期间错过的期数。
@@ -34,6 +42,7 @@
 - `add_transaction` SQL 占位符数不匹配（10 列 vs 11 个 `?`）。
 - `FeeBreakdownCard` 的 `HIDDEN_CODES` 遗漏 `pending_nav` 和 `no_buy_record`，
   导致待确认/无买入记录状态错误显示"免手续费"徽章。
+- `api.py` calc-fee 早期返回补齐 `amount` + `nav` 字段，与 `CalcFeeResponse` 类型一致。
 
 ## [0.12.0] - 2026-07-29
 

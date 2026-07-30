@@ -82,6 +82,11 @@ ZFundPilot/
 ├── README.md / README_EN.md # 项目说明（中/英）
 ├── DEPLOY.md                # 部署文档
 ├── .env.example             # 环境变量示例
+├── .github/workflows/       # GitHub Actions CI/CD
+│   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12) → tsc → build
+├── tests/                   # Pytest 测试套件
+│   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
+│   └── test_*.py            #   88 个测试用例
 └── CONTEXT.md              # 本文件（不追踪）
 ```
 
@@ -404,7 +409,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - 后端 i18n 结构化：risk.py `RiskFlag` + rebalance.py `Advice` + fetch_fund.py `CalcFeeResult`/`FundMeta`/`FetchResult`/`FeeRates` + fetch_estimate.py `FundEstimate` + compare.py `FundCompareItem`/`CompareResponse` + fund_filter.py `FilterResponse` 新增 `code`/`params` 字段，前端按 code 翻译
 - T+1 确认改用 `is_t1` 布尔字段：`transactions` 表新增 `is_t1 INTEGER DEFAULT 0` 列（迁移自动回填存量数据），`auto_invest.py` 设置 `is_t1=True` 而非追加 `"T+1确认"` 到 note 文本，`analysis.py` 查 `is_t1=1` 而非 `note LIKE '%T+1确认%'`
 - 前端翻译映射：新建 `lib/backendLabels.ts`（风险提示/建议/费率/消息 code 翻译）+ `lib/taxonomyLabels.ts`（基金类型/板块/渠道翻译），Risk.tsx/NavUpdate.tsx/FeeBreakdownCard.tsx 等组件按 code 渲染
-- 删除冗余 lib 文件：`rangeLabels.ts`/`actionLabels.ts` 的调用方改用 `t().rangeLabels`/`t().actionLabels`
+- 前端残留 i18n 补全：Positions/FundDetail/FundCompare/Overview 调用 translateFundType/translateSector/translateChannel，Settings.tsx AI 供应商名双语，api/client.ts 401 双语
+- CI/CD 工作流：`.github/workflows/ci.yml`，push/PR 自动 ruff + pytest（3.10/3.11/3.12）+ tsc + build
+- 测试基础设施：`tests/conftest.py`（make_plan/make_tx_row fixtures + PatchAutoInvest 共享类）
+- Bug 修复：`TransactionCreate` 加 `is_t1` 字段（修复手动创建/编辑交易 T+1 标记丢失）；`config.py` 加 `time.tzset()` 确保 SQLite 时区同步；`api.py` calc-fee 早期返回补齐 `amount`+`nav`；`models.py` `from_row()` 转换 `is_t1` int→bool；`FeeBreakdownCard` `HIDDEN_CODES` 补全
 
 ### v0.11.0
 

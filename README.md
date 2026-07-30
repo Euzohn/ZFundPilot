@@ -130,6 +130,8 @@ ZFundPilot/
 ├── pyproject.toml        # 打包配置、依赖、Ruff/Pytest 配置
 ├── Dockerfile            # 多阶段构建 Docker 镜像（内置 TZ=Asia/Shanghai）
 ├── docker-compose.yml    # Docker 部署（端口由 override 指定）
+├── .github/workflows/    # GitHub Actions CI/CD
+│   └── ci.yml            #   ruff → pytest → tsc → build
 ├── src/zfundpilot/       # Python 包
 │   ├── __init__.py
 │   ├── config.py         # 全局配置、渠道、风险阈值、认证/AI 配置存储
@@ -149,7 +151,9 @@ ZFundPilot/
 │   ├── api.py            # FastAPI REST API（37+ 路由 + 认证中间件）
 │   ├── ai.py             # AI 投顾对话（持仓上下文 + 联网搜索 + LLM 流式调用）
 │   └── scheduler.py      # APScheduler 定时净值更新
-├── tests/                # Pytest 测试套件
+├── tests/                # Pytest 测试套件（88 个用例）
+│   ├── conftest.py       #   共享 fixtures
+│   └── test_*.py         #   7 个测试模块
 ├── data/
 │   ├── fund.db           # SQLite 数据库（自动生成）
 │   ├── auth.json         # 用户名 / 密码哈希 / token 密钥（自动生成）

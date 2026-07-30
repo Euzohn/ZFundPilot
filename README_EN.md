@@ -130,6 +130,8 @@ ZFundPilot/
 ├── pyproject.toml        # Package config, dependencies, Ruff/Pytest config
 ├── Dockerfile            # Multi-stage Docker image build (TZ=Asia/Shanghai built-in)
 ├── docker-compose.yml    # Docker deployment
+├── .github/workflows/    # GitHub Actions CI/CD
+│   └── ci.yml            #   ruff → pytest → tsc → build
 ├── src/zfundpilot/       # Python package
 │   ├── __init__.py
 │   ├── config.py         # Global config, channels, risk thresholds, auth/AI config
@@ -149,7 +151,9 @@ ZFundPilot/
 │   ├── api.py            # FastAPI REST API (37+ routes + auth middleware)
 │   ├── ai.py             # AI advisor chat (portfolio context + web search)
 │   └── scheduler.py      # APScheduler NAV auto-update
-├── tests/                # Pytest test suite
+├── tests/                # Pytest test suite (88 tests)
+│   ├── conftest.py       #   Shared fixtures
+│   └── test_*.py         #   7 test modules
 ├── data/
 │   ├── fund.db           # SQLite database (auto-generated)
 │   ├── auth.json         # Password hash / token secret (auto-generated)

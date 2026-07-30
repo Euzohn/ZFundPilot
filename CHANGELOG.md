@@ -6,6 +6,35 @@
 
 ## [Unreleased]
 
+### Added
+- 时区可配置：新增 `ZFUNDPILOT_TIMEZONE` 环境变量（默认 `Asia/Shanghai`），影响定时任务触发时间、
+  交易日期、审计日志时间戳。`config.py` 集中定义 `TIMEZONE`，同步设置 `os.environ["TZ"]` 供 SQLite 使用，
+  各模块不再各自定义 `_TZ`。
+- 后端 i18n 结构化：`RiskFlag`/`Advice`/`CalcFeeResult`/`FundMeta`/`FetchResult`/`FeeRates`/
+  `FundEstimate`/`FundCompareItem`/`CompareResponse`/`FilterResponse` 新增 `code`（或 `msg_code`）字段，
+  前端按 code 翻译，不再依赖中文文本字符串匹配。
+- 前端翻译映射：新建 `lib/backendLabels.ts`（风险提示/建议/费率/消息 code → 中英文翻译）
+  + `lib/taxonomyLabels.ts`（基金类型/板块/渠道 → 中英文翻译），
+  Risk.tsx/NavUpdate.tsx/FeeBreakdownCard.tsx 等组件按 code 渲染。
+- 定投计划 API 字段校验：`AutoInvestPlanCreate` 加 Pydantic `field_validator` + `model_validator`，
+  cadence 限 4 种，week/biweek 需 day_of_week(0-6)，month 需 day_of_month(1-31)。
+
+### Changed
+- T+1 确认改用 `is_t1` 布尔字段：`transactions` 表新增 `is_t1 INTEGER DEFAULT 0` 列
+  （迁移自动回填 `note LIKE '%T+1确认%'` 的存量数据），`auto_invest.py` 设置 `is_t1=True`
+  而非追加中文标记到 note，`analysis.py` 查 `is_t1=1` 而非 `note LIKE '%T+1确认%'`。
+- 删除冗余 lib 文件调用：`rangeLabels.ts`/`actionLabels.ts` 的调用方改用 `t().rangeLabels`/`t().actionLabels`。
+- `CronTrigger` 显式传 `timezone=config.TIMEZONE`，不再依赖宿主机时区。
+- `_run_auto_invest()` 加 `threading.Lock`，防 bootstrap/cron/API 三入口并发重复执行。
+
+### Fixed
+- 定投错过期不再追补：`calculate_next_run` 锚定 `max(next_run, today)`，跳过停机期间错过的期数。
+- 交易日顺延对将来日期生效：`_next_trading_day` 无净值数据时跳过周末（周六日 → 周一）。
+- 估值 API 失败时负面缓存：AkShare 宕机时写 30s 空缓存，防止 FastAPI 线程池耗尽。
+- `add_transaction` SQL 占位符数不匹配（10 列 vs 11 个 `?`）。
+- `FeeBreakdownCard` 的 `HIDDEN_CODES` 遗漏 `pending_nav` 和 `no_buy_record`，
+  导致待确认/无买入记录状态错误显示"免手续费"徽章。
+
 ## [0.12.0] - 2026-07-29
 
 ### Added

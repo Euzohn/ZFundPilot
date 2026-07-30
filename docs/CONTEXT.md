@@ -120,11 +120,11 @@ ZFundPilot/
 - **卖出 T+1**: shares 已知，fee + amount 待净值确认（`amount = shares × nav - fee`）
 - `effectiveNavDate`: 15:00 前用当日净值，15:00 后用次日净值
 - `backfill_transaction_navs()`: 净值更新后自动回填缺失 nav 的交易（跳过分红）
-  - T+1 交易（note 含 'T+1确认'）用 `date+1` 查净值，普通交易用 `date`
-  - `_is_t1_transaction()` 检测 T+1 标记，`_t1_nav_date()` 返回次日日期
+  - T+1 交易（`is_t1=1`）用 `date+1` 查净值，普通交易用 `date`
+  - `_is_t1_transaction()` 检测 `tx.is_t1` 字段，`_t1_nav_date()` 返回次日日期
 - `recalculate_t1_transactions()`: 一次性修复历史 T+1 交易的错误净值回填
   - 启动时自动执行（通过 `preferences` 表 key=`t1_nav_fix_done` 标记完成）
-  - 检测条件：note 含 'T+1确认' + nav 来自交易当日（错误）→ 用次日净值重算
+  - 检测条件：`is_t1=1` + nav 来自交易当日（错误）→ 用次日净值重算
   - 返回修复详情列表（tx_id/fund_code/old_nav/new_nav/old_shares/new_shares）
   - 修复结果写入 `audit_log`（action=`t1_nav_fix`，detail 含修复列表）+ stdout 打印
 

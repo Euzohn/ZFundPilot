@@ -84,6 +84,7 @@ nohup uvicorn zfundpilot.api:app --host 0.0.0.0 --port 8000 > zfundpilot.log 2>&
 | `ZFUNDPILOT_PASSWORD` | 空 | **仅首次启动**时用于初始化密码哈希。首次启动后密码以 bcrypt 哈希存储在 `data/auth.json`，之后可通过设置页在线修改密码 |
 | `ZFUNDPILOT_SECRET` | 自动生成 | **仅首次启动**时用于初始化 token 签名密钥。首次启动后自动生成随机密钥并存储在 `data/auth.json` |
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式（工作日 21:00）。可在设置页面暂停/启用 |
+| `ZFUNDPILOT_TIMEZONE` | `Asia/Shanghai` | 系统时区（IANA 名称），影响定时任务触发时间、交易日期、日志时间戳。需重启应用生效 |
 
 ```bash
 # 示例：设置用户名 + 访问密码 + 自定义数据目录

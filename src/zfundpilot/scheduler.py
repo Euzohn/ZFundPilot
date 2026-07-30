@@ -28,6 +28,7 @@ _TZ = ZoneInfo("Asia/Shanghai")
 _scheduler: BackgroundScheduler | None = None
 _last_run: datetime | None = None
 _last_results: list[dict[str, Any]] | None = None
+_last_auto_invest_run: datetime | None = None
 
 _PREF_KEY_ENABLED = "nav_auto_update"
 _PREF_KEY_CRON = "nav_cron"
@@ -90,9 +91,11 @@ def _parse_cron(expr: str) -> CronTrigger:
 
 def _run_auto_invest() -> None:
     """执行定投计划检查任务（由调度器调用，每天 09:00）。"""
+    global _last_auto_invest_run
     logger.info("[scheduler] 定投计划检查开始")
     try:
         results = auto_invest.run_all_due()
+        _last_auto_invest_run = datetime.now(_TZ)
         if results:
             ok = sum(1 for r in results if r.get("status") == "success")
             fail = sum(1 for r in results if r.get("status") == "error")
@@ -104,6 +107,7 @@ def _run_auto_invest() -> None:
             logger.info("[scheduler] 无到期定投计划")
     except Exception:
         logger.exception("[scheduler] 定投计划检查异常")
+        _last_auto_invest_run = datetime.now(_TZ)
 
 
 def init_scheduler() -> None:
@@ -140,6 +144,23 @@ def init_scheduler() -> None:
         _scheduler.pause_job("nav_update")
     else:
         _bootstrap_check(trigger)
+    _bootstrap_auto_invest()
+
+
+def _bootstrap_auto_invest() -> None:
+    """启动时检测：如果今日 09:00 已过且尚未运行过，立即执行定投检查。"""
+    global _last_auto_invest_run
+    if _last_auto_invest_run is not None:
+        return
+    now = datetime.now(_TZ)
+    if now.hour < 9:
+        return
+    today = now.strftime("%Y-%m-%d")
+    if any(p.get("last_run") == today for p in db.get_auto_invest_plans()):
+        _last_auto_invest_run = now
+        return
+    logger.info("[scheduler] 今日 09:00 已过, 立即执行定投检查")
+    _run_auto_invest()
 
 
 def _bootstrap_check(trigger: CronTrigger) -> None:

@@ -51,8 +51,17 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = lang
   }, [lang])
 
-  const setLang = useCallback((next: Lang) => setLangState(next), [])
-  const toggleLang = useCallback(() => setLangState((prev) => (prev === "zh" ? "en" : "zh")), [])
+  const setLang = useCallback((next: Lang) => {
+    currentLang = next
+    setLangState(next)
+  }, [])
+  const toggleLang = useCallback(() => {
+    setLangState((prev) => {
+      const next = prev === "zh" ? "en" : "zh"
+      currentLang = next
+      return next
+    })
+  }, [])
 
   const value: LanguageContextValue = {
     lang,

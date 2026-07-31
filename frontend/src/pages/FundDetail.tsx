@@ -134,11 +134,13 @@ export default function FundDetail() {
     return filtered.map((d, i) => {
       const prevNav = i > 0 ? filtered[i - 1].nav : null
       let pnl = 0
+      let pnlReturn = 0
       if (prevNav != null) {
         const shares = sharesBefore(d.date)
         pnl = Math.round((d.nav - prevNav) * shares * 100) / 100
+        pnlReturn = (d.nav - prevNav) / prevNav
       }
-      return { ...d, pnl, _tx: txMap[d.date] || null }
+      return { ...d, pnl, pnlReturn, _tx: txMap[d.date] || null }
     })
   }, [navHistory, navRange, txs])
 
@@ -312,6 +314,7 @@ const handleDelete = async (txId: number) => {
                         {d.pnl != null && d.pnl !== 0 && (
                           <p className={`text-xs tabular-nums ${d.pnl >= 0 ? "text-gain" : "text-loss"}`}>
                             {t.fundDetail.dailyPnl} {signedMoney(d.pnl)}
+                            {d.pnlReturn != null && ` (${pct(d.pnlReturn)})`}
                           </p>
                         )}
                         {txInfo && txInfo.length > 0 && (

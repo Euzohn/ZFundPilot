@@ -13,7 +13,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.12.1`（git tag `v0.12.1`）
+- **版本**: `0.12.2`（git tag `v0.12.2`）
 - **License**: MIT
 
 ---
@@ -35,7 +35,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.12.1"
+│   ├── __init__.py          # __version__ = "0.12.2"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
@@ -72,7 +72,8 @@ ZFundPilot/
 │   ├── components/          # Layout + Logo 系列 + PnLCalendar + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
 │   ├── i18n/                # LanguageContext（Provider + useLang hook + getCurrentLang）+ zh.ts + en.ts
 │   ├── api/                 # client.ts + types.ts
-│   └── lib/                 # auth/channels/channelColors/colorTheme/format（按 lang 切换 ¥/$）/actionLabels/rangeLabels/useApi
+│   ├── hooks/               # useCountUp（animejs 数字动画，formatter 用 ref 存储避免 effect 重跑）
+│   └── lib/                 # auth/channels/channelColors/colorTheme/format（按 lang 切换 ¥/$）/actionLabels/rangeLabels/useApi/backendLabels/taxonomyLabels
 ├── data/                    # SQLite 数据库 + auth.json + ai_config.json（gitignore）
 ├── Dockerfile               # 多阶段构建
 ├── docker-compose.yml       # 单服务 + data 卷
@@ -86,7 +87,7 @@ ZFundPilot/
 │   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12) → tsc → build
 ├── tests/                   # Pytest 测试套件
 │   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
-│   └── test_*.py            #   88 个测试用例
+│   └── test_*.py            #   92 个测试用例
 └── CONTEXT.md              # 本文件（不追踪）
 ```
 
@@ -139,7 +140,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.12.1")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.12.2")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
 - 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
@@ -190,6 +191,8 @@ ZFundPilot/
 - 数据源：AkShare `fund_value_estimation_em()`（覆盖全市场基金），天天基金 fundgz API 已废弃
 - `fetch_estimate(fund_code)`: 获取单只基金估值（`gsz`/`gszzl`/`gztime`），30s 内存缓存
 - `fetch_estimates(fund_codes)`: 批量获取，30s 批量缓存
+- `stale-if-error`: API 失败时优先返回过期缓存而非空列表，避免短暂网络波动导致前端显示断档
+- `gztime` 从估值列名提取日期（如 `2024-07-30-估算数据-估算值` → `2024-07-30 15:00`），而非用 `datetime.now()`，避免跨日数据时间戳错误
 - 估算失效检测：`jzrq == gztime[:10]` 时标记 `ok=False`（真实净值已公布）
 - API: `GET /api/estimate`（批量 + 组合汇总）+ `GET /api/funds/{code}/estimate`（单只）
 
@@ -211,7 +214,7 @@ ZFundPilot/
 - `auto_invest` 任务：每天 09:00 检查到期定投计划并执行（`auto_invest.run_all_due`），写审计日志
 - `_run_auto_invest` 加 `threading.Lock` 防止 bootstrap/cron/API 三入口并发重复执行
 - `_bootstrap_auto_invest`: 启动时若已过 09:00 且今日未执行过，立即补跑
-- `_convert_dow()`: 标准 cron day_of_week 数值（0=周日, 1=周一）→ APScheduler 编号（0=周一, 6=周日），`re.sub(r'\d+', lambda m: str((int(m.group(0))-1)%7), dow)`。只在 day_of_week 为纯数字（无字母缩写）时执行转换
+- `_convert_dow()`: 标准 cron day_of_week 数值（0=周日, 1=周一）→ APScheduler 编号（0=周一, 6=周日），`re.sub(r'(?<!/)\d+', lambda m: str((int(m.group(0))-1)%7), dow)`。`(?<!/)` 跳过 `/` 后的步进值（如 `*/2` 中的 `2` 不被转换）。只在 day_of_week 为纯数字（无字母缩写）时执行转换
 - `config.TIMEZONE`: 所有 `datetime.now()` 调用使用此时区，不依赖系统时区
 - API: `GET /api/scheduler/status` + `PUT /api/scheduler/toggle` + `PUT /api/scheduler/cron`
 
@@ -417,7 +420,14 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - 测试基础设施：`tests/conftest.py`（make_plan/make_tx_row fixtures + PatchAutoInvest 共享类）
 - Bug 修复：`TransactionCreate` 加 `is_t1` 字段（修复手动创建/编辑交易 T+1 标记丢失）；`config.py` 加 `time.tzset()` 确保 SQLite 时区同步；`api.py` calc-fee 早期返回补齐 `amount`+`nav`；`models.py` `from_row()` 转换 `is_t1` int→bool；`FeeBreakdownCard` `HIDDEN_CODES` 补全；`LanguageContext` 切换语言时同步更新 `currentLang`；`add_transaction` SQL 占位符数不匹配
 
-### v0.12.2（开发中）
+### v0.12.2 - 2026-07-31
+
+- 定投两步 DB 写合并为一次：`execute_plan()` 原子写入 `last_run` + `next_run`，不再分两次调用 `update_auto_invest_plan`
+- 月度计划不跳过当月：`_next_month_day()` 检查当月 target_day 是否已过，未过则用当月而非直接跳到下月
+- `_convert_dow` 步进值跳过：正则加 `(?<!/)` lookbehind，`*/2`/`0-6/2`/`0/2` 中的步进值不被当作日值转换
+- `useCountUp` formatter 用 `ref` 存储：从 `useEffect` deps 移除，避免 formatter 变化导致动画重启
+- `fetch_estimate` stale-if-error：API 失败时优先返回过期缓存，仅首次失败且无缓存时才返回空列表
+- `gztime` 从估值列名提取日期：`est_nav_col` 列名中提取日期（如 `2024-07-30-估算数据-估算值` → `2024-07-30`），代替 `datetime.now()`，避免跨日数据时间戳错误
 
 ### v0.11.0
 

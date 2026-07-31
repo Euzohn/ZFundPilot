@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-07-31
+
+### Fixed
+- 定投两步 DB 写合并为一次：`execute_plan()` 原子写入 `last_run` + `next_run`，不再分两次调用 `update_auto_invest_plan`
+- 月度计划不跳过当月：`_next_month_day()` 检查当月 target_day 是否已过，未过则用当月而非直接跳到下月
+- `_convert_dow` 步进值跳过：正则加 `(?<!/)` lookbehind，`*/2`/`0-6/2`/`0/2` 中的步进值不被当作日值转换
+- `useCountUp` formatter 用 `ref` 存储：从 `useEffect` deps 移除，避免 formatter 变化导致动画重启
+- `fetch_estimate` stale-if-error：API 失败时优先返回过期缓存，仅首次失败且无缓存时才返回空列表
+- `gztime` 从估值列名提取日期：`est_nav_col` 列名中提取日期代替 `datetime.now()`，避免跨日数据时间戳错误
+
 ## [0.12.1] - 2026-07-30
 
 ### Added

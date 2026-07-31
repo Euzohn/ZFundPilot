@@ -66,7 +66,7 @@ def _convert_dow(dow: str) -> str:
     """将标准 cron day_of_week 数值（0=周日, 1=周一）转为 APScheduler 编号（0=周一, 6=周日）。"""
     def _shift(m: re.Match) -> str:
         return str((int(m.group(0)) - 1) % 7)
-    return re.sub(r'\d+', _shift, dow)
+    return re.sub(r'(?<!/)\d+', _shift, dow)
 
 
 def _parse_cron(expr: str) -> CronTrigger:

@@ -84,7 +84,16 @@ def _parse_dataframe(df: pd.DataFrame) -> list[FundEstimate]:
 
     # 从列名提取日期
     prev_date = prev_nav_col.split("-单位净值")[0] if prev_nav_col else ""
-    gztime = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d %H:%M")
+    # 尝试从估值列名提取估算日期
+    est_date = ""
+    if est_nav_col:
+        parts = est_nav_col.split("-")
+        if len(parts) >= 3 and len(parts[0]) == 4:
+            est_date = "-".join(parts[:3])
+    gztime = f"{est_date} 15:00" if est_date else (
+        f"{prev_date} {datetime.now(config.TIMEZONE).strftime('%H:%M')}"
+        if prev_date else datetime.now(config.TIMEZONE).strftime("%Y-%m-%d %H:%M")
+    )
 
     results: list[FundEstimate] = []
     for _, row in df.iterrows():
@@ -123,7 +132,7 @@ def _parse_dataframe(df: pd.DataFrame) -> list[FundEstimate]:
 
 
 def _get_all_estimates() -> list[FundEstimate]:
-    """获取全市场基金估值（带缓存，失败时负面缓存 10s 防止打爆上游）。"""
+    """获取全市场基金估值（带缓存，失败时 stale-if-error）。"""
     cached = _batch_cache.get(_BATCH_KEY)
     if cached and time.time() - cached[0] < _CACHE_TTL:
         return cached[1]
@@ -133,6 +142,8 @@ def _get_all_estimates() -> list[FundEstimate]:
         _batch_cache[_BATCH_KEY] = (time.time(), all_ests)
         return all_ests
     except Exception:  # noqa: BLE001
+        if cached:
+            return cached[1]
         _batch_cache[_BATCH_KEY] = (time.time(), [])
         return []
 

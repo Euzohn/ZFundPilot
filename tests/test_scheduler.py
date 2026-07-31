@@ -81,6 +81,18 @@ class TestConvertDow:
         """1,3,5 → 0,2,4。"""
         assert _convert_dow("1,3,5") == "0,2,4"
 
+    def test_step_not_converted(self):
+        """*/2 的步进值 2 不应被转换。"""
+        assert _convert_dow("*/2") == "*/2"
+
+    def test_range_with_step(self):
+        """0-6/2 → 6-5/2（日值转换，步进值保留）。"""
+        assert _convert_dow("0-6/2") == "6-5/2"
+
+    def test_single_with_step(self):
+        """0/2 → 6/2（日值转换，步进值保留）。"""
+        assert _convert_dow("0/2") == "6/2"
+
 
 class TestTimezoneConfig:
     """验证 config.TIMEZONE 默认值和可配置性。"""

@@ -45,14 +45,17 @@ def _next_weekday(from_date: str, target_dow: int) -> str:
 
 
 def _next_month_day(from_date: str, target_day: int) -> str:
-    """下个月的 target_day，超限取月末。"""
+    """target_day 的下一个日期。当月未到用当月，已过用下月，超限取月末。"""
     d = datetime.strptime(from_date, "%Y-%m-%d").date()
+    from calendar import monthrange
+    # 当月 target_day 还没到 → 用当月
+    max_day_this = monthrange(d.year, d.month)[1]
+    target_this = min(target_day, max_day_this)
+    if d.day < target_this:
+        return f"{d.year:04d}-{d.month:02d}-{target_this:02d}"
+    # 已过 → 下月
     year = d.year + (d.month // 12)
     month = (d.month % 12) + 1
-    if month > 12:
-        month = 1
-        year += 1
-    from calendar import monthrange
     max_day = monthrange(year, month)[1]
     return f"{year:04d}-{month:02d}-{min(target_day, max_day):02d}"
 
@@ -134,19 +137,16 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
     tx_id = db.add_transaction(tx)
     analysis.clear_analysis_cache()
 
-    db.update_auto_invest_plan(
-        plan["id"],
-        last_run=today,
-        last_tx_id=tx_id,
-    )
+    update_fields: dict[str, Any] = {
+        "last_run": today,
+        "last_tx_id": tx_id,
+    }
 
     if not manual:
         plan["last_run"] = today
-        plan["next_run"] = calculate_next_run(plan)
-        db.update_auto_invest_plan(
-            plan["id"],
-            next_run=plan["next_run"],
-        )
+        update_fields["next_run"] = calculate_next_run(plan)
+
+    db.update_auto_invest_plan(plan["id"], **update_fields)
 
     return {
         "ok": True,

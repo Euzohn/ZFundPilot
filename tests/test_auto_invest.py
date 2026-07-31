@@ -147,14 +147,15 @@ class TestExecutePlanManual:
             assert "next_run" not in call.kwargs
 
     def test_auto_updates_next_run(self):
-        """自动执行调用 update_auto_invest_plan 两次（last_run + next_run）。"""
+        """自动执行调用 update_auto_invest_plan 一次（last_run + next_run 原子写入）。"""
         mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
         with _PatchEnv(mock_dt) as env:
             env.mock_db.get_nav_on_or_after.return_value = {"date": "2026-01-12"}
             execute_plan(_make_plan(), manual=False)
-            assert env.mock_db.update_auto_invest_plan.call_count == 2
-            second_call = env.mock_db.update_auto_invest_plan.call_args_list[1]
-            assert "next_run" in second_call.kwargs
+            assert env.mock_db.update_auto_invest_plan.call_count == 1
+            call = env.mock_db.update_auto_invest_plan.call_args
+            assert "next_run" in call.kwargs
+            assert "last_run" in call.kwargs
 
 
 # ---------------------------------------------------------------------------
@@ -188,20 +189,28 @@ class TestCalculateNextRun:
             assert result == "2026-01-12"  # 1/5 周一 → 下周一 1/12
 
     def test_month_cadence(self):
-        """month 计划 day_of_month=15 → 下月 15 号（2/15 是周日 → 顺延到周一 2/16）。"""
+        """month 计划 day_of_month=15, from=1/5 → 当月 1/15（周四, 无需顺延）。"""
         with _PatchEnv(datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)) as env:
             env.mock_db.get_nav_on_or_after.return_value = None
             plan = _make_plan(cadence="month", day_of_month=15, next_run="2026-01-05")
             result = calculate_next_run(plan, from_date="2026-01-05")
-            assert result == "2026-02-16"  # 2/15 周日 → 顺延到 2/16 周一
+            assert result == "2026-01-15"  # 1/15 周四
+
+    def test_month_past_day_goes_next_month(self):
+        """month 计划 day_of_month=5, from=1/10 → 5 号已过 → 下月 2/5（周四）。"""
+        with _PatchEnv(datetime(2026, 1, 10, 9, 0, tzinfo=_TZ)) as env:
+            env.mock_db.get_nav_on_or_after.return_value = None
+            plan = _make_plan(cadence="month", day_of_month=5, next_run="2026-01-10")
+            result = calculate_next_run(plan, from_date="2026-01-10")
+            assert result == "2026-02-05"  # 2/5 周四
 
     def test_month_end_clamp(self):
-        """month 计划 day_of_month=31 → 2 月无 31 号 → 截断到 28 号（周六 → 顺延到 3/2 周一）。"""
+        """month 计划 day_of_month=31, from=1/5 → 当月 1/31（周六 → 顺延到 2/2 周一）。"""
         with _PatchEnv(datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)) as env:
             env.mock_db.get_nav_on_or_after.return_value = None
             plan = _make_plan(cadence="month", day_of_month=31, next_run="2026-01-05")
             result = calculate_next_run(plan, from_date="2026-01-05")
-            assert result == "2026-03-02"  # 2/28 周六 → 3/1 周日 → 3/2 周一
+            assert result == "2026-02-02"  # 1/31 周六 → 2/2 周一
 
     def test_catch_up_skip(self):
         """next_run 在过去 → 锚定 today，跳过错过的期数。"""

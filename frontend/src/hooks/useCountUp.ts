@@ -8,10 +8,12 @@ export function useCountUp(
 ): string {
   const [display, setDisplay] = useState(() => formatter(0))
   const currentRef = useRef(0)
+  const formatterRef = useRef(formatter)
+  formatterRef.current = formatter
 
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setDisplay(formatter(target))
+      setDisplay(formatterRef.current(target))
       currentRef.current = target
       return
     }
@@ -24,18 +26,18 @@ export function useCountUp(
       ease: "outExpo",
       onUpdate: () => {
         currentRef.current = obj.val
-        setDisplay(formatter(obj.val))
+        setDisplay(formatterRef.current(obj.val))
       },
       onComplete: () => {
         currentRef.current = target
-        setDisplay(formatter(target))
+        setDisplay(formatterRef.current(target))
       },
     })
 
     return () => {
       anim.pause()
     }
-  }, [target, duration, formatter])
+  }, [target, duration])
 
   return display
 }

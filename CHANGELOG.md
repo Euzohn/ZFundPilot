@@ -4,9 +4,10 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [0.13.0] - 2026-08-02
 
 ### Added
+- 基金详情新增「持仓卡片」（Phase 1）：资产配置饼图 + 前十大重仓股表格，AkShare `fund_portfolio_hold_em`（`date_year` 改 `date` 参数 + 取最新季度），1h 缓存
 - 基金详情净值走势 tooltip 新增当期收益率：`当日收益 +¥123.45 (+1.23%)`，`pnlReturn` 取 `(当前净值 - 前净值) / 前净值`
 - 基金详情新增「同类排名走势」卡片：AkShare `fund_open_fund_info_em(indicator="同类排名百分比")`
   取每日排名百分位（越低越好），Recharts 折线图 Y 轴反转（0% 在顶），1h 缓存
@@ -18,6 +19,8 @@
 ### Fixed
 - 交易详情弹窗头部栏去掉重复渠道、网格去掉重复操作类型，新增 `Clock` 图标 + `is_t1` 确认时间行
 - 基金重仓股市值单位修正：`持仓市值`（万元）前端 `/10000` 显示 `亿`
+- 资产配置饼图 tooltip 条目文字颜色 dark 模式下不可读：Recharts 默认 tooltip 给条目设内联 `color: entry.color`，加 `itemStyle.color: hsl(var(--foreground))` 覆盖
+- 同类排名 tooltip 条目文字颜色 dark 模式下不可读：同上，为排名折线图 tooltip 补 `itemStyle.color`
 
 ## [0.12.2] - 2026-07-31
 

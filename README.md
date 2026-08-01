@@ -77,6 +77,7 @@ cd frontend && npm install && npm run dev
 - **实时估值** — 交易日实时估算基金涨跌幅，组合估算 P&L 一目了然，真实净值公布后自动失效
 - **基金对比** — 多维度同框对比 + 净值走势叠加 + 相关性矩阵
 - **基金筛选器** — 从全市场基金池按类型/板块/关键词筛选，一键加入对比
+- **基金详情** — 净值走势 + 资产配置饼图 + 前十大重仓股 + 同类排名走势 + 基金档案（基金经理/规模/成立时间）
 - **定投策略回测** — 指定基金 + 时间区间 + 频率（月/双周/周），用历史净值回测定投 vs 一次性投入，计算 XIRR 年化、最大回撤、夏普比率
 - **定投计划自动执行** — 设置每日/每周/每双周/每月自动买入，遇非交易日顺延，自动计算手续费，T+1 回填净值
 
@@ -137,7 +138,7 @@ ZFundPilot/
 │   ├── config.py         # 全局配置、渠道、风险阈值、认证/AI 配置存储
 │   ├── models.py         # 数据结构（Fund / Transaction / Position）
 │   ├── db.py             # SQLite 数据库操作
-│   ├── fetch_fund.py     # 净值获取 + 名称/类型/板块识别 + 费率查询 + 关键词映射
+│   ├── fetch_fund.py     # 净值获取 + 名称/类型/板块识别 + 费率查询 + 关键词映射 + 持仓/排名/档案
 │   ├── fetch_estimate.py # 基金实时估值（AkShare fund_value_estimation_em）
 │   ├── compare.py        # 基金对比（收益率/风险/相关性多维度计算）
 │   ├── fund_filter.py    # 基金筛选器（全市场池加载 + 多条件筛选）
@@ -151,9 +152,9 @@ ZFundPilot/
 │   ├── api.py            # FastAPI REST API（37+ 路由 + 认证中间件）
 │   ├── ai.py             # AI 投顾对话（持仓上下文 + 联网搜索 + LLM 流式调用）
 │   └── scheduler.py      # APScheduler 定时净值更新
-├── tests/                # Pytest 测试套件（88 个用例）
+├── tests/                # Pytest 测试套件（103 个用例）
 │   ├── conftest.py       #   共享 fixtures
-│   └── test_*.py         #   7 个测试模块
+│   └── test_*.py         #   9 个测试模块
 ├── data/
 │   ├── fund.db           # SQLite 数据库（自动生成）
 │   ├── auth.json         # 用户名 / 密码哈希 / token 密钥（自动生成）

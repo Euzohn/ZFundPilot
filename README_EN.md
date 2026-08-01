@@ -77,6 +77,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **Live Estimates** — Real-time fund change estimates during trading hours. Auto-invalidates when actual NAV is published
 - **Fund Compare** — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix
 - **Fund Filter** — Filter from full market universe by type/sector/keyword, add to comparison with one click
+- **Fund Details** — NAV trend + asset allocation pie chart + top 10 holdings + peer ranking trend + fund profile (manager/assets/inception date)
 - **DCA Backtest** — Simulate DCA (monthly/biweekly/weekly) vs lump-sum with historical NAV data. Calculates XIRR, max drawdown, Sharpe ratio
 - **Auto-Invest Plan** — Set up daily/weekly/biweekly/monthly auto-buy, auto-skip non-trading days, auto-calculate fees, T+1 NAV backfill
 
@@ -137,7 +138,7 @@ ZFundPilot/
 │   ├── config.py         # Global config, channels, risk thresholds, auth/AI config
 │   ├── models.py         # Data structures (Fund / Transaction / Position)
 │   ├── db.py             # SQLite database operations
-│   ├── fetch_fund.py     # NAV fetching + name/type/sector + fee lookup
+│   ├── fetch_fund.py     # NAV fetching + name/type/sector + fee lookup + holdings/ranking/profile
 │   ├── fetch_estimate.py # Real-time fund estimate (AkShare)
 │   ├── compare.py        # Fund comparison (returns/risk/correlation)
 │   ├── fund_filter.py    # Fund filter (full market universe)
@@ -151,9 +152,9 @@ ZFundPilot/
 │   ├── api.py            # FastAPI REST API (37+ routes + auth middleware)
 │   ├── ai.py             # AI advisor chat (portfolio context + web search)
 │   └── scheduler.py      # APScheduler NAV auto-update
-├── tests/                # Pytest test suite (88 tests)
+├── tests/                # Pytest test suite (103 tests)
 │   ├── conftest.py       #   Shared fixtures
-│   └── test_*.py         #   7 test modules
+│   └── test_*.py         #   9 test modules
 ├── data/
 │   ├── fund.db           # SQLite database (auto-generated)
 │   ├── auth.json         # Password hash / token secret (auto-generated)

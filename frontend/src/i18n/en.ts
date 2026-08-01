@@ -208,6 +208,7 @@ const en: typeof zh = {
     navLabel: "NAV",
     feeLabel: "Fee",
     dateLabel: "Date",
+    t1Label: "Settlement",
     noteLabel: "Note",
     editHint: "Click row to view details",
     singleEntry: "Single Entry",

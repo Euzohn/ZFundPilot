@@ -206,6 +206,7 @@ const zh = {
     navLabel: "净值",
     feeLabel: "手续费",
     dateLabel: "日期",
+    t1Label: "确认时间",
     noteLabel: "备注",
     editHint: "点击行查看详情",
     singleEntry: "单笔录入",

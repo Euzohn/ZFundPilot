@@ -25,7 +25,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from . import config, db
-from .models import NavPoint
+from .models import FundHoldingsResult, Holding, NavPoint
 
 # 天天基金类型 -> 系统标准资产类型（config.FUND_TYPES）的映射
 # 注意：按顺序匹配，越具体越靠前
@@ -1108,6 +1108,133 @@ def clear_fee_cache() -> None:
 def get_fee_cache_info() -> int:
     """返回缓存中的基金数量。"""
     return len(_fee_cache)
+
+
+# ---------------------------------------------------------------------------
+# 基金持仓（重仓股 + 资产配置）
+# ---------------------------------------------------------------------------
+_holdings_cache: dict[str, dict] = {}
+_HOLDINGS_CACHE_TTL = 3600  # 1 小时
+
+
+def fetch_fund_holdings(fund_code: str) -> FundHoldingsResult:
+    """获取基金重仓股 + 资产配置（AkShare fund_portfolio_hold_em）。
+
+    返回 FundHoldingsResult，失败不抛异常。
+    """
+    now = time.time()
+    cached = _holdings_cache.get(fund_code)
+    if cached and now - cached["ts"] < _HOLDINGS_CACHE_TTL:
+        return cached["data"]
+
+    try:
+        import akshare as ak
+
+        df = ak.fund_portfolio_hold_em(symbol=fund_code, date_year="2025")
+        if df is None or df.empty:
+            # 尝试上一年
+            df = ak.fund_portfolio_hold_em(symbol=fund_code, date_year="2024")
+
+        if df is None or df.empty:
+            result = FundHoldingsResult(
+                fund_code=fund_code, ok=False,
+                message="暂无持仓数据", code="no_data",
+            )
+            _holdings_cache[fund_code] = {"ts": now, "data": result}
+            return result
+
+        # 列名匹配
+        col_code = _match_col(df.columns, ["股票代码", "股票"])
+        col_name = _match_col(df.columns, ["股票名称", "名称"])
+        col_weight = _match_col(df.columns, ["占净值比例", "占比"])
+        col_shares = _match_col(df.columns, ["持股数", "持股"])
+        col_mv = _match_col(df.columns, ["持仓市值", "市值"])
+        col_quarter = _match_col(df.columns, ["季度", "报告期"])
+
+        if not col_code or not col_weight:
+            result = FundHoldingsResult(
+                fund_code=fund_code, ok=False,
+                message="无法识别列名", code="parse_error",
+            )
+            _holdings_cache[fund_code] = {"ts": now, "data": result}
+            return result
+
+        # 取最新报告期
+        quarters = df[col_quarter].unique() if col_quarter else []
+        latest_q = str(quarters[0]) if len(quarters) > 0 else ""
+        if latest_q:
+            df = df[df[col_quarter] == latest_q]
+
+        holdings: list[Holding] = []
+        for _, row in df.iterrows():
+            code = str(row.get(col_code, "")).strip()
+            if not code:
+                continue
+            name = str(row.get(col_name, "")).strip() if col_name else ""
+            weight = _safe_float_pct(row.get(col_weight))
+            shares = _safe_float_num(row.get(col_shares)) if col_shares else 0.0
+            mv = _safe_float_num(row.get(col_mv)) if col_mv else 0.0
+            holdings.append(Holding(
+                stock_code=code, stock_name=name,
+                weight=weight, shares=shares,
+                market_value=mv, quarter=latest_q,
+            ))
+
+        # 按占比降序，取前 10
+        holdings.sort(key=lambda h: h.weight, reverse=True)
+        holdings = holdings[:10]
+
+        # 资产配置：前十大重仓股占比合计 ≈ 股票占比
+        total_weight = sum(h.weight for h in holdings)
+        result = FundHoldingsResult(
+            fund_code=fund_code, ok=True,
+            message="成功", code="ok",
+            holdings=holdings,
+            stock_ratio=total_weight,
+            quarter=latest_q,
+        )
+        _holdings_cache[fund_code] = {"ts": now, "data": result}
+        return result
+
+    except Exception as exc:  # noqa: BLE001
+        result = FundHoldingsResult(
+            fund_code=fund_code, ok=False,
+            message=str(exc), code="fetch_error",
+        )
+        _holdings_cache[fund_code] = {"ts": now, "data": result}
+        return result
+
+
+def _safe_float_pct(val) -> float:
+    """解析 '5.23%' → 0.0523（小数）。"""
+    if val is None:
+        return 0.0
+    s = str(val).strip().replace("%", "")
+    if not s or s == "--":
+        return 0.0
+    try:
+        return float(s) / 100
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _safe_float_num(val) -> float:
+    """解析数字，处理 '--' / 空 / NaN。"""
+    if val is None:
+        return 0.0
+    s = str(val).strip()
+    if not s or s == "--":
+        return 0.0
+    try:
+        f = float(s)
+        return 0.0 if f != f else f
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def clear_holdings_cache() -> None:
+    """清空持仓缓存。"""
+    _holdings_cache.clear()
 
 
 if __name__ == "__main__":

@@ -727,6 +727,29 @@ def get_fund_fee_rates(code: str) -> dict[str, Any]:
     }
 
 
+@app.get("/api/funds/{code}/holdings")
+def get_fund_holdings(code: str) -> dict[str, Any]:
+    """返回基金重仓股 + 资产配置。"""
+    result = fetch_fund.fetch_fund_holdings(code)
+    return {
+        "ok": result.ok,
+        "fund_code": result.fund_code,
+        "message": result.message,
+        "code": result.code,
+        "holdings": [
+            {"stock_code": h.stock_code, "stock_name": h.stock_name,
+             "weight": h.weight, "shares": h.shares,
+             "market_value": h.market_value, "quarter": h.quarter}
+            for h in (result.holdings or [])
+        ],
+        "stock_ratio": result.stock_ratio,
+        "bond_ratio": result.bond_ratio,
+        "cash_ratio": result.cash_ratio,
+        "other_ratio": result.other_ratio,
+        "quarter": result.quarter,
+    }
+
+
 class CalcFeeQuery(BaseModel):
     action: str = "buy"
     amount: float | None = None

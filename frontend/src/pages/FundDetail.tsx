@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { Position, Transaction, Fund, FundEstimate } from "@/api/types"
+import type { Position, Transaction, Fund, FundEstimate, FundHoldings as FundHoldingsType } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
@@ -17,7 +17,7 @@ import { translateFundType, translateSector } from "@/lib/taxonomyLabels"
 import { toast } from "sonner"
 import { useLang } from "@/i18n/LanguageContext"
 import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
-import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
+import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, PieChart, Pie } from "recharts"
 import MetricCard from "@/components/MetricCard"
 import ConfirmDialog from "@/components/ConfirmDialog"
 import TransactionDetailDialog from "@/components/TransactionDetailDialog"
@@ -46,6 +46,7 @@ export default function FundDetail() {
     [code],
   )
   const { data: fundEstimate, reload: reloadEstimate } = useApi<FundEstimate>(() => api.getFundEstimate(code!), [code])
+  const { data: holdingsData } = useApi<FundHoldingsType>(() => api.getFundHoldings(code!), [code])
   useEffect(() => {
     if (!fundEstimate?.ok) return
     const interval = setInterval(() => {
@@ -372,6 +373,88 @@ const handleDelete = async (txId: number) => {
           )}
         </CardContent>
       </Card>
+
+      {/* Fund holdings: asset allocation + top 10 stocks */}
+      {holdingsData?.ok && holdingsData.holdings?.length > 0 && (
+        <Card className="card-hover">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium text-muted-foreground">{t.fundDetail.topHoldings}</CardTitle>
+              {holdingsData.quarter && (
+                <span className="text-xs text-muted-foreground/60">{t.fundDetail.quarter}: {holdingsData.quarter}</span>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-[200px_1fr]">
+              {/* Asset allocation pie chart */}
+              <div>
+                <p className="text-xs text-muted-foreground/70 mb-2">{t.fundDetail.assetAllocation}</p>
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: t.fundDetail.stock, value: holdingsData.stock_ratio, fill: "hsl(var(--chart-1))" },
+                        { name: t.fundDetail.other, value: Math.max(0, 1 - holdingsData.stock_ratio), fill: "hsl(var(--muted))" },
+                      ]}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={40}
+                      outerRadius={70}
+                      paddingAngle={2}
+                    >
+                      <Cell fill="hsl(var(--chart-1))" />
+                      <Cell fill="hsl(var(--muted))" />
+                    </Pie>
+                    <Tooltip
+                      formatter={(v: number, n: string) => [`${(v * 100).toFixed(2)}%`, n]}
+                      contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex justify-center gap-3 text-xs">
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full" style={{ background: "hsl(var(--chart-1))" }} />
+                    {t.fundDetail.stock} {(holdingsData.stock_ratio * 100).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Top 10 holdings table */}
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">{t.common.code}</TableHead>
+                      <TableHead className="text-xs">{t.common.name}</TableHead>
+                      <TableHead className="text-xs text-right">{t.fundDetail.weight}</TableHead>
+                      <TableHead className="text-xs text-right">{t.fundDetail.holdingsValue}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {holdingsData.holdings.map((h, i) => (
+                      <TableRow key={i}>
+                        <TableCell className="font-mono text-xs">{h.stock_code}</TableCell>
+                        <TableCell className="text-xs">{h.stock_name}</TableCell>
+                        <TableCell className="text-right text-xs tabular-nums">
+                          <span className={h.weight >= 0.05 ? "text-warning font-medium" : ""}>
+                            {(h.weight * 100).toFixed(2)}%
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
+                          {h.market_value > 0 ? `${(h.market_value / 10000).toFixed(2)}万` : "—"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Transaction history */}
       <Card className="card-hover">

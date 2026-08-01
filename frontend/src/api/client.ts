@@ -22,6 +22,7 @@ import type {
   AIUsageDaily,
   FeeRatesResponse,
   CalcFeeResponse,
+  FundHoldings,
   KeywordMaps,
   SchedulerStatus,
 } from "./types"
@@ -198,6 +199,8 @@ export const api = {
   // Fee rates
   getFundFeeRates: (code: string) =>
     request<FeeRatesResponse>(`/funds/${encodeURIComponent(code)}/fee-rates`),
+  getFundHoldings: (code: string) =>
+    request<FundHoldings>(`/funds/${encodeURIComponent(code)}/holdings`),
   calcFundFee: (code: string, params: { action: string; amount?: number; shares?: number; date?: string }) => {
     const q = new URLSearchParams()
     q.set("action", params.action)

@@ -243,3 +243,36 @@ class BacktestResult:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+@dataclass
+class Holding:
+    """基金重仓股（单只）。"""
+    stock_code: str
+    stock_name: str = ""
+    weight: float = 0.0           # 占净值比例（小数，0.05 = 5%）
+    shares: float = 0.0           # 持股数（万股）
+    market_value: float = 0.0     # 持仓市值（万元）
+    quarter: str = ""             # 报告期，如 "2026-Q2"
+
+
+@dataclass
+class FundHoldingsResult:
+    """基金持仓查询结果（重仓股 + 资产配置）。"""
+    fund_code: str
+    ok: bool = False
+    message: str = ""
+    code: str = ""
+    holdings: list[Holding] = None        # type: ignore[assignment]
+    stock_ratio: float = 0.0              # 股票占净值比
+    bond_ratio: float = 0.0               # 债券占净值比
+    cash_ratio: float = 0.0               # 现金占净值比
+    other_ratio: float = 0.0              # 其他占净值比
+    quarter: str = ""                     # 报告期
+
+    def __post_init__(self):
+        if self.holdings is None:
+            self.holdings = []
+
+    def to_dict(self) -> dict:
+        return asdict(self)

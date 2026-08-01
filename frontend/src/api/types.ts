@@ -221,6 +221,29 @@ export interface FeeLot {
   fee: number
 }
 
+// ── 基金持仓 ──
+export interface Holding {
+  stock_code: string
+  stock_name: string
+  weight: number           // 占净值比例（小数，0.05 = 5%）
+  shares: number           // 持股数（万股）
+  market_value: number     // 持仓市值（万元）
+  quarter: string          // 报告期
+}
+
+export interface FundHoldings {
+  ok: boolean
+  fund_code: string
+  message: string
+  code: string
+  holdings: Holding[]
+  stock_ratio: number
+  bond_ratio: number
+  cash_ratio: number
+  other_ratio: number
+  quarter: string
+}
+
 // ── 关键词映射 ──
 export interface KeywordEntry {
   keyword: string

@@ -244,6 +244,35 @@ export interface FundHoldings {
   quarter: string
 }
 
+// ── 同类排名走势 ──
+export interface RankingPoint {
+  date: string
+  percentile: number          // 排名百分位（0-100，越低越好）
+}
+
+export interface FundRanking {
+  ok: boolean
+  fund_code: string
+  message: string
+  code: string
+  points: RankingPoint[]
+}
+
+// ── 基金档案 ──
+export interface FundProfile {
+  ok: boolean
+  fund_code: string
+  message: string
+  code: string
+  manager: string
+  manager_career_days: number | null   // 累计从业天数
+  scale: number | null                 // 现任基金资产总规模（亿元）
+  tenure_return: number | null         // 基金经理任期收益（%）
+  management_fee: number | null
+  custodian_fee: number | null
+  sales_fee: number | null
+}
+
 // ── 关键词映射 ──
 export interface KeywordEntry {
   keyword: string

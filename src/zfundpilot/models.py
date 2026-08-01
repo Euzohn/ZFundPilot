@@ -276,3 +276,46 @@ class FundHoldingsResult:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+@dataclass
+class RankingPoint:
+    """一条同类排名数据（排名百分位，越低越好）。"""
+    date: str            # YYYY-MM-DD
+    percentile: float    # 排名百分位（0-100，12.5 = 前 12.5%）
+
+
+@dataclass
+class FundRankingResult:
+    """基金同类排名走势查询结果。"""
+    fund_code: str
+    ok: bool = False
+    message: str = ""
+    code: str = ""
+    points: list[RankingPoint] = None    # type: ignore[assignment]
+
+    def __post_init__(self):
+        if self.points is None:
+            self.points = []
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class FundProfile:
+    """基金档案信息（经理 / 规模 / 费率）。"""
+    fund_code: str
+    ok: bool = False
+    message: str = ""
+    code: str = ""
+    manager: str = ""
+    manager_career_days: int | None = None   # 基金经理累计从业天数
+    scale: float | None = None               # 现任基金资产总规模（亿元）
+    tenure_return: float | None = None       # 基金经理任期收益（%）
+    management_fee: float | None = None      # 管理费（年化）
+    custodian_fee: float | None = None       # 托管费（年化）
+    sales_fee: float | None = None           # 销售服务费（年化）
+
+    def to_dict(self) -> dict:
+        return asdict(self)

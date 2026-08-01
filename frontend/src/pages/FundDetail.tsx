@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { Position, Transaction, Fund, FundEstimate, FundHoldings as FundHoldingsType } from "@/api/types"
+import type { Position, Transaction, Fund, FundEstimate, FundHoldings as FundHoldingsType, FundRanking, FundProfile } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
@@ -17,7 +17,7 @@ import { translateFundType, translateSector } from "@/lib/taxonomyLabels"
 import { toast } from "sonner"
 import { useLang } from "@/i18n/LanguageContext"
 import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
-import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, PieChart, Pie } from "recharts"
+import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, PieChart, Pie, LineChart } from "recharts"
 import MetricCard from "@/components/MetricCard"
 import ConfirmDialog from "@/components/ConfirmDialog"
 import TransactionDetailDialog from "@/components/TransactionDetailDialog"
@@ -47,6 +47,8 @@ export default function FundDetail() {
   )
   const { data: fundEstimate, reload: reloadEstimate } = useApi<FundEstimate>(() => api.getFundEstimate(code!), [code])
   const { data: holdingsData } = useApi<FundHoldingsType>(() => api.getFundHoldings(code!), [code])
+  const { data: rankingData } = useApi<FundRanking>(() => api.getFundRanking(code!), [code])
+  const { data: profileData } = useApi<FundProfile>(() => api.getFundProfile(code!), [code])
   useEffect(() => {
     if (!fundEstimate?.ok) return
     const interval = setInterval(() => {
@@ -231,6 +233,58 @@ const handleDelete = async (txId: number) => {
         <MetricCard size="sm" label={t.positions.returnRate} value={pct(returnRate)} color={pnlColor(returnRate)} sub={latestNav != null && avgCost != null && latestNav < avgCost ? `${t.fundDetail.breakEven} ${pct(avgCost / latestNav - 1)}` : undefined} subColor="text-warning" />
       </div>
 
+      {/* 基金档案信息栏 */}
+      {profileData?.ok && (
+        <Card className="card-hover">
+          <CardContent className="py-3">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+              {profileData.manager && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">{t.fundDetail.profileManager}</span>
+                  <span className="font-medium">{profileData.manager}</span>
+                </div>
+              )}
+              {profileData.manager_career_days != null && profileData.manager_career_days > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">{t.fundDetail.profileCareer}</span>
+                  <span className="font-medium tabular-nums">{Math.round(profileData.manager_career_days / 365)} {t.fundDetail.profileYearsUnit}</span>
+                </div>
+              )}
+              {profileData.scale != null && profileData.scale > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">{t.fundDetail.profileScale}</span>
+                  <span className="font-medium tabular-nums">{profileData.scale.toFixed(2)} {t.fundDetail.profileScaleUnit}</span>
+                </div>
+              )}
+              {profileData.tenure_return != null && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">{t.fundDetail.profileTenureReturn}</span>
+                  <span className={`font-medium tabular-nums ${profileData.tenure_return >= 0 ? "text-gain" : "text-loss"}`}>{profileData.tenure_return >= 0 ? "+" : ""}{profileData.tenure_return.toFixed(2)}%</span>
+                </div>
+              )}
+              {profileData.management_fee != null && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">{t.fundDetail.profileManagementFee}</span>
+                  <span className="font-medium tabular-nums">{(profileData.management_fee * 100).toFixed(2)}%</span>
+                </div>
+              )}
+              {profileData.custodian_fee != null && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">{t.fundDetail.profileCustodianFee}</span>
+                  <span className="font-medium tabular-nums">{(profileData.custodian_fee * 100).toFixed(2)}%</span>
+                </div>
+              )}
+              {profileData.sales_fee != null && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">{t.fundDetail.profileSalesFee}</span>
+                  <span className="font-medium tabular-nums">{(profileData.sales_fee * 100).toFixed(2)}%</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* 各渠道持仓 */}
       {openPositions.length > 1 && (
         <Card className="card-hover">
@@ -373,6 +427,31 @@ const handleDelete = async (txId: number) => {
           )}
         </CardContent>
       </Card>
+
+      {/* 同类排名走势 */}
+      {rankingData?.ok && rankingData.points?.length > 0 && (
+        <Card className="card-hover">
+          <CardHeader className="pb-2 flex-row items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t.fundDetail.rankTrend}</CardTitle>
+            <span className="text-xs text-muted-foreground/60">{t.fundDetail.rankLowerBetter}</span>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={rankingData.points} margin={{ left: 10, right: 10, top: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} minTickGap={40} tickFormatter={(v: string) => v.slice(0, 7)} />
+                <YAxis reversed fontSize={11} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}%`} />
+                <Tooltip
+                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12, color: "hsl(var(--foreground))" }}
+                  formatter={(v: number) => [`${v.toFixed(2)}%`, t.fundDetail.rankPercentile]}
+                  labelFormatter={(label: string) => label}
+                />
+                <Line type="monotone" dataKey="percentile" stroke="hsl(var(--chart-3))" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Fund holdings: asset allocation + top 10 stocks */}
       {holdingsData?.ok && holdingsData.holdings?.length > 0 && (

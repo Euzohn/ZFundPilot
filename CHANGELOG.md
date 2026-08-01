@@ -8,6 +8,16 @@
 
 ### Added
 - 基金详情净值走势 tooltip 新增当期收益率：`当日收益 +¥123.45 (+1.23%)`，`pnlReturn` 取 `(当前净值 - 前净值) / 前净值`
+- 基金详情新增「同类排名走势」卡片：AkShare `fund_open_fund_info_em(indicator="同类排名百分比")`
+  取每日排名百分位（越低越好），Recharts 折线图 Y 轴反转（0% 在顶），1h 缓存
+- 基金详情新增「基金档案」信息栏：基金经理/从业年限/基金规模/任期收益/运作费率，
+  数据源为天天基金 pingzhongdata（`Data_currentFundManager` + `Data_fluctuationScale`），单请求，1h 缓存
+- 新增 API：`GET /api/funds/{code}/ranking`、`GET /api/funds/{code}/profile`
+- 新增测试：`tests/test_fetch_fund.py`（11 个用例，覆盖排名解析/缓存/档案解析/边界情况）
+
+### Fixed
+- 交易详情弹窗头部栏去掉重复渠道、网格去掉重复操作类型，新增 `Clock` 图标 + `is_t1` 确认时间行
+- 基金重仓股市值单位修正：`持仓市值`（万元）前端 `/10000` 显示 `亿`
 
 ## [0.12.2] - 2026-07-31
 

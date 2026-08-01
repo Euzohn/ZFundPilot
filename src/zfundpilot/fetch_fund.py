@@ -25,7 +25,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from . import config, db
-from .models import FundHoldingsResult, Holding, NavPoint
+from .models import (
+    FundHoldingsResult,
+    FundProfile,
+    FundRankingResult,
+    Holding,
+    NavPoint,
+    RankingPoint,
+)
 
 # 天天基金类型 -> 系统标准资产类型（config.FUND_TYPES）的映射
 # 注意：按顺序匹配，越具体越靠前
@@ -1237,6 +1244,174 @@ def _safe_float_num(val) -> float:
 def clear_holdings_cache() -> None:
     """清空持仓缓存。"""
     _holdings_cache.clear()
+
+
+# ---------------------------------------------------------------------------
+# 同类排名走势
+# ---------------------------------------------------------------------------
+_ranking_cache: dict[str, dict] = {}
+_RANKING_CACHE_TTL = 3600  # 1 小时
+
+
+def fetch_fund_ranking(fund_code: str) -> FundRankingResult:
+    """获取基金同类排名百分位走势（AkShare fund_open_fund_info_em 同类排名百分比）。
+
+    排名百分位越低代表表现越好。失败不抛异常。
+    """
+    now = time.time()
+    cached = _ranking_cache.get(fund_code)
+    if cached and now - cached["ts"] < _RANKING_CACHE_TTL:
+        return cached["data"]
+
+    try:
+        import akshare as ak
+
+        df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="同类排名百分比")
+
+        if df is None or df.empty:
+            result = FundRankingResult(
+                fund_code=fund_code, ok=False,
+                message="暂无排名数据", code="no_data",
+            )
+            _ranking_cache[fund_code] = {"ts": now, "data": result}
+            return result
+
+        col_date = _match_col(df.columns, ["报告日期", "日期"])
+        col_pct = _match_col(df.columns, ["同类型排名", "排名百分比", "百分比"])
+        if not col_date or not col_pct:
+            result = FundRankingResult(
+                fund_code=fund_code, ok=False,
+                message="无法识别列名", code="parse_error",
+            )
+            _ranking_cache[fund_code] = {"ts": now, "data": result}
+            return result
+
+        points: list[RankingPoint] = []
+        for _, row in df.iterrows():
+            d = str(row.get(col_date, ""))[:10]
+            if not d:
+                continue
+            pct_val = _safe_float_num(row.get(col_pct))
+            if pct_val <= 0 or pct_val > 100:
+                continue
+            points.append(RankingPoint(date=d, percentile=round(pct_val, 2)))
+
+        points.sort(key=lambda p: p.date)
+        result = FundRankingResult(
+            fund_code=fund_code, ok=True,
+            message="成功", code="ok", points=points,
+        )
+        _ranking_cache[fund_code] = {"ts": now, "data": result}
+        return result
+
+    except Exception as exc:  # noqa: BLE001
+        result = FundRankingResult(
+            fund_code=fund_code, ok=False,
+            message=str(exc), code="fetch_error",
+        )
+        _ranking_cache[fund_code] = {"ts": now, "data": result}
+        return result
+
+
+def clear_ranking_cache() -> None:
+    """清空排名缓存。"""
+    _ranking_cache.clear()
+
+
+# ---------------------------------------------------------------------------
+# 基金档案（基金经理 / 规模 / 费率）
+# ---------------------------------------------------------------------------
+_profile_cache: dict[str, dict] = {}
+_PROFILE_CACHE_TTL = 3600  # 1 小时
+
+
+def _parse_work_days(text: str) -> int | None:
+    """解析 '13年又310天' → 天数；'7年又311天' → 天数。"""
+    if not text:
+        return None
+    years = re.search(r"(\d+)\s*年", text)
+    days = re.search(r"(\d+)\s*天", text)
+    total = 0
+    if years:
+        total += int(years.group(1)) * 365
+    if days:
+        total += int(days.group(1))
+    return total if total > 0 else None
+
+
+def fetch_fund_profile(fund_code: str) -> FundProfile:
+    """获取基金档案：基金经理、从业时间、基金规模、任期收益、运作费率。
+
+    经理/规模来自天天基金 pingzhongdata（与净值同源，单次请求），
+    费率复用费率接口。失败不抛异常。
+    """
+    now = time.time()
+    cached = _profile_cache.get(fund_code)
+    if cached and now - cached["ts"] < _PROFILE_CACHE_TTL:
+        return cached["data"]
+
+    profile = FundProfile(fund_code=fund_code, ok=True, message="成功", code="ok")
+
+    try:
+        txt = _http_get(f"https://fund.eastmoney.com/pingzhongdata/{fund_code}.js")
+
+        # 基金经理（取第一位）
+        m = re.search(r"Data_currentFundManager\s*=\s*(\[.*?\])\s*;", txt, re.S)
+        if m:
+            try:
+                managers = json.loads(m.group(1))
+                if managers and isinstance(managers, list):
+                    mgr = managers[0]
+                    profile.manager = str(mgr.get("name", "")).strip()
+                    profile.manager_career_days = _parse_work_days(mgr.get("workTime", ""))
+                    # 任期收益（%）
+                    profit = mgr.get("profit") or {}
+                    series = profit.get("series") or []
+                    if series and series[0].get("data"):
+                        ret = series[0]["data"][0].get("y")
+                        if ret is not None:
+                            profile.tenure_return = round(float(ret), 2)
+            except (ValueError, TypeError):  # noqa: BLE001
+                pass
+
+        # 基金规模（最新季度，亿元）
+        m = re.search(r"Data_fluctuationScale\s*=\s*(\{.*?\})\s*;", txt, re.S)
+        if m:
+            try:
+                scale_data = json.loads(m.group(1))
+                series = scale_data.get("series") or []
+                if series:
+                    last_y = series[-1].get("y")
+                    if last_y is not None:
+                        profile.scale = round(float(last_y), 2)
+            except (ValueError, TypeError):  # noqa: BLE001
+                pass
+    except Exception as exc:  # noqa: BLE001
+        profile.message = str(exc)
+        profile.code = "fetch_error"
+
+    # 费率（失败不影响档案主体）
+    try:
+        rates = fetch_fund_fee_rates(fund_code)
+        if rates.ok:
+            profile.management_fee = rates.management_fee
+            profile.custodian_fee = rates.custodian_fee
+            profile.sales_fee = rates.sales_fee
+    except Exception:  # noqa: BLE001
+        pass
+
+    if not profile.manager and profile.scale is None and profile.management_fee is None:
+        profile.ok = False
+        profile.code = profile.code if profile.code != "ok" else "no_data"
+        profile.message = profile.message or "暂无档案数据"
+
+    _profile_cache[fund_code] = {"ts": now, "data": profile}
+    return profile
+
+
+def clear_profile_cache() -> None:
+    """清空基金档案缓存。"""
+    _profile_cache.clear()
 
 
 if __name__ == "__main__":

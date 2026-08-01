@@ -40,7 +40,7 @@ ZFundPilot/
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
 │   ├── models.py            # 数据结构（Fund/Transaction/Position/PortfolioSummary）
-│   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）
+│   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）+ 重仓股/排名/档案
 │   ├── fetch_estimate.py   # 基金实时估值（天天基金 fundgz API）
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
 │   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选）
@@ -66,7 +66,7 @@ ZFundPilot/
 │   │   ├── FundCompare.tsx  # 基金对比（多维度同框对比 + 相关性矩阵）
 │   │   ├── Backtest.tsx     # 定投回测（DCA vs 一次性投入 + 累计曲线 + 每期明细）
 │   │   ├── AIChat.tsx       # AI 投顾对话
-│   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 交易标记）
+│   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 持仓卡片 + 排名 + 档案 + 交易标记）
 │   │   ├── Settings.tsx     # 设置（账户/AI/偏好）
 │   │   └── Login.tsx        # 登录
 │   ├── components/          # Layout + Logo 系列 + PnLCalendar + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
@@ -87,7 +87,7 @@ ZFundPilot/
 │   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12) → tsc → build
 ├── tests/                   # Pytest 测试套件
 │   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
-│   └── test_*.py            #   92 个测试用例
+│   └── test_*.py            #   103 个测试用例
 └── CONTEXT.md              # 本文件（不追踪）
 ```
 
@@ -185,6 +185,10 @@ ZFundPilot/
 - `update_fund_nav(fund_code)`: 获取 + 写入 DB
 - `update_all_holdings_nav(codes, progress)`: 批量更新，0.3s 间隔限流
 - `fetch_fund_meta(fund_code)`: 获取基金名称/类型/板块
+- `fetch_fund_holdings(fund_code)`: 重仓股 + 资产配置（AkShare `fund_portfolio_hold_em`，1h 缓存，取最新季度前 10）
+- `fetch_fund_ranking(fund_code)`: 同类排名百分位走势（AkShare `fund_open_fund_info_em(indicator="同类排名百分比")`，1h 缓存）
+- `fetch_fund_profile(fund_code)`: 基金档案（天天基金 `pingzhongdata` 的 `Data_currentFundManager` + `Data_fluctuationScale`，单请求，1h 缓存）
+- 缓存均带 `clear_*_cache()` 清空函数；费率 `fetch_fund_fee_rates` 另有 HTML 解析（`fundf10.eastmoney.com/jjfl_<code>.html`）
 
 ### fetch_estimate.py — 实时估值
 
@@ -428,6 +432,16 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - `useCountUp` formatter 用 `ref` 存储：从 `useEffect` deps 移除，避免 formatter 变化导致动画重启
 - `fetch_estimate` stale-if-error：API 失败时优先返回过期缓存，仅首次失败且无缓存时才返回空列表
 - `gztime` 从估值列名提取日期：`est_nav_col` 列名中提取日期（如 `2024-07-30-估算数据-估算值` → `2024-07-30`），代替 `datetime.now()`，避免跨日数据时间戳错误
+
+### v0.12.2 之后（Unreleased）
+
+- 基金详情净值走势 tooltip 新增当期收益率（`pnlReturn`，`当日收益 +¥123.45 (+1.23%)`）
+- 交易详情弹窗修复：头部栏去掉重复渠道、网格去掉重复操作类型、新增 `is_t1` 确认时间行（复用 `aiChat.afterClose`/`beforeClose`）
+- 基金详情新增持仓卡片（Phase 1）：资产配置饼图 + 前十大重仓股表格（AkShare `fund_portfolio_hold_em`），重仓股市值 `持仓市值`（万元）前端 `/10000` 显示 `亿`
+- 基金详情新增同类排名走势卡片（Phase 2）：AkShare `fund_open_fund_info_em(indicator="同类排名百分比")`，排名百分位（越低越好）折线图 Y 轴反转
+- 基金详情新增基金档案信息栏（Phase 3）：天天基金 `pingzhongdata`（`Data_currentFundManager` 张坤/从业13年又310天/任期收益50.94% + `Data_fluctuationScale` 规模204.16亿），单请求比 AkShare `fund_manager_em` 全表扫描（~16s）更快更准
+- 新增 API：`GET /api/funds/{code}/ranking`、`GET /api/funds/{code}/profile`
+- 新增测试：`tests/test_fetch_fund.py`（11 个用例），总测试数 92 → 103
 
 ### v0.11.0
 

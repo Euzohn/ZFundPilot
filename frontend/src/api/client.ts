@@ -23,6 +23,8 @@ import type {
   FeeRatesResponse,
   CalcFeeResponse,
   FundHoldings,
+  FundRanking,
+  FundProfile,
   KeywordMaps,
   SchedulerStatus,
 } from "./types"
@@ -201,6 +203,10 @@ export const api = {
     request<FeeRatesResponse>(`/funds/${encodeURIComponent(code)}/fee-rates`),
   getFundHoldings: (code: string) =>
     request<FundHoldings>(`/funds/${encodeURIComponent(code)}/holdings`),
+  getFundRanking: (code: string) =>
+    request<FundRanking>(`/funds/${encodeURIComponent(code)}/ranking`),
+  getFundProfile: (code: string) =>
+    request<FundProfile>(`/funds/${encodeURIComponent(code)}/profile`),
   calcFundFee: (code: string, params: { action: string; amount?: number; shares?: number; date?: string }) => {
     const q = new URLSearchParams()
     q.set("action", params.action)

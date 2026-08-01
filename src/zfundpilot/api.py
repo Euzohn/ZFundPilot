@@ -750,6 +750,41 @@ def get_fund_holdings(code: str) -> dict[str, Any]:
     }
 
 
+@app.get("/api/funds/{code}/ranking")
+def get_fund_ranking(code: str) -> dict[str, Any]:
+    """返回基金同类排名百分位走势。"""
+    result = fetch_fund.fetch_fund_ranking(code)
+    return {
+        "ok": result.ok,
+        "fund_code": result.fund_code,
+        "message": result.message,
+        "code": result.code,
+        "points": [
+            {"date": p.date, "percentile": p.percentile}
+            for p in (result.points or [])
+        ],
+    }
+
+
+@app.get("/api/funds/{code}/profile")
+def get_fund_profile(code: str) -> dict[str, Any]:
+    """返回基金档案（经理 / 规模 / 费率）。"""
+    profile = fetch_fund.fetch_fund_profile(code)
+    return {
+        "ok": profile.ok,
+        "fund_code": profile.fund_code,
+        "message": profile.message,
+        "code": profile.code,
+        "manager": profile.manager,
+        "manager_career_days": profile.manager_career_days,
+        "scale": profile.scale,
+        "tenure_return": profile.tenure_return,
+        "management_fee": profile.management_fee,
+        "custodian_fee": profile.custodian_fee,
+        "sales_fee": profile.sales_fee,
+    }
+
+
 class CalcFeeQuery(BaseModel):
     action: str = "buy"
     amount: float | None = None

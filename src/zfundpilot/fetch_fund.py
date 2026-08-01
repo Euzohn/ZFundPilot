@@ -1130,10 +1130,10 @@ def fetch_fund_holdings(fund_code: str) -> FundHoldingsResult:
     try:
         import akshare as ak
 
-        df = ak.fund_portfolio_hold_em(symbol=fund_code, date_year="2025")
+        df = ak.fund_portfolio_hold_em(symbol=fund_code, date="2025")
         if df is None or df.empty:
             # 尝试上一年
-            df = ak.fund_portfolio_hold_em(symbol=fund_code, date_year="2024")
+            df = ak.fund_portfolio_hold_em(symbol=fund_code, date="2024")
 
         if df is None or df.empty:
             result = FundHoldingsResult(
@@ -1162,6 +1162,12 @@ def fetch_fund_holdings(fund_code: str) -> FundHoldingsResult:
         # 取最新报告期
         quarters = df[col_quarter].unique() if col_quarter else []
         latest_q = str(quarters[0]) if len(quarters) > 0 else ""
+        # 简化为 "2025-Q1" 格式
+        _q_clean = latest_q
+        import re as _re
+        m = _re.match(r"(\d{4})年(\d+)季度", latest_q)
+        if m:
+            _q_clean = f"{m.group(1)}-Q{m.group(2)}"
         if latest_q:
             df = df[df[col_quarter] == latest_q]
 
@@ -1177,7 +1183,7 @@ def fetch_fund_holdings(fund_code: str) -> FundHoldingsResult:
             holdings.append(Holding(
                 stock_code=code, stock_name=name,
                 weight=weight, shares=shares,
-                market_value=mv, quarter=latest_q,
+                market_value=mv, quarter=_q_clean,
             ))
 
         # 按占比降序，取前 10
@@ -1191,7 +1197,7 @@ def fetch_fund_holdings(fund_code: str) -> FundHoldingsResult:
             message="成功", code="ok",
             holdings=holdings,
             stock_ratio=total_weight,
-            quarter=latest_q,
+            quarter=_q_clean,
         )
         _holdings_cache[fund_code] = {"ts": now, "data": result}
         return result

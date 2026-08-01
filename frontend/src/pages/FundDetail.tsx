@@ -442,6 +442,7 @@ const handleDelete = async (txId: number) => {
                 <XAxis dataKey="date" fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} minTickGap={40} tickFormatter={(v: string) => v.slice(0, 7)} />
                 <YAxis reversed fontSize={11} domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}%`} />
                 <Tooltip
+                  itemStyle={{ color: "hsl(var(--foreground))" }}
                   contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12, color: "hsl(var(--foreground))" }}
                   formatter={(v: number) => [`${v.toFixed(2)}%`, t.fundDetail.rankPercentile]}
                   labelFormatter={(label: string) => label}

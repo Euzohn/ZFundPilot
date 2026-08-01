@@ -444,7 +444,7 @@ const handleDelete = async (txId: number) => {
                           </span>
                         </TableCell>
                         <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
-                          {h.market_value > 0 ? `${(h.market_value / 10000).toFixed(2)}万` : "—"}
+                          {h.market_value > 0 ? `${(h.market_value / 10000).toFixed(2)}亿` : "—"}
                         </TableCell>
                       </TableRow>
                     ))}

@@ -489,6 +489,7 @@ const handleDelete = async (txId: number) => {
                     </Pie>
                     <Tooltip
                       formatter={(v: number, n: string) => [`${(v * 100).toFixed(2)}%`, n]}
+                      itemStyle={{ color: "hsl(var(--foreground))" }}
                       contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12, color: "hsl(var(--foreground))" }}
                     />
                   </PieChart>

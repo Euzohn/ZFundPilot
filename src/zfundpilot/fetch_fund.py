@@ -1130,10 +1130,11 @@ def fetch_fund_holdings(fund_code: str) -> FundHoldingsResult:
     try:
         import akshare as ak
 
-        df = ak.fund_portfolio_hold_em(symbol=fund_code, date="2025")
+        this_year = str(time.localtime().tm_year)
+        df = ak.fund_portfolio_hold_em(symbol=fund_code, date=this_year)
         if df is None or df.empty:
-            # 尝试上一年
-            df = ak.fund_portfolio_hold_em(symbol=fund_code, date="2024")
+            prev_year = str(time.localtime().tm_year - 1)
+            df = ak.fund_portfolio_hold_em(symbol=fund_code, date=prev_year)
 
         if df is None or df.empty:
             result = FundHoldingsResult(
@@ -1164,8 +1165,7 @@ def fetch_fund_holdings(fund_code: str) -> FundHoldingsResult:
         latest_q = str(quarters[0]) if len(quarters) > 0 else ""
         # 简化为 "2025-Q1" 格式
         _q_clean = latest_q
-        import re as _re
-        m = _re.match(r"(\d{4})年(\d+)季度", latest_q)
+        m = re.match(r"(\d{4})年(\d+)季度", latest_q)
         if m:
             _q_clean = f"{m.group(1)}-Q{m.group(2)}"
         if latest_q:

@@ -782,6 +782,7 @@ def get_fund_profile(code: str) -> dict[str, Any]:
         "management_fee": profile.management_fee,
         "custodian_fee": profile.custodian_fee,
         "sales_fee": profile.sales_fee,
+        "risk_level": profile.risk_level,
     }
 
 

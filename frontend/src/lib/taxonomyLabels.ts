@@ -78,6 +78,33 @@ export const SECTORS: Record<string, Bilingual> = {
   "其它": { zh: "其它", en: "Other" },
 }
 
+// ── Fund type dot colors (avoid green/red to not clash with gain/loss) ──
+export const FUND_TYPE_DOT: Record<string, string> = {
+  "混合型": "bg-amber-500",
+  "指数型": "bg-teal-500",
+  "债券型": "bg-sky-500",
+  "股票型": "bg-violet-500",
+  "QDII": "bg-indigo-500",
+  "其它": "bg-zinc-400",
+}
+
+// ── Risk levels ──
+export const RISK_LEVELS: Record<string, Bilingual> = {
+  "低风险": { zh: "低风险", en: "Low" },
+  "中低风险": { zh: "中低风险", en: "Low-Medium" },
+  "中风险": { zh: "中风险", en: "Medium" },
+  "中高风险": { zh: "中高风险", en: "Medium-High" },
+  "高风险": { zh: "高风险", en: "High" },
+}
+
+export const RISK_LEVEL_DOT: Record<string, string> = {
+  "低风险": "bg-emerald-500",
+  "中低风险": "bg-teal-500",
+  "中风险": "bg-amber-500",
+  "中高风险": "bg-orange-500",
+  "高风险": "bg-rose-500",
+}
+
 // ── Helper functions ──
 export function translateFundType(type: string): string {
   const lang = getCurrentLang()
@@ -92,4 +119,9 @@ export function translateChannel(channel: string): string {
 export function translateSector(sector: string): string {
   const lang = getCurrentLang()
   return SECTORS[sector]?.[lang] ?? sector
+}
+
+export function translateRiskLevel(level: string): string {
+  const lang = getCurrentLang()
+  return RISK_LEVELS[level]?.[lang] ?? level
 }

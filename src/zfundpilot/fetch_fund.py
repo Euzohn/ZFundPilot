@@ -1390,6 +1390,18 @@ def fetch_fund_profile(fund_code: str) -> FundProfile:
         profile.message = str(exc)
         profile.code = "fetch_error"
 
+    # 风险等级（失败不影响档案主体）
+    try:
+        html = _http_get(f"https://fund.eastmoney.com/{fund_code}.html")
+        m = re.search(
+            r"</a>&nbsp;&nbsp;\|&nbsp;&nbsp;(低风险|中低风险|中风险|中高风险|高风险)",
+            html,
+        )
+        if m:
+            profile.risk_level = m.group(1)
+    except Exception:  # noqa: BLE001
+        pass
+
     # 费率（失败不影响档案主体）
     try:
         rates = fetch_fund_fee_rates(fund_code)

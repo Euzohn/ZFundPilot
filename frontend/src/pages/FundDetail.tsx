@@ -13,7 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { money, pct, signedMoney, navStr, pnlColor, localDateStr } from "@/lib/format"
 import { RANGE_DAYS } from "@/lib/rangeLabels"
 import { isMarketOpen } from "@/lib/market"
-import { translateFundType, translateSector } from "@/lib/taxonomyLabels"
+import { getColorForChannel } from "@/lib/channelColors"
+import { translateFundType, translateSector, translateChannel, translateRiskLevel, FUND_TYPE_DOT, RISK_LEVEL_DOT } from "@/lib/taxonomyLabels"
 import { toast } from "sonner"
 import { useLang } from "@/i18n/LanguageContext"
 import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
@@ -186,11 +187,28 @@ const handleDelete = async (txId: number) => {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <PageHeader title={fund?.fund_name ?? code} tracking="tight" truncate className="min-w-0" />
-            <span className="font-mono text-sm text-muted-foreground">{code}</span>
-            {fund?.fund_type && <Badge variant="secondary">{translateFundType(fund.fund_type)}</Badge>}
-            {fund?.sector && <Badge variant="outline">{translateSector(fund.sector)}</Badge>}
+          <PageHeader title={fund?.fund_name ?? code} tracking="tight" truncate className="min-w-0" />
+          <div className="mt-1 flex items-center gap-2 flex-wrap text-sm">
+            <span className="font-mono text-muted-foreground">{code}</span>
+            {fund?.fund_type && (
+              <Badge variant="secondary" className="font-normal gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${FUND_TYPE_DOT[fund.fund_type] ?? "bg-zinc-400"}`} />
+                {translateFundType(fund.fund_type)}
+              </Badge>
+            )}
+            {fund?.sector && <Badge variant="outline" className="font-normal">{translateSector(fund.sector)}</Badge>}
+            {openPositions.length === 1 && (
+              <Badge variant="outline" className="font-normal gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: getColorForChannel(openPositions[0].channel) }} />
+                {translateChannel(openPositions[0].channel)}
+              </Badge>
+            )}
+            {profileData?.risk_level && (
+              <Badge variant="outline" className="font-normal gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${RISK_LEVEL_DOT[profileData.risk_level] ?? "bg-zinc-400"}`} />
+                {translateRiskLevel(profileData.risk_level)}
+              </Badge>
+            )}
           </div>
         </div>
         <div className="flex gap-2 shrink-0">

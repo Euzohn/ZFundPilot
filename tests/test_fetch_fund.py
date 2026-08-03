@@ -117,11 +117,24 @@ var Data_buySedemption = {};
 var Data_fluctuationScale = {"categories":["2026-03-31","2026-06-30"],"series":[{"y":267.93},{"y":204.16}]};
 """
 
+_FUND_DETAIL_HTML_SAMPLE = (
+    '<td>类型：<a href="http://fund.eastmoney.com/HH_jzzzl.html">混合型-灵活</a>'
+    "&nbsp;&nbsp;|&nbsp;&nbsp;中高风险</td>"
+)
+
+
+def _mock_http_get(url, timeout=15):
+    if "pingzhongdata" in url:
+        return _PINGZHONGDATA_SAMPLE
+    if "fund.eastmoney.com" in url and url.endswith(".html"):
+        return _FUND_DETAIL_HTML_SAMPLE
+    return ""
+
 
 def test_fetch_fund_profile_success():
     with (
         patch.dict(fetch_fund._profile_cache, {}, clear=True),
-        patch.object(fetch_fund, "_http_get", return_value=_PINGZHONGDATA_SAMPLE),
+        patch.object(fetch_fund, "_http_get", side_effect=_mock_http_get),
         patch.object(fetch_fund, "fetch_fund_fee_rates") as f,
     ):
         f.return_value = MagicMock(
@@ -137,12 +150,17 @@ def test_fetch_fund_profile_success():
     assert profile.management_fee == 0.015
     assert profile.custodian_fee == 0.0025
     assert profile.sales_fee is None
+    assert profile.risk_level == "中高风险"
 
 
 def test_fetch_fund_profile_no_manager():
+    def _empty_pingzhong(url, timeout=15):
+        if "pingzhongdata" in url:
+            return "var nothing = 1;"
+        return _FUND_DETAIL_HTML_SAMPLE
     with (
         patch.dict(fetch_fund._profile_cache, {}, clear=True),
-        patch.object(fetch_fund, "_http_get", return_value="var nothing = 1;"),
+        patch.object(fetch_fund, "_http_get", side_effect=_empty_pingzhong),
         patch.object(fetch_fund, "fetch_fund_fee_rates") as f,
     ):
         f.return_value = MagicMock(
@@ -154,6 +172,7 @@ def test_fetch_fund_profile_no_manager():
     # 有费率仍算成功
     assert profile.ok
     assert profile.management_fee == 0.015
+    assert profile.risk_level == "中高风险"
 
 
 def test_fetch_fund_profile_all_empty_fails():
@@ -166,6 +185,7 @@ def test_fetch_fund_profile_all_empty_fails():
         profile = fetch_fund.fetch_fund_profile("005827")
     assert not profile.ok
     assert profile.code in ("no_data", "fetch_error")
+    assert profile.risk_level == ""
 
 
 def test_fund_profile_to_dict():

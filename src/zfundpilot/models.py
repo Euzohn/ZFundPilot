@@ -316,6 +316,7 @@ class FundProfile:
     management_fee: float | None = None      # 管理费（年化）
     custodian_fee: float | None = None       # 托管费（年化）
     sales_fee: float | None = None           # 销售服务费（年化）
+    risk_level: str = ""                     # 风险等级（低风险/中低风险/中风险/中高风险/高风险）
 
     def to_dict(self) -> dict:
         return asdict(self)

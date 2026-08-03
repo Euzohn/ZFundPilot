@@ -271,6 +271,7 @@ export interface FundProfile {
   management_fee: number | null
   custodian_fee: number | null
   sales_fee: number | null
+  risk_level: string                  // 风险等级
 }
 
 // ── 关键词映射 ──

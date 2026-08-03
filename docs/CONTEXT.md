@@ -433,6 +433,14 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - `fetch_estimate` stale-if-error：API 失败时优先返回过期缓存，仅首次失败且无缓存时才返回空列表
 - `gztime` 从估值列名提取日期：`est_nav_col` 列名中提取日期（如 `2024-07-30-估算数据-估算值` → `2024-07-30`），代替 `datetime.now()`，避免跨日数据时间戳错误
 
+### v0.13.1 - 2026-08-03
+
+- 基金详情顶栏新增风险等级色点 Badge，后端 `fund.eastmoney.com/{code}.html` 抓取风险等级（低风险~高风险）
+- 前端 `RISK_LEVELS`/`RISK_LEVEL_DOT`/`FUND_TYPE_DOT`/`translateRiskLevel()` 工具函数
+- 基金详情顶栏元数据行重构：基金代码 · 类型色点 Badge · 板块 Badge · 渠道色点 Badge · 风险色点 Badge
+- 侧边栏交换「交易管理」与「持仓明细」顺序
+- 移除未使用的 `profileRiskLevel` i18n key
+
 ### v0.13.0 - 2026-08-02
 
 - 基金详情净值走势 tooltip 新增当期收益率（`pnlReturn`，`当日收益 +¥123.45 (+1.23%)`）

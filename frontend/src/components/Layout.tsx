@@ -38,8 +38,8 @@ const navGroups = [
   {
     labelKey: "groupTrading" as const,
     items: [
-      { to: "/transactions", labelKey: "transactions" as const, icon: ArrowLeftRight },
       { to: "/positions", labelKey: "positions" as const, icon: Briefcase },
+      { to: "/transactions", labelKey: "transactions" as const, icon: ArrowLeftRight },
       { to: "/nav", labelKey: "navUpdate" as const, icon: RefreshCw },
     ],
   },

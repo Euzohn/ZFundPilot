@@ -4,6 +4,19 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.13.1] - 2026-08-03
+
+### Added
+- 基金详情顶栏新增风险等级色点 Badge，后端 `fund.eastmoney.com/{code}.html` 抓取风险等级（低风险~高风险）
+- 前端 `RISK_LEVELS`/`RISK_LEVEL_DOT`/`FUND_TYPE_DOT`/`translateRiskLevel()` 工具函数
+
+### Changed
+- 基金详情顶栏元数据行重构：基金代码 · 类型色点 Badge · 板块 Badge · 渠道色点 Badge · 风险色点 Badge
+- 侧边栏交换「交易管理」与「持仓明细」顺序
+
+### Removed
+- 移除未使用的 `profileRiskLevel` i18n key
+
 ## [0.13.0] - 2026-08-02
 
 ### Added

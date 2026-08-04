@@ -534,6 +534,7 @@ class FilterRequest(BaseModel):
     keyword: str = ""
     limit: int = 50
     offset: int = 0
+    with_metrics: bool = False
 
 
 @app.post("/api/funds/filter")
@@ -545,6 +546,7 @@ def filter_funds(body: FilterRequest) -> dict[str, Any]:
         keyword=body.keyword,
         limit=body.limit,
         offset=body.offset,
+        with_metrics=body.with_metrics,
     )
     return result.__dict__
 
@@ -554,6 +556,38 @@ def compare_funds(body: CompareRequest) -> dict[str, Any]:
     """对比多只基金。"""
     result = compare.compare_funds(body.codes)
     return result.__dict__
+
+
+class WatchlistRequest(BaseModel):
+    code: str
+    note: str = ""
+
+
+@app.post("/api/watchlist")
+def add_to_watchlist(request: Request, body: WatchlistRequest) -> dict[str, Any]:
+    code = body.code.strip()
+    if not code:
+        raise HTTPException(400, "基金代码不能为空")
+    meta = fetch_fund.fetch_fund_meta(code)
+    if not meta.ok:
+        raise HTTPException(400, meta.message or f"基金 {code} 不存在")
+    db.upsert_fund(Fund(code, meta.fund_name, meta.fund_type, meta.sector))
+    fetch_fund.save_sector_mapping(code, meta.sector)
+    db.add_to_watchlist(code, body.note)
+    db.log_audit("watchlist_add", ip=_get_client_ip(request), detail={"code": code})
+    return {"ok": True, "code": code}
+
+
+@app.get("/api/watchlist")
+def get_watchlist() -> list[dict]:
+    return db.get_watchlist()
+
+
+@app.delete("/api/watchlist/{code}")
+def remove_from_watchlist(request: Request, code: str) -> dict[str, Any]:
+    db.remove_from_watchlist(code)
+    db.log_audit("watchlist_remove", ip=_get_client_ip(request), detail={"code": code})
+    return {"ok": True, "code": code}
 
 
 @app.get("/api/funds/{code}")

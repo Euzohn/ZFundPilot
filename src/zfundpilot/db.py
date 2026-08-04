@@ -138,6 +138,12 @@ def init_db() -> None:
                 created_at   TEXT DEFAULT (datetime('now','localtime')),
                 updated_at   TEXT DEFAULT (datetime('now','localtime'))
             );
+
+            CREATE TABLE IF NOT EXISTS watchlist (
+                fund_code TEXT PRIMARY KEY,
+                note      TEXT DEFAULT '',
+                added_at  TEXT DEFAULT (datetime('now','localtime'))
+            );
             """
         )
     _migrate_add_columns()
@@ -681,6 +687,34 @@ def get_due_auto_invest_plans(today: str) -> list[dict]:
             "AND next_run IS NOT NULL AND next_run<=? "
             "ORDER BY next_run ASC, id ASC",
             (today,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# 自选关注列表
+# ---------------------------------------------------------------------------
+def add_to_watchlist(fund_code: str, note: str = "") -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO watchlist(fund_code, note) VALUES(?,?) "
+            "ON CONFLICT(fund_code) DO UPDATE SET note=excluded.note",
+            (fund_code.strip(), note),
+        )
+
+
+def remove_from_watchlist(fund_code: str) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM watchlist WHERE fund_code=?", (fund_code,))
+
+
+def get_watchlist() -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT w.fund_code, w.note, w.added_at, "
+            "f.fund_name, f.fund_type, f.sector "
+            "FROM watchlist w LEFT JOIN funds f ON w.fund_code=f.fund_code "
+            "ORDER BY w.added_at DESC"
         ).fetchall()
     return [dict(r) for r in rows]
 

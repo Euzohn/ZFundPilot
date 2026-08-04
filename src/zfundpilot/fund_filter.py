@@ -14,6 +14,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
+from . import compare as _compare
 from . import config
 from .fetch_fund import _guess_fund_type, _guess_sector
 
@@ -106,14 +107,60 @@ def load_fund_universe(force_refresh: bool = False) -> list[dict]:
     return data
 
 
+def _enrich_one(item: FundFilterItem) -> None:
+    """为单个 FundFilterItem 补充规模/经理/成立日期/收益/风险指标。"""
+    try:
+        nav = _compare._get_cached_nav(item.code)
+        archive = _compare._get_fund_archive(item.code)
+        item.scale = archive.get("scale")
+        item.manager = archive.get("manager", "")
+        item.inception_date = archive.get("inception", "")
+
+        if nav.empty:
+            item.returns = {}
+            item.risk = {}
+            return
+
+        item.returns = {
+            "1w": _compare._calculate_period_return(nav, 5),
+            "1m": _compare._calculate_period_return(nav, 22),
+            "3m": _compare._calculate_period_return(nav, 66),
+            "6m": _compare._calculate_period_return(nav, 132),
+            "1y": _compare._calculate_period_return(nav, 252),
+            "ytd": _compare._calculate_period_return(nav, _compare._ytd_trading_days(nav)),
+            "since": (nav.iloc[-1] - nav.iloc[0]) / nav.iloc[0] if len(nav) > 1 else None,
+        }
+        item.risk = {
+            "max_drawdown": _compare._calculate_max_drawdown(nav),
+            "volatility": _compare._calculate_volatility(nav),
+            "sharpe": _compare._calculate_sharpe(nav),
+        }
+    except Exception as exc:
+        logger.warning("指标补充失败 %s: %s", item.code, exc)
+        item.returns = {}
+        item.risk = {}
+
+
+def _enrich_with_metrics(items: list[FundFilterItem]) -> None:
+    """用线程池对 items 并发补充收益/风险指标（最多 _MAX_METRICS_FUNDS 只）。"""
+    targets = items[:_MAX_METRICS_FUNDS]
+    futures = [_EXECUTOR.submit(_enrich_one, it) for it in targets]
+    for f in futures:
+        try:
+            f.result(timeout=60)
+        except Exception as exc:
+            logger.warning("指标补充超时或失败: %s", exc)
+
+
 def filter_funds(
     types: list[str] | None = None,
     sectors: list[str] | None = None,
     keyword: str = "",
     limit: int = 50,
     offset: int = 0,
+    with_metrics: bool = False,
 ) -> FilterResponse:
-    """按条件筛选基金候选池。"""
+    """按条件筛选基金候选池。with_metrics=True 时对前 _MAX_METRICS_FUNDS 只补充收益/风险指标。"""
     universe = load_fund_universe()
     if not universe:
         return FilterResponse(funds=[], total=0, ok=False, message="基金池加载失败，请稍后重试", code="universe_failed")
@@ -133,5 +180,8 @@ def filter_funds(
     page = matched[offset : offset + limit]
 
     items = [FundFilterItem(code=f["code"], name=f["name"], type=f["type"], sector=f["sector"]) for f in page]
+
+    if with_metrics and items:
+        _enrich_with_metrics(items)
 
     return FilterResponse(funds=items, total=total)

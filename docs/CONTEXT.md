@@ -43,7 +43,7 @@ ZFundPilot/
 │   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）+ 重仓股/排名/档案
 │   ├── fetch_estimate.py   # 基金实时估值（AkShare fund_value_estimation_em）
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
-│   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选）
+│   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）
 │   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）
 │   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI）
 │   ├── rebalance.py         # 再平衡建议
@@ -55,7 +55,7 @@ ZFundPilot/
 │   └── data_io.py           # CSV 导入/导出
 ├── frontend/src/            # React 前端
 │   ├── App.tsx              # 路由（/ → Home 独立页，其余在 Layout 内）
-│   ├── pages/               # 13 个页面
+│   ├── pages/               # 15 个页面
 │   │   ├── Home.tsx         # 首页（brutalist 战术终端风格，中英双语切换）
 │   │   ├── Overview.tsx     # 组合总览
 │   │   ├── Transactions.tsx # 交易管理（录入/流水/CSV/定投计划）
@@ -63,8 +63,10 @@ ZFundPilot/
 │   │   ├── Positions.tsx    # 持仓明细
 │   │   ├── Returns.tsx      # 收益分析（曲线/排名/日历）
 │   │   ├── Risk.tsx         # 风险评估
-│   │   ├── FundCompare.tsx  # 基金对比（多维度同框对比 + 相关性矩阵）
-│   │   ├── Backtest.tsx     # 定投回测（DCA vs 一次性投入 + 累计曲线 + 每期明细）
+│   │   ├── FundCompare.tsx     # 基金对比（多维度同框对比 + 相关性矩阵）
+│   │   ├── Screener.tsx       # 基金筛选（全市场筛选 + 指标排序 + 加自选/对比）
+│   │   ├── Watchlist.tsx      # 自选关注列表（追踪未持有基金）
+│   │   ├── Backtest.tsx       # 定投回测（DCA vs 一次性投入 + 累计曲线 + 每期明细）
 │   │   ├── AIChat.tsx       # AI 投顾对话
 │   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 持仓卡片 + 排名 + 档案 + 交易标记）
 │   │   ├── Settings.tsx     # 设置（账户/AI/偏好）
@@ -103,6 +105,7 @@ ZFundPilot/
 | `transactions` | 交易流水（buy/sell/dividend/reinvest） |
 | `nav_history` | 基金净值历史（fund_code + date + nav） |
 | `portfolio_snapshots` | 组合每日快照 |
+| `watchlist` | 自选关注列表（fund_code + note + added_at，关联 funds 表） |
 | `ai_usage` | AI token 用量记录 |
 | `preferences` | 偏好设置 key-value（channels/channel_colors/color_theme/nav_auto_update/type_keywords_custom/sector_keywords_custom） |
 | `audit_log` | 审计日志（ts/ip/username/action/detail），记录敏感操作 |
@@ -147,6 +150,7 @@ ZFundPilot/
 - 关闭: `@app.on_event("shutdown")` → `scheduler.shutdown_scheduler()`
 - 静态文件: 生产模式挂载 `frontend/dist/` 到 `/`
 - i18n 序列化: `/api/risk` flags 和 `/api/rebalance` advice 输出 `code`+`params`，前端 `backendLabels.ts` 按 code 翻译
+- 自选列表: `POST/GET/DELETE /api/watchlist`，加入时自动获取基金 meta 并 upsert 到 `funds` 表
 
 ### config.py — 全局配置
 
@@ -191,6 +195,13 @@ ZFundPilot/
 - `fetch_fund_profile(fund_code)`: 基金档案（天天基金 `pingzhongdata` 的 `Data_currentFundManager` + `Data_fluctuationScale`，单请求，1h 缓存）
 - 缓存均带 `clear_*_cache()` 清空函数；费率 `fetch_fund_fee_rates` 另有 HTML 解析（`fundf10.eastmoney.com/jjfl_<code>.html`）
 
+### fund_filter.py — 基金筛选
+
+- `load_fund_universe()`: 天天基金 `fundcode_search.js` 全市场基金池（24h 本地缓存），自动分类类型/板块
+- `filter_funds(types, sectors, keyword, limit, offset, with_metrics)`: 按条件筛选
+- `with_metrics=True` 时 `_enrich_with_metrics()` 用 `_EXECUTOR`（6 线程池）对 Top 30 并发补充：`_enrich_one()` 复用 `compare.py` 的 `_get_cached_nav()`/`_get_fund_archive()`/`_calculate_period_return()`/`_calculate_max_drawdown()`/`_calculate_volatility()`/`_calculate_sharpe()`
+- `FundFilterItem`: `code`/`name`/`type`/`sector`（基础）+ `scale`/`manager`/`inception_date`（档案）+ `returns`/`risk`（指标）
+
 ### fetch_estimate.py — 实时估值
 
 - 数据源：AkShare `fund_value_estimation_em()`（覆盖全市场基金），天天基金 fundgz API 已废弃
@@ -230,7 +241,7 @@ ZFundPilot/
 ### 路由（App.tsx）
 
 - `/` → `<Home />`（独立全屏页，不在 Layout 内，无侧边栏）
-- `/overview`、`/transactions`、`/nav`、`/positions`、`/returns`、`/risk`、`/compare`、`/backtest`、`/ai`、`/settings` → 在 `<Layout />` 内（含侧边栏）
+- `/overview`、`/transactions`、`/nav`、`/positions`、`/returns`、`/risk`、`/compare`、`/screener`、`/watchlist`、`/backtest`、`/ai`、`/settings` → 在 `<Layout />` 内（含侧边栏）
 
 ### 首页（Home.tsx）
 
@@ -405,6 +416,9 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### Unreleased
 
+- 基金筛选器独立页面 `/screener`：全市场筛选 + Top 30 指标增强（1年收益/回撤/波动率/规模/经理），列头可排序，一键加入对比或自选
+- `fund_filter.py` 激活死代码 `_EXECUTOR`/`_MAX_METRICS_FUNDS`，`_enrich_with_metrics()` 复用 `compare.py` 指标计算
+- 自选关注列表 `/watchlist`：`watchlist` 表 + 3 个 API 端点，支持追踪未持有基金
 - 修复 /api/risk 和 /api/rebalance 序列化丢弃 `code`+`params`（v0.12.1 引入 i18n code 体系时 API 层漏传）
 - Risk.tsx 再平衡建议因 loading 条件 bug 从未显示，改为四态分支
 

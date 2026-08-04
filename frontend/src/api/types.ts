@@ -383,6 +383,8 @@ export interface FundFilterItem {
   scale: number | null
   manager: string
   inception_date: string
+  returns: Record<string, number | null> | null
+  risk: Record<string, number | null> | null
 }
 
 export interface FilterResponse {
@@ -391,6 +393,16 @@ export interface FilterResponse {
   ok: boolean
   message: string
   code: string
+}
+
+// ── 自选关注列表 ──
+export interface WatchlistItem {
+  fund_code: string
+  note: string
+  added_at: string
+  fund_name: string
+  fund_type: string
+  sector: string
 }
 
 // ── 定投回测 ──

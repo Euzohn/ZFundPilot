@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### Added
+- 基金筛选器独立页面 `/screener`：全市场基金池按类型/板块/关键词筛选，Top 30 补充收益/风险指标（1年收益/最大回撤/波动率/规模/经理），列头可排序，一键加入对比或自选
+- `fund_filter.py` 激活死代码 `_EXECUTOR`/`_MAX_METRICS_FUNDS`：`_enrich_with_metrics()` 复用 `compare.py` 指标计算函数，`filter_funds()` 新增 `with_metrics` 参数
+- 自选关注列表功能：`watchlist` 表 + `POST/GET/DELETE /api/watchlist` 端点，新建 `/watchlist` 页面，支持追踪未持有基金
+- 前端 `FundFilterItem` 类型补全 `returns`/`risk` 字段
+
 ### Fixed
 - `/api/risk` flags 序列化补回 `code` + `params` 字段（v0.12.1 引入 i18n code 体系时 API 层漏传，英文翻译表失效）
 - `/api/rebalance` advice 序列化补回 `code` + `params` 字段，同上

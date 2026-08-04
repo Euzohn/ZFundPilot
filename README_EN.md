@@ -76,7 +76,8 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **Return Analysis** — Unrealized/realized P&L, portfolio return curve, return rate ranking, calendar view, stacked bar by channel
 - **Live Estimates** — Real-time fund change estimates during trading hours. Auto-invalidates when actual NAV is published
 - **Fund Compare** — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix
-- **Fund Filter** — Filter from full market universe by type/sector/keyword, add to comparison with one click
+- **Fund Screener** — Filter from full market universe by type/sector/keyword, top 30 auto-enriched with returns/risk metrics, sortable columns, one-click add to compare or watchlist
+- **Watchlist** — Track funds you don't own yet, auto-fetch name/type/sector on add, quick links to detail/compare/buy
 - **Fund Details** — NAV trend + asset allocation pie chart + top 10 holdings + peer ranking trend + fund profile (manager/assets/inception date) + risk level
 - **DCA Backtest** — Simulate DCA (monthly/biweekly/weekly) vs lump-sum with historical NAV data. Calculates XIRR, max drawdown, Sharpe ratio
 - **Auto-Invest Plan** — Set up daily/weekly/biweekly/monthly auto-buy, auto-skip non-trading days, auto-calculate fees, T+1 NAV backfill
@@ -141,7 +142,7 @@ ZFundPilot/
 │   ├── fetch_fund.py     # NAV fetching + name/type/sector + fee lookup + holdings/ranking/profile
 │   ├── fetch_estimate.py # Real-time fund estimate (AkShare)
 │   ├── compare.py        # Fund comparison (returns/risk/correlation)
-│   ├── fund_filter.py    # Fund filter (full market universe)
+│   ├── fund_filter.py    # Fund filter (full market universe + metrics enrichment)
 │   ├── analysis.py       # Transaction aggregation, return calculation, curve
 │   ├── risk.py           # Risk analysis (drawdown/volatility/concentration)
 │   ├── rebalance.py      # Portfolio rebalancing advice

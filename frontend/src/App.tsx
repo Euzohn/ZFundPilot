@@ -14,6 +14,8 @@ import AIChat from "@/pages/AIChat"
 import Settings from "@/pages/Settings"
 import FundCompare from "@/pages/FundCompare"
 import Backtest from "@/pages/Backtest"
+import Watchlist from "@/pages/Watchlist"
+import Screener from "@/pages/Screener"
 import Login from "@/pages/Login"
 import { api } from "@/api/client"
 import { getToken } from "@/lib/auth"
@@ -57,6 +59,8 @@ export default function App() {
         <Route path="risk" element={<Risk />} />
         <Route path="ai" element={<AIChat />} />
         <Route path="compare" element={<FundCompare />} />
+        <Route path="screener" element={<Screener />} />
+        <Route path="watchlist" element={<Watchlist />} />
         <Route path="backtest" element={<Backtest />} />
         <Route path="settings" element={<Settings />} />
       </Route>

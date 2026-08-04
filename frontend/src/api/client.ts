@@ -18,6 +18,7 @@ import type {
   RiskReport,
   Transaction,
   CSVParseResult,
+  WatchlistItem,
   AIUsageStats,
   AIUsageDaily,
   FeeRatesResponse,
@@ -302,7 +303,7 @@ export const api = {
     request<AuditLog[]>(`/audit?limit=${limit}`),
 
   // Fund filter
-  filterFunds: (params: { types?: string[]; sectors?: string[]; keyword?: string; limit?: number; offset?: number }) =>
+  filterFunds: (params: { types?: string[]; sectors?: string[]; keyword?: string; limit?: number; offset?: number; with_metrics?: boolean }) =>
     request<FilterResponse>("/funds/filter", {
       method: "POST",
       body: JSON.stringify(params),
@@ -365,5 +366,17 @@ export const api = {
   executeAutoInvestPlan: (id: number) =>
     request<{ ok: boolean; tx_id?: number }>(`/auto-invest/plans/${id}/execute`, {
       method: "POST",
+    }),
+
+  // Watchlist
+  getWatchlist: () => request<WatchlistItem[]>("/watchlist"),
+  addToWatchlist: (code: string, note?: string) =>
+    request<{ ok: boolean; code: string }>("/watchlist", {
+      method: "POST",
+      body: JSON.stringify({ code, note: note ?? "" }),
+    }),
+  removeFromWatchlist: (code: string) =>
+    request<{ ok: boolean; code: string }>(`/watchlist/${encodeURIComponent(code)}`, {
+      method: "DELETE",
     }),
 }

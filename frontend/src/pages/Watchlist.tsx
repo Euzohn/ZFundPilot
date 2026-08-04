@@ -56,6 +56,7 @@ export default function Watchlist() {
       await api.addToWatchlist(c, note.trim(), groupName.trim())
       setCode("")
       setNote("")
+      setGroupName("")
       reload()
       toast.success(t.watchlist.added)
     } catch (e: unknown) {

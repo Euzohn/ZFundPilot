@@ -26,7 +26,7 @@ export default function AIChat() {
     messages, streaming, searching, currentTitle, archive, txStatus, systemPrompt,
     includeContext, lastUsage, usageStats,
     handleSend, handleNewChat, handleSwitchChat, handleDeleteArchived, handleRenameArchived,
-    handleConfirmTx, handleDiscardTx, setIncludeContext, setCurrentTitle, reloadUsage,
+    handleConfirmTx, handleDiscardTx, setIncludeContext, setCurrentTitle,
   } = useChat()
   const { data: aiConfig } = useApi(() => api.getAIConfig(), [])
 

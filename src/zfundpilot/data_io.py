@@ -1,4 +1,4 @@
-"""交易流水 CSV 导入 / 导出模块。
+"""交易流水 CSV 导入/导出 + 全量备份 ZIP 模块。
 
 CSV 列（表头，第一行）：
     fund_code, action, date, amount, shares, nav, fee, channel, note

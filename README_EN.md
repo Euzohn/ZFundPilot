@@ -65,7 +65,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 
 ### Transactions & Holdings
 
-- **Transaction Management** — Record buys/sells/dividends/reinvests. Form entry + CSV bulk import/export
+- **Transaction Management** — Record buys/sells/dividends/reinvests. Form entry + CSV bulk import/export + full backup ZIP export
 - **Multi-Channel Support** — Alipay, WeChat, Tiantian Fund, etc. Same fund tracked separately across channels
 - **Auto Fee Lookup** — Fetches purchase/redemption fee rates from Tiantian Fund on entry. FIFO-based redemption fee calculation. Manual override supported
 - **Auto Portfolio Aggregation** — Moving weighted average cost by fund + channel. Realized P&L transferred on sell
@@ -149,7 +149,7 @@ ZFundPilot/
 │   ├── backtest.py       # DCA backtest
 │   ├── auto_invest.py    # Auto-invest plan execution
 │   ├── crypto.py         # Field encryption (Fernet)
-│   ├── data_io.py        # CSV import/export
+│   ├── data_io.py        # CSV import/export + backup ZIP
 │   ├── api.py            # FastAPI REST API (37+ routes + auth middleware)
 │   ├── ai.py             # AI advisor chat (portfolio context + web search)
 │   └── scheduler.py      # APScheduler NAV auto-update

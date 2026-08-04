@@ -146,6 +146,7 @@ ZFundPilot/
 - 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
 - 关闭: `@app.on_event("shutdown")` → `scheduler.shutdown_scheduler()`
 - 静态文件: 生产模式挂载 `frontend/dist/` 到 `/`
+- i18n 序列化: `/api/risk` flags 和 `/api/rebalance` advice 输出 `code`+`params`，前端 `backendLabels.ts` 按 code 翻译
 
 ### config.py — 全局配置
 
@@ -401,6 +402,11 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ---
 
 ## 十二、当前工作状态
+
+### Unreleased
+
+- 修复 /api/risk 和 /api/rebalance 序列化丢弃 `code`+`params`（v0.12.1 引入 i18n code 体系时 API 层漏传）
+- Risk.tsx 再平衡建议因 loading 条件 bug 从未显示，改为四态分支
 
 ### v0.13.1 - 2026-08-03
 

@@ -4,6 +4,13 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Fixed
+- `/api/risk` flags 序列化补回 `code` + `params` 字段（v0.12.1 引入 i18n code 体系时 API 层漏传，英文翻译表失效）
+- `/api/rebalance` advice 序列化补回 `code` + `params` 字段，同上
+- Risk.tsx 再平衡建议 `al(loading) && advice` 条件导致加载完成后永远走 `EmptyState`，建议从未显示；改为 loading/error/data/empty 四态分支
+
 ## [0.13.1] - 2026-08-03
 
 ### Added

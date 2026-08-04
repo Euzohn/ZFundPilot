@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react"
+import { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { api } from "@/api/client"
 import type { FundFilterItem } from "@/api/types"
@@ -15,7 +15,7 @@ import { pct, pnlColor } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useLang } from "@/i18n/LanguageContext"
 import { toast } from "sonner"
-import { Search, RefreshCw, Check, Star, GitCompare } from "lucide-react"
+import { Search, RefreshCw, Check, Star, GitCompare, Loader2 } from "lucide-react"
 
 type SortField = "code" | "1y" | "max_drawdown" | "volatility" | "scale"
 
@@ -29,13 +29,18 @@ export default function Screener() {
   const [results, setResults] = useState<FundFilterItem[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [metricsLoading, setMetricsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [searched, setSearched] = useState(false)
   const [sortField, setSortField] = useState<SortField>("1y")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const [availTypes, setAvailTypes] = useState<string[]>([])
   const [availSectors, setAvailSectors] = useState<string[]>([])
+
+  const skipAutoSearch = useRef(true)
+  const searchIdRef = useRef(0)
 
   useEffect(() => {
     api.getKeywordMaps().then((m) => {
@@ -44,32 +49,81 @@ export default function Screener() {
     }).catch(() => {})
   }, [])
 
+  const isCodeSearch = (kw: string) => /^\d{6}$/.test(kw)
+
   const handleSearch = useCallback(async () => {
-    setLoading(true)
+    const kw = keyword.trim()
+    const codeMode = isCodeSearch(kw)
+    const searchTypes = codeMode ? [] : types
+    const searchSectors = codeMode ? [] : sectors
+    const mySearchId = ++searchIdRef.current
+
+    setSearched(true)
     setError("")
+    setSelected(new Set())
+    setMetricsLoading(false)
+
+    // Phase 1: basic results (fast)
+    setLoading(true)
     setResults([])
     setTotal(0)
-    setSelected(new Set())
     try {
       const res = await api.filterFunds({
-        types, sectors, keyword: keyword.trim(), limit: 50, offset: 0,
-        with_metrics: true,
+        types: searchTypes, sectors: searchSectors, keyword: kw, limit: 50, offset: 0,
+        with_metrics: false,
       })
+      if (mySearchId !== searchIdRef.current) return
       if (res.ok) {
         setResults(res.funds)
         setTotal(res.total)
       } else {
         setError(res.message)
+        setLoading(false)
+        return
       }
     } catch (e: unknown) {
+      if (mySearchId !== searchIdRef.current) return
       setError(e instanceof Error ? e.message : t.screener.searchFailed)
-    } finally {
       setLoading(false)
+      return
+    }
+    setLoading(false)
+
+    // Phase 2: enrich with metrics (slow, non-blocking)
+    if (mySearchId !== searchIdRef.current) return
+    setMetricsLoading(true)
+    try {
+      const res2 = await api.filterFunds({
+        types: searchTypes, sectors: searchSectors, keyword: kw, limit: 50, offset: 0,
+        with_metrics: true,
+      })
+      if (mySearchId !== searchIdRef.current) return
+      if (res2.ok) {
+        const metricsMap = new Map(res2.funds.map(f => [f.code, f]))
+        setResults(prev => prev.map(f => {
+          const m = metricsMap.get(f.code)
+          return m ? { ...f, returns: m.returns, risk: m.risk, scale: m.scale, manager: m.manager, inception_date: m.inception_date } : f
+        }))
+      }
+    } catch {
+      // silently fail — basic results still usable
+    } finally {
+      if (mySearchId === searchIdRef.current) setMetricsLoading(false)
     }
   }, [types, sectors, keyword, t.screener.searchFailed])
 
-  const toggleType = (t: string) => {
-    setTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])
+  // Auto-search on filter chip change
+  useEffect(() => {
+    if (skipAutoSearch.current) {
+      skipAutoSearch.current = false
+      return
+    }
+    handleSearch()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [types, sectors])
+
+  const toggleType = (tp: string) => {
+    setTypes((prev) => prev.includes(tp) ? prev.filter((x) => x !== tp) : [...prev, tp])
   }
   const toggleSector = (s: string) => {
     setSectors((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s])
@@ -125,6 +179,18 @@ export default function Screener() {
     }
     toast.success(t.watchlist.added)
     setSelected(new Set())
+  }
+
+  const codeMode = isCodeSearch(keyword.trim())
+
+  const MetricCell = ({ value, color }: { value: number | null | undefined; color?: string }) => {
+    if (value != null) {
+      return <span className={cn("tabular-nums font-medium", color)}>{pct(value)}</span>
+    }
+    if (metricsLoading) {
+      return <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/50" />
+    }
+    return <span className="text-muted-foreground">—</span>
   }
 
   return (
@@ -183,6 +249,9 @@ export default function Screener() {
               </Button>
             </div>
 
+            {codeMode && (types.length > 0 || sectors.length > 0) && (
+              <p className="text-xs text-muted-foreground">{t.screener.codeSearchHint}</p>
+            )}
             {error && <p className="text-xs text-loss-600">{error}</p>}
           </div>
         </CardContent>
@@ -192,7 +261,6 @@ export default function Screener() {
         <Card>
           <CardContent className="py-16">
             <LoadingState />
-            <p className="mt-2 text-center text-xs text-muted-foreground">{t.screener.loadingHint}</p>
           </CardContent>
         </Card>
       )}
@@ -200,9 +268,17 @@ export default function Screener() {
       {!loading && !error && results.length > 0 && (
         <>
           <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">
-              {t.compare.resultCount.replace("{total}", String(total)).replace("{shown}", String(results.length))}
-            </p>
+            <div className="flex items-center gap-3">
+              <p className="text-xs text-muted-foreground">
+                {t.compare.resultCount.replace("{total}", String(total)).replace("{shown}", String(results.length))}
+              </p>
+              {metricsLoading && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {t.screener.metricsLoading}
+                </span>
+              )}
+            </div>
             {selected.size > 0 && (
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={handleAddToCompare}>
@@ -244,19 +320,13 @@ export default function Screener() {
                     <TableCell className="px-2 py-1.5 text-xs">{translateFundType(f.type)}</TableCell>
                     <TableCell className="px-2 py-1.5 text-xs">{f.sector ? translateSector(f.sector) : "—"}</TableCell>
                     <TableCell className="px-2 py-1.5 text-right text-xs">
-                      {f.returns?.["1y"] != null ? (
-                        <span className={cn("tabular-nums font-medium", pnlColor(f.returns["1y"]))}>{pct(f.returns["1y"])}</span>
-                      ) : <span className="text-muted-foreground">—</span>}
+                      <MetricCell value={f.returns?.["1y"]} color={pnlColor(f.returns?.["1y"] ?? 0)} />
                     </TableCell>
                     <TableCell className="px-2 py-1.5 text-right text-xs">
-                      {f.risk?.max_drawdown != null ? (
-                        <span className="tabular-nums text-loss-600">{pct(f.risk.max_drawdown)}</span>
-                      ) : <span className="text-muted-foreground">—</span>}
+                      <MetricCell value={f.risk?.max_drawdown} color="text-loss-600" />
                     </TableCell>
                     <TableCell className="px-2 py-1.5 text-right text-xs">
-                      {f.risk?.volatility != null ? (
-                        <span className="tabular-nums">{pct(f.risk.volatility)}</span>
-                      ) : <span className="text-muted-foreground">—</span>}
+                      <MetricCell value={f.risk?.volatility} />
                     </TableCell>
                     <TableCell className="px-2 py-1.5 text-right text-xs tabular-nums">
                       {f.scale != null ? f.scale.toFixed(1) : <span className="text-muted-foreground">—</span>}
@@ -270,7 +340,15 @@ export default function Screener() {
         </>
       )}
 
-      {!loading && !error && results.length === 0 && total === 0 && (
+      {!loading && !error && results.length === 0 && searched && (
+        <Card>
+          <CardContent className="py-16">
+            <EmptyState title={t.screener.noResults} size="lg" />
+          </CardContent>
+        </Card>
+      )}
+
+      {!loading && !error && results.length === 0 && !searched && (
         <Card>
           <CardContent className="py-16">
             <EmptyState title={t.screener.empty} size="lg" />

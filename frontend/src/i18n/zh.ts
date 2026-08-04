@@ -983,13 +983,15 @@ const zh = {
   },
   screener: {
     title: "基金筛选",
-    loadingMetrics: "计算指标中...",
-    loadingHint: "正在并发获取净值数据并计算收益/风险指标，约需 10-15 秒",
+    loadingMetrics: "搜索中...",
+    metricsLoading: "指标加载中...",
     searchFailed: "筛选请求失败",
     return1y: "近1年",
     addToCompare: "加入对比",
     addToWatchlist: "加自选",
-    empty: "输入条件后点击搜索",
+    empty: "选择类型/板块筛选，或输入基金代码/名称搜索",
+    noResults: "没有找到符合条件的基金，试试减少筛选条件",
+    codeSearchHint: "代码搜索：忽略类型/板块筛选",
   },
   periodLabels: {
     "1w": "近1周",

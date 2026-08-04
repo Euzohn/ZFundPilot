@@ -985,13 +985,15 @@ const en: typeof zh = {
   },
   screener: {
     title: "Fund Screener",
-    loadingMetrics: "Computing metrics...",
-    loadingHint: "Fetching NAV data and calculating returns/risk metrics in parallel (~10-15s)",
+    loadingMetrics: "Searching...",
+    metricsLoading: "Loading metrics...",
     searchFailed: "Search failed",
     return1y: "1Y Return",
     addToCompare: "Compare",
     addToWatchlist: "Watch",
-    empty: "Enter criteria and click search",
+    empty: "Select type/sector filters, or enter a fund code/name to search",
+    noResults: "No funds match your criteria. Try removing some filters.",
+    codeSearchHint: "Code search: type/sector filters ignored",
   },
   periodLabels: {
     "1w": "1W",

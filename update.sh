@@ -13,7 +13,8 @@ if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
   echo "⚠️  检测到本地未提交的改动："
   git status --short
   echo ""
-  echo "按 Enter 继续（git pull 会尝试合并，docker-compose.override.yml 不受影响）"
+  echo "⚠️  update.sh 会执行 git reset --hard origin/main，以上改动将被丢弃！"
+  echo "按 Enter 继续（docker-compose.override.yml 在 .gitignore 中不受影响）"
   echo "按 Ctrl+C 取消"
   read -r
 fi
@@ -25,9 +26,10 @@ echo ""
 # 3. 记录拉取前的 HEAD
 BEFORE=$(git rev-parse HEAD)
 
-# 4. 拉取最新代码
+# 4. 拉取最新代码（fetch + reset，避免分叉问题）
 echo "📥 拉取最新代码..."
-git pull
+git fetch origin
+git reset --hard origin/main
 echo ""
 
 # 5. 判断 HEAD 是否变化

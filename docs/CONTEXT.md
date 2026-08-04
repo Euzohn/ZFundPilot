@@ -315,6 +315,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - **Commit message 用中文**
 - 前缀: `feat:` / `fix:` / `docs:` / `perf:` / `chore:`
 - 格式: `feat: 简短描述`，空行后可选详细说明
+- **禁止 amend 已推送的 commit**：发现遗漏时新建 fix commit，不要 `git commit --amend` 后 force push。amend 会改写历史，导致服务器 `git pull` 分叉失败
 - 示例:
   ```
   feat: 添加净值定时自动更新功能

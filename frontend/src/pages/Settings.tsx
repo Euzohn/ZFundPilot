@@ -1047,36 +1047,35 @@ export default function Settings() {
               </CardContent>
             </Card>
           )}
+          {/* ── 数据备份 ── */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Archive className="h-5 w-5 text-primary" />
+                {t.settings.dataBackup}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">{t.settings.backupHint}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    await api.exportZip()
+                    toast.success(t.settings.backupExported)
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : t.settings.backupFailed)
+                  }
+                }}
+              >
+                <FileDown className="mr-1.5 h-4 w-4" />
+                {t.settings.exportZip}
+              </Button>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
-
-      {/* ── 数据备份 ── */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Archive className="h-5 w-5 text-primary" />
-            {t.settings.dataBackup}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">{t.settings.backupHint}</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={async () => {
-              try {
-                await api.exportZip()
-                toast.success(t.settings.backupExported)
-              } catch (e) {
-                toast.error(e instanceof Error ? e.message : t.settings.backupFailed)
-              }
-            }}
-          >
-            <FileDown className="mr-1.5 h-4 w-4" />
-            {t.settings.exportZip}
-          </Button>
-        </CardContent>
-      </Card>
     </div>
   )
 }

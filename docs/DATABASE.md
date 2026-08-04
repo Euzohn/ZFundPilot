@@ -16,6 +16,7 @@
 | `portfolio_snapshots` | 组合每日快照 | `id` (自增)，`UNIQUE(date)` |
 | `audit_log` | 审计日志（敏感操作记录） | `id` (自增) |
 | `auto_invest_plans` | 定投计划 | `id` (自增) |
+| `watchlist` | 自选关注列表 | `fund_code` |
 | `ai_usage` | AI token 用量记录 | `id` (自增) |
 | `preferences` | 偏好设置 key-value | `key` |
 
@@ -56,6 +57,7 @@
 | `fee` | REAL | DEFAULT 0 | 手续费 |
 | `channel` | TEXT | DEFAULT '' | 购买渠道（支付宝/理财通/天天基金等） |
 | `note` | TEXT | DEFAULT '' | 备注 |
+| `is_t1` | INTEGER | DEFAULT 0 | T+1 待确认标记（1=T+1，净值用 date+1 回填） |
 | `created_at` | TEXT | DEFAULT datetime('now','localtime') | 创建时间 |
 
 ### 金额与手续费约定
@@ -73,6 +75,7 @@
 
 ### T+1 待确认交易
 
+- `is_t1` 列标记 T+1 交易（1=T+1），`auto_invest.py` 在 15:00 后创建交易时自动设置
 - **买入 T+1**：`amount` 已知，`shares` 和 `nav` 待净值确认（15:00 后净值公布）
 - **卖出 T+1**：`shares` 已知，`fee` 和 `amount` 待净值确认（卖出手续费依赖卖出净值）
 - `amount`/`shares`/`nav` 允许为 NULL，支持待确认状态
@@ -167,7 +170,21 @@
 
 ---
 
-## 7. ai_usage — AI token 用量记录
+## 7. watchlist — 自选关注列表
+
+追踪未持有的基金。通过 `POST /api/watchlist` 添加时自动获取基金 meta 并 upsert 到 `funds` 表。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `fund_code` | TEXT | PRIMARY KEY | 基金代码 |
+| `note` | TEXT | DEFAULT '' | 用户备注 |
+| `added_at` | TEXT | DEFAULT datetime('now','localtime') | 加入时间 |
+
+查询时 LEFT JOIN `funds` 表获取基金名称/类型/板块。
+
+---
+
+## 8. ai_usage — AI token 用量记录
 
 每次 AI 对话的 token 消耗记录。用于用量统计和趋势展示。
 
@@ -185,7 +202,7 @@
 
 ---
 
-## 8. preferences — 偏好设置
+## 9. preferences — 偏好设置
 
 通用 key-value 存储，用于持久化用户偏好。各模块通过 `db.upsert_preference(key, value)` / `db.get_preference(key)` 读写。
 
@@ -262,8 +279,8 @@
 | `FeeLot` | fetch_fund.py | 赎回费 FIFO 明细（lot_date/shares/fee_rate/fee） |
 | `CalcFeeResponse` | fetch_fund.py | 费率计算结果（fee/fee_rate/lots） |
 | `RiskReport` | risk.py | 风险报告（max_drawdown/volatility/hhi/flags 等） |
-| `RiskFlag` | risk.py | 风险提示条目（level/title/detail） |
-| `Advice` | rebalance.py | 结构优化建议（category/text） |
+| `RiskFlag` | risk.py | 风险提示条目（level/code/params/title/detail） |
+| `Advice` | rebalance.py | 结构优化建议（code/params/category/text） |
 | `BacktestResult` | backtest.py | 回测结果（含曲线 + 每期明细） |
 | `AutoInvestPlan` | auto_invest.py | 定投计划（fund_code/amount/cadence/next_run 等） |
 
@@ -273,8 +290,8 @@
 
 `db.init_db()` 在应用启动时调用（幂等），包含以下迁移：
 
-1. **建表**：所有 `CREATE TABLE IF NOT EXISTS`（含 `audit_log`、`auto_invest_plans`）
-2. **`_migrate_add_columns()`**: 为旧表补充新增列（如 `channel`）
+1. **建表**：所有 `CREATE TABLE IF NOT EXISTS`（含 `audit_log`、`auto_invest_plans`、`watchlist`）
+2. **`_migrate_add_columns()`**: 为旧表补充新增列（`channel`、`is_t1`，回填 `note LIKE '%T+1确认%'` 的旧交易标记为 `is_t1=1`）
 3. **`_migrate_relax_transactions_schema()`**: 重建 transactions 表，移除 `CHECK(action IN ('buy','sell'))` 约束和 `NOT NULL` 约束，支持 dividend/reinvest 和待确认交易
 4. **`_migrate_legacy_holdings()`**: 旧版 `holdings` 表数据迁移为一条买入流水
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { Transaction, AIUsageStats, CalcFeeResponse } from "@/api/types"
+import type { CalcFeeResponse } from "@/api/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -10,171 +10,37 @@ import { ChevronDown, ChevronRight, Eye, EyeOff, ShieldAlert, Lightbulb, PlusCir
 import { Bot, Send, Search, Plus, Check, X, Loader2, Clock, Pencil } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { toast } from "sonner"
-import { money, formatRelativeTime, formatTokens } from "@/lib/format"
+import { formatRelativeTime, formatTokens, money } from "@/lib/format"
 import LogoTyping from "@/components/LogoTyping"
 import EmptyState from "@/components/EmptyState"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useLang } from "@/i18n/LanguageContext"
-
-interface ChatMessage {
-  role: "user" | "assistant"
-  content: string
-}
+import { useChat, extractToolCall, stripJsonBlock, type ExtractedTx } from "@/contexts/ChatContext"
 
 const QUICK_PROMPT_ICONS = [ShieldAlert, Lightbulb, PlusCircle, Newspaper]
 
-const SESSIONS_KEY = "zfundpilot_chat_sessions"
-const LEGACY_KEY = "zfundpilot_chat_messages"
-
-type TxState = Record<number, { state: "added"; id: number } | { state: "discarded" }>
-
-interface SessionMeta {
-  id: string
-  title: string
-  messages: ChatMessage[]
-  txStatus: TxState
-  systemPrompt: string
-  updatedAt: string
-}
-
-interface PersistedSessions {
-  activeId: string
-  activeTitle: string
-  activeMessages: ChatMessage[]
-  activeTxStatus: TxState
-  activeSystemPrompt: string
-  includeContext: boolean
-  archive: SessionMeta[]
-}
-
-function newId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
-}
-
-function truncate(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n) + "…" : s
-}
-
-function deriveTitle(messages: ChatMessage[], fallback = ""): string {
-  const first = messages.find((m) => m.role === "user")
-  if (!first) return fallback
-  return truncate(first.content.replace(/\s+/g, " ").trim(), 24)
-}
-
-function generateTimeTitle(): string {
-  const now = new Date()
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`
-}
-
-function loadSessions(): PersistedSessions {
-  const empty = (): PersistedSessions => ({ activeId: newId(), activeTitle: "", activeMessages: [], activeTxStatus: {}, activeSystemPrompt: "", includeContext: true, archive: [] })
-  try {
-    const raw = localStorage.getItem(SESSIONS_KEY)
-    if (raw) {
-      const p = JSON.parse(raw)
-      if (p && Array.isArray(p.archive)) {
-        return {
-          activeId: p.activeId || newId(),
-          activeTitle: p.activeTitle || "",
-          activeMessages: Array.isArray(p.activeMessages) ? p.activeMessages : [],
-          activeTxStatus: p.activeTxStatus ?? {},
-          activeSystemPrompt: p.activeSystemPrompt ?? "",
-          includeContext: p.includeContext !== false,
-          archive: p.archive.map((s: SessionMeta) => ({ ...s, systemPrompt: s.systemPrompt ?? "" })),
-        }
-      }
-    }
-  } catch { /* corrupt */ }
-  try {
-    const legacy = localStorage.getItem(LEGACY_KEY)
-    if (legacy) {
-      const old = JSON.parse(legacy)
-      if (old && Array.isArray(old.messages) && old.messages.length > 0) {
-        try { localStorage.removeItem(LEGACY_KEY) } catch {}
-        return { activeId: newId(), activeTitle: "", activeMessages: old.messages, activeTxStatus: old.txStatus ?? {}, activeSystemPrompt: "", includeContext: true, archive: [] }
-      }
-    }
-  } catch {}
-  return empty()
-}
-
-interface ExtractedTx {
-  fund_code: string
-  action: string
-  date: string
-  after_three: boolean
-  amount: number | null
-  shares: number | null
-  nav: number | null
-  fee: number
-  channel: string
-  note: string
-}
-
-function extractToolCall(content: string): ExtractedTx | null {
-  const match = content.match(/```json\s*([\s\S]*?)```/)
-  if (!match) return null
-  try {
-    const p = JSON.parse(match[1])
-    if (p && p.tool === "add_transaction") {
-      return {
-        fund_code: String(p.fund_code ?? ""),
-        action: String(p.action ?? "buy"),
-        date: String(p.date ?? ""),
-        after_three: Boolean(p.after_three),
-        amount: p.amount != null ? Number(p.amount) : null,
-        shares: p.shares != null ? Number(p.shares) : null,
-        nav: p.nav != null ? Number(p.nav) : null,
-        fee: p.fee != null ? Number(p.fee) : 0,
-        channel: String(p.channel ?? ""),
-        note: String(p.note ?? ""),
-      }
-    }
-  } catch { /* incomplete or malformed */ }
-  return null
-}
-
-function stripJsonBlock(content: string): string {
-  return content.replace(/```json\s*[\s\S]*?```\s*/g, "").trim()
-}
-
 export default function AIChat() {
   const { t } = useLang()
-  const [restored] = useState(loadSessions)
-  const [archive, setArchive] = useState<SessionMeta[]>(() => restored.archive)
-  const [activeId, setActiveId] = useState(() => restored.activeId)
-  const [currentTitle, setCurrentTitle] = useState(() => restored.activeTitle || deriveTitle(restored.activeMessages, t.aiChat.newChat))
-  const [messages, setMessages] = useState<ChatMessage[]>(() => restored.activeMessages)
-  const [input, setInput] = useState("")
-  const [streaming, setStreaming] = useState(false)
-  const [searching, setSearching] = useState(false)
+  const {
+    messages, streaming, searching, currentTitle, archive, txStatus, systemPrompt,
+    includeContext, lastUsage, usageStats,
+    handleSend, handleNewChat, handleSwitchChat, handleDeleteArchived, handleRenameArchived,
+    handleConfirmTx, handleDiscardTx, setIncludeContext, setCurrentTitle, reloadUsage,
+  } = useChat()
   const { data: aiConfig } = useApi(() => api.getAIConfig(), [])
-  const chatEndRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [txStatus, setTxStatus] = useState<TxState>(() => restored.activeTxStatus)
-  const [systemPrompt, setSystemPrompt] = useState(() => restored.activeSystemPrompt ?? "")
-  const [includeContext, setIncludeContext] = useState(() => restored.includeContext)
+
+  const [input, setInput] = useState("")
   const [showSysPrompt, setShowSysPrompt] = useState(false)
   const [adding, setAdding] = useState<number | null>(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [lastUsage, setLastUsage] = useState<{ prompt: number; completion: number; total: number } | null>(null)
-  const { data: usageStats, reload: reloadUsage } = useApi<AIUsageStats>(() => api.getAIUsage(), [])
   const [showUsage, setShowUsage] = useState(false)
   const [editingTitle, setEditingTitle] = useState(false)
   const [editingArchiveId, setEditingArchiveId] = useState<string | null>(null)
   const [titleInput, setTitleInput] = useState("")
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(SESSIONS_KEY, JSON.stringify({
-        activeId, activeTitle: currentTitle, activeMessages: messages, activeTxStatus: txStatus,
-        activeSystemPrompt: systemPrompt, includeContext, archive,
-      } as PersistedSessions))
-    } catch { /* 配额满静默降级 */ }
-  }, [messages, txStatus, activeId, archive, currentTitle, systemPrompt, includeContext])
+  const chatEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -189,158 +55,17 @@ export default function AIChat() {
 
   useEffect(() => { autoResize() }, [input, autoResize])
 
-  useEffect(() => {
-    api.getSystemPrompt(includeContext).then((res) => {
-      setSystemPrompt(res.system_prompt)
-    }).catch(() => {})
-  }, [includeContext])
-
-  const handleSend = async (text?: string) => {
+  const onSend = (text?: string) => {
     const content = (text ?? input).trim()
     if (!content || streaming) return
-
-    const userMsg: ChatMessage = { role: "user", content }
-    const newMessages = [...messages, userMsg]
-    setMessages([...newMessages, { role: "assistant", content: "" }])
     setInput("")
-    setStreaming(true)
-    setSearching(false)
-
-    const aiIndex = newMessages.length
-
-    try {
-      let sysPrompt = systemPrompt
-      if (!sysPrompt) {
-        try {
-          const res = await api.getSystemPrompt(includeContext)
-          sysPrompt = res.system_prompt
-          setSystemPrompt(sysPrompt)
-        } catch { /* 取失败则不发 system，后端兜底构建 */ }
-      }
-      const messagesToSend = [
-        ...(sysPrompt ? [{ role: "system", content: sysPrompt }] : []),
-        ...newMessages.map((m) => ({ role: m.role, content: m.content })),
-      ]
-      await api.streamChat(
-        messagesToSend,
-        (chunk) => {
-          if (chunk.status === "searching") {
-            setSearching(true)
-          } else if (chunk.content) {
-            setSearching(false)
-            setMessages((prev) => {
-              const updated = [...prev]
-              updated[aiIndex] = { role: "assistant", content: updated[aiIndex].content + chunk.content }
-              return updated
-            })
-          } else if (chunk.usage) {
-            setLastUsage(chunk.usage)
-          } else if (chunk.error) {
-            setSearching(false)
-            setMessages((prev) => {
-              const updated = [...prev]
-              updated[aiIndex] = { role: "assistant", content: `❌ ${chunk.error}` }
-              return updated
-            })
-          }
-        },
-      )
-    } catch (e) {
-      setMessages((prev) => {
-        const updated = [...prev]
-        updated[aiIndex] = { role: "assistant", content: `❌ ${t.aiChat.requestFailed}: ${e}` }
-        return updated
-      })
-    } finally {
-      setStreaming(false)
-      setSearching(false)
-      reloadUsage()
-    }
+    handleSend(content)
   }
 
-  const handleConfirmTx = async (msgIndex: number, tx: ExtractedTx) => {
-    if (!tx.fund_code || !tx.date) {
-      toast.error(t.aiChat.fundCodeDateRequired)
-      return
-    }
-    const baseNote = tx.note.trim()
-    const note = (baseNote ? baseNote + (tx.after_three ? " | " : "") : "") + (tx.after_three ? t.transactions.t1Confirm : "")
-    const payload: Transaction = {
-      fund_code: tx.fund_code,
-      action: tx.action,
-      date: tx.date,
-      amount: tx.amount,
-      shares: tx.shares,
-      nav: tx.nav,
-      fee: tx.fee,
-      channel: tx.channel,
-      note,
-    }
+  const onConfirmTx = async (msgIndex: number, tx: ExtractedTx) => {
     setAdding(msgIndex)
-    try {
-      const res = await api.addTransaction(payload)
-      toast.success(t.aiChat.txSuccess.replace("{action}", t.actionLabels[tx.action as keyof typeof t.actionLabels] ?? tx.action).replace("{code}", tx.fund_code).replace("{id}", String(res.id)))
-      setTxStatus((prev) => ({ ...prev, [msgIndex]: { state: "added", id: res.id } }))
-    } catch (e) {
-      toast.error(`${t.aiChat.addFailed}: ${e}`)
-    } finally {
-      setAdding(null)
-    }
-  }
-
-  const handleDiscardTx = (msgIndex: number) => {
-    setTxStatus((prev) => ({ ...prev, [msgIndex]: { state: "discarded" } }))
-  }
-
-  const archiveCurrent = (): SessionMeta[] => {
-    if (messages.length === 0) return archive
-    const session: SessionMeta = {
-      id: activeId,
-      title: currentTitle || deriveTitle(messages, t.aiChat.newChat),
-      messages,
-      txStatus,
-      systemPrompt,
-      updatedAt: new Date().toISOString(),
-    }
-    return [session, ...archive]
-  }
-
-  const handleNewChat = () => {
-    setArchive(archiveCurrent())
-    setActiveId(newId())
-    setCurrentTitle(generateTimeTitle())
-    setMessages([])
-    setTxStatus({})
-    setSystemPrompt("")
-    setInput("")
-    setDropdownOpen(false)
-    setEditingTitle(false)
-  }
-
-  const handleSwitchChat = (id: string) => {
-    const target = archive.find((s) => s.id === id)
-    if (!target) return
-    setArchive(archiveCurrent().filter((s) => s.id !== id))
-    setActiveId(target.id)
-    setCurrentTitle(target.title)
-    setMessages(target.messages)
-    setTxStatus(target.txStatus)
-    setSystemPrompt(target.systemPrompt)
-    setInput("")
-    setDropdownOpen(false)
-    setEditingTitle(false)
-  }
-
-  const handleDeleteArchived = (id: string) => {
-    setArchive((prev) => prev.filter((s) => s.id !== id))
-  }
-
-  const handleRenameArchived = (id: string, newTitle: string) => {
-    const title = newTitle.trim()
-    if (title) {
-      setArchive((prev) => prev.map((s) => s.id === id ? { ...s, title } : s))
-    }
-    setEditingArchiveId(null)
+    await handleConfirmTx(msgIndex, tx)
+    setAdding(null)
   }
 
   const startEditTitle = () => {
@@ -408,7 +133,7 @@ export default function AIChat() {
                       <div
                         key={s.id}
                         className="group flex items-center gap-2 px-3 py-2 hover:bg-muted/50 cursor-pointer"
-                        onClick={() => handleSwitchChat(s.id)}
+                        onClick={() => { handleSwitchChat(s.id); setDropdownOpen(false); setEditingTitle(false) }}
                       >
                         <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         <div className="flex-1 min-w-0">
@@ -417,10 +142,10 @@ export default function AIChat() {
                               value={titleInput}
                               onChange={(e) => setTitleInput(e.target.value)}
                               onKeyDown={(e) => {
-                                if (e.key === "Enter" && !e.nativeEvent.isComposing) handleRenameArchived(s.id, titleInput)
+                                if (e.key === "Enter" && !e.nativeEvent.isComposing) { handleRenameArchived(s.id, titleInput); setEditingArchiveId(null) }
                                 if (e.key === "Escape") setEditingArchiveId(null)
                               }}
-                              onBlur={() => handleRenameArchived(s.id, titleInput)}
+                              onBlur={() => { handleRenameArchived(s.id, titleInput); setEditingArchiveId(null) }}
                               onClick={(e) => e.stopPropagation()}
                               autoFocus
                               className="h-6 text-sm"
@@ -489,7 +214,7 @@ export default function AIChat() {
             {includeContext ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
             <span>{t.aiChat.positionDetail}</span>
           </button>
-          <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={handleNewChat} disabled={streaming} title={t.aiChat.startNewChat}>
+          <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={() => { handleNewChat(); setDropdownOpen(false); setEditingTitle(false) }} disabled={streaming} title={t.aiChat.startNewChat}>
             <Plus className="h-3.5 w-3.5 mr-1" /> {t.aiChat.newChat}
           </Button>
         </div>
@@ -539,7 +264,7 @@ export default function AIChat() {
                     return (
                     <button
                       key={text}
-                      onClick={() => !streaming && handleSend(text)}
+                      onClick={() => onSend(text)}
                       disabled={streaming}
                       className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-left text-xs text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                     >
@@ -595,7 +320,7 @@ export default function AIChat() {
                       tx={tx}
                       status={status}
                       adding={adding === i}
-                      onConfirm={(finalTx) => handleConfirmTx(i, finalTx)}
+                      onConfirm={(finalTx) => onConfirmTx(i, finalTx)}
                       onDiscard={() => handleDiscardTx(i)}
                     />
                   </div>
@@ -625,7 +350,7 @@ export default function AIChat() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault()
-                    handleSend()
+                    onSend()
                   }
                 }}
                 disabled={streaming}
@@ -635,7 +360,7 @@ export default function AIChat() {
                 style={{ maxHeight: "120px" }}
               />
               <Button
-                onClick={() => handleSend()}
+                onClick={() => onSend()}
                 disabled={streaming || !input.trim()}
                 size="icon"
                 className="shrink-0 h-8 w-8"

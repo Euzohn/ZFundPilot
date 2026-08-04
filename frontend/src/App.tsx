@@ -20,6 +20,7 @@ import Login from "@/pages/Login"
 import { api } from "@/api/client"
 import { getToken } from "@/lib/auth"
 import { initUiTheme } from "@/lib/theme"
+import { ChatProvider } from "@/contexts/ChatContext"
 
 export default function App() {
   const [authRequired, setAuthRequired] = useState<boolean | null>(null)
@@ -47,23 +48,25 @@ export default function App() {
   }
 
   return (
-    <Routes>
-      <Route path="/" element={<Home />} />
-      <Route element={<Layout />}>
-        <Route path="overview" element={<Overview />} />
-        <Route path="transactions" element={<Transactions />} />
-        <Route path="positions" element={<Positions />} />
-        <Route path="fund/:code" element={<FundDetail />} />
-        <Route path="nav" element={<NavUpdate />} />
-        <Route path="returns" element={<Returns />} />
-        <Route path="risk" element={<Risk />} />
-        <Route path="ai" element={<AIChat />} />
-        <Route path="compare" element={<FundCompare />} />
-        <Route path="screener" element={<Screener />} />
-        <Route path="watchlist" element={<Watchlist />} />
-        <Route path="backtest" element={<Backtest />} />
-        <Route path="settings" element={<Settings />} />
-      </Route>
-    </Routes>
+    <ChatProvider>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route element={<Layout />}>
+          <Route path="overview" element={<Overview />} />
+          <Route path="transactions" element={<Transactions />} />
+          <Route path="positions" element={<Positions />} />
+          <Route path="fund/:code" element={<FundDetail />} />
+          <Route path="nav" element={<NavUpdate />} />
+          <Route path="returns" element={<Returns />} />
+          <Route path="risk" element={<Risk />} />
+          <Route path="ai" element={<AIChat />} />
+          <Route path="compare" element={<FundCompare />} />
+          <Route path="screener" element={<Screener />} />
+          <Route path="watchlist" element={<Watchlist />} />
+          <Route path="backtest" element={<Backtest />} />
+          <Route path="settings" element={<Settings />} />
+        </Route>
+      </Routes>
+    </ChatProvider>
   )
 }

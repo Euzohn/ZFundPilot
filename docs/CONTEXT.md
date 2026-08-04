@@ -41,7 +41,7 @@ ZFundPilot/
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
 │   ├── models.py            # 数据结构（Fund/Transaction/Position/PortfolioSummary）
 │   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）+ 重仓股/排名/档案
-│   ├── fetch_estimate.py   # 基金实时估值（天天基金 fundgz API）
+│   ├── fetch_estimate.py   # 基金实时估值（AkShare fund_value_estimation_em）
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
 │   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选）
 │   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）
@@ -367,13 +367,12 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 4. 更新 `README.md` / `README_EN.md`（功能列表、项目结构等）
 5. 运行完整测试套件 + TypeScript 检查 + Vite build
 6. 提交版本 bump 并推送
-7. `git tag vx.y.z && git push --tags`
-5. Git tag: `git tag vx.y.z && git push origin vx.y.z`
-6. GitHub Release:
+7. `git tag vx.y.z && git push origin vx.y.z`
+8. GitHub Release:
    - 标题: `vx.y.z` 或带描述性标题（如 `v0.5.0 — 首页改版 + 定时更新`）
    - 正文: 从 CHANGELOG.md 复制对应版本段落
    - 命令: `gh release create vx.y.z --title "vx.y.z — 简短描述" --notes "$(cat CHANGELOG.md 中对应段落)"`
-7. 积累到一定阶段（多个功能/修复）再发布新 release，不必每次提交都发
+9. 积累到一定阶段（多个功能/修复）再发布新 release，不必每次提交都发
 
 ---
 
@@ -392,46 +391,15 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ## 十一、数据源
 
 - **AkShare** (`ak.fund_open_fund_info_em`): 主数据源，基金净值历史
-- **天天基金** (`fund.eastmoney.com/pingzhongdata`): fallback 数据源
+- **AkShare** (`ak.fund_value_estimation_em`): 实时估值（覆盖全市场基金，交易日实时估算涨跌幅）
+- **天天基金** (`fund.eastmoney.com/pingzhongdata`): fallback 数据源 + 基金档案（经理/规模）
+- **天天基金** (`fund.eastmoney.com/{code}.html`): 风险等级抓取（HTML 解析）
 - **天天基金** (`fundf10.eastmoney.com`): 费率抓取（HTML 解析）
-- **天天基金** (`fundgz.1234567.com.cn`): 实时估值（fundgz JSONP API，交易日实时估算涨跌幅）
 - 均为东方财富旗下，无需额外 API key
 
 ---
 
 ## 十二、当前工作状态
-
-### v0.12.0
-
-- 全站国际化（i18n）：新建 `LanguageContext` + `useLang()` hook + `zh.ts`/`en.ts` 翻译文件，
-  所有页面和共享组件支持中英文切换。侧边栏新增全局语言切换按钮。
-  `format.ts` 的 `money()`/`formatRelativeTime()` 按 lang 选 `¥`/`$` 和对应语言文案；
-  `actionLabels`/`rangeLabels` 改为函数按 lang 返回
-- 交易记录点击查看详情：新建 `TransactionDetailDialog` 共享组件，Transactions 和 FundDetail
-  页面的交易列表行点击即可打开只读详情弹窗，展示所有交易字段，支持「编辑」跳转
-- 修复定投执行 T+1 判定 bug：`execute_plan()` 按当前时间判断 15:00 分界，不再永远加 `T+1确认` 标记
-
-### v0.12.1 - 2026-07-30
-
-- 后端 i18n 结构化：risk.py `RiskFlag` + rebalance.py `Advice` + fetch_fund.py `CalcFeeResult`/`FundMeta`/`FetchResult`/`FeeRates` + fetch_estimate.py `FundEstimate` + compare.py `FundCompareItem`/`CompareResponse` + fund_filter.py `FilterResponse` 新增 `code`/`params` 字段，前端按 code 翻译
-- T+1 确认改用 `is_t1` 布尔字段：`transactions` 表新增 `is_t1 INTEGER DEFAULT 0` 列（迁移自动回填存量数据），`auto_invest.py` 设置 `is_t1=True` 而非追加 `"T+1确认"` 到 note 文本，`analysis.py` 查 `is_t1=1` 而非 `note LIKE '%T+1确认%'`
-- 前端翻译映射：新建 `lib/backendLabels.ts`（风险提示/建议/费率/消息 code 翻译）+ `lib/taxonomyLabels.ts`（基金类型/板块/渠道翻译），Risk.tsx/NavUpdate.tsx/FeeBreakdownCard.tsx 等组件按 code 渲染
-- 前端残留 i18n 补全：Positions/FundDetail/FundCompare/Overview 调用 translateFundType/translateSector/translateChannel，Settings.tsx AI 供应商名双语，api/client.ts 401 双语
-- 6 项高优修复：CronTrigger 时区、定投补跑锁、错过期不追补、API 字段校验、周末跳过、估值负面缓存
-- 时区可配置：新增 `ZFUNDPILOT_TIMEZONE` 环境变量
-- 定投缺少启动补跑机制
-- CI/CD 工作流：`.github/workflows/ci.yml`，push/PR 自动 ruff + pytest（3.10/3.11/3.12）+ tsc + build
-- 测试基础设施：`tests/conftest.py`（make_plan/make_tx_row fixtures + PatchAutoInvest 共享类）
-- Bug 修复：`TransactionCreate` 加 `is_t1` 字段（修复手动创建/编辑交易 T+1 标记丢失）；`config.py` 加 `time.tzset()` 确保 SQLite 时区同步；`api.py` calc-fee 早期返回补齐 `amount`+`nav`；`models.py` `from_row()` 转换 `is_t1` int→bool；`FeeBreakdownCard` `HIDDEN_CODES` 补全；`LanguageContext` 切换语言时同步更新 `currentLang`；`add_transaction` SQL 占位符数不匹配
-
-### v0.12.2 - 2026-07-31
-
-- 定投两步 DB 写合并为一次：`execute_plan()` 原子写入 `last_run` + `next_run`，不再分两次调用 `update_auto_invest_plan`
-- 月度计划不跳过当月：`_next_month_day()` 检查当月 target_day 是否已过，未过则用当月而非直接跳到下月
-- `_convert_dow` 步进值跳过：正则加 `(?<!/)` lookbehind，`*/2`/`0-6/2`/`0/2` 中的步进值不被当作日值转换
-- `useCountUp` formatter 用 `ref` 存储：从 `useEffect` deps 移除，避免 formatter 变化导致动画重启
-- `fetch_estimate` stale-if-error：API 失败时优先返回过期缓存，仅首次失败且无缓存时才返回空列表
-- `gztime` 从估值列名提取日期：`est_nav_col` 列名中提取日期（如 `2024-07-30-估算数据-估算值` → `2024-07-30`），代替 `datetime.now()`，避免跨日数据时间戳错误
 
 ### v0.13.1 - 2026-08-03
 
@@ -451,70 +419,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - 新增 API：`GET /api/funds/{code}/ranking`、`GET /api/funds/{code}/profile`
 - 新增测试：`tests/test_fetch_fund.py`（11 个用例），总测试数 92 → 103
 
-### v0.11.0
-
-- 定投计划自动执行：`auto_invest.py` 新模块 + `auto_invest_plans` 表 + 6 个 API 端点 + 前端 Tab（4 种频率：交易日/周/双周/月，遇非交易日顺延，自动算手续费，T+1 回填净值）
-- 调度器新增 09:00 定时任务，每天检查到期定投并执行
-- 净值回填审计日志：`backfill_transaction_navs()` 返回更新详情，手动/定时更新净值后写入 `nav_backfill` 审计日志
-- 版本号同步：`pyproject.toml` 从 `0.7.0` 升到 `0.11.0`，修复长期滞后问题
-
-### v0.10.0
-
-- 定投策略回测：`backtest.py` 新模块 + `POST /api/backtest/dca` 端点 + `/backtest` 页面（DCA vs 一次性投入，XIRR 年化/最大回撤/夏普比率）
-- AI API key 加密存储：`crypto.py` 新模块（Fernet，AES-128-CBC + HMAC-SHA256），密钥独立存 `data/secret.key`
-- 板块/类型关键词映射：`keyword_maps` 偏好设置 + `PUT /api/keyword-maps` 端点 + Settings 页面编辑
-- 移动端预览优化：`update.sh` 新增 `docker logs` 查看容器日志、`docker inspect` 验证端口映射命令
-- 修复：Docker 容器时区 UTC 导致定时任务不运行（`Dockerfile` 设置 `TZ=Asia/Shanghai` + `scheduler.py` 时区感知）
-- 修复：T+1 净值回填 bug + 历史修复迁移 + 审计日志 + 测试
-
-### v0.9.1
-
-- 修复：待确认买入（T+1 份额未知）不再产生虚假亏损 — Position 新增 `pending_buy_cost` 字段，待确认金额从 `total_cost` 分离，不参与市值/盈亏/收益率计算，仅用于 `is_open` 判断
-- 修复：DB 覆盖路径 `est_pnl` 用精确净值差 `shares*(gsz-dwjz)` 计算，消除 `gszzl` 四舍五入导致的与基金详情页差异
-- 修复：买入按钮预填渠道（FundDetail / Positions 单渠道时自动传递 `channel` 参数，与卖出按钮一致）
-- 变更：实时估值数据源由天天基金 fundgz API 迁移至 AkShare `fund_value_estimation_em()`，覆盖全市场基金
-- 文档：DEPLOY.md 多实例部署完善（独立目录方式、container_name 冲突警告、故障排查），密码哈希说明修正（SHA-256 → bcrypt）
-
-### v0.9.0
-
-- UI/UX 全局重构：Linear-style 设计语言（zinc 中性色 + 暗色模式 + token 系统）
-- 暗色模式：light/dark/system 三态，默认跟随 `prefers-color-scheme`，Settings + Layout 侧边栏双入口
-- 设计 token 扩展：warning/info/success 语义色 + brand-accent/bg-dark/text-light 桥接 token + chart-1..8 统一图表色板
-- 全局 200+ 处硬编码颜色 token 化（text-blue-500 → text-primary 等）
-- Home brutalist 桥接 token：#0A0A0A/#FF2A2A/#EAEAEA → brand-bg-dark/brand-accent/brand-text-light
-- 组件库建设：6 个 shadcn 原语（dialog/alert-dialog/tooltip/popover/dropdown-menu/skeleton/checkbox）+ 7 个业务组件（MetricCard/SortHeader/ConfirmDialog/PageHeader/EmptyState/LoadingState/ThemeToggle）
-- 重复组件抽取：3 套 MetricCard / 3 套 SortHeader / 3 处手写 fixed inset-0 弹窗 → 统一组件
-- 公共工具抽取：lib/actionLabels.ts / lib/rangeLabels.ts / lib/chartPalette.ts / 扩展 lib/format.ts
-- 逐页迁移：9 处 h1 → PageHeader / 11 处 LogoSpinner → LoadingState / 14 处暂无数据 → EmptyState
-- FundCompare 4 个原生 table → shadcn Table + CorrelationMatrix 热力图 token 化
-- Settings 原生 checkbox → Radix Checkbox + 原生 select → shadcn Select
-- Vite manualChunks 代码拆分：vendor-react/charts/radix/markdown + index 5 chunk
-- 死码清理：4 个未用 Logo 组件 + 4 套 CSS keyframes + 2 个未用 Radix 依赖
-- localStorage key 前缀统一为 zfundpilot_*
-
-### v0.8.1
-
-- 基金筛选器：`fund_filter.py` + `POST /api/funds/filter`，FilterSection 组件，全市场池按类型/板块/关键词筛选，一键加入对比
-- 修复：APScheduler day_of_week 数值转换（cron 0=周日 → APScheduler 0=周一），`_convert_dow()` 做 `(n-1)%7` 映射
-- 修复：首页「昨日收益」标签 3 分支逻辑（today→今日收益/yesterday→昨日收益/else→实际日期）
-
-### v0.8.0
-
-- 基金对比页面（`/compare`），多维度同框对比 + 净值走势叠加 + 相关性矩阵
-- 自托管字体（`@fontsource/fira-sans` + `@fontsource/fira-code`），移除 Google Fonts 外部依赖
-- Logo 动画清理：删除 8 个未使用变体，重新编号 B1–B7
-- DEPLOY.md 新增多实例部署章节
-- 修复：登录页 429 状态码正确显示、速率限制窗口语义化提示、审计日志时区修正
-
-### v0.7.0
-
-- 登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟，支持 X-Forwarded-For 信任代理）
-- 密码哈希升级 bcrypt（cost=12），兼容旧 SHA-256，登录后自动无感升级
-- 审计日志（audit_log 表记录敏感操作，设置页面板查看最近 100 条）
-- 隐藏 username 枚举（`/api/auth/status` 不再返回 username，新增 `/api/auth/me`）
-- AI 错误脱敏（上游错误细节仅后端日志记录，不暴露给客户端）
-- 新增环境变量 `ZFUNDPILOT_TRUSTED_PROXIES`
-- DEPLOY.md 新增反向代理 + HTTPS（Caddy）章节
+> 完整历史版本记录见 `CHANGELOG.md`。
 
 ### 待办
 

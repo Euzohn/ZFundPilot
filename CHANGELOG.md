@@ -4,7 +4,7 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [0.14.0] - 2026-08-04
 
 ### Added
 - 基金筛选器独立页面 `/screener`：全市场基金池按类型/板块/关键词筛选，Top 30 补充收益/风险指标（1年收益/最大回撤/波动率/规模/经理），列头可排序，一键加入对比或自选

@@ -955,16 +955,16 @@ def get_risk_report() -> dict[str, Any]:
         "bond_weight": report.bond_weight,
         "qdii_weight": report.qdii_weight,
         "flags": [
-            {"level": f.level, "title": f.title, "detail": f.detail}
+            {"level": f.level, "code": f.code, "params": f.params, "title": f.title, "detail": f.detail}
             for f in report.flags
         ],
     }
 
 
 @app.get("/api/rebalance")
-def get_rebalance_advice() -> list[dict[str, str]]:
+def get_rebalance_advice() -> list[dict[str, Any]]:
     advice = rebalance.generate_advice()
-    return [{"category": a.category, "text": a.text} for a in advice]
+    return [{"code": a.code, "params": a.params, "category": a.category, "text": a.text} for a in advice]
 
 
 # ---------------------------------------------------------------------------

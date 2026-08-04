@@ -23,7 +23,7 @@ const FLAG_STYLES: Record<string, { icon: ReactNode; variant: "destructive" | "w
 
 export default function Risk() {
   const { data: report, loading: rl, error: re, reload: reloadReport } = useApi<RiskReport>(() => api.getRiskReport())
-  const { data: advice, loading: al } = useApi<Advice[]>(() => api.getRebalanceAdvice())
+  const { data: advice, loading: al, error: ae, reload: reloadAdvice } = useApi<Advice[]>(() => api.getRebalanceAdvice())
   const { t } = useLang()
 
   if (re) return <ErrorState message={re} onRetry={reloadReport} />
@@ -78,7 +78,11 @@ export default function Risk() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">{t.risk.adviceDisclaimer}</p>
-          {al && advice && advice.length > 0 ? (
+          {al ? (
+            <div className="flex justify-center py-6"><LogoSpinner className="h-6 w-6" /></div>
+          ) : ae ? (
+            <ErrorState message={ae} onRetry={reloadAdvice} />
+          ) : advice && advice.length > 0 ? (
             advice.map((a, i) => {
               const { category, text } = translateAdvice(a)
               return (

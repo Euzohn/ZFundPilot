@@ -514,6 +514,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
                   {heldShares > 0 && (
                     <div className="mt-1.5 flex gap-1.5">
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.25).toFixed(2))}>1/4</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 1 / 3).toFixed(2))}>1/3</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.5).toFixed(2))}>1/2</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.75).toFixed(2))}>3/4</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares(heldShares.toFixed(2))}>{t.common.all}</Button>

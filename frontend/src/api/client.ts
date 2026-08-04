@@ -95,11 +95,11 @@ export const api = {
 
   // AI Config
   getAIConfig: () =>
-    request<{ base_url: string; model: string; has_key: boolean; web_search: boolean }>("/settings/ai"),
-  updateAIConfig: (base_url: string, api_key: string, model: string, web_search: boolean) =>
+    request<{ base_url: string; model: string; has_key: boolean; web_search: boolean; custom_prompt: string }>("/settings/ai"),
+  updateAIConfig: (base_url: string, api_key: string, model: string, web_search: boolean, custom_prompt: string = "") =>
     request<{ ok: boolean }>("/settings/ai", {
       method: "PUT",
-      body: JSON.stringify({ base_url, api_key, model, web_search }),
+      body: JSON.stringify({ base_url, api_key, model, web_search, custom_prompt }),
     }),
 
   // AI Usage

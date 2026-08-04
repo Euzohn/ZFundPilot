@@ -265,18 +265,20 @@ def _save_ai_config(data: dict) -> None:
         json.dump(to_save, f, indent=2)
 
 
-def update_ai_config(base_url: str, api_key: str, model: str, web_search: bool) -> None:
+def update_ai_config(base_url: str, api_key: str, model: str, web_search: bool, custom_prompt: str = "") -> None:
     """更新 AI 配置（内存 + 持久化）。"""
-    global AI_BASE_URL, AI_API_KEY, AI_MODEL, AI_WEB_SEARCH
+    global AI_BASE_URL, AI_API_KEY, AI_MODEL, AI_WEB_SEARCH, AI_CUSTOM_PROMPT
     AI_BASE_URL = base_url
     AI_API_KEY = api_key
     AI_MODEL = model
     AI_WEB_SEARCH = web_search
+    AI_CUSTOM_PROMPT = custom_prompt
     _save_ai_config({
         "base_url": base_url,
         "api_key": api_key,
         "model": model,
         "web_search": web_search,
+        "custom_prompt": custom_prompt,
     })
 
 
@@ -285,6 +287,7 @@ AI_BASE_URL: str = _ai_config.get("base_url", "")
 AI_API_KEY: str = _ai_config.get("api_key", "")
 AI_MODEL: str = _ai_config.get("model", "")
 AI_WEB_SEARCH: bool = _ai_config.get("web_search", True)
+AI_CUSTOM_PROMPT: str = _ai_config.get("custom_prompt", "")
 
 
 # ---------------------------------------------------------------------------

@@ -233,6 +233,7 @@ export default function Settings() {
   const [aiApiKey, setAiApiKey] = useState("")
   const [aiModel, setAiModel] = useState("")
   const [aiWebSearch, setAiWebSearch] = useState(true)
+  const [aiCustomPrompt, setAiCustomPrompt] = useState("")
   const [savingAI, setSavingAI] = useState(false)
   const [resettingSectors, setResettingSectors] = useState(false)
 
@@ -249,11 +250,12 @@ export default function Settings() {
       setAiBaseUrl(aiConfig.base_url)
       setAiModel(aiConfig.model)
       setAiWebSearch(aiConfig.web_search)
+      setAiCustomPrompt(aiConfig.custom_prompt || "")
     }
   }, [aiConfig])
 
   // Clear test result when config changes
-  useEffect(() => { setTestResult(null) }, [aiBaseUrl, aiApiKey, aiModel, aiWebSearch])
+  useEffect(() => { setTestResult(null) }, [aiBaseUrl, aiApiKey, aiModel, aiWebSearch, aiCustomPrompt])
 
   // --- Channels ---
   const moveUp = async (i: number) => {
@@ -352,7 +354,7 @@ export default function Settings() {
     if (!aiBaseUrl.trim() || !aiModel.trim()) { toast.error(t.settings.aiConfigRequired); return }
     setSavingAI(true)
     try {
-      await api.updateAIConfig(aiBaseUrl.trim(), aiApiKey, aiModel.trim(), aiWebSearch)
+      await api.updateAIConfig(aiBaseUrl.trim(), aiApiKey, aiModel.trim(), aiWebSearch, aiCustomPrompt.trim().slice(0, 1000))
       setAiApiKey("")
       reloadAIConfig()
       toast.success(t.settings.aiConfigSaved)
@@ -606,6 +608,25 @@ export default function Settings() {
                       {detectProvider(aiBaseUrl, lang)}
                     </span>
                   )}
+                </div>
+
+                {/* 浅色分隔线 — 技术配置 / 个性化指令 */}
+                <div className="border-t border-border/40" />
+
+                {/* 自定义指令 */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs text-muted-foreground">{t.settings.customPrompt}</Label>
+                    <span className="text-[10px] text-muted-foreground/50">{aiCustomPrompt.length}/1000</span>
+                  </div>
+                  <textarea
+                    value={aiCustomPrompt}
+                    onChange={(e) => setAiCustomPrompt(e.target.value.slice(0, 1000))}
+                    rows={4}
+                    placeholder={t.settings.customPromptPlaceholder}
+                    className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-xs leading-relaxed outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 placeholder:text-muted-foreground/50"
+                  />
+                  <p className="text-[10px] text-muted-foreground/60">{t.settings.customPromptHint}</p>
                 </div>
 
                 {/* 操作按钮 */}

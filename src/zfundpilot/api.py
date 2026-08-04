@@ -301,6 +301,7 @@ class AIConfigUpdate(BaseModel):
     api_key: str = ""
     model: str
     web_search: bool = True
+    custom_prompt: str = ""
 
 
 class ChatRequest(BaseModel):
@@ -315,6 +316,7 @@ def get_ai_config() -> dict[str, Any]:
         "model": config.AI_MODEL,
         "has_key": bool(config.AI_API_KEY),
         "web_search": config.AI_WEB_SEARCH,
+        "custom_prompt": config.AI_CUSTOM_PROMPT,
     }
 
 
@@ -322,7 +324,7 @@ def get_ai_config() -> dict[str, Any]:
 def update_ai_config(request: Request, body: AIConfigUpdate) -> dict[str, Any]:
     """保存 AI 配置。api_key 为空时保留原值。"""
     api_key = body.api_key if body.api_key else config.AI_API_KEY
-    config.update_ai_config(body.base_url, api_key, body.model, body.web_search)
+    config.update_ai_config(body.base_url, api_key, body.model, body.web_search, body.custom_prompt)
     db.log_audit("update_ai_config", ip=_get_client_ip(request),
                   username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
                   detail={"base_url": body.base_url, "model": body.model,

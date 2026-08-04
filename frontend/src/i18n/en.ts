@@ -489,6 +489,11 @@ const en: typeof zh = {
     resetCustom: "Reset Custom",
     resetting: "Resetting...",
     resetSectorMapping: "Reset Sector Mapping",
+    dataBackup: "Data Backup",
+    backupHint: "Export all user data (transactions/funds/watchlist/auto-invest/preferences) as a ZIP file. NAV history excluded — re-fetch to rebuild.",
+    exportZip: "Export Backup",
+    backupExported: "Backup exported",
+    backupFailed: "Backup export failed",
   },
   overview: {
     title: "Portfolio Overview",

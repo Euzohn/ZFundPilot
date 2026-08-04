@@ -487,6 +487,11 @@ const zh = {
     resetCustom: "重置自定义",
     resetting: "重置中...",
     resetSectorMapping: "重置板块映射",
+    dataBackup: "数据备份",
+    backupHint: "导出全部用户数据（交易/基金/自选/定投/偏好）为 ZIP 文件。净值历史不含，可重新拉取重建。",
+    exportZip: "导出备份",
+    backupExported: "备份已导出",
+    backupFailed: "备份导出失败",
   },
   overview: {
     title: "组合总览",

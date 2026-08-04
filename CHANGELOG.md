@@ -11,6 +11,10 @@
 - `fund_filter.py` 激活死代码 `_EXECUTOR`/`_MAX_METRICS_FUNDS`：`_enrich_with_metrics()` 复用 `compare.py` 指标计算函数，`filter_funds()` 新增 `with_metrics` 参数
 - 自选关注列表功能：`watchlist` 表 + `POST/GET/DELETE /api/watchlist` 端点，新建 `/watchlist` 页面，支持追踪未持有基金
 - 前端 `FundFilterItem` 类型补全 `returns`/`risk` 字段
+- 全量数据备份导出 `GET /api/export/zip`：ZIP 含 5 个 CSV（交易/基金/自选/定投/偏好），Settings 页面加备份按钮，净值历史不含可重新拉取
+
+### Changed
+- 基金筛选器 UX 改进：筛选芯片自动搜索 + 代码搜索忽略类型/板块 + 两阶段加载指标（先基础后指标，非阻塞）+ 空结果友好提示
 
 ### Fixed
 - `/api/risk` flags 序列化补回 `code` + `params` 字段（v0.12.1 引入 i18n code 体系时 API 层漏传，英文翻译表失效）

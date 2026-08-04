@@ -1057,6 +1057,19 @@ def export_transactions() -> Response:
     )
 
 
+@app.get("/api/export/zip")
+def export_backup(request: Request) -> Response:
+    """全量备份导出（ZIP 含 5 个 CSV：交易/基金/自选/定投/偏好）。"""
+    content = data_io.export_backup_zip()
+    db.log_audit("export_backup", ip=_get_client_ip(request), detail={})
+    date_str = datetime.now(config.TIMEZONE).strftime("%Y%m%d")
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="zfundpilot_backup_{date_str}.zip"'},
+    )
+
+
 @app.post("/api/csv/parse")
 async def parse_csv(file: UploadFile = File(...)) -> dict[str, Any]:
     content = await file.read()

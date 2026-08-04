@@ -52,7 +52,7 @@ ZFundPilot/
 │   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
 │   ├── scheduler.py         # APScheduler 定时净值更新
 │   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）
-│   └── data_io.py           # CSV 导入/导出
+│   └── data_io.py           # CSV 导入/导出 + 全量备份 ZIP
 ├── frontend/src/            # React 前端
 │   ├── App.tsx              # 路由（/ → Home 独立页，其余在 Layout 内）
 │   ├── pages/               # 15 个页面
@@ -151,6 +151,7 @@ ZFundPilot/
 - 静态文件: 生产模式挂载 `frontend/dist/` 到 `/`
 - i18n 序列化: `/api/risk` flags 和 `/api/rebalance` advice 输出 `code`+`params`，前端 `backendLabels.ts` 按 code 翻译
 - 自选列表: `POST/GET/DELETE /api/watchlist`，加入时自动获取基金 meta 并 upsert 到 `funds` 表
+- 数据备份: `GET /api/export/zip`，ZIP 含 5 个 CSV（交易/基金/自选/定投/偏好），净值历史不含
 
 ### config.py — 全局配置
 
@@ -419,6 +420,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - 基金筛选器独立页面 `/screener`：全市场筛选 + Top 30 指标增强（1年收益/回撤/波动率/规模/经理），列头可排序，一键加入对比或自选
 - `fund_filter.py` 激活死代码 `_EXECUTOR`/`_MAX_METRICS_FUNDS`，`_enrich_with_metrics()` 复用 `compare.py` 指标计算
 - 自选关注列表 `/watchlist`：`watchlist` 表 + 3 个 API 端点，支持追踪未持有基金
+- 全量数据备份导出 `GET /api/export/zip`：ZIP 含 5 个 CSV（交易/基金/自选/定投/偏好），Settings 页面加备份按钮
+- 基金筛选器 UX 改进：筛选芯片自动搜索 + 代码搜索忽略类型/板块 + 两阶段加载指标（先基础后指标，非阻塞）
 - 修复 /api/risk 和 /api/rebalance 序列化丢弃 `code`+`params`（v0.12.1 引入 i18n code 体系时 API 层漏传）
 - Risk.tsx 再平衡建议因 loading 条件 bug 从未显示，改为四态分支
 

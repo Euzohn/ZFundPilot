@@ -12,9 +12,11 @@ CSV 列（表头，第一行）：
 from __future__ import annotations
 
 import io
+import zipfile
 
 import pandas as pd
 
+from . import db
 from .models import (
     ACTION_BUY,
     ACTION_DIVIDEND,
@@ -196,3 +198,38 @@ def transactions_to_csv_bytes(transactions: list[Transaction]) -> bytes:
         rows.append({c: d.get(c, "") for c in CSV_COLUMNS})
     df = pd.DataFrame(rows, columns=CSV_COLUMNS)
     return df.to_csv(index=False).encode("utf-8-sig")
+
+
+def _dicts_to_csv_bytes(data: list[dict], fallback_header: str) -> bytes:
+    """将 dict 列表转为 CSV bytes（空数据时用 fallback_header）。"""
+    if data:
+        return pd.DataFrame(data).to_csv(index=False).encode("utf-8-sig")
+    return f"{fallback_header}\n".encode("utf-8-sig")
+
+
+def export_backup_zip() -> bytes:
+    """打包用户数据为 ZIP（5 个 CSV：交易/基金/自选/定投/偏好）。
+
+    不含 nav_history 和 portfolio_snapshots — 重新拉取净值即可重建。
+    """
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("transactions.csv", transactions_to_csv_bytes(db.get_transactions_desc()))
+        zf.writestr("funds.csv", _dicts_to_csv_bytes(
+            [f.to_dict() for f in db.get_funds()],
+            "fund_code,fund_name,fund_type,sector,created_at,updated_at",
+        ))
+        zf.writestr("watchlist.csv", _dicts_to_csv_bytes(
+            db.get_watchlist(),
+            "fund_code,note,added_at,fund_name,fund_type,sector",
+        ))
+        zf.writestr("auto_invest_plans.csv", _dicts_to_csv_bytes(
+            db.get_auto_invest_plans(),
+            "id,fund_code,amount,cadence,day_of_week,day_of_month,channel,note,enabled,next_run,last_run,last_tx_id,created_at,updated_at",
+        ))
+        prefs = db.get_all_preferences()
+        zf.writestr("preferences.csv", _dicts_to_csv_bytes(
+            [{"key": k, "value": v} for k, v in prefs.items()],
+            "key,value",
+        ))
+    return buf.getvalue()

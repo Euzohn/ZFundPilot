@@ -29,7 +29,7 @@ import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
   SlidersHorizontal, LogOut, Loader2, CheckCircle2, XCircle, Zap,
-  Search, X, Palette, UserCircle, Clock,
+  Search, X, Palette, UserCircle, Clock, Archive, FileDown,
 } from "lucide-react"
 
 const PROVIDER_NAMES: Record<string, { zh: string; en: string }> = {
@@ -1049,6 +1049,34 @@ export default function Settings() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* ── 数据备份 ── */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Archive className="h-5 w-5 text-primary" />
+            {t.settings.dataBackup}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">{t.settings.backupHint}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              try {
+                await api.exportZip()
+                toast.success(t.settings.backupExported)
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : t.settings.backupFailed)
+              }
+            }}
+          >
+            <FileDown className="mr-1.5 h-4 w-4" />
+            {t.settings.exportZip}
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -242,6 +242,12 @@ export const api = {
     const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`
     return downloadWithAuth("/csv/export", `transactions_${ts}.csv`)
   },
+  exportZip: () => {
+    const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, "0")
+    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
+    return downloadWithAuth("/export/zip", `zfundpilot_backup_${ts}.zip`)
+  },
   parseCsv: async (file: File): Promise<CSVParseResult> => {
     const form = new FormData()
     form.append("file", file)

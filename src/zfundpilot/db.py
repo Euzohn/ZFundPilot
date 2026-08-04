@@ -140,8 +140,9 @@ def init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS watchlist (
-                fund_code TEXT PRIMARY KEY,
+                fund_code  TEXT PRIMARY KEY,
                 note      TEXT DEFAULT '',
+                group_name TEXT DEFAULT '',
                 added_at  TEXT DEFAULT (datetime('now','localtime'))
             );
             """
@@ -167,6 +168,14 @@ def _migrate_add_columns() -> None:
             # 回填：note 含 "T+1确认" 的旧交易标记为 is_t1
             conn.execute(
                 "UPDATE transactions SET is_t1=1 WHERE note LIKE '%T+1确认%'"
+            )
+
+        # watchlist 表补充 group_name 列
+        wl_cols = {r["name"] for r in
+                   conn.execute("PRAGMA table_info(watchlist)").fetchall()}
+        if wl_cols and "group_name" not in wl_cols:
+            conn.execute(
+                "ALTER TABLE watchlist ADD COLUMN group_name TEXT DEFAULT ''"
             )
 
 
@@ -694,12 +703,12 @@ def get_due_auto_invest_plans(today: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # 自选关注列表
 # ---------------------------------------------------------------------------
-def add_to_watchlist(fund_code: str, note: str = "") -> None:
+def add_to_watchlist(fund_code: str, note: str = "", group_name: str = "") -> None:
     with get_connection() as conn:
         conn.execute(
-            "INSERT INTO watchlist(fund_code, note) VALUES(?,?) "
-            "ON CONFLICT(fund_code) DO UPDATE SET note=excluded.note",
-            (fund_code.strip(), note),
+            "INSERT INTO watchlist(fund_code, note, group_name) VALUES(?,?,?) "
+            "ON CONFLICT(fund_code) DO UPDATE SET note=excluded.note, group_name=excluded.group_name",
+            (fund_code.strip(), note, group_name),
         )
 
 
@@ -708,13 +717,21 @@ def remove_from_watchlist(fund_code: str) -> None:
         conn.execute("DELETE FROM watchlist WHERE fund_code=?", (fund_code,))
 
 
+def update_watchlist_group(fund_code: str, group_name: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE watchlist SET group_name=? WHERE fund_code=?",
+            (group_name, fund_code),
+        )
+
+
 def get_watchlist() -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT w.fund_code, w.note, w.added_at, "
+            "SELECT w.fund_code, w.note, w.group_name, w.added_at, "
             "f.fund_name, f.fund_type, f.sector "
             "FROM watchlist w LEFT JOIN funds f ON w.fund_code=f.fund_code "
-            "ORDER BY w.added_at DESC"
+            "ORDER BY w.group_name, w.added_at DESC"
         ).fetchall()
     return [dict(r) for r in rows]
 

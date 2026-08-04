@@ -561,6 +561,11 @@ def compare_funds(body: CompareRequest) -> dict[str, Any]:
 class WatchlistRequest(BaseModel):
     code: str
     note: str = ""
+    group_name: str = ""
+
+
+class WatchlistGroupRequest(BaseModel):
+    group_name: str = ""
 
 
 @app.post("/api/watchlist")
@@ -573,14 +578,21 @@ def add_to_watchlist(request: Request, body: WatchlistRequest) -> dict[str, Any]
         raise HTTPException(400, meta.message or f"基金 {code} 不存在")
     db.upsert_fund(Fund(code, meta.fund_name, meta.fund_type, meta.sector))
     fetch_fund.save_sector_mapping(code, meta.sector)
-    db.add_to_watchlist(code, body.note)
-    db.log_audit("watchlist_add", ip=_get_client_ip(request), detail={"code": code})
+    db.add_to_watchlist(code, body.note, body.group_name)
+    db.log_audit("watchlist_add", ip=_get_client_ip(request), detail={"code": code, "group_name": body.group_name})
     return {"ok": True, "code": code}
 
 
 @app.get("/api/watchlist")
 def get_watchlist() -> list[dict]:
     return db.get_watchlist()
+
+
+@app.put("/api/watchlist/{code}/group")
+def update_watchlist_group(request: Request, code: str, body: WatchlistGroupRequest) -> dict[str, Any]:
+    db.update_watchlist_group(code, body.group_name)
+    db.log_audit("watchlist_group", ip=_get_client_ip(request), detail={"code": code, "group_name": body.group_name})
+    return {"ok": True, "code": code}
 
 
 @app.delete("/api/watchlist/{code}")

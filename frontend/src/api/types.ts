@@ -399,6 +399,7 @@ export interface FilterResponse {
 export interface WatchlistItem {
   fund_code: string
   note: string
+  group_name: string
   added_at: string
   fund_name: string
   fund_type: string

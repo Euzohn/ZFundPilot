@@ -376,10 +376,15 @@ export const api = {
 
   // Watchlist
   getWatchlist: () => request<WatchlistItem[]>("/watchlist"),
-  addToWatchlist: (code: string, note?: string) =>
+  addToWatchlist: (code: string, note?: string, groupName?: string) =>
     request<{ ok: boolean; code: string }>("/watchlist", {
       method: "POST",
-      body: JSON.stringify({ code, note: note ?? "" }),
+      body: JSON.stringify({ code, note: note ?? "", group_name: groupName ?? "" }),
+    }),
+  updateWatchlistGroup: (code: string, groupName: string) =>
+    request<{ ok: boolean; code: string }>(`/watchlist/${encodeURIComponent(code)}/group`, {
+      method: "PUT",
+      body: JSON.stringify({ group_name: groupName }),
     }),
   removeFromWatchlist: (code: string) =>
     request<{ ok: boolean; code: string }>(`/watchlist/${encodeURIComponent(code)}`, {

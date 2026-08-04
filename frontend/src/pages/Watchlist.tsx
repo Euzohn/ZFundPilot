@@ -6,14 +6,13 @@ import type { WatchlistItem } from "@/api/types"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { translateFundType, translateSector } from "@/lib/taxonomyLabels"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import ErrorState from "@/components/ErrorState"
-import { Star, Search, Trash2, GitCompare, ArrowLeftRight, ExternalLink, Plus } from "lucide-react"
+import { Star, Trash2, GitCompare, ArrowLeftRight, ExternalLink, Plus } from "lucide-react"
 import { useLang } from "@/i18n/LanguageContext"
 import { toast } from "sonner"
 
@@ -62,7 +61,7 @@ export default function Watchlist() {
   }
 
   const buyFund = (c: string) => {
-    navigate(`/transactions?buy=${c}`)
+    navigate(`/transactions?code=${c}&action=buy`)
   }
 
   const viewDetail = (c: string) => {

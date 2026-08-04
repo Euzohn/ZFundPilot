@@ -5,7 +5,6 @@ import type { FundFilterItem } from "@/api/types"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { translateFundType, translateSector } from "@/lib/taxonomyLabels"
 import PageHeader from "@/components/PageHeader"
@@ -16,7 +15,7 @@ import { pct, pnlColor } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useLang } from "@/i18n/LanguageContext"
 import { toast } from "sonner"
-import { Search, RefreshCw, Check, Star, GitCompare, ChevronDown, ChevronRight, Filter } from "lucide-react"
+import { Search, RefreshCw, Check, Star, GitCompare } from "lucide-react"
 
 type SortField = "code" | "1y" | "max_drawdown" | "volatility" | "scale"
 
@@ -118,15 +117,6 @@ export default function Screener() {
   const handleAddToCompare = () => {
     if (selected.size === 0) return
     navigate(`/compare?codes=${Array.from(selected).join(",")}`)
-  }
-
-  const handleAddToWatchlist = async (code: string) => {
-    try {
-      await api.addToWatchlist(code)
-      toast.success(t.watchlist.added)
-    } catch {
-      toast.error(t.watchlist.addFailed)
-    }
   }
 
   const handleAddSelectedToWatchlist = async () => {
@@ -276,17 +266,6 @@ export default function Screener() {
                 ))}
               </TableBody>
             </Table>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={handleAddToCompare} disabled={selected.size === 0}>
-              <GitCompare className="mr-1 h-3.5 w-3.5" />
-              {t.screener.addToCompare}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={handleAddSelectedToWatchlist} disabled={selected.size === 0}>
-              <Star className="mr-1 h-3.5 w-3.5" />
-              {t.screener.addToWatchlist}
-            </Button>
           </div>
         </>
       )}

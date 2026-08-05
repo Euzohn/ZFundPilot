@@ -319,6 +319,15 @@ def update_fund_sector(fund_code: str, sector: str) -> None:
         )
 
 
+def update_fund_tracking_index(fund_code: str, tracking_index: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE funds SET tracking_index=?, updated_at=datetime('now','localtime') "
+            "WHERE fund_code=?",
+            (tracking_index, fund_code),
+        )
+
+
 # ---------------------------------------------------------------------------
 # transactions 流水 CRUD
 # ---------------------------------------------------------------------------

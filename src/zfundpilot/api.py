@@ -639,6 +639,10 @@ def reset_sectors() -> dict[str, int]:
             db.update_fund_sector(f.fund_code, new_sector)
             fetch_fund.save_sector_mapping(f.fund_code, new_sector)
             count += 1
+        new_idx = fetch_fund._guess_tracking_index(f.fund_name, f.fund_type)
+        if new_idx != f.tracking_index:
+            db.update_fund_tracking_index(f.fund_code, new_idx)
+            count += 1
     analysis.clear_analysis_cache()
     return {"reset": count}
 

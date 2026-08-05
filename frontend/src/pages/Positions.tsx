@@ -209,13 +209,17 @@ export default function Positions() {
                         <div className="flex flex-col">
                           <span className="font-medium max-w-[160px] truncate" title={m.name}>{m.name}</span>
                           <span className="font-mono text-xs text-muted-foreground">{code}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell><Badge variant="outline">{translateFundType(m.type)}</Badge></TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-0.5">
+                          {m.sector ? <Badge variant="secondary" className="font-normal">{translateSector(m.sector)}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
                           {m.trackingIndex && (
                             <span className="text-xs text-muted-foreground">跟踪 {m.trackingIndex}</span>
                           )}
                         </div>
                       </TableCell>
-                      <TableCell><Badge variant="outline">{translateFundType(m.type)}</Badge></TableCell>
-                      <TableCell>{m.sector ? <Badge variant="secondary" className="font-normal">{translateSector(m.sector)}</Badge> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>
 <TableCell className="text-right tabular-nums font-medium">
                         <div className="flex flex-col items-end">
                           <span>{money(m.value)}</span>

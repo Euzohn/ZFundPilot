@@ -49,12 +49,13 @@ def init_db() -> None:
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS funds (
-                fund_code  TEXT PRIMARY KEY,
-                fund_name  TEXT DEFAULT '',
-                fund_type  TEXT DEFAULT '其它',
-                sector     TEXT DEFAULT '',
-                created_at TEXT DEFAULT (datetime('now','localtime')),
-                updated_at TEXT DEFAULT (datetime('now','localtime'))
+                fund_code       TEXT PRIMARY KEY,
+                fund_name       TEXT DEFAULT '',
+                fund_type       TEXT DEFAULT '其它',
+                sector          TEXT DEFAULT '',
+                tracking_index  TEXT DEFAULT '',
+                created_at      TEXT DEFAULT (datetime('now','localtime')),
+                updated_at      TEXT DEFAULT (datetime('now','localtime'))
             );
 
             CREATE TABLE IF NOT EXISTS transactions (
@@ -178,6 +179,14 @@ def _migrate_add_columns() -> None:
                 "ALTER TABLE watchlist ADD COLUMN group_name TEXT DEFAULT ''"
             )
 
+        # funds 表补充 tracking_index 列
+        fund_cols = {r["name"] for r in
+                     conn.execute("PRAGMA table_info(funds)").fetchall()}
+        if fund_cols and "tracking_index" not in fund_cols:
+            conn.execute(
+                "ALTER TABLE funds ADD COLUMN tracking_index TEXT DEFAULT ''"
+            )
+
 
 def _migrate_relax_transactions_schema() -> None:
     """放宽 transactions 表约束：移除 CHECK(action) 和 amount/shares 的 NOT NULL。
@@ -251,10 +260,10 @@ def _migrate_legacy_holdings() -> None:
             if not shares:
                 shares = amount / cost_nav if cost_nav else amount  # 无净值时份额=金额兜底
             conn.execute(
-                "INSERT OR IGNORE INTO funds(fund_code,fund_name,fund_type,sector) "
-                "VALUES(?,?,?,?)",
+                "INSERT OR IGNORE INTO funds(fund_code,fund_name,fund_type,sector,tracking_index) "
+                "VALUES(?,?,?,?,?)",
                 (code, d.get("fund_name") or code, d.get("fund_type") or "其它",
-                 d.get("sector") or ""),
+                 d.get("sector") or "", ""),
             )
             conn.execute(
                 "INSERT INTO transactions(fund_code,action,date,amount,shares,nav,note) "
@@ -273,16 +282,17 @@ def upsert_fund(fund: Fund) -> None:
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO funds(fund_code, fund_name, fund_type, sector)
-            VALUES(?,?,?,?)
+            INSERT INTO funds(fund_code, fund_name, fund_type, sector, tracking_index)
+            VALUES(?,?,?,?,?)
             ON CONFLICT(fund_code) DO UPDATE SET
                 fund_name=excluded.fund_name,
                 fund_type=excluded.fund_type,
                 sector=excluded.sector,
+                tracking_index=excluded.tracking_index,
                 updated_at=datetime('now','localtime')
             """,
             (fund.fund_code.strip(), fund.fund_name.strip(),
-             fund.fund_type, fund.sector),
+             fund.fund_type, fund.sector, fund.tracking_index),
         )
 
 
@@ -729,7 +739,7 @@ def get_watchlist() -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT w.fund_code, w.note, w.group_name, w.added_at, "
-            "f.fund_name, f.fund_type, f.sector "
+            "f.fund_name, f.fund_type, f.sector, f.tracking_index "
             "FROM watchlist w LEFT JOIN funds f ON w.fund_code=f.fund_code "
             "ORDER BY w.group_name, w.added_at DESC"
         ).fetchall()

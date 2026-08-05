@@ -197,6 +197,12 @@ const handleDelete = async (txId: number) => {
               </Badge>
             )}
             {fund?.sector && <Badge variant="outline" className="font-normal">{translateSector(fund.sector)}</Badge>}
+            {fund?.tracking_index && (
+              <Badge variant="outline" className="font-normal gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />
+                {t.fundDetail.trackingIndex}: {fund.tracking_index}
+              </Badge>
+            )}
             {openPositions.length === 1 && (
               <Badge variant="outline" className="font-normal gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: getColorForChannel(openPositions[0].channel) }} />

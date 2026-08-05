@@ -251,6 +251,57 @@ _SECTOR_KEYWORD_MAP = [
 
 _SECTOR_MAP_PATH = os.path.join(config.DATA_DIR, "sector_map.json")
 
+# 基金名称关键词 → 跟踪指数关键词（用于指数型基金实时估值）
+# 按顺序匹配，长关键词优先
+_INDEX_KEYWORD_MAP = [
+    # ================= 宽基 =================
+    ("沪深300", "沪深300"), ("中证A500", "中证A500"),
+    ("中证500", "中证500"), ("中证1000", "中证1000"),
+    ("创业板50", "创业板50"), ("创业50", "创业板50"),
+    ("创业板", "创业板指"), ("科创50", "科创50"),
+    ("上证50", "上证50"), ("北证50", "北证50"),
+    ("中证A50", "中证A50"),
+
+    # ================= 海外 =================
+    ("纳斯达克100", "纳斯达克"), ("纳斯达克", "纳斯达克"),
+    ("纳指100", "纳斯达克"), ("纳指", "纳斯达克"),
+    ("标普500", "标普500"), ("标普", "标普500"),
+    ("恒生科技", "恒生科技"), ("恒生互联网", "恒生科技"),
+    ("恒生", "恒生指数"),
+    ("日经", "日经225"), ("法国CAC", "法国CAC40"), ("德国DAX", "德国DAX"),
+
+    # ================= 行业/主题 =================
+    ("半导体材料设备", "半导体材料设备"), ("半导体", "半导体"),
+    ("人工智能", "人工智能"), ("AIGC", "人工智能"),
+    ("光伏", "光伏"), ("储能", "储能"),
+    ("新能源车", "新能源车"), ("新能源汽车", "新能源车"),
+    ("新能源", "新能源"), ("锂电池", "新能源"), ("锂电", "新能源"),
+    ("军工", "军工"), ("国防", "军工"),
+    ("证券", "证券"), ("券商", "证券"),
+    ("银行", "银行"), ("保险", "保险"),
+    ("创新药", "创新药"), ("生物医药", "医药"), ("医疗器械", "医药"),
+    ("医疗", "医药"), ("医药", "医药"),
+    ("食品饮料", "消费"), ("白酒", "消费"), ("消费", "消费"),
+    ("科技", "科技"), ("信息技术", "信息技术"),
+    ("软件", "信息技术"), ("信创", "信息技术"), ("云计算", "信息技术"),
+    ("通信", "通信"), ("光模块", "通信"), ("CPO", "通信"),
+    ("机器人", "机器人"),
+    ("PCB", "PCB"), ("覆铜板", "PCB"),
+    ("煤炭", "煤炭"), ("钢铁", "钢铁"), ("黄金", "黄金"),
+    ("化工", "化工"), ("传媒", "传媒"), ("游戏", "传媒"),
+    ("农业", "农业"), ("环保", "环保"), ("电力", "电力"),
+    ("房地产", "房地产"), ("地产", "房地产"),
+    ("交运", "交运物流"), ("物流", "交运物流"),
+    ("石油", "石油石化"), ("石化", "石油石化"),
+    ("旅游", "旅游"), ("酒店", "旅游"),
+    ("建筑", "建筑建材"), ("建材", "建筑建材"),
+    ("高端装备", "高端装备"), ("先进制造", "先进制造"),
+    ("电网", "电力设备"), ("电力设备", "电力设备"),
+    ("商业航天", "商业航天"), ("卫星", "商业航天"), ("低空经济", "商业航天"),
+    ("稀土", "稀土永磁"), ("有色", "有色金属"),
+    ("电子", "电子"), ("消费电子", "电子"),
+]
+
 _HTTP_HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Referer": "https://fund.eastmoney.com/",
@@ -271,11 +322,12 @@ class FetchResult:
 
 @dataclass
 class FundMeta:
-    """基金基础信息（名称/类型/板块）。"""
+    """基金基础信息（名称/类型/板块/跟踪指数）。"""
     fund_code: str
     fund_name: str = ""
     fund_type: str = "其它"
     sector: str = ""
+    tracking_index: str = ""
     ok: bool = False
     message: str = ""
     code: str = ""
@@ -344,6 +396,20 @@ def _guess_sector(fund_name: str) -> str:
         if keyword in fund_name:
             return sector
     return "其它"
+
+
+def _guess_tracking_index(fund_name: str, fund_type: str = "") -> str:
+    """通过基金名称关键词推断跟踪指数（仅指数型基金有意义）。
+
+    合并用户自定义 + 默认关键词，自定义排前面优先匹配。
+    """
+    if fund_type and fund_type != "指数型":
+        return ""
+    merged = _load_custom_keywords("index_keywords_custom") + _INDEX_KEYWORD_MAP
+    for keyword, idx in merged:
+        if keyword in fund_name:
+            return idx
+    return ""
 
 
 def save_sector_mapping(fund_code: str, sector: str) -> None:
@@ -433,8 +499,11 @@ def fetch_fund_meta(fund_code: str) -> FundMeta:
     if not sector:
         sector = _guess_sector(name)
 
+    tracking_index = _guess_tracking_index(name, fund_type)
+
     return FundMeta(fund_code=fund_code, fund_name=name,
                     fund_type=fund_type, sector=sector,
+                    tracking_index=tracking_index,
                     ok=True, message="成功", code="ok")
 
 

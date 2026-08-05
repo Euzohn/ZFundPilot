@@ -41,7 +41,7 @@ ZFundPilot/
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
 │   ├── models.py            # 数据结构（Fund/Transaction/Position/PortfolioSummary）
 │   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）+ 重仓股/排名/档案
-│   ├── fetch_estimate.py   # 基金实时估值（AkShare fund_value_estimation_em）
+│   ├── fetch_estimate.py   # 基金实时估值（东财估值 + 指数/ETF 兜底）
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
 │   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）
 │   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）
@@ -205,13 +205,18 @@ ZFundPilot/
 
 ### fetch_estimate.py — 实时估值
 
-- 数据源：AkShare `fund_value_estimation_em()`（覆盖全市场基金），天天基金 fundgz API 已废弃
+- 主数据源：AkShare `fund_value_estimation_em()`（覆盖全市场基金），天天基金 fundgz API 已废弃
+- 指数估值兜底：东财估值不可用时，对指数型基金用跟踪指数/ETF 实时涨跌估算
+  - `fetch_index_quotes(keywords)`: 批量获取指数/ETF 实时涨跌幅，两级匹配（指数实时 → ETF 实时，仅按需）
+  - `estimate_from_index(fund_code, tracking_index, prev_nav, prev_date)`: 用指数涨跌构建 FundEstimate
+  - 数据源：`stock_zh_index_spot_sina`（A 股 562）+ `index_global_spot_em`（全球 56）+ `stock_hk_index_spot_em`（港股 359）+ `fund_etf_spot_em`（ETF 1566，行业/主题代理）
+  - 指数缓存 30s，ETF 缓存 60s（拉取较慢）
 - `fetch_estimate(fund_code)`: 获取单只基金估值（`gsz`/`gszzl`/`gztime`），30s 内存缓存
 - `fetch_estimates(fund_codes)`: 批量获取，30s 批量缓存
 - `stale-if-error`: API 失败时优先返回过期缓存而非空列表，避免短暂网络波动导致前端显示断档
 - `gztime` 从估值列名提取日期（如 `2024-07-30-估算数据-估算值` → `2024-07-30 15:00`），而非用 `datetime.now()`，避免跨日数据时间戳错误
 - 估算失效检测：`jzrq == gztime[:10]` 时标记 `ok=False`（真实净值已公布）
-- API: `GET /api/estimate`（批量 + 组合汇总）+ `GET /api/funds/{code}/estimate`（单只）
+- API: `GET /api/estimate`（批量 + 组合汇总，含指数兜底）+ `GET /api/funds/{code}/estimate`（单只，含指数兜底）
 
 ### analysis.py — 收益计算
 
@@ -405,7 +410,9 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ## 十一、数据源
 
 - **AkShare** (`ak.fund_open_fund_info_em`): 主数据源，基金净值历史
-- **AkShare** (`ak.fund_value_estimation_em`): 实时估值（覆盖全市场基金，交易日实时估算涨跌幅）
+- **AkShare** (`ak.fund_value_estimation_em`): 实时估值（覆盖全市场基金，交易日实时估算涨跌幅，目前不可用）
+- **AkShare** (`ak.stock_zh_index_spot_sina` / `ak.index_global_spot_em` / `ak.stock_hk_index_spot_em`): 指数实时行情（A 股/全球/港股），指数基金估值兜底
+- **AkShare** (`ak.fund_etf_spot_em`): ETF 实时行情（1566 只），行业/主题指数基金估值代理
 - **天天基金** (`fund.eastmoney.com/pingzhongdata`): fallback 数据源 + 基金档案（经理/规模）
 - **天天基金** (`fund.eastmoney.com/{code}.html`): 风险等级抓取（HTML 解析）
 - **天天基金** (`fundf10.eastmoney.com`): 费率抓取（HTML 解析）
@@ -414,6 +421,14 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ---
 
 ## 十二、当前工作状态
+
+### Unreleased
+
+- 指数基金跟踪指数估值：`funds` 表加 `tracking_index` 列，`fetch_fund.py` 按基金名称推断跟踪指数关键词
+- `fetch_estimate.py` 新增 `fetch_index_quotes()` + `estimate_from_index()`：东财估值不可用时用指数/ETF 实时涨跌估算
+- 数据源：`stock_zh_index_spot_sina` + `index_global_spot_em` + `stock_hk_index_spot_em` + `fund_etf_spot_em`（ETF 代理行业指数）
+- 两级匹配：先查指数实时（~5s），未匹配再查 ETF（~17s，仅按需）
+- 前端展示：FundDetail badge + Positions/Watchlist 名称列小字
 
 ### v0.14.0 - 2026-08-04
 

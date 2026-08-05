@@ -36,6 +36,7 @@ class Fund:
     fund_name: str = ""
     fund_type: str = "其它"
     sector: str = ""
+    tracking_index: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -143,6 +144,7 @@ class Position:
     fund_type: str
     sector: str
     channel: str = ""                 # 购买渠道
+    tracking_index: str = ""           # 跟踪指数关键词（指数型基金用于实时估值）
     held_shares: float = 0.0          # 当前持有份额
     total_cost: float = 0.0           # 当前持仓成本（已扣卖出结转）
     pending_buy_cost: float = 0.0     # 待确认买入金额（份额未确认，不参与市值/盈亏计算，仅用于 is_open 判断）

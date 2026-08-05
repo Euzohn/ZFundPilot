@@ -3,6 +3,7 @@ export interface Fund {
   fund_name: string
   fund_type: string
   sector: string
+  tracking_index: string
 }
 
 export interface Transaction {
@@ -25,6 +26,7 @@ export interface Position {
   fund_type: string
   sector: string
   channel: string
+  tracking_index: string
   held_shares: number
   total_cost: number
   avg_cost_nav: number | null
@@ -136,6 +138,7 @@ export interface FundMeta {
   fund_name: string
   fund_type: string
   sector: string
+  tracking_index: string
   ok: boolean
   message: string
 }
@@ -404,6 +407,7 @@ export interface WatchlistItem {
   fund_name: string
   fund_type: string
   sector: string
+  tracking_index: string
 }
 
 // ── 定投回测 ──

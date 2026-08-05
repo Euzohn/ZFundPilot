@@ -4,6 +4,16 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Added
+- 指数基金跟踪指数估值：`funds` 表新增 `tracking_index` 列，`fetch_fund.py` 按基金名称推断跟踪指数关键词（沪深300/中证500/创业板指/半导体材料设备/人工智能/纳指/标普/恒生等）
+- `fetch_estimate.py` 新增 `fetch_index_quotes()` + `estimate_from_index()`：东财估值 API 不可用时，用跟踪指数/ETF 实时涨跌估算指数基金当日净值变动
+- 指数行情数据源：`stock_zh_index_spot_sina()`（A 股 562 个）+ `index_global_spot_em()`（全球 56 个）+ `stock_hk_index_spot_em()`（港股 359 个）+ `fund_etf_spot_em()`（ETF 1566 只，行业/主题指数代理）
+- 两级匹配策略：先查指数实时行情（~5s），未匹配的关键词再查 ETF 实时行情（~17s，仅按需触发）
+- 前端展示跟踪指数：FundDetail header badge + Positions/Watchlist 名称列小字
+- `Fund`/`Position`/`FundMeta`/`WatchlistItem` 类型加 `tracking_index` 字段
+
 ## [0.14.0] - 2026-08-04
 
 ### Added

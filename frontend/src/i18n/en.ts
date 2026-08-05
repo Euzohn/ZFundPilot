@@ -733,6 +733,7 @@ const en: typeof zh = {
     heldShares: "Held Shares",
     avgCost: "Avg Cost",
     estimate: "Est.",
+    trackingIndex: "Tracking Index",
     unrealizedPnl: "Unrealized P&L",
     realizedPnl: "Realized P&L",
     breakEven: "Break-even",

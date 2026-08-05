@@ -731,6 +731,7 @@ const zh = {
     heldShares: "持有份额",
     avgCost: "持仓均价",
     estimate: "估算",
+    trackingIndex: "跟踪指数",
     unrealizedPnl: "浮动盈亏",
     realizedPnl: "已实现盈亏",
     breakEven: "回本",

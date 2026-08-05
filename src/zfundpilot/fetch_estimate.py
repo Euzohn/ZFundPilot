@@ -1,7 +1,8 @@
 """基金实时估值获取模块。
 
-数据源：AkShare fund_value_estimation_em（东方财富基金估值表）
-替代已下线的 fundgz.1234567.com.cn JSONP API。
+数据源：
+1. AkShare fund_value_estimation_em（东方财富基金估值表）— 主源，目前不可用
+2. 指数/ETF 实时行情兜底 — 对指数型基金，用跟踪指数或 ETF 的实时涨跌估算
 
 一次调用获取全市场基金估值 + 公布净值，30s 内存缓存。
 仅权益类基金（股票型/混合型/指数型/QDII）有估值数据，债券型/货币型无估值。
@@ -9,6 +10,8 @@
 对外主要函数：
 - fetch_estimate(fund_code)         获取单只基金实时估值
 - fetch_estimates(fund_codes)      批量获取
+- fetch_index_quotes(keywords)     获取指数/ETF 实时涨跌（指数估值兜底）
+- estimate_from_index(...)         用指数涨跌构建 FundEstimate
 """
 
 from __future__ import annotations
@@ -173,3 +176,164 @@ def fetch_estimates(fund_codes: list[str]) -> list[FundEstimate]:
 
 def clear_estimate_cache() -> None:
     _batch_cache.clear()
+
+
+# ---------------------------------------------------------------------------
+# 指数/ETF 实时行情（指数型基金估值兜底）
+# ---------------------------------------------------------------------------
+_index_spot_cache: tuple[float, dict[str, float]] = (0.0, {})
+_etf_spot_cache: tuple[float, dict[str, float]] = (0.0, {})
+_INDEX_CACHE_TTL = 30   # 秒
+_ETF_CACHE_TTL = 60     # 秒（ETF 拉取较慢，缓存更久）
+
+
+def _fetch_index_spot() -> dict[str, float]:
+    """合并三个指数实时 API → {名称: 涨跌幅}。"""
+    result: dict[str, float] = {}
+    try:
+        df = ak.stock_zh_index_spot_sina()
+        for _, row in df.iterrows():
+            name = str(row.get("名称", "")).strip()
+            pct = _safe_float(row.get("涨跌幅"))
+            if name and pct:
+                result[name] = pct
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        df = ak.index_global_spot_em()
+        for _, row in df.iterrows():
+            name = str(row.get("名称", "")).strip()
+            pct = _safe_float(row.get("涨跌幅"))
+            if name and pct:
+                result[name] = pct
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        df = ak.stock_hk_index_spot_em()
+        for _, row in df.iterrows():
+            name = str(row.get("名称", "")).strip()
+            pct = _safe_float(row.get("涨跌幅"))
+            if name and pct:
+                result[name] = pct
+    except Exception:  # noqa: BLE001
+        pass
+    return result
+
+
+def _fetch_etf_spot() -> dict[str, float]:
+    """ETF 实时行情 → {名称: 涨跌幅}。"""
+    result: dict[str, float] = {}
+    try:
+        df = ak.fund_etf_spot_em()
+        for _, row in df.iterrows():
+            name = str(row.get("名称", "")).strip()
+            pct = _safe_float(row.get("涨跌幅"))
+            if name and pct:
+                result[name] = pct
+    except Exception:  # noqa: BLE001
+        pass
+    return result
+
+
+def _get_index_spot_cached() -> dict[str, float]:
+    global _index_spot_cache
+    if _index_spot_cache[0] and time.time() - _index_spot_cache[0] < _INDEX_CACHE_TTL:
+        return _index_spot_cache[1]
+    data = _fetch_index_spot()
+    _index_spot_cache = (time.time(), data)
+    return data
+
+
+def _get_etf_spot_cached() -> dict[str, float]:
+    global _etf_spot_cache
+    if _etf_spot_cache[0] and time.time() - _etf_spot_cache[0] < _ETF_CACHE_TTL:
+        return _etf_spot_cache[1]
+    data = _fetch_etf_spot()
+    _etf_spot_cache = (time.time(), data)
+    return data
+
+
+def _match_keyword(keyword: str, name_map: dict[str, float]) -> float | None:
+    """在 {名称: 涨跌幅} 中匹配关键词。
+
+    匹配策略：精确 → 包含 → 逐字缩短（前缀子串）。
+    """
+    if keyword in name_map:
+        return name_map[keyword]
+    for name, pct in name_map.items():
+        if keyword in name or name in keyword:
+            return pct
+    for length in range(len(keyword) - 1, 2, -1):
+        substr = keyword[:length]
+        for name, pct in name_map.items():
+            if substr in name:
+                return pct
+    return None
+
+
+def fetch_index_quotes(keywords: list[str]) -> dict[str, float]:
+    """批量获取指数/ETF 实时涨跌幅。
+
+    返回 {keyword: 涨跌幅}。先查指数实时行情（快），
+    未匹配的关键词再查 ETF 实时行情（慢，仅按需）。
+    """
+    if not keywords:
+        return {}
+
+    index_map = _get_index_spot_cached()
+    result: dict[str, float] = {}
+    unmatched: list[str] = []
+
+    for kw in keywords:
+        matched = _match_keyword(kw, index_map)
+        if matched is not None:
+            result[kw] = matched
+        else:
+            unmatched.append(kw)
+
+    if unmatched:
+        etf_map = _get_etf_spot_cached()
+        for kw in unmatched:
+            matched = _match_keyword(kw, etf_map)
+            if matched is not None:
+                result[kw] = matched
+
+    return result
+
+
+def estimate_from_index(
+    fund_code: str,
+    fund_name: str,
+    tracking_index: str,
+    prev_nav: float,
+    prev_date: str,
+) -> FundEstimate:
+    """用跟踪指数/ETF 的实时涨跌构建 FundEstimate。"""
+    quotes = fetch_index_quotes([tracking_index])
+    change_pct = quotes.get(tracking_index)
+    if change_pct is None or prev_nav <= 0:
+        return FundEstimate(
+            fund_code, ok=False,
+            message="无指数行情", code="no_index_quote",
+        )
+    gsz = round(prev_nav * (1 + change_pct / 100), 4)
+    now_str = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d %H:%M")
+    return FundEstimate(
+        fund_code=fund_code,
+        fund_name=fund_name,
+        jzrq=prev_date,
+        dwjz=prev_nav,
+        gsz=gsz,
+        gszzl=round(change_pct, 2),
+        gztime=now_str,
+        ok=True,
+        message="指数估值",
+        code="index_estimate",
+    )
+
+
+def clear_index_cache() -> None:
+    """清空指数/ETF 行情缓存。"""
+    global _index_spot_cache, _etf_spot_cache
+    _index_spot_cache = (0.0, {})
+    _etf_spot_cache = (0.0, {})

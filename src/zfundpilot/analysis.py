@@ -95,6 +95,7 @@ def _build_positions_from_transactions(
                 fund_type=fund.fund_type if fund else "其它",
                 sector=fund.sector if fund else "",
                 channel=tx.channel or "",
+                tracking_index=fund.tracking_index if fund else "",
             )
         pos = positions[key]
 

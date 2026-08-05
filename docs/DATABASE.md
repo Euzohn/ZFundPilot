@@ -32,6 +32,7 @@
 | `fund_name` | TEXT | DEFAULT '' | 基金名称 |
 | `fund_type` | TEXT | DEFAULT '其它' | 基金类型（混合型/指数型/QDII/债券型/股票型/其它） |
 | `sector` | TEXT | DEFAULT '' | 板块（如 科技/消费/医药） |
+| `tracking_index` | TEXT | DEFAULT '' | 跟踪指数关键词（指数型基金用于实时估值，如 沪深300/半导体材料设备） |
 | `created_at` | TEXT | DEFAULT datetime('now','localtime') | 创建时间 |
 | `updated_at` | TEXT | DEFAULT datetime('now','localtime') | 更新时间 |
 
@@ -275,7 +276,7 @@
 |---|---|---|
 | `NavPoint` | models.py | 一条净值记录（fund_code/date/nav/accumulated_nav/source） |
 | `FetchResult` | fetch_fund.py | 净值抓取结果（fund_code/ok/written/message/latest_date/latest_nav） |
-| `FundMeta` | fetch_fund.py | 基金元信息（fund_code/fund_name/fund_type/sector） |
+| `FundMeta` | fetch_fund.py | 基金元信息（fund_code/fund_name/fund_type/sector/tracking_index） |
 | `FeeLot` | fetch_fund.py | 赎回费 FIFO 明细（lot_date/shares/fee_rate/fee） |
 | `CalcFeeResponse` | fetch_fund.py | 费率计算结果（fee/fee_rate/lots） |
 | `RiskReport` | risk.py | 风险报告（max_drawdown/volatility/hhi/flags 等） |

@@ -576,7 +576,7 @@ def add_to_watchlist(request: Request, body: WatchlistRequest) -> dict[str, Any]
     meta = fetch_fund.fetch_fund_meta(code)
     if not meta.ok:
         raise HTTPException(400, meta.message or f"基金 {code} 不存在")
-    db.upsert_fund(Fund(code, meta.fund_name, meta.fund_type, meta.sector))
+    db.upsert_fund(Fund(code, meta.fund_name, meta.fund_type, meta.sector, meta.tracking_index))
     fetch_fund.save_sector_mapping(code, meta.sector)
     db.add_to_watchlist(code, body.note, body.group_name)
     db.log_audit("watchlist_add", ip=_get_client_ip(request), detail={"code": code, "group_name": body.group_name})
@@ -614,7 +614,7 @@ def get_fund(code: str) -> dict[str, Any]:
 def fetch_meta(code: str) -> dict[str, Any]:
     meta = fetch_fund.fetch_fund_meta(code)
     if meta.ok:
-        db.upsert_fund(Fund(code, meta.fund_name, meta.fund_type, meta.sector))
+        db.upsert_fund(Fund(code, meta.fund_name, meta.fund_type, meta.sector, meta.tracking_index))
         fetch_fund.save_sector_mapping(code, meta.sector)
     return meta.__dict__
 
@@ -646,6 +646,55 @@ def reset_sectors() -> dict[str, int]:
 # ---------------------------------------------------------------------------
 # 实时估值（AkShare fund_value_estimation_em）
 # ---------------------------------------------------------------------------
+
+def _index_fallback(estimates: list, merged: dict[str, dict]) -> None:
+    """对 AkShare 无数据且无 DB override 的指数型基金，用跟踪指数/ETF 实时涨跌估算。
+
+    直接修改 estimates 列表中的 FundEstimate 对象。
+    """
+    today_str = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
+    pending: list[tuple[int, str, str]] = []  # (index in estimates, fund_code, tracking_index)
+    keywords: set[str] = set()
+
+    for i, est in enumerate(estimates):
+        if est.ok or est.dwjz > 0:
+            continue
+        info = merged.get(est.fund_code, {})
+        # 当日净值已入库的由 DB override 处理，跳过
+        if info.get("latest_date") == today_str:
+            continue
+        idx_kw = info.get("tracking_index", "")
+        if not idx_kw:
+            continue
+        pending.append((i, est.fund_code, idx_kw))
+        keywords.add(idx_kw)
+
+    if not pending:
+        return
+
+    quotes = fetch_estimate.fetch_index_quotes(list(keywords))
+    now_str = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d %H:%M")
+
+    for i, code, idx_kw in pending:
+        change_pct = quotes.get(idx_kw)
+        if change_pct is None:
+            continue
+        latest_nav = db.get_latest_nav(code)
+        if not latest_nav:
+            continue
+        prev_nav = float(latest_nav["nav"])
+        prev_date = str(latest_nav["date"])
+        est = estimates[i]
+        est.dwjz = prev_nav
+        est.jzrq = prev_date
+        est.gsz = round(prev_nav * (1 + change_pct / 100), 4)
+        est.gszzl = round(change_pct, 2)
+        est.gztime = now_str
+        est.ok = True
+        est.code = "index_estimate"
+        est.message = "指数估值"
+
+
 @app.get("/api/estimate")
 def get_estimates() -> dict[str, Any]:
     """批量获取所有持仓基金的实时估值 + 组合汇总。"""
@@ -657,12 +706,17 @@ def get_estimates() -> dict[str, Any]:
         m = merged.setdefault(p.fund_code, {
             "code": p.fund_code, "name": p.fund_name,
             "shares": 0.0, "latest_date": None,
+            "tracking_index": p.tracking_index,
         })
         m["shares"] += p.held_shares
         if p.latest_date and (not m["latest_date"] or p.latest_date > m["latest_date"]):
             m["latest_date"] = p.latest_date
 
     estimates = fetch_estimate.fetch_estimates(list(merged.keys()))
+
+    # 指数估值兜底：对 AkShare 无数据且无 DB override 的指数型基金，
+    # 用跟踪指数/ETF 实时涨跌估算
+    _index_fallback(estimates, merged)
 
     funds: list[dict[str, Any]] = []
     total_est_pnl = 0.0
@@ -735,6 +789,16 @@ def get_estimates() -> dict[str, Any]:
 def get_fund_estimate(code: str) -> dict[str, Any]:
     """获取单只基金的实时估值。"""
     est = fetch_estimate.fetch_estimate(code)
+    # 指数估值兜底
+    if not est.ok:
+        fund = db.get_fund(code)
+        if fund and fund.tracking_index:
+            latest_nav = db.get_latest_nav(code)
+            if latest_nav:
+                est = fetch_estimate.estimate_from_index(
+                    code, fund.fund_name, fund.tracking_index,
+                    float(latest_nav["nav"]), str(latest_nav["date"]),
+                )
     return {
         "fund_code": est.fund_code,
         "fund_name": est.fund_name,
@@ -1132,15 +1196,16 @@ def confirm_import(request: Request, body: CSVImportConfirm) -> dict[str, Any]:
 # 辅助
 # ---------------------------------------------------------------------------
 def _ensure_fund_exists(code: str, name: str = "", ftype: str = "其它",
-                        sector: str = "") -> None:
+                        sector: str = "", tracking_index: str = "") -> None:
     fund = db.get_fund(code)
     if fund and fund.fund_name and fund.fund_name != code:
         return
     if not name:
         meta = fetch_fund.fetch_fund_meta(code)
         if meta.ok:
-            name, ftype, sector = meta.fund_name, meta.fund_type, meta.sector
-    db.upsert_fund(Fund(code, name or code, ftype, sector))
+            name, ftype, sector, tracking_index = (
+                meta.fund_name, meta.fund_type, meta.sector, meta.tracking_index)
+    db.upsert_fund(Fund(code, name or code, ftype, sector, tracking_index))
 
 
 # ---------------------------------------------------------------------------

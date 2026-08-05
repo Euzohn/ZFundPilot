@@ -72,9 +72,9 @@ export default function Positions() {
     : []
 
   // 按基金合并（跨渠道）
-  const merged: Record<string, { name: string; type: string; sector: string; value: number; cost: number; pnl: number; shares: number; avgCost: number | null; latestNav: number | null; channels: number; latestDate: string | null; channel: string | null }> = {}
+  const merged: Record<string, { name: string; type: string; sector: string; trackingIndex: string; value: number; cost: number; pnl: number; shares: number; avgCost: number | null; latestNav: number | null; channels: number; latestDate: string | null; channel: string | null }> = {}
   for (const p of view.filter((p) => p.is_open)) {
-    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, value: 0, cost: 0, pnl: 0, shares: 0, avgCost: null, latestNav: p.latest_nav, channels: 0, latestDate: p.latest_date, channel: p.channel }
+    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, trackingIndex: p.tracking_index || "", value: 0, cost: 0, pnl: 0, shares: 0, avgCost: null, latestNav: p.latest_nav, channels: 0, latestDate: p.latest_date, channel: p.channel }
     m.value += p.market_value
     m.cost += p.total_cost
     m.pnl += p.unrealized_pnl
@@ -209,6 +209,9 @@ export default function Positions() {
                         <div className="flex flex-col">
                           <span className="font-medium max-w-[160px] truncate" title={m.name}>{m.name}</span>
                           <span className="font-mono text-xs text-muted-foreground">{code}</span>
+                          {m.trackingIndex && (
+                            <span className="text-xs text-muted-foreground">跟踪 {m.trackingIndex}</span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell><Badge variant="outline">{translateFundType(m.type)}</Badge></TableCell>

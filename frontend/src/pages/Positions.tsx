@@ -214,9 +214,9 @@ export default function Positions() {
                       <TableCell><Badge variant="outline">{translateFundType(m.type)}</Badge></TableCell>
                       <TableCell>
                         <div className="flex flex-col gap-0.5">
-                          {m.sector ? <Badge variant="secondary" className="font-normal">{translateSector(m.sector)}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
+                          {m.sector ? <Badge variant="outline" className="font-normal">{translateSector(m.sector)}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
                           {m.trackingIndex && (
-                            <span className="text-xs text-muted-foreground">跟踪 {m.trackingIndex}</span>
+                            <span className="text-xs text-muted-foreground">{m.trackingIndex}</span>
                           )}
                         </div>
                       </TableCell>

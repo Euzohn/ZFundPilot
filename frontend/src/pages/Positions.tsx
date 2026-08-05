@@ -213,7 +213,7 @@ export default function Positions() {
                       </TableCell>
                       <TableCell><Badge variant="outline">{translateFundType(m.type)}</Badge></TableCell>
                       <TableCell>
-                        <div className="flex flex-col gap-0.5">
+                        <div className="flex flex-col items-start gap-0.5">
                           {m.sector ? <Badge variant="outline" className="font-normal">{translateSector(m.sector)}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
                           {m.trackingIndex && (
                             <span className="text-xs text-muted-foreground">{m.trackingIndex}</span>

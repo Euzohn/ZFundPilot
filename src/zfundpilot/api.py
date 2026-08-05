@@ -793,8 +793,9 @@ def get_fund_estimate(code: str) -> dict[str, Any]:
     if not est.ok:
         fund = db.get_fund(code)
         if fund and fund.tracking_index:
+            today_str = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
             latest_nav = db.get_latest_nav(code)
-            if latest_nav:
+            if latest_nav and str(latest_nav["date"]) != today_str:
                 est = fetch_estimate.estimate_from_index(
                     code, fund.fund_name, fund.tracking_index,
                     float(latest_nav["nav"]), str(latest_nav["date"]),

@@ -16,6 +16,7 @@ import { translateFundType, translateSector } from "@/lib/taxonomyLabels"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
+import ErrorState from "@/components/ErrorState"
 import { cn } from "@/lib/utils"
 import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search } from "lucide-react"
 import { makeSortHeader } from "@/components/SortHeader"
@@ -31,7 +32,7 @@ export default function Positions() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [closedSortField, setClosedSortField] = useState("realized")
   const [closedSortDir, setClosedSortDir] = useState<"asc" | "desc">("desc")
-  const { data: positions, loading } = useApi(() => api.getPositions(true))
+  const { data: positions, loading, error, reload } = useApi(() => api.getPositions(true))
   const { data: estimate, reload: reloadEstimate } = useApi<EstimateSummary>(() => api.getEstimate())
 
   const hasEstimate = estimate?.funds.some(f => f.ok) ?? false
@@ -141,7 +142,7 @@ export default function Positions() {
       {loading ? (
         <LoadingState />
       ) : !positions ? (
-        <div className="py-20 text-center text-destructive">{t.common.loadFailed}</div>
+        <ErrorState message={error ?? undefined} onRetry={reload} />
       ) : (
       <>
       <div className="flex items-center justify-between flex-wrap gap-2">

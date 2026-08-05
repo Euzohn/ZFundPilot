@@ -87,6 +87,10 @@ function AuditLogPanel() {
     auto_invest_plan_delete: t.settings.auditLabels.auto_invest_plan_delete,
     auto_invest_plan_toggle: t.settings.auditLabels.auto_invest_plan_toggle,
     auto_invest_execute: t.settings.auditLabels.auto_invest_execute,
+    watchlist_add: t.settings.auditLabels.watchlist_add,
+    watchlist_group: t.settings.auditLabels.watchlist_group,
+    watchlist_remove: t.settings.auditLabels.watchlist_remove,
+    export_backup: t.settings.auditLabels.export_backup,
   }
 
   return (

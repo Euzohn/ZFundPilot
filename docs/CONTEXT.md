@@ -428,7 +428,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - `fetch_estimate.py` 新增 `fetch_index_quotes()` + `estimate_from_index()`：东财估值不可用时用指数/ETF 实时涨跌估算
 - 数据源：`stock_zh_index_spot_sina` + `index_global_spot_em` + `stock_hk_index_spot_em` + `fund_etf_spot_em`（ETF 代理行业指数）
 - 两级匹配：先查指数实时（~5s），未匹配再查 ETF（~17s，仅按需）
-- 前端展示：FundDetail badge + Positions/Watchlist 名称列小字
+- 前端展示：FundDetail badge + Positions/Watchlist 板块列小字
+- 回填：`reset_sectors` 端点同时重推 tracking_index，Settings 页面点「重置板块」一次性回填
 
 ### v0.14.0 - 2026-08-04
 

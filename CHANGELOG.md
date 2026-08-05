@@ -11,8 +11,13 @@
 - `fetch_estimate.py` 新增 `fetch_index_quotes()` + `estimate_from_index()`：东财估值 API 不可用时，用跟踪指数/ETF 实时涨跌估算指数基金当日净值变动
 - 指数行情数据源：`stock_zh_index_spot_sina()`（A 股 562 个）+ `index_global_spot_em()`（全球 56 个）+ `stock_hk_index_spot_em()`（港股 359 个）+ `fund_etf_spot_em()`（ETF 1566 只，行业/主题指数代理）
 - 两级匹配策略：先查指数实时行情（~5s），未匹配的关键词再查 ETF 实时行情（~17s，仅按需触发）
-- 前端展示跟踪指数：FundDetail header badge + Positions/Watchlist 名称列小字
+- 前端展示跟踪指数：FundDetail header badge + Positions/Watchlist 板块列小字
 - `Fund`/`Position`/`FundMeta`/`WatchlistItem` 类型加 `tracking_index` 字段
+- `db.update_fund_tracking_index()` 函数 + `reset_sectors` 端点同时回填 tracking_index
+
+### Fixed
+- `get_fund_estimate()` 单只估值端点未检查当日净值已入库，导致用今日净值当 prev_nav 算出错误估值
+- 审计日志 4 条操作（watchlist_add/watchlist_group/watchlist_remove/export_backup）漏加 i18n 标签，显示为英文
 
 ## [0.14.0] - 2026-08-04
 

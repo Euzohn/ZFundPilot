@@ -204,15 +204,17 @@ export default function Watchlist() {
                   <TableRow key={item.fund_code} className="border-t border-border/50">
                     <TableCell className="px-3 py-2 font-mono text-xs">{item.fund_code}</TableCell>
                     <TableCell className="max-w-[200px] px-3 py-2 text-xs">
-                      <div className="flex flex-col">
-                        <span className="truncate" title={item.fund_name}>{item.fund_name || "—"}</span>
+                      <span className="truncate block" title={item.fund_name}>{item.fund_name || "—"}</span>
+                    </TableCell>
+                    <TableCell className="px-3 py-2 text-xs">{item.fund_type ? translateFundType(item.fund_type) : "—"}</TableCell>
+                    <TableCell className="px-3 py-2 text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <span>{item.sector ? translateSector(item.sector) : "—"}</span>
                         {item.tracking_index && (
-                          <span className="text-xs text-muted-foreground">跟踪 {item.tracking_index}</span>
+                          <span className="text-muted-foreground">{item.tracking_index}</span>
                         )}
                       </div>
                     </TableCell>
-                    <TableCell className="px-3 py-2 text-xs">{item.fund_type ? translateFundType(item.fund_type) : "—"}</TableCell>
-                    <TableCell className="px-3 py-2 text-xs">{item.sector ? translateSector(item.sector) : "—"}</TableCell>
                     <TableCell className="px-3 py-2 text-xs">
                       <Input
                         defaultValue={item.group_name}

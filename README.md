@@ -25,6 +25,9 @@
   <br>
   <img src="docs/screenshots/positions.png" alt="持仓明细" width="90%">
   <p><b>持仓明细</b> — 按基金合并的跨渠道持仓视图，净值日期标注新鲜度</p>
+  <br>
+  <img src="docs/screenshots/transactions.png" alt="交易管理" width="90%">
+  <p><b>交易管理</b> — 深色/浅色双主题，交易录入、流水查看、CSV 导入与定投计划</p>
 </div>
 
 ## 这是什么

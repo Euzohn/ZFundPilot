@@ -25,6 +25,9 @@
   <br>
   <img src="docs/screenshots/positions.png" alt="Positions" width="90%">
   <p><b>Positions</b> — Cross-channel merged view per fund, with NAV freshness indicator</p>
+  <br>
+  <img src="docs/screenshots/transactions.png" alt="Transactions" width="90%">
+  <p><b>Transactions</b> — Dark/light dual theme, trade entry, transaction log, CSV import, and auto-invest plans</p>
 </div>
 
 ## What is this

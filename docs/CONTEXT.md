@@ -87,7 +87,7 @@ ZFundPilot/
 ├── DEPLOY.md                # 部署文档
 ├── .env.example             # 环境变量示例
 ├── .github/workflows/       # GitHub Actions CI/CD
-│   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12) → tsc → build
+│   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12 并行) → tsc → build
 ├── tests/                   # Pytest 测试套件
 │   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
 │   └── test_*.py            #   134 个测试用例

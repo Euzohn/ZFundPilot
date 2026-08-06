@@ -262,6 +262,8 @@ ZFundPilot/
 
 MIT License © 2025 Euzohn
 
+数据来源与合规声明见 [NOTICE.md](./NOTICE.md)。
+
 ---
 
 ## Star History

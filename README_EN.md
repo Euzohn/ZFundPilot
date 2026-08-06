@@ -262,6 +262,8 @@ Welcome to submit [Issues](https://github.com/Euzohn/ZFundPilot/issues) for bugs
 
 MIT License © 2025 Euzohn
 
+See [NOTICE.md](./NOTICE.md) for data source attribution and compliance terms.
+
 ---
 
 ## Star History

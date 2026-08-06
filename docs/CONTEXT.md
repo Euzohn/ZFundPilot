@@ -83,14 +83,15 @@ ZFundPilot/
 ├── pyproject.toml           # Python 依赖 + ruff/pytest 配置
 ├── CHANGELOG.md             # 版本变更记录
 ├── README.md / README_EN.md # 项目说明（中/英）
+├── NOTICE.md                # 数据来源与合规声明（License MIT 补充）
 ├── DEPLOY.md                # 部署文档
 ├── .env.example             # 环境变量示例
 ├── .github/workflows/       # GitHub Actions CI/CD
 │   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12) → tsc → build
 ├── tests/                   # Pytest 测试套件
 │   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
-│   └── test_*.py            #   103 个测试用例
-└── CONTEXT.md              # 本文件（不追踪）
+│   └── test_*.py            #   134 个测试用例
+└── docs/CONTEXT.md              # 本文件（不追踪）
 ```
 
 ---
@@ -425,7 +426,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### Unreleased
 
-- （暂无）
+- fix: `_index_fallback` 移除 `est.dwjz > 0` 跳过条件，修复指数兜底不触发
+- fix: `pyproject.toml` 补全 `python-multipart` 运行时依赖声明，修复 CI 测试收集失败
 
 ### v0.15.0 - 2026-08-06
 

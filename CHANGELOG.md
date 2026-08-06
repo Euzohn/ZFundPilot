@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-06
+
 ### Added
 - 指数基金跟踪指数估值：`funds` 表新增 `tracking_index` 列，`fetch_fund.py` 按基金名称推断跟踪指数关键词（沪深300/中证500/创业板指/半导体材料设备/人工智能/纳指/标普/恒生等）
 - `fetch_estimate.py` 新增 `fetch_index_quotes()` + `estimate_from_index()`：东财估值 API 不可用时，用跟踪指数/ETF 实时涨跌估算指数基金当日净值变动
@@ -14,10 +16,19 @@
 - 前端展示跟踪指数：FundDetail header badge + Positions/Watchlist 板块列小字
 - `Fund`/`Position`/`FundMeta`/`WatchlistItem` 类型加 `tracking_index` 字段
 - `db.update_fund_tracking_index()` 函数 + `reset_sectors` 端点同时回填 tracking_index
+- 自选关注列表分组功能：`watchlist` 表新增 `group_name` 列，支持按组管理自选基金
+- AI 助手流式回答跨页面持久化：新 `ChatContext` 方案，`ChatProvider` 挂在 `<Routes>` 外层，切换页面不丢失对话
+
+### Changed
+- 基金对比页删除 FilterSection，与独立基金筛选器（Screener）去重，复用同一套筛选逻辑
 
 ### Fixed
 - `get_fund_estimate()` 单只估值端点未检查当日净值已入库，导致用今日净值当 prev_nav 算出错误估值
 - 审计日志 4 条操作（watchlist_add/watchlist_group/watchlist_remove/export_backup）漏加 i18n 标签，显示为英文
+- Positions/Watchlist 跟踪指数展示位置与样式统一（板块列、outline badge、`items-start` 防撑满）
+- Positions 加载失败改用 `ErrorState` 组件保持一致
+- 添加自选后未清空分组输入框
+- 清理 FundCompare 未使用的 import（useEffect/LogoSpinner/Badge）
 
 ## [0.14.0] - 2026-08-04
 

@@ -22,3 +22,30 @@
 ## 免责声明
 
 本项目仅用于数据分析与风险管理，**不构成任何投资建议**。不提供自动交易、不预测涨跌、不连接券商。使用者应自行承担投资决策的全部风险。
+
+---
+
+# NOTICE (English)
+
+This project (ZFundPilot) is licensed under the [MIT License](./LICENSE).
+
+## Data Source Attribution
+
+This project retrieves data from the following third-party sources at runtime. The data and its copyright belong to the respective sources. This project does not own this data:
+
+- **东方财富 (East Money) / 天天基金 (Tiantian Fund)** (`fund.eastmoney.com`, `fundf10.eastmoney.com`, `fundgz` and other interfaces)
+- **AkShare**-wrapped data sources (Sina Finance, East Money, etc.)
+
+### Terms of Use
+
+Users of this project must comply with the terms of service and applicable laws of the above data sources, including but not limited to:
+
+- No excessive bulk scraping beyond the permitted scope of the data source
+- No unauthorized redistribution, resale, or republication of retrieved data
+- Data is intended for personal data analysis and risk management purposes only
+
+This project assumes no responsibility for any compliance risks or legal liabilities arising from the use, scraping, or forwarding of third-party data.
+
+## Disclaimer
+
+This project is intended solely for data analysis and risk management. **It does not constitute investment advice.** It does not provide automated trading, predict price movements, or connect to brokerages. Users bear full responsibility for their own investment decisions.

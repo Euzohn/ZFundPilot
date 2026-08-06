@@ -377,10 +377,11 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ### Release 流程
 
 1. 确认所有改动已提交并推送
-2. 更新版本号（共 4 处）:
+2. 更新版本号（共 5 处）:
    - `src/zfundpilot/__init__.py` → `__version__ = "x.y.z"`
    - `src/zfundpilot/api.py` → `FastAPI(version="x.y.z")`
    - `pyproject.toml` → `version = "x.y.z"`
+   - `frontend/package.json` → `"version": "x.y.z"`（同步更新 `frontend/package-lock.json`）
    - `docs/CONTEXT.md` → 主标题版本 + 项目树注释 + api.py 描述 + 工作状态区
 3. 更新 `CHANGELOG.md`（`[Unreleased]` → `[x.y.z] - 日期`）
 4. 更新 `README.md` / `README_EN.md`（功能列表、项目结构等）

@@ -661,7 +661,7 @@ def _index_fallback(estimates: list, merged: dict[str, dict]) -> None:
     keywords: set[str] = set()
 
     for i, est in enumerate(estimates):
-        if est.ok or est.dwjz > 0:
+        if est.ok:
             continue
         info = merged.get(est.fund_code, {})
         # 当日净值已入库的由 DB override 处理，跳过

@@ -6,6 +6,17 @@
 
 ## [Unreleased]
 
+### Added
+- `NOTICE.md` 数据来源与合规声明（中英双语），声明第三方数据源（东方财富/天天基金）版权与使用约定
+- README 截图区新增交易管理页面（深色/浅色双主题合并图）
+
+### Changed
+- CI workflow 加固：后端 3 个 Python 版本并行运行（移除 `max-parallel: 1`）、`fail-fast: false` 防单版本故障取消其他 job、`concurrency` 取消同分支旧运行、`timeout-minutes: 20` 安全阀、前端改用 `working-directory` 替代 `cd` 链式
+
+### Fixed
+- `fetch_estimate._index_fallback` 移除 `est.dwjz > 0` 跳过条件，修复指数基金在东财估值表有数据行但当日估算列缺失时指数兜底不触发的 bug
+- `pyproject.toml` `dependencies` 补全 `python-multipart`，修复 CI 用 `pip install -e ".[dev]"` 时 FastAPI `UploadFile` 路由收集失败（`requirements.txt` 已有，pyproject 遗漏）
+
 ## [0.15.0] - 2026-08-06
 
 ### Added

@@ -9,6 +9,7 @@ import ErrorState from "@/components/ErrorState"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, navStr, pnlColor, localDateStr } from "@/lib/format"
 import { RANGE_DAYS } from "@/lib/rangeLabels"
@@ -205,27 +206,34 @@ const handleDelete = async (txId: number) => {
               </Badge>
             )}
             {fund && (
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground">{t.fundDetail.dividendMethod}</span>
-                <div className="flex rounded-md border border-border overflow-hidden">
-                  <button
-                    onClick={async () => {
-                      try { await api.updateDividendMethod(code!, "cash"); await reloadFund(); }
-                      catch { toast.error(t.common.operationFailed) }
-                    }}
-                    className={cn("px-2 py-0.5 text-xs",
-                      fund.dividend_method !== "reinvest" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/50")}
-                  >{t.transactions.dividend}</button>
-                  <button
-                    onClick={async () => {
-                      try { await api.updateDividendMethod(code!, "reinvest"); await reloadFund(); }
-                      catch { toast.error(t.common.operationFailed) }
-                    }}
-                    className={cn("px-2 py-0.5 text-xs",
-                      fund.dividend_method === "reinvest" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/50")}
-                  >{t.transactions.reinvest}</button>
-                </div>
-              </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Badge variant="outline" className="font-normal gap-1.5 cursor-pointer hover:bg-muted/50 transition-colors">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    {t.fundDetail.dividendMethod}: {fund.dividend_method === "reinvest" ? t.transactions.reinvest : t.transactions.dividend}
+                  </Badge>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-1" align="start">
+                  <div className="flex flex-col gap-0.5">
+                    <button
+                      onClick={async () => {
+                        try { await api.updateDividendMethod(code!, "cash"); await reloadFund(); toast.success(t.transactions.dividend) }
+                        catch { toast.error(t.common.operationFailed) }
+                      }}
+                      className={cn("px-3 py-1.5 text-left text-xs rounded-sm hover:bg-muted/50",
+                        fund.dividend_method !== "reinvest" && "text-primary font-medium")}
+                    >{t.transactions.dividend}</button>
+                    <button
+                      onClick={async () => {
+                        try { await api.updateDividendMethod(code!, "reinvest"); await reloadFund(); toast.success(t.transactions.reinvest) }
+                        catch { toast.error(t.common.operationFailed) }
+                      }}
+                      className={cn("px-3 py-1.5 text-left text-xs rounded-sm hover:bg-muted/50",
+                        fund.dividend_method === "reinvest" && "text-primary font-medium")}
+                    >{t.transactions.reinvest}</button>
+                  </div>
+                </PopoverContent>
+              </Popover>
             )}
             {openPositions.length === 1 && (
               <Badge variant="outline" className="font-normal gap-1.5">

@@ -724,7 +724,7 @@ export default function Settings() {
         </TabsContent>
 
         {/* ── 偏好设置 ── */}
-        <TabsContent value="prefs" className="space-y-4">
+        <TabsContent value="prefs" className="space-y-4 max-w-4xl">
           {/* 渠道管理 */}
           <Card>
             <CardHeader className="pb-3">
@@ -737,35 +737,39 @@ export default function Settings() {
             <CardContent className="space-y-4">
               <div className="space-y-1">
                 {channels.map((ch, i) => (
-                  <div key={ch} className="flex items-center gap-2 rounded-lg px-3 py-2 transition-colors hover:bg-muted/40">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-muted text-xs font-medium text-muted-foreground">
-                      {i + 1}
-                    </span>
-                    <button onClick={() => moveUp(i)} disabled={i === 0}
-                      className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button onClick={() => moveDown(i)} disabled={i === channels.length - 1}
-                      className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </button>
-                    <span className="flex-1 text-sm font-semibold">{ch}</span>
-                    {i === 0 && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{t.settings.defaultLabel}</span>}
-                    <div className="flex items-center gap-1">
-                      {palette.map(color => (
-                        <button key={color} onClick={() => handleColorChange(ch, color)}
-                          className={cn("h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
-                            channelColors[ch] === color ? "border-border" : "border-transparent")}
-                          style={{ background: color }} />
-                      ))}
+                  <div key={ch} className="flex flex-col gap-2 rounded-lg px-3 py-2 transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-muted text-xs font-medium text-muted-foreground">
+                        {i + 1}
+                      </span>
+                      <span className="flex-1 text-sm font-semibold">{ch}</span>
+                      {i === 0 && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{t.settings.defaultLabel}</span>}
+                      <button onClick={() => remove(i)}
+                        className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-6 sm:w-6">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                    <input type="color" value={channelColors[ch] ?? "#3b82f6"}
-                      onChange={(e) => handleColorChange(ch, e.target.value)}
-                      className="h-7 w-7 rounded cursor-pointer border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
-                    <button onClick={() => remove(i)}
-                      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1.5 sm:ml-auto">
+                      <button onClick={() => moveUp(i)} disabled={i === 0}
+                        className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-5 sm:w-5">
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button onClick={() => moveDown(i)} disabled={i === channels.length - 1}
+                        className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-5 sm:w-5">
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {palette.map(color => (
+                          <button key={color} onClick={() => handleColorChange(ch, color)}
+                            className={cn("h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+                              channelColors[ch] === color ? "border-border" : "border-transparent")}
+                            style={{ background: color }} />
+                        ))}
+                      </div>
+                      <input type="color" value={channelColors[ch] ?? "#3b82f6"}
+                        onChange={(e) => handleColorChange(ch, e.target.value)}
+                        className="h-7 w-7 rounded cursor-pointer border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -953,13 +957,13 @@ export default function Settings() {
 
                 {/* 添加自定义 */}
                 <div className="flex flex-wrap items-end gap-2">
-                  <div className="flex-1 min-w-[120px]">
+                  <div className="flex-1 min-w-0 sm:min-w-[120px]">
                     <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.keyword}</Label>
                     <Input value={newKwKeyword} onChange={(e) => setNewKwKeyword(e.target.value)}
                       placeholder={t.settings.keywordPlaceholder} className="h-8 text-xs"
                       onKeyDown={(e) => { if (e.key === "Enter") addCustomKeyword() }} />
                   </div>
-                  <div className="flex-1 min-w-[120px]">
+                  <div className="flex-1 min-w-0 sm:min-w-[120px]">
                     <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.mapTo}</Label>
                     <Select
                       value={newKwMapped}
@@ -980,22 +984,26 @@ export default function Settings() {
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-muted-foreground">{t.settings.customKeywordsCount.replace("{n}", String(kwCustom.length))}</p>
                     {kwCustom.map((e, i) => (
-                      <div key={i} className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-1.5">
-                        <button onClick={() => moveCustomKeyword(i, -1)} disabled={i === 0}
-                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:opacity-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
-                          <ChevronUp className="h-3 w-3" />
-                        </button>
-                        <button onClick={() => moveCustomKeyword(i, 1)} disabled={i === kwCustom.length - 1}
-                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:opacity-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
-                          <ChevronDown className="h-3 w-3" />
-                        </button>
+                      <div key={i} className="flex flex-col gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-3 py-1.5 sm:flex-row sm:items-center sm:gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => moveCustomKeyword(i, -1)} disabled={i === 0}
+                            className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:opacity-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-5 sm:w-5">
+                            <ChevronUp className="h-3 w-3" />
+                          </button>
+                          <button onClick={() => moveCustomKeyword(i, 1)} disabled={i === kwCustom.length - 1}
+                            className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:opacity-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-5 sm:w-5">
+                            <ChevronDown className="h-3 w-3" />
+                          </button>
+                        </div>
                         <span className="text-sm font-medium flex-1">{e.keyword}</span>
-                        <span className="text-xs text-muted-foreground">→</span>
-                        <span className="text-sm font-medium text-primary">{e.mapped}</span>
-                        <button onClick={() => deleteCustomKeyword(i)}
-                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
-                          <X className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">→</span>
+                          <span className="text-sm font-medium text-primary">{e.mapped}</span>
+                          <button onClick={() => deleteCustomKeyword(i)}
+                            className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground/70 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-5 sm:w-5">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

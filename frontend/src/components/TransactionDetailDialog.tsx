@@ -66,7 +66,7 @@ export default function TransactionDetailDialog({ tx, fundName, open, onOpenChan
           </div>
         </DialogHeader>
 
-        <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
           <span className="text-xs text-muted-foreground/70">{t.transactions.actionLabel}</span>
           {actionBadge(tx, t.actionLabels)}
           <span className="mx-1 text-muted-foreground/30">|</span>
@@ -75,7 +75,7 @@ export default function TransactionDetailDialog({ tx, fundName, open, onOpenChan
           
         </div>
 
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <Row icon={DollarSign} label={t.transactions.amountLabel} value={tx.amount != null ? money(tx.amount) : "—"} mono />
           <Row icon={PieChart} label={t.transactions.sharesLabel} value={tx.shares?.toFixed(2) ?? "—"} mono />
           <Row icon={Hash} label={t.transactions.navLabel} value={navValue} mono />

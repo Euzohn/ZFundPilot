@@ -98,9 +98,8 @@ export default function Transactions() {
       <div className="flex items-center justify-between gap-2">
         <PageHeader title={t.transactions.title} />
         <Button variant="outline" size="sm" onClick={() => setDividendDialogOpen(true)} className="shrink-0">
-          <Gift className="h-4 w-4 mr-1.5" />
+          <Gift className="h-4 w-4 sm:mr-1.5" />
           <span className="hidden sm:inline">{t.transactions.dividendCheck}</span>
-          <span className="sm:hidden"><Gift className="h-4 w-4" /></span>
         </Button>
       </div>
       <DividendCheckDialog open={dividendDialogOpen} onOpenChange={setDividendDialogOpen} />

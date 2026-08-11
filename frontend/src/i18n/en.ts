@@ -316,6 +316,17 @@ const en: typeof zh = {
     amountPerRunYuan: "Amount (¥)",
     weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     dayOfMonthSuffix: "",
+
+    dividendCheck: "Check Dividends",
+    dividendCheckDesc: "Auto-detect unrecorded dividend events for held funds",
+    dividendCheckPrompt: "Click the button below to check dividend records for held funds",
+    checkNow: "Check Now",
+    noUnrecordedDividends: "No unrecorded dividends",
+    dividendCheckFailed: "Dividend check failed",
+    exDate: "Ex-date",
+    perShare: "CNY/share",
+    recordDividend: "Record Dividend",
+    recordReinvest: "Record Reinvest",
   },
   settings: {
     title: "Settings",
@@ -777,6 +788,7 @@ const en: typeof zh = {
     profileDaysUnit: "days",
     profileScaleUnit: "B",
     profileYearsUnit: "yrs",
+    dividendMethod: "Dividend",
   },
   backtest: {
     title: "DCA Backtest",

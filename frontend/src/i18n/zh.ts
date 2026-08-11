@@ -314,6 +314,17 @@ const zh = {
     amountPerRunYuan: "每期金额（元）",
     weekdays: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
     dayOfMonthSuffix: "号",
+
+    dividendCheck: "检查分红",
+    dividendCheckDesc: "自动检测持仓基金的未记录分红事件",
+    dividendCheckPrompt: "点击下方按钮检查持仓基金的分红记录",
+    checkNow: "立即检查",
+    noUnrecordedDividends: "暂无未记录的分红",
+    dividendCheckFailed: "分红检查失败",
+    exDate: "除息日",
+    perShare: "元/份",
+    recordDividend: "记为分红",
+    recordReinvest: "记为再投",
   },
   settings: {
     title: "设置",
@@ -775,6 +786,7 @@ const zh = {
     profileDaysUnit: "天",
     profileScaleUnit: "亿",
     profileYearsUnit: "年",
+    dividendMethod: "分红方式",
   },
   backtest: {
     title: "定投回测",

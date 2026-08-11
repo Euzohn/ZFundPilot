@@ -7,6 +7,7 @@ import type {
   CompareResponse,
   CurvePoint,
   DistributionItem,
+  DividendEvent,
   EstimateSummary,
   FundEstimate,
   FundMeta,
@@ -389,5 +390,13 @@ export const api = {
   removeFromWatchlist: (code: string) =>
     request<{ ok: boolean; code: string }>(`/watchlist/${encodeURIComponent(code)}`, {
       method: "DELETE",
+    }),
+
+  // Dividend
+  checkDividends: () => request<DividendEvent[]>("/dividends/check"),
+  updateDividendMethod: (code: string, method: string) =>
+    request<{ ok: boolean }>(`/funds/${encodeURIComponent(code)}/dividend-method`, {
+      method: "PUT",
+      body: JSON.stringify({ method }),
     }),
 }

@@ -37,6 +37,7 @@ class Fund:
     fund_type: str = "其它"
     sector: str = ""
     tracking_index: str = ""
+    dividend_method: str = "cash"  # 'cash'（现金分红）/ 'reinvest'（红利再投资）
 
     def to_dict(self) -> dict:
         return asdict(self)

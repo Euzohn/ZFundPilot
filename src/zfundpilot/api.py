@@ -394,6 +394,10 @@ class SectorUpdate(BaseModel):
     sector: str
 
 
+class DividendMethodUpdate(BaseModel):
+    method: str  # 'cash' or 'reinvest'
+
+
 class CSVImportConfirm(BaseModel):
     transactions: list[TransactionCreate]
     clear_existing: bool = False
@@ -625,6 +629,39 @@ def update_sector(code: str, body: SectorUpdate) -> dict[str, bool]:
     fetch_fund.save_sector_mapping(code, body.sector)
     analysis.clear_analysis_cache()
     return {"ok": True}
+
+
+@app.put("/api/funds/{code}/dividend-method")
+def update_dividend_method(code: str, body: DividendMethodUpdate) -> dict[str, bool]:
+    if body.method not in ("cash", "reinvest"):
+        raise HTTPException(400, "method must be 'cash' or 'reinvest'")
+    db.update_fund_dividend_method(code, body.method)
+    return {"ok": True}
+
+
+@app.get("/api/dividends/check")
+def check_dividends() -> list[dict]:
+    """检查持仓基金的未记录分红事件。
+
+    用 def 而非 async def：内部用 ThreadPoolExecutor + AkShare 同步阻塞，
+    async def 会卡住事件循环。FastAPI 对 def 端点自动放到线程池执行。
+    """
+    from . import fetch_dividend
+    events = fetch_dividend.check_dividends()
+    return [
+        {
+            "fund_code": ev.fund_code,
+            "fund_name": ev.fund_name,
+            "record_date": ev.record_date,
+            "ex_date": ev.ex_date,
+            "per_share": ev.per_share,
+            "pay_date": ev.pay_date,
+            "held_shares": ev.held_shares,
+            "estimated_amount": ev.estimated_amount,
+            "dividend_method": ev.dividend_method,
+        }
+        for ev in events
+    ]
 
 
 @app.post("/api/sectors/reset")

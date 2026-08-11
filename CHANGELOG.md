@@ -16,6 +16,8 @@
 ### Fixed
 - `fetch_estimate._index_fallback` 移除 `est.dwjz > 0` 跳过条件，修复指数基金在东财估值表有数据行但当日估算列缺失时指数兜底不触发的 bug
 - `pyproject.toml` `dependencies` 补全 `python-multipart`，修复 CI 用 `pip install -e ".[dev]"` 时 FastAPI `UploadFile` 路由收集失败（`requirements.txt` 已有，pyproject 遗漏）
+- Settings 偏好设置 tab 布局优化：`max-w-4xl` 约束宽度解决桌面端右侧留白，渠道管理行/关键词自定义行 `flex-col sm:flex-row` 移动端拆双行，色块组 `flex-wrap`，触摸目标移动端增大
+- TransactionDetailDialog 移动端适配：详情网格 `grid-cols-1 sm:grid-cols-2` 移动端单列，操作/日期栏加 `flex-wrap` 防溢出
 
 ## [0.15.0] - 2026-08-06
 

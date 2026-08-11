@@ -428,6 +428,11 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 - fix: `_index_fallback` 移除 `est.dwjz > 0` 跳过条件，修复指数兜底不触发
 - fix: `pyproject.toml` 补全 `python-multipart` 运行时依赖声明，修复 CI 测试收集失败
+- ci: workflow 加固（3 版本并行 + fail-fast: false + concurrency + timeout + working-directory）
+- docs: 新增 `NOTICE.md` 数据来源与合规声明（中英双语）
+- docs: README 截图区新增交易管理页面（深/浅双主题合并图）
+- fix: Settings 偏好设置 tab 布局优化（max-w-4xl + 渠道行/关键词行移动端响应式 + 触摸目标增大）
+- fix: TransactionDetailDialog 移动端适配（详情网格移动端单列 + 操作栏 flex-wrap）
 
 ### v0.15.0 - 2026-08-06
 

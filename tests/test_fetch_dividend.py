@@ -59,43 +59,63 @@ class TestDateClose:
 
 
 class TestParseDividendRow:
-    def test_standard_columns(self):
+    def test_real_akshare_format(self):
+        """AkShare fund_open_fund_info_em(分红送配详情) 的真实返回格式。"""
         row = {
-            "年份": "2025",
-            "权益登记日": "2025-09-22",
+            "年份": "2026年",
+            "权益登记日": "2026-01-19",
+            "除息日": "2026-01-19",
+            "每10份分红": "每10份派现金0.0500元",
+            "分红发放日": "2026-01-21",
+        }
+        ev = fetch_dividend._parse_dividend_row(row, "161606", "融通通利")
+        assert ev is not None
+        assert ev.ex_date == "2026-01-19"
+        assert ev.per_share == 0.005  # 0.0500 / 10
+        assert ev.pay_date == "2026-01-21"
+
+    def test_large_dividend(self):
+        row = {
+            "除息日": "2007-10-25",
+            "每10份分红": "每10份派现金7.7000元",
+            "分红发放日": "2007-10-29",
+        }
+        ev = fetch_dividend._parse_dividend_row(row, "161606", "test")
+        assert ev is not None
+        assert ev.per_share == 0.77
+
+    def test_float_format_from_fh_em(self):
+        """fund_fh_em 接口返回纯 float 格式。"""
+        row = {
             "除息日": "2025-09-22",
-            "每份分红": "0.0100",
+            "分红": 0.0100,
             "分红发放日": "2025-09-23",
         }
-        ev = fetch_dividend._parse_dividend_row(row, "000001", "华夏成长")
+        ev = fetch_dividend._parse_dividend_row(row, "000001", "test")
         assert ev is not None
-        assert ev.fund_code == "000001"
-        assert ev.ex_date == "2025-09-22"
         assert ev.per_share == 0.01
-        assert ev.pay_date == "2025-09-23"
 
-    def test_alternative_columns(self):
+    def test_string_float_format(self):
+        """纯数字字符串格式。"""
         row = {
-            "权益登记日": "2025-03-21",
-            "除息日期": "2025-03-21",
+            "除息日": "2025-03-21",
             "分红": "0.0105",
             "分红发放日": "2025-03-24",
         }
-        ev = fetch_dividend._parse_dividend_row(row, "000005", "嘉实增强")
+        ev = fetch_dividend._parse_dividend_row(row, "000005", "test")
         assert ev is not None
-        assert ev.ex_date == "2025-03-21"
         assert ev.per_share == 0.0105
 
     def test_missing_ex_date(self):
-        row = {"权益登记日": "2025-09-22", "每份分红": "0.01"}
+        row = {"每10份分红": "每10份派现金0.0500元"}
         assert fetch_dividend._parse_dividend_row(row, "000001", "test") is None
 
     def test_invalid_per_share(self):
-        row = {"除息日": "2025-09-22", "每份分红": "N/A"}
+        row = {"除息日": "2025-09-22", "每10份分红": "无分红"}
         assert fetch_dividend._parse_dividend_row(row, "000001", "test") is None
 
     def test_zero_per_share(self):
-        row = {"除息日": "2025-09-22", "每份分红": "0"}
+        row = {"除息日": "2025-09-22", "每10份分红": "每10份派现金0.0000元"}
         assert fetch_dividend._parse_dividend_row(row, "000001", "test") is None
 
 

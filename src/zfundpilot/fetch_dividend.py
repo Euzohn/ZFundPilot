@@ -1,5 +1,6 @@
 """基金分红数据抓取与检测。"""
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -18,7 +19,7 @@ _DIV_CACHE_TTL = 6 * 3600
 _LOOKBACK_DAYS = 90
 
 # 并行抓取的线程数
-_MAX_WORKERS = 6
+_MAX_WORKERS = 3
 
 
 def _match_col(columns, candidates) -> str | None:
@@ -68,19 +69,42 @@ def _fetch_fund_dividends(fund_code: str) -> list[dict]:
         return []
 
 
+def _parse_per_share(raw) -> float | None:
+    """从分红金额字段解析每股分红(元/份)。
+
+    AkShare 返回格式如 "每10份派现金0.0500元"，需提取 0.0500 并 /10。
+    fund_fh_em 接口可能返回纯 float 如 0.0100，直接使用。
+    """
+    if isinstance(raw, (int, float)):
+        v = float(raw)
+        return v if v > 0 else None
+    s = str(raw).strip()
+    m = re.search(r"现金(\d+\.?\d*)\s*元", s)
+    if not m:
+        m = re.search(r"(\d+\.?\d+)\s*元", s)
+    if m:
+        amount = float(m.group(1))
+        if "10" in s[:5]:
+            amount /= 10
+        return amount if amount > 0 else None
+    # fallback: 纯数字字符串
+    try:
+        v = float(s)
+        return v if v > 0 else None
+    except ValueError:
+        return None
+
+
 def _parse_dividend_row(row: dict, fund_code: str, fund_name: str) -> DividendEvent | None:
     """解析单行分红数据为 DividendEvent。列名模糊匹配。"""
     col_record = _match_col(row.keys(), ["权益登记日", "登记日"])
     col_ex = _match_col(row.keys(), ["除息日", "除息日期"])
-    col_per = _match_col(row.keys(), ["每份分红", "分红"])
+    col_per = _match_col(row.keys(), ["每10份分红", "每份分红", "分红"])
     col_pay = _match_col(row.keys(), ["分红发放日", "发放日"])
     if not col_ex or not col_per:
         return None
-    try:
-        per_share = float(row.get(col_per, 0))
-    except (TypeError, ValueError):
-        return None
-    if per_share <= 0:
+    per_share = _parse_per_share(row.get(col_per, 0))
+    if not per_share:
         return None
     return DividendEvent(
         fund_code=fund_code,

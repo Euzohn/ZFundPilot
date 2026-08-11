@@ -63,7 +63,11 @@ def _fetch_fund_dividends(fund_code: str) -> list[dict]:
         _DIV_CACHE[fund_code] = {"ts": now, "data": records}
         return records
     except Exception as e:
-        logger.warning("[fetch_dividend] 获取 %s 分红数据失败: %s", fund_code, e)
+        msg = str(e)
+        if "no text parsed" in msg or "No tables found" in msg:
+            logger.debug("[fetch_dividend] %s 无分红记录（空响应）", fund_code)
+        else:
+            logger.warning("[fetch_dividend] 获取 %s 分红数据失败: %s", fund_code, e)
         if cached:
             return cached["data"]
         return []

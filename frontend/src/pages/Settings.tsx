@@ -91,6 +91,8 @@ function AuditLogPanel() {
     watchlist_group: t.settings.auditLabels.watchlist_group,
     watchlist_remove: t.settings.auditLabels.watchlist_remove,
     export_backup: t.settings.auditLabels.export_backup,
+    update_dividend_method: t.settings.auditLabels.update_dividend_method,
+    dividend_check: t.settings.auditLabels.dividend_check,
   }
 
   return (

@@ -187,6 +187,12 @@ def _migrate_add_columns() -> None:
                 "ALTER TABLE funds ADD COLUMN tracking_index TEXT DEFAULT ''"
             )
 
+        # funds 表补充 dividend_method 列
+        if fund_cols and "dividend_method" not in fund_cols:
+            conn.execute(
+                "ALTER TABLE funds ADD COLUMN dividend_method TEXT DEFAULT 'cash'"
+            )
+
 
 def _migrate_relax_transactions_schema() -> None:
     """放宽 transactions 表约束：移除 CHECK(action) 和 amount/shares 的 NOT NULL。
@@ -278,12 +284,16 @@ def _migrate_legacy_holdings() -> None:
 # funds 基础信息
 # ---------------------------------------------------------------------------
 def upsert_fund(fund: Fund) -> None:
-    """新增或更新基金基础信息。"""
+    """新增或更新基金基础信息。
+
+    dividend_method 只在 INSERT 时写入默认值('cash')，
+    ON CONFLICT 时不覆盖——避免元数据刷新重置用户设置。
+    """
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO funds(fund_code, fund_name, fund_type, sector, tracking_index)
-            VALUES(?,?,?,?,?)
+            INSERT INTO funds(fund_code, fund_name, fund_type, sector, tracking_index, dividend_method)
+            VALUES(?,?,?,?,?,?)
             ON CONFLICT(fund_code) DO UPDATE SET
                 fund_name=excluded.fund_name,
                 fund_type=excluded.fund_type,
@@ -292,7 +302,7 @@ def upsert_fund(fund: Fund) -> None:
                 updated_at=datetime('now','localtime')
             """,
             (fund.fund_code.strip(), fund.fund_name.strip(),
-             fund.fund_type, fund.sector, fund.tracking_index),
+             fund.fund_type, fund.sector, fund.tracking_index, fund.dividend_method),
         )
 
 
@@ -325,6 +335,15 @@ def update_fund_tracking_index(fund_code: str, tracking_index: str) -> None:
             "UPDATE funds SET tracking_index=?, updated_at=datetime('now','localtime') "
             "WHERE fund_code=?",
             (tracking_index, fund_code),
+        )
+
+
+def update_fund_dividend_method(fund_code: str, method: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE funds SET dividend_method=?, updated_at=datetime('now','localtime') "
+            "WHERE fund_code=?",
+            (method, fund_code),
         )
 
 

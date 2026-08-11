@@ -20,12 +20,13 @@ import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2, Receipt, ArrowUpDown, Repeat } from "lucide-react"
+import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2, Receipt, ArrowUpDown, Repeat, Gift } from "lucide-react"
 import { getChannels, getChannelsAsync, saveChannels } from "@/lib/channels"
 import { makeSortHeader } from "@/components/SortHeader"
 import { useLang } from "@/i18n/LanguageContext"
 import ConfirmDialog from "@/components/ConfirmDialog"
 import TransactionDetailDialog from "@/components/TransactionDetailDialog"
+import DividendCheckDialog from "@/components/DividendCheckDialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 
 function actionBadgeClass(action: string): string {
@@ -46,16 +47,20 @@ export default function Transactions() {
   const [activeTab, setActiveTab] = useState("form")
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [listReloadKey, setListReloadKey] = useState(0)
-  const [prefill, setPrefill] = useState<{ code: string; action: string; channel?: string } | null>(null)
+  const [prefill, setPrefill] = useState<{ code: string; action: string; channel?: string; amount?: string; date?: string; note?: string } | null>(null)
+  const [dividendDialogOpen, setDividendDialogOpen] = useState(false)
   const consumedEditTx = useRef(false)
 
-  // 从 URL 参数消费预填数据（从持仓页跳转过来）
+  // 从 URL 参数消费预填数据（从持仓页/分红检查跳转过来）
   useEffect(() => {
     const code = searchParams.get("code")
     const action = searchParams.get("action")
     const channel = searchParams.get("channel")
+    const amount = searchParams.get("amount")
+    const date = searchParams.get("date")
+    const note = searchParams.get("note")
     if (code) {
-      setPrefill({ code, action: action || "buy", channel: channel || undefined })
+      setPrefill({ code, action: action || "buy", channel: channel || undefined, amount: amount || undefined, date: date || undefined, note: note ? decodeURIComponent(note) : undefined })
       setActiveTab("form")
       setSearchParams({}, { replace: true })
     }
@@ -90,7 +95,14 @@ export default function Transactions() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t.transactions.title} />
+      <div className="flex items-center justify-between gap-2">
+        <PageHeader title={t.transactions.title} />
+        <Button variant="outline" size="sm" onClick={() => setDividendDialogOpen(true)} className="shrink-0">
+          <Gift className="h-4 w-4 sm:mr-1.5" />
+          <span className="hidden sm:inline">{t.transactions.dividendCheck}</span>
+        </Button>
+      </div>
+      <DividendCheckDialog open={dividendDialogOpen} onOpenChange={setDividendDialogOpen} />
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-4 sm:inline-flex sm:w-auto">
           <TabsTrigger value="form" className="gap-1.5">
@@ -129,7 +141,7 @@ export default function Transactions() {
 // ---------------------------------------------------------------------------
 function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   editingTx: Transaction | null
-  prefill: { code: string; action: string; channel?: string } | null
+  prefill: { code: string; action: string; channel?: string; amount?: string; date?: string; note?: string } | null
   onPrefillConsumed: () => void
   onDone: (fundCode?: string) => void
 }) {
@@ -209,13 +221,16 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
     }
   }, [editingTx])
 
-  // 预填模式：从持仓页跳转过来，回填代码 + 操作方向 + 渠道
+  // 预填模式：从持仓页/分红检查跳转过来，回填代码 + 操作方向 + 渠道 + 金额/日期/备注
   useEffect(() => {
     if (!prefill) return
     setCode(prefill.code)
     setAction(prefill.action)
-    setAmount(""); setShares(""); setNav(""); setFee("0")
-    setNote(""); setAfterThree(false); setCustomChannel("")
+    setShares(""); setNav(""); setFee("0")
+    setAmount(prefill.amount ?? "")
+    setDate(prefill.date ?? localDateStr())
+    setNote(prefill.note ?? "")
+    setAfterThree(false); setCustomChannel("")
     setMeta(null)
     setFeeCalcResult(null); feeManuallyEdited.current = false
     // 渠道预填：预设渠道走 select，自定义渠道走 customChannel

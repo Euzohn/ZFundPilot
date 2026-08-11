@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+### Added
+- 分红自动检测功能（Phase 1）：交易页「检查分红」按钮，按基金并行调 `ak.fund_open_fund_info_em(indicator="分红送配详情")`，检测持仓基金的未记录分红事件，弹窗预填确认入账（`fetch_dividend.py` 新模块，ThreadPoolExecutor 3 线程 + 6h 缓存 + stale-if-error + 去重）
+- `funds` 表新增 `dividend_method` 字段（`cash`/`reinvest`，默认 `cash`），FundDetail 页加分红方式选择器（segmented control）
+- 新增 API：`GET /api/dividends/check`（检测未记录分红）、`PUT /api/funds/{code}/dividend-method`（设置分红方式）
+- 分红操作审计日志（`dividend_check` / `update_dividend_method`）
+- 分红提醒弹窗组件 `DividendCheckDialog.tsx`：按基金 `dividend_method` 预选 action，弹窗内切换仅影响本次预填
+
+### Changed
+- AkShare 1.18.79 → 1.18.82（空响应不再抛 `no text parsed` 异常，改为返回空 DataFrame）
+- `upsert_fund()` SQL：INSERT 含 `dividend_method`（新基金默认 cash），`ON CONFLICT DO UPDATE SET` 不含（避免元数据刷新重置用户设置）
+
+### Fixed
+- 分红金额解析：AkShare 返回 `"每10份派现金0.0500元"` 字符串格式，`_parse_per_share()` 正则提取金额 + `/10` 得每股分红
+- 无分红记录的空响应降级为 debug 日志（避免刷屏 WARNING）
+- TransactionForm prefill 扩展支持 `amount`/`date`/`note` URL 参数（从分红弹窗跳转预填）
+
 ## [0.15.1] - 2026-08-11
 
 ### Added

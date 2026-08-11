@@ -426,7 +426,12 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### Unreleased
 
-- （暂无）
+- feat: 分红自动检测功能（Phase 1）——按基金并行调 `ak.fund_open_fund_info_em(indicator="分红送配详情")`，检测持仓基金的未记录分红事件，弹窗预填确认入账
+- feat: `funds` 表新增 `dividend_method` 字段（`cash`/`reinvest`，默认 `cash`），FundDetail 页加分红方式选择器
+- feat: 新增 API `GET /api/dividends/check`（检测未记录分红）、`PUT /api/funds/{code}/dividend-method`（设置分红方式）
+- feat: 分红操作审计日志（`dividend_check` / `update_dividend_method`）
+- fix: AkShare 1.18.79 → 1.18.82（空响应不再抛异常）
+- 完整规划见 `tmp/dividend-auto-detect-plan.md`，Phase 2（定时检测 + 通知）待定
 
 ### v0.15.1 - 2026-08-11
 

@@ -16,6 +16,7 @@ import { isMarketOpen } from "@/lib/market"
 import { getColorForChannel } from "@/lib/channelColors"
 import { translateFundType, translateSector, translateChannel, translateRiskLevel, FUND_TYPE_DOT, RISK_LEVEL_DOT } from "@/lib/taxonomyLabels"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 import { useLang } from "@/i18n/LanguageContext"
 import { ArrowLeft, TrendingUp, TrendingDown, Pencil, Trash2 } from "lucide-react"
 import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, PieChart, Pie, LineChart } from "recharts"
@@ -202,6 +203,29 @@ const handleDelete = async (txId: number) => {
                 <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />
                 {t.fundDetail.trackingIndex}: {fund.tracking_index}
               </Badge>
+            )}
+            {fund && (
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted-foreground">{t.fundDetail.dividendMethod}</span>
+                <div className="flex rounded-md border border-border overflow-hidden">
+                  <button
+                    onClick={async () => {
+                      try { await api.updateDividendMethod(code!, "cash"); await reloadFund(); }
+                      catch { toast.error(t.common.operationFailed) }
+                    }}
+                    className={cn("px-2 py-0.5 text-xs",
+                      fund.dividend_method !== "reinvest" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/50")}
+                  >{t.transactions.dividend}</button>
+                  <button
+                    onClick={async () => {
+                      try { await api.updateDividendMethod(code!, "reinvest"); await reloadFund(); }
+                      catch { toast.error(t.common.operationFailed) }
+                    }}
+                    className={cn("px-2 py-0.5 text-xs",
+                      fund.dividend_method === "reinvest" ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/50")}
+                  >{t.transactions.reinvest}</button>
+                </div>
+              </div>
             )}
             {openPositions.length === 1 && (
               <Badge variant="outline" className="font-normal gap-1.5">

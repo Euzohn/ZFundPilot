@@ -4,6 +4,19 @@ export interface Fund {
   fund_type: string
   sector: string
   tracking_index: string
+  dividend_method?: string
+}
+
+export interface DividendEvent {
+  fund_code: string
+  fund_name: string
+  record_date: string
+  ex_date: string
+  per_share: number
+  pay_date: string
+  held_shares: number
+  estimated_amount: number
+  dividend_method: string
 }
 
 export interface Transaction {
@@ -139,6 +152,7 @@ export interface FundMeta {
   fund_type: string
   sector: string
   tracking_index: string
+  dividend_method?: string
   ok: boolean
   message: string
 }

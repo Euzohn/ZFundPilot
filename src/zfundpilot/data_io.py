@@ -217,7 +217,7 @@ def export_backup_zip() -> bytes:
         zf.writestr("transactions.csv", transactions_to_csv_bytes(db.get_transactions_desc()))
         zf.writestr("funds.csv", _dicts_to_csv_bytes(
             [f.to_dict() for f in db.get_funds()],
-            "fund_code,fund_name,fund_type,sector,tracking_index,created_at,updated_at",
+            "fund_code,fund_name,fund_type,sector,tracking_index,dividend_method,created_at,updated_at",
         ))
         zf.writestr("watchlist.csv", _dicts_to_csv_bytes(
             db.get_watchlist(),

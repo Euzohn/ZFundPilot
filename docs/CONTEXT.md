@@ -430,6 +430,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### v0.15.1 - 2026-08-11
 
+> 已部署至服务器（2026-08-11，`./update.sh` + Settings「重置板块」回填 tracking_index）
+
 - fix: `_index_fallback` 移除 `est.dwjz > 0` 跳过条件，修复指数兜底不触发
 - fix: `pyproject.toml` 补全 `python-multipart` 运行时依赖声明，修复 CI 测试收集失败
 - ci: workflow 加固（3 版本并行 + fail-fast: false + concurrency + timeout + working-directory）

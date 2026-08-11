@@ -404,6 +404,8 @@ const zh = {
       watchlist_group: "自选分组",
       watchlist_remove: "删除自选",
       export_backup: "导出备份",
+      update_dividend_method: "修改分红方式",
+      dividend_check: "分红检查",
     },
     auditLogRecordsHint: "最近 100 条敏感操作记录",
     auditUser: "用户",

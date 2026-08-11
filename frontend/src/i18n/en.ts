@@ -406,6 +406,8 @@ const en: typeof zh = {
       watchlist_group: "Watchlist Group",
       watchlist_remove: "Remove from Watchlist",
       export_backup: "Export Backup",
+      update_dividend_method: "Update dividend method",
+      dividend_check: "Dividend check",
     },
     auditLogRecordsHint: "Last 100 sensitive operation records",
     auditUser: "User",

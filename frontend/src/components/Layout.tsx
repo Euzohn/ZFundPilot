@@ -62,19 +62,8 @@ const navGroups = [
 
 const bottomNav = { to: "/settings", labelKey: "settings" as const, icon: SettingsIcon }
 
-function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
+function NavLinks({ collapsed, onNavigate, pendingCount }: { collapsed: boolean; onNavigate?: () => void; pendingCount: number }) {
   const { t } = useLang()
-  const [pendingCount, setPendingCount] = useState(0)
-
-  useEffect(() => {
-    let active = true
-    const fetchCount = () => {
-      api.getPendingAlertCount().then(r => { if (active) setPendingCount(r.count) }).catch(() => {})
-    }
-    fetchCount()
-    const timer = setInterval(fetchCount, 60000)
-    return () => { active = false; clearInterval(timer) }
-  }, [])
 
   const linkClass = (isActive: boolean) =>
     cn(
@@ -141,6 +130,7 @@ export default function Layout() {
     try { return localStorage.getItem(STORAGE_KEY) === "true" } catch { return false }
   })
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
   const location = useLocation()
 
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
@@ -148,6 +138,16 @@ export default function Layout() {
   useEffect(() => {
     applyColorTheme(getColorTheme())
     getColorThemeAsync().then(applyColorTheme).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    const fetchCount = () => {
+      api.getPendingAlertCount().then(r => { if (active) setPendingCount(r.count) }).catch(() => {})
+    }
+    fetchCount()
+    const timer = setInterval(fetchCount, 60000)
+    return () => { active = false; clearInterval(timer) }
   }, [])
 
   const toggle = () => {
@@ -194,7 +194,7 @@ export default function Layout() {
           )}
         </div>
 
-        <NavLinks collapsed={collapsed} />
+        <NavLinks collapsed={collapsed} pendingCount={pendingCount} />
 
         <div className={cn("border-t border-zinc-800/60", collapsed ? "px-2 py-3" : "px-3 py-3")}>
           <a
@@ -271,7 +271,7 @@ export default function Layout() {
           </button>
         </div>
 
-        <NavLinks collapsed={false} onNavigate={() => setMobileOpen(false)} />
+        <NavLinks collapsed={false} onNavigate={() => setMobileOpen(false)} pendingCount={pendingCount} />
       </aside>
 
       {/* Main content */}

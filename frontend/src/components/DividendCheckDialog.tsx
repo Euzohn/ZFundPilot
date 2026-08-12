@@ -37,10 +37,15 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
   }, [t])
 
   useEffect(() => {
-    if (open) {
-      loadAlerts()
-    }
-  }, [open, loadAlerts])
+    if (!open) return
+    let active = true
+    setLoading(true)
+    api.getDividendAlerts("pending")
+      .then(r => { if (active) setAlerts(r) })
+      .catch(() => { if (active) toast.error(t.transactions.dividendCheckFailed) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [open, t])
 
   const handleRescan = async () => {
     setScanning(true)

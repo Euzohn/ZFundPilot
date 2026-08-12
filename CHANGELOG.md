@@ -4,7 +4,7 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [0.16.0] - 2026-08-12
 
 ### Added
 - 分红自动检测功能（Phase 1）：交易页「检查分红」按钮，按基金并行调 `ak.fund_open_fund_info_em(indicator="分红送配详情")`，检测持仓基金的未记录分红事件，弹窗预填确认入账（`fetch_dividend.py` 新模块，ThreadPoolExecutor 3 线程 + 6h 缓存 + stale-if-error + 去重）

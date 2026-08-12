@@ -95,13 +95,7 @@ export default function Transactions() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-2">
-        <PageHeader title={t.transactions.title} />
-        <Button variant="outline" size="sm" onClick={() => setDividendDialogOpen(true)} className="shrink-0">
-          <Gift className="h-4 w-4 sm:mr-1.5" />
-          <span className="hidden sm:inline">{t.transactions.dividendCheck}</span>
-        </Button>
-      </div>
+      <PageHeader title={t.transactions.title} />
       <DividendCheckDialog open={dividendDialogOpen} onOpenChange={setDividendDialogOpen} />
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-4 sm:inline-flex sm:w-auto">
@@ -119,6 +113,12 @@ export default function Transactions() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="form">
+          <div className="flex justify-end mb-2">
+            <Button variant="outline" size="sm" onClick={() => setDividendDialogOpen(true)}>
+              <Gift className="h-4 w-4 mr-1.5" />
+              {t.transactions.dividendCheck}
+            </Button>
+          </div>
           <TransactionForm
             editingTx={editingTx}
             prefill={prefill}

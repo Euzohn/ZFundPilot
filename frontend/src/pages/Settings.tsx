@@ -740,7 +740,7 @@ export default function Settings() {
         </TabsContent>
 
         {/* ── 偏好设置 ── */}
-        <TabsContent value="prefs" className="space-y-4 max-w-4xl">
+        <TabsContent value="prefs" className="space-y-4">
           {/* 渠道管理 */}
           <Card>
             <CardHeader className="pb-3">

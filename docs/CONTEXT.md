@@ -395,6 +395,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
    - 命令: `gh release create vx.y.z --title "vx.y.z — 简短描述" --notes "$(cat CHANGELOG.md 中对应段落)"`
 9. 积累到一定阶段（多个功能/修复）再发布新 release，不必每次提交都发
 
+> **重要**：未经用户明确允许，不要主动创建 GitHub Release 或打 git tag。版本号 bump 可以随功能提交一起做，但 `git tag` + `gh release create` 必须等用户指示。
+
 ---
 
 ## 十、关键设计原则

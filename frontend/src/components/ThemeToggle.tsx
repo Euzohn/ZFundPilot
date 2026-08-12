@@ -66,7 +66,7 @@ export default function ThemeToggle({ variant = "icon", className, label }: Them
             saveUiTheme(v)
           }}
           className={cn(
-            "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+            "flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
             theme === v
               ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:text-foreground",

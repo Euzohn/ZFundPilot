@@ -754,7 +754,7 @@ export default function Settings() {
               <div className="space-y-1">
                 {channels.map((ch, i) => (
                   <div key={ch} className="flex flex-col gap-2 rounded-lg px-3 py-2 transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:gap-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-1 items-center gap-2">
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-muted text-xs font-medium text-muted-foreground">
                         {i + 1}
                       </span>
@@ -765,7 +765,7 @@ export default function Settings() {
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <div className="flex items-center gap-1.5 sm:ml-auto">
+                    <div className="flex items-center gap-1.5">
                       <button onClick={() => moveUp(i)} disabled={i === 0}
                         className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-5 sm:w-5">
                         <ChevronUp className="h-3.5 w-3.5" />
@@ -854,7 +854,7 @@ export default function Settings() {
               </div>
               <div className="space-y-2">
                 <p className="text-sm font-semibold">{t.settings.appearanceTheme}</p>
-                <ThemeToggle variant="segmented" />
+                <ThemeToggle variant="segmented" className="w-full" />
                 <p className="text-xs text-muted-foreground">{t.settings.themeHint}</p>
               </div>
             </CardContent>

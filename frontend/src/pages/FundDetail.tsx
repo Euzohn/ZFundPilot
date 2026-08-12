@@ -208,10 +208,13 @@ const handleDelete = async (txId: number) => {
             {fund && (
               <Popover>
                 <PopoverTrigger asChild>
-                  <Badge variant="outline" className="font-normal gap-1.5 cursor-pointer hover:bg-muted/50 transition-colors">
+                  <button
+                    type="button"
+                    className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold cursor-pointer hover:bg-muted/50 transition-colors"
+                  >
                     <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                     {t.fundDetail.dividendMethod}: {fund.dividend_method === "reinvest" ? t.transactions.reinvest : t.transactions.dividend}
-                  </Badge>
+                  </button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-1" align="start">
                   <div className="flex flex-col gap-0.5">

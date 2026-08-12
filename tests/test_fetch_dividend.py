@@ -1,7 +1,6 @@
 """fetch_dividend 测试：分红检测、去重、缓存、列名匹配。"""
 
 import sys
-import time
 from types import ModuleType
 from unittest.mock import MagicMock, patch
 
@@ -9,9 +8,7 @@ import pandas as pd
 
 from zfundpilot import fetch_dividend
 from zfundpilot.models import (
-    ACTION_BUY,
     ACTION_DIVIDEND,
-    ACTION_REINVEST,
     Fund,
     Position,
     Transaction,

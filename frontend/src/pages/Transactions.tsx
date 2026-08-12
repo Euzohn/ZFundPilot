@@ -47,7 +47,7 @@ export default function Transactions() {
   const [activeTab, setActiveTab] = useState("form")
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [listReloadKey, setListReloadKey] = useState(0)
-  const [prefill, setPrefill] = useState<{ code: string; action: string; channel?: string; amount?: string; date?: string; note?: string } | null>(null)
+  const [prefill, setPrefill] = useState<{ code: string; action: string; channel?: string; amount?: string; date?: string; note?: string; alert_id?: number } | null>(null)
   const [dividendDialogOpen, setDividendDialogOpen] = useState(false)
   const consumedEditTx = useRef(false)
 
@@ -59,8 +59,9 @@ export default function Transactions() {
     const amount = searchParams.get("amount")
     const date = searchParams.get("date")
     const note = searchParams.get("note")
+    const alertId = searchParams.get("alert_id")
     if (code) {
-      setPrefill({ code, action: action || "buy", channel: channel || undefined, amount: amount || undefined, date: date || undefined, note: note ? decodeURIComponent(note) : undefined })
+      setPrefill({ code, action: action || "buy", channel: channel || undefined, amount: amount || undefined, date: date || undefined, note: note ? decodeURIComponent(note) : undefined, alert_id: alertId ? Number(alertId) : undefined })
       setActiveTab("form")
       setSearchParams({}, { replace: true })
     }
@@ -136,7 +137,7 @@ export default function Transactions() {
 // ---------------------------------------------------------------------------
 function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onCheckDividends }: {
   editingTx: Transaction | null
-  prefill: { code: string; action: string; channel?: string; amount?: string; date?: string; note?: string } | null
+  prefill: { code: string; action: string; channel?: string; amount?: string; date?: string; note?: string; alert_id?: number } | null
   onPrefillConsumed: () => void
   onDone: (fundCode?: string) => void
   onCheckDividends?: () => void
@@ -163,7 +164,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
   const [feeCalcLoading, setFeeCalcLoading] = useState(false)
   const feeManuallyEdited = useRef(false)
   const feeCalcTimer = useRef<ReturnType<typeof setTimeout>>()
-
+  const [pendingAlertId, setPendingAlertId] = useState<number | null>(null)
   const isEditing = !!editingTx
 
   // 持仓数据（用于卖出时校验 + 快捷填入）
@@ -229,6 +230,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
     setAfterThree(false); setCustomChannel("")
     setMeta(null)
     setFeeCalcResult(null); feeManuallyEdited.current = false
+    setPendingAlertId(prefill.alert_id ?? null)
     // 渠道预填：预设渠道走 select，自定义渠道走 customChannel
     if (prefill.channel) {
       if (channels.includes(prefill.channel)) {
@@ -363,6 +365,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
     setAmount(""); setShares(""); setNav(""); setFee("0")
     setCustomChannel(""); setNote(""); setAfterThree(false)
     setFeeCalcResult(null); feeManuallyEdited.current = false
+    setPendingAlertId(null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -411,8 +414,13 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
         await api.updateTransaction(editingTx.id, payload)
         toast.success(t.transactions.txUpdatedToast.replace("{action}", t.actionLabels[action as keyof typeof t.actionLabels] ?? action).replace("{code}", code.trim()))
       } else {
-        await api.addTransaction(payload)
+        const result = await api.addTransaction(payload)
         toast.success(t.transactions.txSavedToast.replace("{action}", t.actionLabels[action as keyof typeof t.actionLabels] ?? action).replace("{code}", code.trim()))
+        // 从分红提醒跳转来：保存成功后标记 alert 为 confirmed
+        if (pendingAlertId) {
+          api.updateDividendAlert(pendingAlertId, "confirmed", result.id).catch(() => {})
+          setPendingAlertId(null)
+        }
       }
       // 自动添加自定义渠道到系统列表
       const finalChannel = customChannel.trim() || channel

@@ -19,6 +19,23 @@ export interface DividendEvent {
   dividend_method: string
 }
 
+export interface DividendAlert {
+  id: number
+  fund_code: string
+  fund_name: string
+  record_date: string | null
+  ex_date: string | null
+  per_share: number | null
+  pay_date: string | null
+  held_shares: number | null
+  estimated_amount: number | null
+  dividend_method: string
+  status: string  // 'pending' | 'confirmed' | 'ignored'
+  created_at: string
+  resolved_at: string | null
+  tx_id: number | null
+}
+
 export interface Transaction {
   id?: number
   fund_code: string
@@ -313,6 +330,8 @@ export interface SchedulerStatus {
   next_run: string | null
   last_run: string | null
   last_results: { fund_code: string; ok: boolean; written: number; latest_date: string | null; latest_nav: number | null }[] | null
+  dividend_enabled: boolean
+  dividend_last_run: string | null
 }
 
 // ── 实时估值 ──

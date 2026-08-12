@@ -29,7 +29,7 @@ import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
   SlidersHorizontal, LogOut, Loader2, CheckCircle2, XCircle, Zap,
-  Search, X, Palette, UserCircle, Clock, Archive, FileDown,
+  Search, X, Palette, UserCircle, Clock, Archive, FileDown, Gift,
 } from "lucide-react"
 
 const PROVIDER_NAMES: Record<string, { zh: string; en: string }> = {
@@ -93,6 +93,9 @@ function AuditLogPanel() {
     export_backup: t.settings.auditLabels.export_backup,
     update_dividend_method: t.settings.auditLabels.update_dividend_method,
     dividend_check: t.settings.auditLabels.dividend_check,
+    dividend_scan: t.settings.auditLabels.dividend_scan,
+    dividend_alert_update: t.settings.auditLabels.dividend_alert_update,
+    dividend_auto_check_toggle: t.settings.auditLabels.dividend_auto_check_toggle,
   }
 
   return (
@@ -325,6 +328,17 @@ export default function Settings() {
       await api.toggleScheduler(!schedulerStatus.enabled)
       await reloadScheduler()
       toast.success(schedulerStatus.enabled ? t.settings.schedulePaused : t.settings.scheduleResumed)
+    } catch (e) { toast.error(`${t.common.operationFailed}: ${e}`) }
+    finally { setSchedulerToggling(false) }
+  }
+
+  const handleDividendToggle = async () => {
+    if (!schedulerStatus) return
+    setSchedulerToggling(true)
+    try {
+      await api.toggleDividendAutoCheck(!schedulerStatus.dividend_enabled)
+      await reloadScheduler()
+      toast.success(schedulerStatus.dividend_enabled ? t.settings.dividendAutoCheckOff : t.settings.dividendAutoCheckOn)
     } catch (e) { toast.error(`${t.common.operationFailed}: ${e}`) }
     finally { setSchedulerToggling(false) }
   }
@@ -925,6 +939,45 @@ export default function Settings() {
                       {cronSaving ? t.settings.saving : t.common.save}
                     </Button>
                   </div>
+                </div>
+              ) : (
+                <LoadingState size="xs" />
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 分红自动检测 */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Gift className="h-5 w-5 text-primary" />
+                {t.settings.dividendAutoCheck}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">{t.settings.dividendAutoCheckDesc}</p>
+            </CardHeader>
+            <CardContent>
+              {schedulerStatus ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleDividendToggle}
+                      disabled={schedulerToggling}
+                      className={cn(
+                        "rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+                        schedulerStatus.dividend_enabled
+                          ? "border-primary/30 bg-primary/10 text-primary"
+                          : "border-border bg-background text-muted-foreground hover:bg-accent"
+                      )}
+                    >
+                      {schedulerToggling ? t.settings.switching : schedulerStatus.dividend_enabled ? t.settings.enabled : t.settings.paused}
+                    </button>
+                    <span className="text-xs text-muted-foreground">09:30</span>
+                  </div>
+                  {schedulerStatus.dividend_last_run && (
+                    <div className="text-xs text-muted-foreground">
+                      {t.settings.lastRun}<span className="font-semibold text-foreground ml-1">{schedulerStatus.dividend_last_run}</span>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <LoadingState size="xs" />

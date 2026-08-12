@@ -146,6 +146,25 @@ def init_db() -> None:
                 group_name TEXT DEFAULT '',
                 added_at  TEXT DEFAULT (datetime('now','localtime'))
             );
+
+            CREATE TABLE IF NOT EXISTS dividend_alerts (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                fund_code        TEXT NOT NULL,
+                fund_name        TEXT DEFAULT '',
+                record_date      TEXT,
+                ex_date          TEXT,
+                per_share        REAL,
+                pay_date         TEXT,
+                held_shares      REAL,
+                estimated_amount REAL,
+                dividend_method  TEXT DEFAULT 'cash',
+                status           TEXT DEFAULT 'pending',
+                created_at       TEXT DEFAULT (datetime('now','localtime')),
+                resolved_at      TEXT,
+                tx_id            INTEGER
+            );
+            CREATE INDEX IF NOT EXISTS idx_alert_status ON dividend_alerts(status);
+            CREATE INDEX IF NOT EXISTS idx_alert_code_ex ON dividend_alerts(fund_code, ex_date);
             """
         )
     _migrate_add_columns()
@@ -772,6 +791,79 @@ def get_watchlist() -> list[dict]:
             "ORDER BY w.group_name, w.added_at DESC"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# 分红提醒 (dividend_alerts) CRUD
+# ---------------------------------------------------------------------------
+def add_dividend_alert(alert: dict) -> int:
+    """新增一条分红提醒，返回 id。"""
+    with get_connection() as conn:
+        cur = conn.execute(
+            """INSERT INTO dividend_alerts
+               (fund_code, fund_name, record_date, ex_date, per_share,
+                pay_date, held_shares, estimated_amount, dividend_method)
+               VALUES(?,?,?,?,?,?,?,?,?)""",
+            (alert["fund_code"], alert.get("fund_name", ""),
+             alert.get("record_date"), alert.get("ex_date"),
+             alert.get("per_share"), alert.get("pay_date"),
+             alert.get("held_shares"), alert.get("estimated_amount"),
+             alert.get("dividend_method", "cash")),
+        )
+        return int(cur.lastrowid)
+
+
+def get_dividend_alerts(status: str | None = None) -> list[dict]:
+    """获取分红提醒列表。status=None 返回全部，否则按状态过滤。"""
+    with get_connection() as conn:
+        if status is None:
+            rows = conn.execute(
+                "SELECT * FROM dividend_alerts ORDER BY id DESC"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM dividend_alerts WHERE status=? ORDER BY id DESC",
+                (status,),
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_pending_alert_count() -> int:
+    """返回 pending 状态的提醒数量（轻量查询，供前端红点轮询）。"""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) c FROM dividend_alerts WHERE status='pending'"
+        ).fetchone()
+    return row["c"] if row else 0
+
+
+def update_dividend_alert(alert_id: int, **fields) -> None:
+    """更新分红提醒字段（status / resolved_at / tx_id 等）。"""
+    if not fields:
+        return
+    allowed = {"status", "resolved_at", "tx_id"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    vals = list(updates.values()) + [alert_id]
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE dividend_alerts SET {set_clause} WHERE id=?", vals
+        )
+
+
+def dividend_alert_exists(fund_code: str, ex_date: str) -> bool:
+    """检查某基金某除息日的提醒是否已存在（任意状态）。
+
+    查所有状态：ignored 后不再重复提醒；用户改主意可手动调 GET /check（不查本表）。
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM dividend_alerts WHERE fund_code=? AND ex_date=? LIMIT 1",
+            (fund_code, ex_date),
+        ).fetchone()
+    return row is not None
 
 
 if __name__ == "__main__":

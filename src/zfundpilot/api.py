@@ -46,7 +46,7 @@ from .models import Fund, Transaction
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="ZFundPilot API", version="0.15.1")
+app = FastAPI(title="ZFundPilot API", version="0.16.0")
 
 _nav_update_state: dict[str, Any] = {
     "running": False,
@@ -398,6 +398,15 @@ class DividendMethodUpdate(BaseModel):
     method: str  # 'cash' or 'reinvest'
 
 
+class DividendAlertUpdate(BaseModel):
+    status: str  # 'confirmed' or 'ignored'
+    tx_id: int | None = None
+
+
+class DividendAutoCheckBody(BaseModel):
+    enabled: bool
+
+
 class CSVImportConfirm(BaseModel):
     transactions: list[TransactionCreate]
     clear_existing: bool = False
@@ -664,6 +673,63 @@ def check_dividends(request: Request) -> list[dict]:
         }
         for ev in events
     ]
+
+
+@app.get("/api/dividends/alerts")
+def get_dividend_alerts(status: str | None = None) -> list[dict]:
+    """获取分红提醒列表。status=pending/confirmed/ignored，默认全部。"""
+    return db.get_dividend_alerts(status)
+
+
+@app.get("/api/dividends/alerts/count")
+def get_pending_alert_count() -> dict[str, int]:
+    """返回 pending 提醒数量（轻量，供前端红点轮询）。"""
+    return {"count": db.get_pending_alert_count()}
+
+
+@app.put("/api/dividends/alerts/{alert_id}")
+def update_dividend_alert(alert_id: int, body: DividendAlertUpdate,
+                          request: Request) -> dict[str, bool]:
+    """更新分红提醒状态（confirmed / ignored）。"""
+    if body.status not in ("confirmed", "ignored"):
+        raise HTTPException(400, "status must be 'confirmed' or 'ignored'")
+    fields: dict = {"status": body.status,
+                    "resolved_at": datetime.now(config.TIMEZONE).isoformat()}
+    if body.tx_id is not None:
+        fields["tx_id"] = body.tx_id
+    db.update_dividend_alert(alert_id, **fields)
+    db.log_audit("dividend_alert_update", ip=_get_client_ip(request),
+                 detail={"id": alert_id, "status": body.status,
+                         "tx_id": body.tx_id})
+    return {"ok": True}
+
+
+@app.post("/api/dividends/scan")
+def scan_dividends(request: Request) -> dict[str, Any]:
+    """手动触发分红扫描，新发现的存入 dividend_alerts 表。
+
+    与 GET /check 区分：scan 持久化到 alerts 表，check 只返回不存储。
+    """
+    from . import fetch_dividend
+    events = fetch_dividend.check_dividends()
+    new_count = 0
+    for ev in events:
+        if not db.dividend_alert_exists(ev.fund_code, ev.ex_date):
+            db.add_dividend_alert({
+                "fund_code": ev.fund_code,
+                "fund_name": ev.fund_name,
+                "record_date": ev.record_date,
+                "ex_date": ev.ex_date,
+                "per_share": ev.per_share,
+                "pay_date": ev.pay_date,
+                "held_shares": ev.held_shares,
+                "estimated_amount": ev.estimated_amount,
+                "dividend_method": ev.dividend_method,
+            })
+            new_count += 1
+    db.log_audit("dividend_scan", ip=_get_client_ip(request),
+                 detail={"found": len(events), "new": new_count})
+    return {"found": len(events), "new": new_count}
 
 
 @app.post("/api/sectors/reset")
@@ -1467,6 +1533,15 @@ def update_scheduler_cron(request: Request, body: SchedulerCronBody) -> dict[str
     db.log_audit("scheduler_cron_change", ip=_get_client_ip(request),
                   username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
                   detail={"cron": body.cron})
+    return scheduler.get_status()
+
+
+@app.put("/api/dividends/auto-check")
+def toggle_dividend_auto_check(request: Request, body: DividendAutoCheckBody) -> dict[str, Any]:
+    """启用/暂停分红自动检测。"""
+    scheduler.set_dividend_enabled(body.enabled)
+    db.log_audit("dividend_auto_check_toggle", ip=_get_client_ip(request),
+                 detail={"enabled": body.enabled})
     return scheduler.get_status()
 
 

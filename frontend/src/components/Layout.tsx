@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { NavLink, Outlet, useLocation } from "react-router-dom"
+import { api } from "@/api/client"
 import Logo from "./Logo"
 import {
   LayoutDashboard,
@@ -63,6 +64,18 @@ const bottomNav = { to: "/settings", labelKey: "settings" as const, icon: Settin
 
 function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const { t } = useLang()
+  const [pendingCount, setPendingCount] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    const fetchCount = () => {
+      api.getPendingAlertCount().then(r => { if (active) setPendingCount(r.count) }).catch(() => {})
+    }
+    fetchCount()
+    const timer = setInterval(fetchCount, 60000)
+    return () => { active = false; clearInterval(timer) }
+  }, [])
+
   const linkClass = (isActive: boolean) =>
     cn(
       "flex items-center rounded-lg text-sm font-medium transition-colors duration-200",
@@ -79,7 +92,9 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
           {!collapsed && (
             <p className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600">{t.nav[group.labelKey]}</p>
           )}
-          {group.items.map(({ to, labelKey, icon: Icon }) => (
+          {group.items.map(({ to, labelKey, icon: Icon }) => {
+            const showBadge = to === "/transactions" && pendingCount > 0
+            return (
             <NavLink
               key={to}
               to={to}
@@ -88,10 +103,21 @@ function NavLinks({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
               className={({ isActive }) => linkClass(isActive)}
               title={collapsed ? t.nav[labelKey] : undefined}
             >
-              <Icon className="h-[18px] w-[18px] shrink-0" />
+              <span className="relative shrink-0">
+                <Icon className="h-[18px] w-[18px]" />
+                {collapsed && showBadge && (
+                  <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-red-500 ring-1 ring-zinc-900" />
+                )}
+              </span>
               {!collapsed && <span className="whitespace-nowrap">{t.nav[labelKey]}</span>}
+              {!collapsed && showBadge && (
+                <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold">
+                  {pendingCount > 99 ? "99+" : pendingCount}
+                </span>
+              )}
             </NavLink>
-          ))}
+            )
+          })}
         </div>
       ))}
       <div className="mt-2 border-t border-zinc-800/50 pt-2">

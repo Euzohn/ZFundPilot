@@ -7,6 +7,7 @@ import type {
   CompareResponse,
   CurvePoint,
   DistributionItem,
+  DividendAlert,
   DividendEvent,
   EstimateSummary,
   FundEstimate,
@@ -398,5 +399,21 @@ export const api = {
     request<{ ok: boolean }>(`/funds/${encodeURIComponent(code)}/dividend-method`, {
       method: "PUT",
       body: JSON.stringify({ method }),
+    }),
+  getDividendAlerts: (status?: string) =>
+    request<DividendAlert[]>(`/dividends/alerts${status ? `?status=${status}` : ""}`),
+  getPendingAlertCount: () =>
+    request<{ count: number }>("/dividends/alerts/count"),
+  updateDividendAlert: (id: number, status: string, txId?: number) =>
+    request<{ ok: boolean }>(`/dividends/alerts/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ status, tx_id: txId ?? null }),
+    }),
+  scanDividends: () =>
+    request<{ found: number; new: number }>("/dividends/scan", { method: "POST" }),
+  toggleDividendAutoCheck: (enabled: boolean) =>
+    request<SchedulerStatus>("/dividends/auto-check", {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
     }),
 }

@@ -12,6 +12,14 @@
 - 新增 API：`GET /api/dividends/check`（检测未记录分红）、`PUT /api/funds/{code}/dividend-method`（设置分红方式）
 - 分红操作审计日志（`dividend_check` / `update_dividend_method`）
 - 分红提醒弹窗组件 `DividendCheckDialog.tsx`：按基金 `dividend_method` 预选 action，弹窗内切换仅影响本次预填
+- 分红定时检测（Phase 2）：每天 09:30 自动扫描持仓基金分红事件，新发现的存入 `dividend_alerts` 表（status: pending/confirmed/ignored），启动时 bootstrap 补执行
+- `dividend_alerts` 表 + CRUD（`add_dividend_alert` / `get_dividend_alerts` / `get_pending_alert_count` / `update_dividend_alert` / `dividend_alert_exists`），去重查所有状态（ignored 后不再重复提醒）
+- 新增 API：`GET /api/dividends/alerts`（按状态过滤）、`GET /api/dividends/alerts/count`（红点轮询）、`PUT /api/dividends/alerts/{id}`（确认/忽略）、`POST /api/dividends/scan`（手动扫描存表）、`PUT /api/dividends/auto-check`（开关）
+- 导航栏 Transactions 项红点提醒：60s 轮询 pending alerts 数量，collapsed 模式显示小圆点，展开模式显示数字 badge
+- Settings 页分红自动检测开关卡片（`dividend_auto_check` preference key，默认关闭）
+- DividendCheckDialog 改为 alerts 模式：打开即显示 pending alerts + 「重新扫描」按钮 + 每行「忽略」按钮 + 「确认入账」带 alert_id 跳转
+- TransactionForm 确认回调：保存交易后自动标记 alert 为 confirmed（关联 tx_id）
+- 分红扫描/提醒处理审计日志（`dividend_scan` / `dividend_alert_update` / `dividend_auto_check_toggle`）
 
 ### Changed
 - AkShare 1.18.79 → 1.18.82（空响应不再抛 `no text parsed` 异常，改为返回空 DataFrame）

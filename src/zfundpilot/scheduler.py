@@ -31,6 +31,9 @@ _auto_invest_lock = threading.Lock()
 
 _PREF_KEY_ENABLED = "nav_auto_update"
 _PREF_KEY_CRON = "nav_cron"
+_PREF_KEY_DIVIDEND = "dividend_auto_check"
+
+_last_dividend_run: datetime | None = None
 
 
 def _run_nav_update() -> None:
@@ -111,6 +114,45 @@ def _run_auto_invest() -> None:
             _last_auto_invest_run = datetime.now(config.TIMEZONE)
 
 
+def _run_dividend_check() -> None:
+    """执行分红检测任务（由调度器调用，每天 09:30）。
+
+    扫描持仓基金的未记录分红事件，新发现的存入 dividend_alerts 表。
+    去重：dividend_alert_exists 查所有状态，已存在的不重复存。
+    """
+    global _last_dividend_run
+    logger.info("[scheduler] 分红检测任务开始")
+    try:
+        from . import fetch_dividend
+        events = fetch_dividend.check_dividends()
+        new_count = 0
+        for ev in events:
+            if not db.dividend_alert_exists(ev.fund_code, ev.ex_date):
+                db.add_dividend_alert({
+                    "fund_code": ev.fund_code,
+                    "fund_name": ev.fund_name,
+                    "record_date": ev.record_date,
+                    "ex_date": ev.ex_date,
+                    "per_share": ev.per_share,
+                    "pay_date": ev.pay_date,
+                    "held_shares": ev.held_shares,
+                    "estimated_amount": ev.estimated_amount,
+                    "dividend_method": ev.dividend_method,
+                })
+                new_count += 1
+        if new_count:
+            db.log_audit("dividend_scan", ip=None,
+                         detail={"found": len(events), "new": new_count})
+            logger.info("[scheduler] 分红检测完成: 发现 %d, 新增 %d 条提醒",
+                        len(events), new_count)
+        else:
+            logger.info("[scheduler] 分红检测完成: 发现 %d, 无新增提醒", len(events))
+        _last_dividend_run = datetime.now(config.TIMEZONE)
+    except Exception:
+        logger.exception("[scheduler] 分红检测任务异常")
+        _last_dividend_run = datetime.now(config.TIMEZONE)
+
+
 def init_scheduler() -> None:
     """初始化并启动调度器。在 FastAPI startup 中调用。"""
     global _scheduler
@@ -138,6 +180,14 @@ def init_scheduler() -> None:
         misfire_grace_time=3600,
         coalesce=True,
     )
+    _scheduler.add_job(
+        _run_dividend_check,
+        trigger=CronTrigger(hour=9, minute=30, timezone=config.TIMEZONE),
+        id="dividend_check",
+        max_instances=1,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
     _scheduler.start()
     logger.info("[scheduler] 调度器已启动, cron=%s, enabled=%s", cron_expr, enabled)
 
@@ -146,6 +196,11 @@ def init_scheduler() -> None:
     else:
         _bootstrap_check(trigger)
     _bootstrap_auto_invest()
+
+    if not _get_dividend_enabled():
+        _scheduler.pause_job("dividend_check")
+    else:
+        _bootstrap_dividend_check()
 
 
 def _bootstrap_auto_invest() -> None:
@@ -162,6 +217,19 @@ def _bootstrap_auto_invest() -> None:
         return
     logger.info("[scheduler] 今日 09:00 已过, 立即执行定投检查")
     _run_auto_invest()
+
+
+def _bootstrap_dividend_check() -> None:
+    """启动时检测：如果今日 09:30 已过且开关开启且尚未运行过，立即执行分红检测。"""
+    if _last_dividend_run is not None:
+        return
+    if not _get_dividend_enabled():
+        return
+    now = datetime.now(config.TIMEZONE)
+    if now.hour < 9 or (now.hour == 9 and now.minute < 30):
+        return
+    logger.info("[scheduler] 今日 09:30 已过, 立即执行分红检测")
+    _run_dividend_check()
 
 
 def _bootstrap_check(trigger: CronTrigger) -> None:
@@ -226,6 +294,27 @@ def set_enabled(enabled: bool) -> None:
         logger.info("[scheduler] 定时任务已暂停")
 
 
+def _get_dividend_enabled() -> bool:
+    """从 preferences 表读取分红自动检测是否启用。默认关闭。"""
+    val = db.get_preference(_PREF_KEY_DIVIDEND)
+    if val is None:
+        return False
+    return val == "true"
+
+
+def set_dividend_enabled(enabled: bool) -> None:
+    """启用/暂停分红自动检测任务，并持久化到 preferences 表。"""
+    db.upsert_preference(_PREF_KEY_DIVIDEND, "true" if enabled else "false")
+    if _scheduler is None:
+        return
+    if enabled:
+        _scheduler.resume_job("dividend_check")
+        logger.info("[scheduler] 分红自动检测已启用")
+    else:
+        _scheduler.pause_job("dividend_check")
+        logger.info("[scheduler] 分红自动检测已暂停")
+
+
 def get_status() -> dict[str, Any]:
     """返回调度器状态。"""
     enabled = _get_enabled()
@@ -241,4 +330,7 @@ def get_status() -> dict[str, Any]:
         "next_run": next_run,
         "last_run": _last_run.strftime("%Y-%m-%d %H:%M:%S") if _last_run else None,
         "last_results": _last_results,
+        "dividend_enabled": _get_dividend_enabled(),
+        "dividend_last_run": (_last_dividend_run.strftime("%Y-%m-%d %H:%M:%S")
+                              if _last_dividend_run else None),
     }

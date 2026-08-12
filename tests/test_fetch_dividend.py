@@ -278,3 +278,181 @@ class TestCheckDividends:
 
         assert len(events) == 1
         assert events[0].dividend_method == "cash"
+
+
+class TestDividendAlertsDB:
+    """dividend_alerts 表 CRUD 测试（用临时数据库）。"""
+
+    def _setup_db(self, tmp_path):
+        """用临时数据库替换 config.DB_PATH 并初始化。"""
+        import os
+
+        from zfundpilot import config
+        db_path = os.path.join(str(tmp_path), "test.db")
+        # patch config.DB_PATH（db 模块用 config.DB_PATH 连接）
+        import zfundpilot.db as db_module
+        original = config.DB_PATH
+        config.DB_PATH = db_path
+        db_module.init_db()
+        return db_module, original
+
+    def _teardown(self, original):
+        from zfundpilot import config
+        config.DB_PATH = original
+
+    def test_add_and_get_alert(self, tmp_path):
+        db, original = self._setup_db(tmp_path)
+        try:
+            alert_id = db.add_dividend_alert({
+                "fund_code": "000001", "fund_name": "华夏成长",
+                "record_date": "2025-09-22", "ex_date": "2025-09-22",
+                "per_share": 0.01, "pay_date": "2025-09-23",
+                "held_shares": 10000, "estimated_amount": 100.0,
+                "dividend_method": "cash",
+            })
+            assert alert_id > 0
+            alerts = db.get_dividend_alerts()
+            assert len(alerts) == 1
+            assert alerts[0]["fund_code"] == "000001"
+            assert alerts[0]["status"] == "pending"
+        finally:
+            self._teardown(original)
+
+    def test_pending_count(self, tmp_path):
+        db, original = self._setup_db(tmp_path)
+        try:
+            assert db.get_pending_alert_count() == 0
+            db.add_dividend_alert({
+                "fund_code": "000001", "ex_date": "2025-09-22",
+                "per_share": 0.01, "held_shares": 1000,
+                "estimated_amount": 10.0,
+            })
+            db.add_dividend_alert({
+                "fund_code": "000002", "ex_date": "2025-09-22",
+                "per_share": 0.02, "held_shares": 1000,
+                "estimated_amount": 20.0,
+            })
+            assert db.get_pending_alert_count() == 2
+            # 确认一条
+            db.update_dividend_alert(1, status="confirmed", resolved_at="2025-09-23")
+            assert db.get_pending_alert_count() == 1
+        finally:
+            self._teardown(original)
+
+    def test_alert_exists_all_status(self, tmp_path):
+        """ignored 的 alert 也算 exists（不再重复提醒）。"""
+        db, original = self._setup_db(tmp_path)
+        try:
+            db.add_dividend_alert({
+                "fund_code": "000001", "ex_date": "2025-09-22",
+                "per_share": 0.01, "held_shares": 1000,
+                "estimated_amount": 10.0,
+            })
+            assert db.dividend_alert_exists("000001", "2025-09-22")
+            assert not db.dividend_alert_exists("000001", "2025-09-23")
+            # 忽略后仍 exists
+            db.update_dividend_alert(1, status="ignored", resolved_at="2025-09-23")
+            assert db.dividend_alert_exists("000001", "2025-09-22")
+        finally:
+            self._teardown(original)
+
+    def test_update_alert_fields(self, tmp_path):
+        db, original = self._setup_db(tmp_path)
+        try:
+            alert_id = db.add_dividend_alert({
+                "fund_code": "000001", "ex_date": "2025-09-22",
+                "per_share": 0.01, "held_shares": 1000,
+                "estimated_amount": 10.0,
+            })
+            db.update_dividend_alert(alert_id, status="confirmed",
+                                     resolved_at="2025-09-23", tx_id=42)
+            alerts = db.get_dividend_alerts()
+            assert alerts[0]["status"] == "confirmed"
+            assert alerts[0]["resolved_at"] == "2025-09-23"
+            assert alerts[0]["tx_id"] == 42
+        finally:
+            self._teardown(original)
+
+    def test_filter_by_status(self, tmp_path):
+        db, original = self._setup_db(tmp_path)
+        try:
+            for i in range(3):
+                db.add_dividend_alert({
+                    "fund_code": f"00000{i+1}", "ex_date": "2025-09-22",
+                    "per_share": 0.01, "held_shares": 1000,
+                    "estimated_amount": 10.0,
+                })
+            db.update_dividend_alert(1, status="ignored")
+            db.update_dividend_alert(2, status="confirmed")
+            assert len(db.get_dividend_alerts("pending")) == 1
+            assert len(db.get_dividend_alerts("ignored")) == 1
+            assert len(db.get_dividend_alerts("confirmed")) == 1
+            assert len(db.get_dividend_alerts()) == 3
+        finally:
+            self._teardown(original)
+
+
+class TestRunDividendCheck:
+    """scheduler._run_dividend_check 去重逻辑测试。"""
+
+    def test_new_alerts_added(self):
+        """新发现的分红事件存入 alerts 表。"""
+        from zfundpilot import scheduler
+        events = [
+            fetch_dividend.DividendEvent(
+                fund_code="000001", fund_name="基金A",
+                record_date="2025-09-22", ex_date="2025-09-22",
+                per_share=0.01, pay_date="2025-09-23",
+                held_shares=10000, estimated_amount=100.0,
+                dividend_method="cash",
+            ),
+        ]
+        with (
+            patch("zfundpilot.fetch_dividend.check_dividends", return_value=events),
+            patch("zfundpilot.scheduler.db.dividend_alert_exists", return_value=False),
+            patch("zfundpilot.scheduler.db.add_dividend_alert") as mock_add,
+            patch("zfundpilot.scheduler.db.log_audit"),
+        ):
+            scheduler._run_dividend_check()
+            assert mock_add.call_count == 1
+
+    def test_existing_alerts_skipped(self):
+        """已存在的 alert（任意状态）不重复存。"""
+        from zfundpilot import scheduler
+        events = [
+            fetch_dividend.DividendEvent(
+                fund_code="000001", fund_name="基金A",
+                record_date="2025-09-22", ex_date="2025-09-22",
+                per_share=0.01, pay_date="2025-09-23",
+                held_shares=10000, estimated_amount=100.0,
+                dividend_method="cash",
+            ),
+        ]
+        with (
+            patch("zfundpilot.fetch_dividend.check_dividends", return_value=events),
+            patch("zfundpilot.scheduler.db.dividend_alert_exists", return_value=True),
+            patch("zfundpilot.scheduler.db.add_dividend_alert") as mock_add,
+            patch("zfundpilot.scheduler.db.log_audit"),
+        ):
+            scheduler._run_dividend_check()
+            assert mock_add.call_count == 0
+
+    def test_no_events(self):
+        """无分红事件时正常完成。"""
+        from zfundpilot import scheduler
+        with (
+            patch("zfundpilot.fetch_dividend.check_dividends", return_value=[]),
+            patch("zfundpilot.scheduler.db.dividend_alert_exists") as mock_exists,
+            patch("zfundpilot.scheduler.db.add_dividend_alert") as mock_add,
+            patch("zfundpilot.scheduler.db.log_audit"),
+        ):
+            scheduler._run_dividend_check()
+            assert mock_add.call_count == 0
+            assert mock_exists.call_count == 0
+
+    def test_exception_handled(self):
+        """check_dividends 抛异常时不崩溃。"""
+        from zfundpilot import scheduler
+        with patch("zfundpilot.fetch_dividend.check_dividends",
+                   side_effect=Exception("network")):
+            scheduler._run_dividend_check()  # 不应抛异常

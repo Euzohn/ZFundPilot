@@ -113,17 +113,12 @@ export default function Transactions() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="form">
-          <div className="flex justify-end mb-2">
-            <Button variant="outline" size="sm" onClick={() => setDividendDialogOpen(true)}>
-              <Gift className="h-4 w-4 mr-1.5" />
-              {t.transactions.dividendCheck}
-            </Button>
-          </div>
           <TransactionForm
             editingTx={editingTx}
             prefill={prefill}
             onPrefillConsumed={() => setPrefill(null)}
             onDone={handleFormDone}
+            onCheckDividends={() => setDividendDialogOpen(true)}
           />
         </TabsContent>
         <TabsContent value="list">
@@ -139,11 +134,12 @@ export default function Transactions() {
 // ---------------------------------------------------------------------------
 // 单笔录入 / 编辑
 // ---------------------------------------------------------------------------
-function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
+function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onCheckDividends }: {
   editingTx: Transaction | null
   prefill: { code: string; action: string; channel?: string; amount?: string; date?: string; note?: string } | null
   onPrefillConsumed: () => void
   onDone: (fundCode?: string) => void
+  onCheckDividends?: () => void
 }) {
   const { t } = useLang()
   const [code, setCode] = useState("")
@@ -434,9 +430,17 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone }: {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">
-          {isEditing ? `${t.transactions.editTransaction} #${editingTx?.id}` : t.transactions.singleEntry}
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">
+            {isEditing ? `${t.transactions.editTransaction} #${editingTx?.id}` : t.transactions.singleEntry}
+          </CardTitle>
+          {onCheckDividends && !isEditing && (
+            <Button variant="outline" size="sm" onClick={onCheckDividends}>
+              <Gift className="h-4 w-4 mr-1.5" />
+              {t.transactions.dividendCheck}
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-5">

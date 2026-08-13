@@ -25,7 +25,7 @@ from typing import Any
 
 import pandas as pd
 
-from . import db
+from . import db, fetch_fund
 from .models import (
     ACTION_BUY,
     ACTION_DIVIDEND,
@@ -563,8 +563,9 @@ def backfill_transaction_navs() -> list[dict[str, Any]]:
     查找 nav IS NULL 的交易，按日期查净值，补全 nav 并计算缺失的份额/金额。
     T+1 交易（is_t1=1）使用次日净值，而非当日。
     现金分红的 nav 是每份分红金额（非基金净值），不自动回填。
+    回填时若手续费为空，自动拉取申购/赎回费率计算。
 
-    返回被更新的交易详情列表，每条含 tx_id/fund_code/date/nav/shares/amount。
+    返回被更新的交易详情列表，每条含 tx_id/fund_code/date/nav/shares/amount/fee。
     """
     txs = db.get_transactions_without_nav()
     updated: list[dict[str, Any]] = []
@@ -576,6 +577,11 @@ def backfill_transaction_navs() -> list[dict[str, Any]]:
         if not nav_point:
             continue
         tx.nav = float(nav_point["nav"])
+        if not tx.fee:
+            if tx.action == "buy" and tx.amount:
+                tx.fee = fetch_fund.calc_purchase_fee(tx.fund_code, tx.amount).fee
+            elif tx.action == "sell" and tx.shares:
+                tx.fee = fetch_fund.calc_redemption_fee(tx.fund_code, tx.date, tx.shares).fee
         tx.normalize()
         db.update_transaction(tx)
         updated.append({
@@ -585,6 +591,7 @@ def backfill_transaction_navs() -> list[dict[str, Any]]:
             "nav": tx.nav,
             "shares": tx.shares,
             "amount": tx.amount,
+            "fee": tx.fee,
         })
     return updated
 
@@ -594,6 +601,7 @@ def recalculate_t1_transactions() -> list[dict[str, Any]]:
 
     查找 is_t1=1 且 nav 已回填的交易，
     若 nav 来自交易当日（错误）而非次日（正确），则用次日净值重新计算。
+    重新计算时若手续费为空，自动拉取申购/赎回费率。
 
     返回修复详情列表，每条含 tx_id/fund_code/date/old_nav/new_nav/old_shares/new_shares 等。
     幂等：已正确的交易不受影响。启动时自动执行一次。
@@ -624,6 +632,7 @@ def recalculate_t1_transactions() -> list[dict[str, Any]]:
         old_nav = tx.nav
         old_shares = tx.shares
         old_amount = tx.amount
+        old_fee = tx.fee
         # 用正确净值重新计算
         tx.nav = correct_nav_val
         # 清空 shares/amount 让 normalize 重新计算
@@ -633,6 +642,11 @@ def recalculate_t1_transactions() -> list[dict[str, Any]]:
             tx.amount = None  # 卖出：用 shares*nav-fee 重算金额
         elif tx.action == "reinvest":
             tx.amount = None  # 再投资：用 shares*nav 重算金额
+        if not tx.fee:
+            if tx.action == "buy" and tx.amount:
+                tx.fee = fetch_fund.calc_purchase_fee(tx.fund_code, tx.amount).fee
+            elif tx.action == "sell" and tx.shares:
+                tx.fee = fetch_fund.calc_redemption_fee(tx.fund_code, tx.date, tx.shares).fee
         tx.normalize()
         db.update_transaction(tx)
         fixed.append({
@@ -646,5 +660,7 @@ def recalculate_t1_transactions() -> list[dict[str, Any]]:
             "new_shares": tx.shares,
             "old_amount": old_amount,
             "new_amount": tx.amount,
+            "old_fee": old_fee,
+            "new_fee": tx.fee,
         })
     return fixed

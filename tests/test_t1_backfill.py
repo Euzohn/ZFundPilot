@@ -5,6 +5,7 @@
 2. _t1_nav_date 返回次日日期
 3. backfill_transaction_navs 对 T+1 交易使用次日净值
 4. recalculate_t1_transactions 修复历史错误回填
+5. 回填时自动拉取手续费（买入/卖出）
 """
 from unittest.mock import MagicMock, patch
 
@@ -14,7 +15,12 @@ from zfundpilot.analysis import (
     backfill_transaction_navs,
     recalculate_t1_transactions,
 )
-from zfundpilot.models import ACTION_BUY, Transaction
+from zfundpilot.models import ACTION_BUY, ACTION_SELL, Transaction
+
+
+def _zero_fee(*_args, **_kwargs):
+    """返回 fee=0 的 mock，保持现有断言不变。"""
+    return MagicMock(fee=0)
 
 
 class TestT1Detection:
@@ -70,8 +76,10 @@ class TestBackfillT1:
             amount=1000, is_t1=False,
         )
 
-        with patch("zfundpilot.analysis.db") as mock_db:
+        with patch("zfundpilot.analysis.db") as mock_db, \
+             patch("zfundpilot.analysis.fetch_fund") as mock_ff:
             mock_db.get_transactions_without_nav.return_value = [t1_tx, normal_tx]
+            mock_ff.calc_purchase_fee.side_effect = _zero_fee
 
             # T+1 交易：返回次日净值 1.5
             # 普通交易：返回当日净值 1.0
@@ -101,10 +109,12 @@ class TestBackfillT1:
             amount=1000, is_t1=False,
         )
 
-        with patch("zfundpilot.analysis.db") as mock_db:
+        with patch("zfundpilot.analysis.db") as mock_db, \
+             patch("zfundpilot.analysis.fetch_fund") as mock_ff:
             mock_db.get_transactions_without_nav.return_value = [tx]
             mock_db.get_nav_on_or_after.return_value = {"nav": 1.2}
             mock_db.update_transaction = MagicMock()
+            mock_ff.calc_purchase_fee.side_effect = _zero_fee
 
             updated = backfill_transaction_navs()
 
@@ -112,6 +122,73 @@ class TestBackfillT1:
             assert tx.nav == 1.2
             # 确认查的是当日 2025-01-15
             mock_db.get_nav_on_or_after.assert_called_with("001", "2025-01-15")
+
+    def test_buy_backfill_fetches_purchase_fee(self):
+        """回填买入时应自动拉取申购手续费。"""
+        tx = Transaction(
+            id=1, fund_code="001", action=ACTION_BUY, date="2025-01-15",
+            amount=1000, is_t1=False,
+        )
+
+        with patch("zfundpilot.analysis.db") as mock_db, \
+             patch("zfundpilot.analysis.fetch_fund") as mock_ff:
+            mock_db.get_transactions_without_nav.return_value = [tx]
+            mock_db.get_nav_on_or_after.return_value = {"nav": 1.5}
+            mock_db.update_transaction = MagicMock()
+            mock_ff.calc_purchase_fee.return_value = MagicMock(fee=5.0)
+
+            updated = backfill_transaction_navs()
+
+            assert len(updated) == 1
+            assert updated[0]["fee"] == 5.0
+            # shares = (amount - fee) / nav = (1000 - 5) / 1.5 = 663.33
+            assert tx.shares == round((1000 - 5) / 1.5, 2)
+            assert tx.fee == 5.0
+            mock_ff.calc_purchase_fee.assert_called_once_with("001", 1000)
+
+    def test_sell_backfill_fetches_redemption_fee(self):
+        """回填卖出时应自动拉取赎回手续费。"""
+        tx = Transaction(
+            id=1, fund_code="001", action=ACTION_SELL, date="2025-01-15",
+            shares=100, is_t1=False,
+        )
+
+        with patch("zfundpilot.analysis.db") as mock_db, \
+             patch("zfundpilot.analysis.fetch_fund") as mock_ff:
+            mock_db.get_transactions_without_nav.return_value = [tx]
+            mock_db.get_nav_on_or_after.return_value = {"nav": 1.5}
+            mock_db.update_transaction = MagicMock()
+            mock_ff.calc_redemption_fee.return_value = MagicMock(fee=3.0)
+
+            updated = backfill_transaction_navs()
+
+            assert len(updated) == 1
+            assert updated[0]["fee"] == 3.0
+            # amount = shares * nav - fee = 100 * 1.5 - 3 = 147.0
+            assert tx.amount == round(100 * 1.5 - 3, 2)
+            assert tx.fee == 3.0
+            mock_ff.calc_redemption_fee.assert_called_once_with("001", "2025-01-15", 100)
+
+    def test_backfill_preserves_existing_fee(self):
+        """已有手续费的交易不再重新拉取。"""
+        tx = Transaction(
+            id=1, fund_code="001", action=ACTION_BUY, date="2025-01-15",
+            amount=1000, fee=12.0, is_t1=False,
+        )
+
+        with patch("zfundpilot.analysis.db") as mock_db, \
+             patch("zfundpilot.analysis.fetch_fund") as mock_ff:
+            mock_db.get_transactions_without_nav.return_value = [tx]
+            mock_db.get_nav_on_or_after.return_value = {"nav": 1.5}
+            mock_db.update_transaction = MagicMock()
+
+            updated = backfill_transaction_navs()
+
+            assert len(updated) == 1
+            assert updated[0]["fee"] == 12.0
+            # shares = (amount - fee) / nav = (1000 - 12) / 1.5 = 658.67
+            assert tx.shares == round((1000 - 12) / 1.5, 2)
+            mock_ff.calc_purchase_fee.assert_not_called()
 
 
 class TestRecalculateT1:
@@ -131,7 +208,8 @@ class TestRecalculateT1:
             "channel": "", "note": "定投", "is_t1": 1,
         })
 
-        with patch("zfundpilot.analysis.db") as mock_db:
+        with patch("zfundpilot.analysis.db") as mock_db, \
+             patch("zfundpilot.analysis.fetch_fund") as mock_ff:
             mock_conn = MagicMock()
             mock_conn.execute.return_value.fetchall.return_value = [row]
             mock_db.get_connection.return_value.__enter__ = MagicMock(return_value=mock_conn)
@@ -142,6 +220,7 @@ class TestRecalculateT1:
             # 次日净值 = 1.5（正确净值）
             mock_db.get_nav_on_or_after.return_value = {"nav": 1.5}
             mock_db.update_transaction = MagicMock()
+            mock_ff.calc_purchase_fee.side_effect = _zero_fee
 
             fixed = recalculate_t1_transactions()
 
@@ -152,6 +231,8 @@ class TestRecalculateT1:
             assert fixed[0]["new_nav"] == 1.5
             assert fixed[0]["old_shares"] == 1000.0
             assert fixed[0]["new_shares"] == round((1000 - 0) / 1.5, 2)
+            assert fixed[0]["old_fee"] == 0
+            assert fixed[0]["new_fee"] == 0
             # 验证 update_transaction 被调用，且 nav 已改为 1.5
             call_args = mock_db.update_transaction.call_args
             updated_tx = call_args[0][0]
@@ -166,7 +247,8 @@ class TestRecalculateT1:
             "channel": "", "note": "定投", "is_t1": 1,
         })
 
-        with patch("zfundpilot.analysis.db") as mock_db:
+        with patch("zfundpilot.analysis.db") as mock_db, \
+             patch("zfundpilot.analysis.fetch_fund") as mock_ff:
             mock_conn = MagicMock()
             mock_conn.execute.return_value.fetchall.return_value = [row]
             mock_db.get_connection.return_value.__enter__ = MagicMock(return_value=mock_conn)
@@ -176,6 +258,7 @@ class TestRecalculateT1:
             mock_db.get_nav_on_date.return_value = {"nav": 1.0}
             mock_db.get_nav_on_or_after.return_value = {"nav": 1.5}
             mock_db.update_transaction = MagicMock()
+            mock_ff.calc_purchase_fee.side_effect = _zero_fee
 
             fixed = recalculate_t1_transactions()
 
@@ -190,7 +273,8 @@ class TestRecalculateT1:
             "channel": "", "note": "普通买入", "is_t1": 0,
         })
 
-        with patch("zfundpilot.analysis.db") as mock_db:
+        with patch("zfundpilot.analysis.db") as mock_db, \
+             patch("zfundpilot.analysis.fetch_fund"):
             mock_conn = MagicMock()
             mock_conn.execute.return_value.fetchall.return_value = [row]
             mock_db.get_connection.return_value.__enter__ = MagicMock(return_value=mock_conn)
@@ -209,7 +293,8 @@ class TestRecalculateT1:
             "channel": "", "note": "定投", "is_t1": 1,
         })
 
-        with patch("zfundpilot.analysis.db") as mock_db:
+        with patch("zfundpilot.analysis.db") as mock_db, \
+             patch("zfundpilot.analysis.fetch_fund") as mock_ff:
             mock_conn = MagicMock()
             mock_conn.execute.return_value.fetchall.return_value = [row]
             mock_db.get_connection.return_value.__enter__ = MagicMock(return_value=mock_conn)
@@ -220,6 +305,7 @@ class TestRecalculateT1:
             # 次日净值也是 1.0（相同，无需修复）
             mock_db.get_nav_on_or_after.return_value = {"nav": 1.0}
             mock_db.update_transaction = MagicMock()
+            mock_ff.calc_purchase_fee.side_effect = _zero_fee
 
             fixed = recalculate_t1_transactions()
 

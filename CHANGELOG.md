@@ -4,6 +4,16 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Fixed
+- NavLinks 双实例轮询提升到 Layout 层，消除 desktop+mobile 重复 60s 定时器
+- DividendCheckDialog useEffect 加 active flag cleanup，防止弹窗关闭后 async 返回在已卸载组件上 setState
+- Settings 偏好设置 tab Card 宽度与 account/ai 一致（移除 `max-w-4xl`）
+- 渠道管理行布局：左 div `flex-1` 撑满，消除桌面端中间空白
+- 外观主题 segmented control 宽度与涨跌颜色选择器一致（`w-full` + `flex-1`）
+- 净值回填时自动拉取手续费：`backfill_transaction_navs` / `recalculate_t1_transactions` 在 `normalize` 前调 `calc_purchase_fee` / `calc_redemption_fee`，返回/审计日志 detail 新增 `fee` 字段
+
 ## [0.16.0] - 2026-08-12
 
 ### Added

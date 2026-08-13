@@ -131,11 +131,12 @@ ZFundPilot/
 - `effectiveNavDate`: 15:00 前用当日净值，15:00 后用次日净值
 - `backfill_transaction_navs()`: 净值更新后自动回填缺失 nav 的交易（跳过分红）
   - T+1 交易（`is_t1=1`）用 `date+1` 查净值，普通交易用 `date`
+  - 回填时若 `fee` 为空，自动拉取：买入调 `calc_purchase_fee`，卖出调 `calc_redemption_fee`
   - `_is_t1_transaction()` 检测 `tx.is_t1` 字段，`_t1_nav_date()` 返回次日日期
 - `recalculate_t1_transactions()`: 一次性修复历史 T+1 交易的错误净值回填
   - 启动时自动执行（通过 `preferences` 表 key=`t1_nav_fix_done` 标记完成）
   - 检测条件：`is_t1=1` + nav 来自交易当日（错误）→ 用次日净值重算
-  - 返回修复详情列表（tx_id/fund_code/old_nav/new_nav/old_shares/new_shares）
+  - 返回修复详情列表（tx_id/fund_code/old_nav/new_nav/old_shares/new_shares/old_fee/new_fee）
   - 修复结果写入 `audit_log`（action=`t1_nav_fix`，detail 含修复列表）+ stdout 打印
 
 ---
@@ -425,6 +426,15 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ---
 
 ## 十二、当前工作状态
+
+### Unreleased
+
+- fix: NavLinks 双实例轮询提升到 Layout 层，消除 desktop+mobile 重复 60s 定时器
+- fix: DividendCheckDialog useEffect 加 active flag cleanup，防止弹窗关闭后 async 返回在已卸载组件上 setState
+- fix: Settings 偏好设置 tab Card 宽度与 account/ai 一致（移除 `max-w-4xl`）
+- fix: 渠道管理行布局：左 div `flex-1` 撑满，消除桌面端中间空白
+- fix: 外观主题 segmented control 宽度与涨跌颜色选择器一致（`w-full` + `flex-1`）
+- fix: 净值回填时自动拉取手续费（`backfill_transaction_navs` / `recalculate_t1_transactions` 在 `normalize` 前调 `calc_purchase_fee` / `calc_redemption_fee`，返回/审计日志 detail 新增 `fee` 字段）
 
 ### v0.16.0 - 2026-08-12
 

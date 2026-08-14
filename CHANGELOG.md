@@ -7,6 +7,11 @@
 ## [Unreleased]
 
 ### Added
+（当前无待发布变更）
+
+## [0.17.0] - 2026-08-14
+
+### Added
 - 组合曲线叠加基准指数对比：支持沪深300/上证指数/创业板指 toggle 切换，虚线叠加在右轴(%)上，直观看出跑赢/跑输大盘
 - 新增 API `GET /api/portfolio/benchmark?indices=000300,000001,399006`，返回基准累计收益率，按组合曲线日期 ffill 对齐
 - `fetch_estimate.py` 新增 `fetch_index_history()` 获取指数历史收盘价（新浪源 `ak.stock_zh_index_daily`），1h 缓存

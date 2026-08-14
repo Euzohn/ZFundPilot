@@ -1185,6 +1185,7 @@ def get_portfolio_benchmark(indices: str = "") -> list[dict[str, Any]]:
 
     curve = analysis.build_portfolio_curve()
     if curve.empty:
+        logger.warning("get_portfolio_benchmark: 组合曲线为空，跳过基准数据")
         return []
 
     dates = curve["date"].tolist()
@@ -1213,6 +1214,7 @@ def get_portfolio_benchmark(indices: str = "") -> list[dict[str, Any]]:
         series[code] = filled
 
     if not series:
+        logger.warning("get_portfolio_benchmark: 所有指数数据均为空 %s", codes)
         return []
 
     result = []

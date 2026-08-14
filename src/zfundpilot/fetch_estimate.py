@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -24,6 +25,8 @@ import akshare as ak
 import pandas as pd
 
 from . import config
+
+logger = logging.getLogger(__name__)
 
 _batch_cache: dict[str, tuple[float, list[FundEstimate]]] = {}
 _BATCH_KEY = "__batch__"
@@ -371,6 +374,7 @@ def fetch_index_history(symbol: str, start_date: str, end_date: str) -> list[dic
             start_date=start_compact, end_date=end_compact,
         )
         if df is None or len(df) == 0:
+            logger.warning("fetch_index_history: no data for %s %s-%s", symbol, start_date, end_date)
             return []
         result = []
         for _, row in df.iterrows():
@@ -381,6 +385,7 @@ def fetch_index_history(symbol: str, start_date: str, end_date: str) -> list[dic
         _index_hist_cache[cache_key] = (time.time(), result)
         return result
     except Exception:  # noqa: BLE001
+        logger.exception("fetch_index_history failed: %s %s-%s", symbol, start_date, end_date)
         return []
 
 

@@ -349,8 +349,20 @@ _index_hist_cache: dict[str, tuple[float, list[dict]]] = {}
 _INDEX_HIST_TTL = 3600  # 秒（1h，历史数据不变）
 
 
+def _to_sina_symbol(code: str) -> str:
+    """指数代码转新浪格式：000300 → sh000300, 399006 → sz399006。"""
+    if code.startswith("0"):
+        return f"sh{code}"
+    if code.startswith("3"):
+        return f"sz{code}"
+    return code
+
+
 def fetch_index_history(symbol: str, start_date: str, end_date: str) -> list[dict]:
     """获取指数历史收盘价。
+
+    使用新浪数据源（ak.stock_zh_index_daily），返回日期范围内 [{date, close}]。
+    全量数据按 symbol 缓存 1h，按日期范围过滤返回。
 
     Args:
         symbol: 指数代码，如 "000300"(沪深300) "000001"(上证指数) "399006"(创业板指)
@@ -361,32 +373,27 @@ def fetch_index_history(symbol: str, start_date: str, end_date: str) -> list[dic
         [{date: "YYYY-MM-DD", close: 3800.5}, ...]，按日期升序。
         失败返回空列表。
     """
-    cache_key = f"{symbol}:{start_date}:{end_date}"
-    cached = _index_hist_cache.get(cache_key)
+    cached = _index_hist_cache.get(symbol)
     if cached and time.time() - cached[0] < _INDEX_HIST_TTL:
-        return cached[1]
-
-    start_compact = start_date.replace("-", "")
-    end_compact = end_date.replace("-", "")
-    try:
-        df = ak.index_zh_a_hist(
-            symbol=symbol, period="daily",
-            start_date=start_compact, end_date=end_compact,
-        )
-        if df is None or len(df) == 0:
-            logger.warning("fetch_index_history: no data for %s %s-%s", symbol, start_date, end_date)
+        full = cached[1]
+    else:
+        sina_symbol = _to_sina_symbol(symbol)
+        try:
+            df = ak.stock_zh_index_daily(symbol=sina_symbol)
+            if df is None or len(df) == 0:
+                logger.warning("fetch_index_history: no data for %s", symbol)
+                return []
+            full = []
+            for _, row in df.iterrows():
+                d = str(row.get("date", "")).strip()[:10]
+                c = _safe_float(row.get("close"))
+                if d and c:
+                    full.append({"date": d, "close": c})
+            _index_hist_cache[symbol] = (time.time(), full)
+        except Exception:  # noqa: BLE001
+            logger.exception("fetch_index_history failed: %s", symbol)
             return []
-        result = []
-        for _, row in df.iterrows():
-            d = str(row.get("日期", "")).strip()[:10]
-            c = _safe_float(row.get("收盘"))
-            if d and c:
-                result.append({"date": d, "close": c})
-        _index_hist_cache[cache_key] = (time.time(), result)
-        return result
-    except Exception:  # noqa: BLE001
-        logger.exception("fetch_index_history failed: %s %s-%s", symbol, start_date, end_date)
-        return []
+    return [pt for pt in full if start_date <= pt["date"] <= end_date]
 
 
 def clear_index_hist_cache() -> None:

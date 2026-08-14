@@ -6,6 +6,11 @@
 
 ## [Unreleased]
 
+### Added
+- 组合曲线叠加基准指数对比：支持沪深300/上证指数/创业板指 toggle 切换，虚线叠加在右轴(%)上，直观看出跑赢/跑输大盘
+- 新增 API `GET /api/portfolio/benchmark?indices=000300,000001,399006`，返回基准累计收益率，按组合曲线日期 ffill 对齐
+- `fetch_estimate.py` 新增 `fetch_index_history()` 获取指数历史收盘价（新浪源 `ak.stock_zh_index_daily`），1h 缓存
+
 ### Fixed
 - NavLinks 双实例轮询提升到 Layout 层，消除 desktop+mobile 重复 60s 定时器
 - DividendCheckDialog useEffect 加 active flag cleanup，防止弹窗关闭后 async 返回在已卸载组件上 setState

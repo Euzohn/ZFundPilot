@@ -76,7 +76,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 ### Analysis & Estimates
 
 - **NAV Updates** — AkShare primary, Tiantian Fund fallback. Auto-fetch fund name/type/sector on code entry
-- **Return Analysis** — Unrealized/realized P&L, portfolio return curve, return rate ranking, calendar view, stacked bar by channel
+- **Return Analysis** — Unrealized/realized P&L, portfolio return curve, benchmark comparison (CSI 300 / SSE Composite / ChiNext), return rate ranking, calendar view, stacked bar by channel
 - **Live Estimates** — Real-time fund change estimates during trading hours. Auto-invalidates when actual NAV is published
 - **Fund Compare** — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix
 - **Fund Screener** — Filter from full market universe by type/sector/keyword, top 30 auto-enriched with returns/risk metrics, sortable columns, one-click add to compare or watchlist

@@ -61,7 +61,7 @@ ZFundPilot/
 │   │   ├── Transactions.tsx # 交易管理（录入/流水/CSV/定投计划）
 │   │   ├── NavUpdate.tsx    # 净值更新
 │   │   ├── Positions.tsx    # 持仓明细
-│   │   ├── Returns.tsx      # 收益分析（曲线/排名/日历）
+│   │   ├── Returns.tsx      # 收益分析（曲线/基准对比/排名/日历）
 │   │   ├── Risk.tsx         # 风险评估
 │   │   ├── FundCompare.tsx     # 基金对比（多维度同框对比 + 相关性矩阵）
 │   │   ├── Screener.tsx       # 基金筛选（全市场筛选 + 指标排序 + 加自选/对比）
@@ -154,6 +154,7 @@ ZFundPilot/
 - i18n 序列化: `/api/risk` flags 和 `/api/rebalance` advice 输出 `code`+`params`，前端 `backendLabels.ts` 按 code 翻译
 - 自选列表: `POST/GET/DELETE /api/watchlist`，加入时自动获取基金 meta 并 upsert 到 `funds` 表
 - 数据备份: `GET /api/export/zip`，ZIP 含 5 个 CSV（交易/基金/自选/定投/偏好），净值历史不含
+- 基准对比: `GET /api/portfolio/benchmark?indices=000300,000001,399006`，返回基准累计收益率（`close / close_at_start - 1`），按组合曲线日期 ffill 对齐。`BENCHMARK_INDICES` 白名单控制可选指数
 
 ### config.py — 全局配置
 
@@ -219,6 +220,7 @@ ZFundPilot/
 - `gztime` 从估值列名提取日期（如 `2024-07-30-估算数据-估算值` → `2024-07-30 15:00`），而非用 `datetime.now()`，避免跨日数据时间戳错误
 - 估算失效检测：`jzrq == gztime[:10]` 时标记 `ok=False`（真实净值已公布）
 - API: `GET /api/estimate`（批量 + 组合汇总，含指数兜底）+ `GET /api/funds/{code}/estimate`（单只，含指数兜底）
+- `fetch_index_history(symbol, start_date, end_date)`: 获取指数历史收盘价（新浪源 `ak.stock_zh_index_daily`），1h 缓存，按日期范围过滤返回。`_to_sina_symbol()` 转换代码格式（000300→sh000300），用于基准对比
 
 ### analysis.py — 收益计算
 
@@ -417,6 +419,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - **AkShare** (`ak.fund_open_fund_info_em`): 主数据源，基金净值历史
 - **AkShare** (`ak.fund_value_estimation_em`): 实时估值（覆盖全市场基金，交易日实时估算涨跌幅，目前不可用）
 - **AkShare** (`ak.stock_zh_index_spot_sina` / `ak.index_global_spot_em` / `ak.stock_hk_index_spot_em`): 指数实时行情（A 股/全球/港股），指数基金估值兜底
+- **AkShare** (`ak.stock_zh_index_daily`): 指数历史日线（新浪源），基准对比用（沪深300/上证指数/创业板指）
 - **AkShare** (`ak.fund_etf_spot_em`): ETF 实时行情（1566 只），行业/主题指数基金估值代理
 - **天天基金** (`fund.eastmoney.com/pingzhongdata`): fallback 数据源 + 基金档案（经理/规模）
 - **天天基金** (`fund.eastmoney.com/{code}.html`): 风险等级抓取（HTML 解析）
@@ -429,6 +432,9 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### Unreleased
 
+- feat: 组合曲线叠加基准指数对比——沪深300/上证指数/创业板指 toggle 切换，虚线叠加在右轴(%)上，直观看出跑赢/跑输大盘
+- feat: 新增 API `GET /api/portfolio/benchmark?indices=000300,000001,399006`，返回基准累计收益率，按组合曲线日期 ffill 对齐
+- feat: `fetch_estimate.py` 新增 `fetch_index_history()` 获取指数历史收盘价（新浪源 `ak.stock_zh_index_daily`，1h 缓存）
 - fix: NavLinks 双实例轮询提升到 Layout 层，消除 desktop+mobile 重复 60s 定时器
 - fix: DividendCheckDialog useEffect 加 active flag cleanup，防止弹窗关闭后 async 返回在已卸载组件上 setState
 - fix: Settings 偏好设置 tab Card 宽度与 account/ai 一致（移除 `max-w-4xl`）

@@ -6,6 +6,7 @@ import type {
   ChannelPnLPoint,
   CompareResponse,
   CurvePoint,
+  BenchmarkPoint,
   DistributionItem,
   DividendAlert,
   DividendEvent,
@@ -230,6 +231,8 @@ export const api = {
 
   // Portfolio curve
   getPortfolioCurve: () => request<CurvePoint[]>("/portfolio/curve"),
+  getPortfolioBenchmark: (indices: string[]) =>
+    request<BenchmarkPoint[]>(`/portfolio/benchmark?indices=${indices.join(",")}`),
   getChannelPnl: () => request<ChannelPnLPoint[]>("/portfolio/channel-pnl"),
 
   // Risk & Rebalance

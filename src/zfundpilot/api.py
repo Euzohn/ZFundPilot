@@ -1157,6 +1157,73 @@ def get_portfolio_curve() -> list[dict[str, Any]]:
     return curve.to_dict(orient="records")
 
 
+BENCHMARK_INDICES: dict[str, str] = {
+    "000300": "沪深300",
+    "000001": "上证指数",
+    "399006": "创业板指",
+}
+
+
+@app.get("/api/portfolio/benchmark")
+def get_portfolio_benchmark(indices: str = "") -> list[dict[str, Any]]:
+    """获取基准指数累计收益率序列，与组合曲线日期对齐。
+
+    Args:
+        indices: 逗号分隔的指数代码，如 "000300,000001,399006"
+
+    Returns:
+        [{date: "2025-01-01", "000300": 0.05, "000001": 0.03, ...}, ...]
+        每个指数的值为累计收益率（close / close_at_start - 1）。
+        失败的指数不包含在结果中。
+    """
+    if not indices:
+        return []
+    codes = [c.strip() for c in indices.split(",") if c.strip()]
+    codes = [c for c in codes if c in BENCHMARK_INDICES]
+    if not codes:
+        return []
+
+    curve = analysis.build_portfolio_curve()
+    if curve.empty:
+        return []
+
+    dates = curve["date"].tolist()
+    start_date = dates[0]
+    end_date = dates[-1]
+
+    series: dict[str, dict[str, float]] = {}
+    for code in codes:
+        hist = fetch_estimate.fetch_index_history(code, start_date, end_date)
+        if not hist:
+            continue
+        first_close = hist[0]["close"]
+        if first_close == 0:
+            continue
+        # 按日期建 Map，计算累计收益率
+        close_map: dict[str, float] = {}
+        for pt in hist:
+            close_map[pt["date"]] = (pt["close"] / first_close) - 1
+        # ffill 到组合曲线的日期轴
+        last_val = 0.0
+        filled: dict[str, float] = {}
+        for d in dates:
+            if d in close_map:
+                last_val = close_map[d]
+            filled[d] = last_val
+        series[code] = filled
+
+    if not series:
+        return []
+
+    result = []
+    for d in dates:
+        row: dict[str, Any] = {"date": d}
+        for code in series:
+            row[code] = round(series[code][d], 6)
+        result.append(row)
+    return result
+
+
 @app.get("/api/portfolio/channel-pnl")
 def get_channel_pnl() -> list[dict[str, Any]]:
     return analysis.build_channel_daily_pnl()

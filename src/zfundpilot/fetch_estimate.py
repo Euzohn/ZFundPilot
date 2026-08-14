@@ -337,3 +337,53 @@ def clear_index_cache() -> None:
     global _index_spot_cache, _etf_spot_cache
     _index_spot_cache = (0.0, {})
     _etf_spot_cache = (0.0, {})
+
+
+# ---------------------------------------------------------------------------
+# 指数历史收盘价（基准对比）
+# ---------------------------------------------------------------------------
+_index_hist_cache: dict[str, tuple[float, list[dict]]] = {}
+_INDEX_HIST_TTL = 3600  # 秒（1h，历史数据不变）
+
+
+def fetch_index_history(symbol: str, start_date: str, end_date: str) -> list[dict]:
+    """获取指数历史收盘价。
+
+    Args:
+        symbol: 指数代码，如 "000300"(沪深300) "000001"(上证指数) "399006"(创业板指)
+        start_date: 起始日期 "YYYY-MM-DD"
+        end_date: 结束日期 "YYYY-MM-DD"
+
+    Returns:
+        [{date: "YYYY-MM-DD", close: 3800.5}, ...]，按日期升序。
+        失败返回空列表。
+    """
+    cache_key = f"{symbol}:{start_date}:{end_date}"
+    cached = _index_hist_cache.get(cache_key)
+    if cached and time.time() - cached[0] < _INDEX_HIST_TTL:
+        return cached[1]
+
+    start_compact = start_date.replace("-", "")
+    end_compact = end_date.replace("-", "")
+    try:
+        df = ak.index_zh_a_hist(
+            symbol=symbol, period="daily",
+            start_date=start_compact, end_date=end_compact,
+        )
+        if df is None or len(df) == 0:
+            return []
+        result = []
+        for _, row in df.iterrows():
+            d = str(row.get("日期", "")).strip()[:10]
+            c = _safe_float(row.get("收盘"))
+            if d and c:
+                result.append({"date": d, "close": c})
+        _index_hist_cache[cache_key] = (time.time(), result)
+        return result
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def clear_index_hist_cache() -> None:
+    """清空指数历史缓存。"""
+    _index_hist_cache.clear()

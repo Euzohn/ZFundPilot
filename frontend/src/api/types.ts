@@ -104,6 +104,12 @@ export interface CurvePoint {
   total_value: number
   invested_cost: number
   total_return: number
+  [key: string]: string | number
+}
+
+export interface BenchmarkPoint {
+  date: string
+  [code: string]: string | number
 }
 
 export interface ChannelPnLPoint {

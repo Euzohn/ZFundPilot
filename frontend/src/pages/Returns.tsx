@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { PortfolioSummary, CurvePoint, ChannelPnLPoint, Position } from "@/api/types"
+import type { PortfolioSummary, CurvePoint, BenchmarkPoint, ChannelPnLPoint, Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
@@ -19,8 +19,15 @@ import { getChannelColors, getChannelColorsAsync, getPalette } from "@/lib/chann
 import { RANGE_DAYS } from "@/lib/rangeLabels"
 import { makeSortHeader } from "@/components/SortHeader"
 import { useLang } from "@/i18n/LanguageContext"
+import { CHART_COLORS } from "@/lib/chartPalette"
 
 const PALETTE = getPalette()
+
+const BENCHMARK_DEFS = [
+  { code: "000300", labelKey: "benchmarkHS300" as const, color: CHART_COLORS[1] },
+  { code: "000001", labelKey: "benchmarkSSE" as const, color: CHART_COLORS[2] },
+  { code: "399006", labelKey: "benchmarkGEM" as const, color: CHART_COLORS[5] },
+]
 
 function ChannelTooltip({ active, payload, label }: { active?: boolean; payload?: { dataKey: string; value: number; color: string }[]; label?: string }) {
   const { t } = useLang()
@@ -58,6 +65,8 @@ export default function Returns() {
   const [curveRange, setCurveRange] = useState<"1m" | "3m" | "6m" | "1y" | "all">("1y")
   const [channelColors, setChannelColors] = useState<Record<string, string>>(() => getChannelColors())
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
+  const [benchmarks, setBenchmarks] = useState<Set<string>>(new Set(["000300"]))
+  const [benchmarkData, setBenchmarkData] = useState<BenchmarkPoint[] | null>(null)
   const { t } = useLang()
 
   const toggleLegend = (e: any) => {
@@ -69,6 +78,24 @@ export default function Returns() {
       return next
     })
   }
+
+  const toggleBenchmark = (code: string) => {
+    setBenchmarks(prev => {
+      const next = new Set(prev)
+      if (next.has(code)) next.delete(code)
+      else next.add(code)
+      return next
+    })
+  }
+
+  useEffect(() => {
+    if (benchmarks.size === 0) { setBenchmarkData(null); return }
+    let active = true
+    api.getPortfolioBenchmark([...benchmarks])
+      .then(data => { if (active) setBenchmarkData(data) })
+      .catch(() => { if (active) setBenchmarkData(null) })
+    return () => { active = false }
+  }, [benchmarks])
 
   useEffect(() => {
     getChannelColorsAsync().then(setChannelColors).catch(() => {})
@@ -117,7 +144,7 @@ export default function Returns() {
     return data
   }, [curve])
 
-  // 按时间区间过滤组合曲线 + 计算累计收益
+  // 按时间区间过滤组合曲线 + 计算累计收益 + 合并基准数据
   const filteredCurve = useMemo(() => {
     if (!curve?.length) return []
     let data = curve
@@ -128,8 +155,26 @@ export default function Returns() {
       const cutoff = localDateStr(d)
       data = curve.filter(p => p.date >= cutoff)
     }
-    return data.map(p => ({ ...p, profit: Math.round((p.total_value - p.invested_cost) * 100) / 100 }))
-  }, [curve, curveRange])
+    // 基准数据按日期建 Map
+    const benchMap = new Map<string, Record<string, number>>()
+    if (benchmarkData) {
+      for (const bp of benchmarkData) {
+        const row: Record<string, number> = {}
+        for (const key of Object.keys(bp)) {
+          if (key !== "date" && typeof bp[key] === "number") {
+            row[key] = bp[key] as number
+          }
+        }
+        benchMap.set(bp.date, row)
+      }
+    }
+    return data.map(p => {
+      const row: Record<string, string | number> = { ...p, profit: Math.round((p.total_value - p.invested_cost) * 100) / 100 }
+      const bench = benchMap.get(p.date)
+      if (bench) Object.assign(row, bench)
+      return row
+    })
+  }, [curve, curveRange, benchmarkData])
 
   const channels = useMemo(() => {
     if (!channelPnl?.length) return []
@@ -318,7 +363,30 @@ export default function Returns() {
       {/* Portfolio curve */}
       <Card className="card-hover">
         <CardHeader className="pb-2 flex-row items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-3">
             <CardTitle className="text-sm font-medium text-muted-foreground">{t.returns.portfolioCurve}</CardTitle>
+            <div className="flex items-center gap-1">
+              {BENCHMARK_DEFS.map(bd => {
+                const active = benchmarks.has(bd.code)
+                return (
+                  <button
+                    key={bd.code}
+                    type="button"
+                    onClick={() => toggleBenchmark(bd.code)}
+                    className={cn(
+                      "flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+                      active
+                        ? "border-border bg-background text-foreground"
+                        : "border-transparent text-muted-foreground/50 hover:text-muted-foreground"
+                    )}
+                  >
+                    <span className="inline-block w-2 h-2 rounded-full" style={{ background: active ? bd.color : "currentColor" }} />
+                    {t.returns[bd.labelKey]}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
           <div className="flex items-center gap-1">
             {(["1m", "3m", "6m", "1y", "all"] as const).map(r => (
               <Button key={r} size="sm" variant={curveRange === r ? "default" : "outline"} className="h-6 px-2 text-[11px]"
@@ -343,7 +411,8 @@ export default function Returns() {
                 <YAxis yAxisId="value" tickFormatter={(v: number) => `¥${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
                 <YAxis yAxisId="return" orientation="right" tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
                 <Tooltip formatter={(value: number, name: string) => {
-                  if (name === t.returns.totalReturnRate) return [`${(value * 100).toFixed(2)}%`, name]
+                  const benchLabels = BENCHMARK_DEFS.map(bd => t.returns[bd.labelKey])
+                  if (name === t.returns.totalReturnRate || benchLabels.includes(name)) return [`${(value * 100).toFixed(2)}%`, name]
                   return [money(value), name]
                 }} labelStyle={{ color: 'hsl(var(--foreground))' }} contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} onClick={toggleLegend} />
@@ -351,6 +420,9 @@ export default function Returns() {
                 <Line yAxisId="value" type="monotone" dataKey="invested_cost" name={t.returns.investedCost} stroke="hsl(var(--chart-4))" strokeWidth={2} dot={false} hide={hiddenKeys.has("invested_cost")} />
                 <Line yAxisId="value" type="monotone" dataKey="profit" name={t.returns.totalReturn} stroke="var(--gain-500)" strokeWidth={2} dot={false} hide={hiddenKeys.has("profit")} />
                 <Line yAxisId="return" type="monotone" dataKey="total_return" name={t.returns.totalReturnRate} stroke="hsl(var(--chart-5))" strokeWidth={2} dot={false} hide={hiddenKeys.has("total_return")} />
+                {BENCHMARK_DEFS.filter(bd => benchmarks.has(bd.code)).map(bd => (
+                  <Line key={bd.code} yAxisId="return" type="monotone" dataKey={bd.code} name={t.returns[bd.labelKey]} stroke={bd.color} strokeWidth={1.5} strokeDasharray="5 5" dot={false} connectNulls hide={hiddenKeys.has(bd.code)} />
+                ))}
               </ComposedChart>
             </ResponsiveContainer>
           ) : (

@@ -293,7 +293,7 @@ export default function Home() {
                   key={routes[i]}
                   type="button"
                   onClick={() => navigate(routes[i])}
-                  className={`group relative bg-brand-bg-dark p-5 text-left transition-colors duration-200 hover:bg-brand-text-light hover:text-brand-bg-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg-dark active:scale-[0.98] sm:p-6 ${isWide ? "sm:col-span-2" : ""}`}
+                  className={`group relative cursor-pointer bg-brand-bg-dark p-5 text-left transition-colors duration-200 hover:bg-brand-text-light hover:text-brand-bg-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-brand-bg-dark active:scale-[0.98] sm:p-6 ${isWide ? "sm:col-span-2" : ""}`}
                 >
                   <span
                     aria-hidden="true"

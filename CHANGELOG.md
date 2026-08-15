@@ -9,6 +9,8 @@
 ### Fixed
 - card-hover 悬停效果修复：补 1px 默认边框（`--border`）+ hover 边框高亮（primary 60%）+ 阴影加深（12%），原定义因 Card 组件无 `border` 类导致 `border-color` 不可见
 - 首页低对比文字可读性提升：5 处 `text-white/30` → `/40`~`/50`（bento 描述/版本号/免责声明/分隔符）
+- Overview 数据元素移除 `fade-in-up`：`useApi.reload()` 设 `loading=true` 导致卡片卸载重挂、动画每次刷新重播，移除后刷新不再闪烁
+- 首页 bento 导航按钮补 `cursor-pointer`，强化可点击暗示
 
 ## [0.17.0] - 2026-08-14
 

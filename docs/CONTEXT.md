@@ -434,6 +434,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 - fix: card-hover 悬停效果修复——补 1px 默认边框 + hover 边框高亮（primary 60%）+ 阴影加深（12%），原定义因 Card 组件无 border 类导致 border-color 不可见
 - fix: 首页低对比文字可读性提升（5 处 text-white/30 → /40~/50）
+- fix: Overview 数据元素移除 fade-in-up（useApi.reload 设 loading=true 导致卸载重挂、动画重播）
+- fix: 首页 bento 按钮补 cursor-pointer
 
 ### v0.17.0 - 2026-08-14
 

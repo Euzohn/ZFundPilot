@@ -27,7 +27,7 @@ function CompactCard({ label, value, sub, color }: {
     <Card className="card-hover">
       <CardContent className="p-4 md:p-5">
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums fade-in-up ${color ?? ""}`}>{value}</p>
+        <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${color ?? ""}`}>{value}</p>
         {sub && <p className={`text-xs tabular-nums ${color ?? "text-muted-foreground"}`}>{sub}</p>}
       </CardContent>
     </Card>
@@ -40,7 +40,7 @@ function HeroCard({ summary }: { summary: PortfolioSummary }) {
     <Card className="card-hover col-span-1 lg:col-span-1">
       <CardContent className="p-4 md:p-5">
         <p className="text-xs font-medium text-muted-foreground">{t.overview.totalValue}</p>
-        <p className="mt-1 text-2xl font-bold tabular-nums fade-in-up text-foreground">{money(summary.total_value)}</p>
+        <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">{money(summary.total_value)}</p>
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums">
           <span className="text-muted-foreground">{t.overview.totalPnl}</span>
           <span className={`font-medium ${pnlColor(summary.total_pnl)}`}>
@@ -135,8 +135,8 @@ export default function Overview() {
       {/* Row 2: Hero + portfolio metrics — 3-col with hero card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
         <HeroCard summary={summary} />
-        <MetricCard fade icon={Wallet} label={t.overview.totalCost} value={money(summary.total_cost)} />
-        <MetricCard fade icon={Wallet} label={t.overview.holdingCount} value={`${summary.holding_count} ${t.common.units}`} sub={`${t.overview.navDate} ${summary.as_of_date ?? t.overview.notUpdated}`} />
+        <MetricCard icon={Wallet} label={t.overview.totalCost} value={money(summary.total_cost)} />
+        <MetricCard icon={Wallet} label={t.overview.holdingCount} value={`${summary.holding_count} ${t.common.units}`} sub={`${t.overview.navDate} ${summary.as_of_date ?? t.overview.notUpdated}`} />
       </div>
 
       {/* Row 3: Transaction summary + max concentration — 2-col */}
@@ -153,7 +153,7 @@ export default function Overview() {
             </p>
           </CardContent>
         </Card>
-        <MetricCard fade icon={Calendar} label={t.overview.maxSingleWeight} value={pct(summary.max_single_weight)} sub={summary.max_single_name || undefined} />
+        <MetricCard icon={Calendar} label={t.overview.maxSingleWeight} value={pct(summary.max_single_weight)} sub={summary.max_single_name || undefined} />
       </div>
 
       {/* Row 4: Charts — bar chart spans 2 cols, pies 1 col each */}

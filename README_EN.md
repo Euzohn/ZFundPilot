@@ -80,7 +80,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **Live Estimates** — Real-time fund change estimates during trading hours. Auto-invalidates when actual NAV is published
 - **Fund Compare** — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix
 - **Fund Screener** — Filter from full market universe by type/sector/keyword, top 30 auto-enriched with returns/risk metrics, sortable columns, one-click add to compare or watchlist
-- **Watchlist** — Track funds you don't own yet, auto-fetch name/type/sector on add, quick links to detail/compare/buy
+- **Watchlist** — Track funds of interest, held funds show a "Held" badge, auto-fetch name/type/sector on add, quick links to detail/compare/buy
 - **Fund Details** — NAV trend + asset allocation pie chart + top 10 holdings + peer ranking trend + fund profile (manager/assets/inception date) + risk level
 - **DCA Backtest** — Simulate DCA (monthly/biweekly/weekly) vs lump-sum with historical NAV data. Calculates XIRR, max drawdown, Sharpe ratio
 - **Auto-Invest Plan** — Set up daily/weekly/biweekly/monthly auto-buy, auto-skip non-trading days, auto-calculate fees, T+1 NAV backfill

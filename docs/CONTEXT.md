@@ -432,7 +432,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### Unreleased
 
-（当前无待发布变更）
+- fix: card-hover 悬停效果修复——补 1px 默认边框 + hover 边框高亮（primary 60%）+ 阴影加深（12%），原定义因 Card 组件无 border 类导致 border-color 不可见
+- fix: 首页低对比文字可读性提升（5 处 text-white/30 → /40~/50）
 
 ### v0.17.0 - 2026-08-14
 

@@ -6,8 +6,9 @@
 
 ## [Unreleased]
 
-### Added
-（当前无待发布变更）
+### Fixed
+- card-hover 悬停效果修复：补 1px 默认边框（`--border`）+ hover 边框高亮（primary 60%）+ 阴影加深（12%），原定义因 Card 组件无 `border` 类导致 `border-color` 不可见
+- 首页低对比文字可读性提升：5 处 `text-white/30` → `/40`~`/50`（bento 描述/版本号/免责声明/分隔符）
 
 ## [0.17.0] - 2026-08-14
 

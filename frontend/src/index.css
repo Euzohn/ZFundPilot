@@ -172,11 +172,12 @@
 
 /* ── 卡片悬停：边框高亮 + 阴影抬升（无位移，避免布局抖动）── */
 .card-hover {
+  border: 1px solid hsl(var(--border));
   transition: border-color 200ms ease, box-shadow 200ms ease;
 }
 .card-hover:hover {
-  border-color: hsl(var(--primary) / 0.4);
-  box-shadow: 0 4px 12px -2px hsl(var(--foreground) / 0.08);
+  border-color: hsl(var(--primary) / 0.6);
+  box-shadow: 0 4px 12px -2px hsl(var(--foreground) / 0.12);
 }
 
 /* 移动端：禁止橡皮筋滚动 + 安全区适配 */

@@ -264,12 +264,12 @@ export default function Home() {
                 <span className={mkt ? "text-gain-400" : "text-brand-accent"}>
                   {mkt ? tr.marketOpen : tr.marketClosed}
                 </span>
-                <span aria-hidden="true" className="mx-3 text-white/30">///</span>
+                <span aria-hidden="true" className="mx-3 text-white/40">///</span>
                 <span className="text-white/60">{tr.nav}:</span>{" "}
                 <span className={summary.as_of_date === todayStr ? "text-gain-400" : "text-white/80"}>
                   {navStatus}
                 </span>
-                <span aria-hidden="true" className="mx-3 text-white/30">///</span>
+                <span aria-hidden="true" className="mx-3 text-white/40">///</span>
                 <span className="text-white/60">{tr.concentration}:</span>{" "}
                 <span className={concentrationColor(summary.max_single_weight)}>
                   {concentrationLabel(summary.max_single_weight, tr)}
@@ -307,7 +307,7 @@ export default function Home() {
                     <p className="font-mono text-2xl font-bold">{codes[i]}</p>
                     <div className={isWide ? "sm:border-l sm:border-white/10 sm:pl-3" : ""}>
                       <p className={`text-sm ${labelFont}`}>{label}</p>
-                      <p className={`mt-0.5 text-xs text-white/30 group-hover:text-black/50 ${descFont}`}>
+                      <p className={`mt-0.5 text-xs text-white/50 group-hover:text-black/50 ${descFont}`}>
                         {desc}
                       </p>
                     </div>
@@ -326,7 +326,7 @@ export default function Home() {
             <div className="flex items-center gap-3 min-w-0">
               <span aria-hidden="true" className="font-mono text-sm text-brand-accent">+</span>
               <span className="font-mono text-xs uppercase tracking-wider text-white/60">ZFUNDPILOT ®</span>
-              <span className="font-mono text-xs uppercase tracking-wider text-white/30">v{authStatus?.version ?? "..."}</span>
+              <span className="font-mono text-xs uppercase tracking-wider text-white/40">v{authStatus?.version ?? "..."}</span>
             </div>
             <a
               href={GITHUB_URL}
@@ -343,7 +343,7 @@ export default function Home() {
               </span>
             </a>
           </div>
-          <p className={`mt-2 text-[10px] tracking-wider text-white/30 ${lang === "zh" ? "font-sans" : "font-mono uppercase"}`}>
+          <p className={`mt-2 text-[10px] tracking-wider text-white/40 ${lang === "zh" ? "font-sans" : "font-mono uppercase"}`}>
             {tr.disclaimer}
           </p>
         </div>

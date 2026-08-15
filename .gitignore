@@ -33,6 +33,9 @@ docker-compose.override.yml
 # opencode 本地配置
 .opencode/
 
+# aionrs 本地 skill 链接
+.aionrs/
+
 # 前端
 frontend/node_modules/
 frontend/dist/

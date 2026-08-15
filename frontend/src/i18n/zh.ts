@@ -1023,6 +1023,7 @@ const zh = {
     group: "分组",
     allGroups: "全部",
     ungrouped: "未分组",
+    held: "持仓中",
   },
   screener: {
     title: "基金筛选",

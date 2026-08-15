@@ -1025,6 +1025,7 @@ const en: typeof zh = {
     group: "Group",
     allGroups: "All",
     ungrouped: "Ungrouped",
+    held: "Held",
   },
   screener: {
     title: "Fund Screener",

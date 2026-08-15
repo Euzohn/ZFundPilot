@@ -16,6 +16,7 @@ import { Star, Trash2, GitCompare, ArrowLeftRight, ExternalLink, Plus } from "lu
 import { useLang } from "@/i18n/LanguageContext"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { Badge } from "@/components/ui/badge"
 
 export default function Watchlist() {
   const navigate = useNavigate()
@@ -29,6 +30,11 @@ export default function Watchlist() {
 
   const fetcher = useCallback(() => api.getWatchlist(), [])
   const { data: items, loading, error, reload } = useApi(fetcher)
+
+  const positionsFetcher = useCallback(() => api.getPositions(), [])
+  const { data: positions } = useApi(positionsFetcher)
+
+  const heldCodes = useMemo(() => new Set(positions?.map((p) => p.fund_code) ?? []), [positions])
 
   const groups = useMemo(() => {
     if (!items) return []
@@ -204,7 +210,14 @@ export default function Watchlist() {
                   <TableRow key={item.fund_code} className="border-t border-border/50">
                     <TableCell className="px-3 py-2 font-mono text-xs">{item.fund_code}</TableCell>
                     <TableCell className="max-w-[200px] px-3 py-2 text-xs">
-                      <span className="truncate block" title={item.fund_name}>{item.fund_name || "—"}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate" title={item.fund_name}>{item.fund_name || "—"}</span>
+                        {heldCodes.has(item.fund_code) && (
+                          <Badge variant="outline" className="shrink-0 text-success border-success/40 bg-success/10 text-[10px] px-1.5 py-0">
+                            {t.watchlist.held}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="px-3 py-2 text-xs">{item.fund_type ? translateFundType(item.fund_type) : "—"}</TableCell>
                     <TableCell className="px-3 py-2 text-xs">

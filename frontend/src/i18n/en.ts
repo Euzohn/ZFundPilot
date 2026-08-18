@@ -8,6 +8,7 @@ const en: typeof zh = {
     delete: "Delete",
     edit: "Edit",
     close: "Close",
+    viewFund: "View Fund",
     loading: "Loading...",
     processing: "Processing...",
     noData: "No data",

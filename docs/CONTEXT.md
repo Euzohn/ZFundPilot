@@ -432,6 +432,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### Unreleased
 
+- feat: 交易详情弹窗新增「查看基金」按钮，点击跳转到基金详情页（`TransactionDetailDialog` 新增可选 `onViewFund` prop，仅在 `Transactions.tsx` 传入，`FundDetail.tsx` 不传自动隐藏）
 - feat: 自选页持仓基金加「持仓中」badge 标识（数据来自持仓列表，排除已清仓）
 - fix: card-hover 悬停效果修复——补默认边框 + hover 柔和高亮（border 50% 透明 + primary 25% + 阴影 8%），原定义因 Card 组件无 border 类导致 border-color 不可见
 - fix: 首页低对比文字可读性提升（5 处 text-white/30 → /40~/50）

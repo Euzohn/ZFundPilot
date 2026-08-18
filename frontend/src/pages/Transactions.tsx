@@ -94,6 +94,8 @@ export default function Transactions() {
     if (fundCode) navigate(`/fund/${fundCode}`)
   }
 
+  const handleViewFund = (code: string) => navigate(`/fund/${code}`)
+
   return (
     <div className="space-y-6">
       <PageHeader title={t.transactions.title} />
@@ -123,7 +125,7 @@ export default function Transactions() {
           />
         </TabsContent>
         <TabsContent value="list">
-          <TransactionList key={listReloadKey} onEdit={handleEdit} />
+          <TransactionList key={listReloadKey} onEdit={handleEdit} onViewFund={handleViewFund} />
         </TabsContent>
         <TabsContent value="csv"><CSVImportExport /></TabsContent>
         <TabsContent value="auto-invest"><AutoInvestPlansPanel /></TabsContent>
@@ -646,7 +648,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
 // ---------------------------------------------------------------------------
 // 交易流水
 // ---------------------------------------------------------------------------
-function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
+function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => void; onViewFund: (fundCode: string) => void }) {
   const { t } = useLang()
   const { data: txs, loading, error, reload } = useApi<Transaction[]>(() => api.getTransactions())
   const [funds, setFunds] = useState<Record<string, Fund>>({})
@@ -904,6 +906,7 @@ function TransactionList({ onEdit }: { onEdit: (tx: Transaction) => void }) {
         open={viewingTx != null}
         onOpenChange={(open) => { if (!open) setViewingTx(null) }}
         onEdit={(tx) => { setViewingTx(null); onEdit(tx) }}
+        onViewFund={onViewFund}
       />
       <ConfirmDialog
         open={confirmDeleteId != null}

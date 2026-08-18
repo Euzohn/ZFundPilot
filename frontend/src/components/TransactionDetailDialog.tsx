@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { money, navStr } from "@/lib/format"
-import { Pencil, Receipt, Hash, Wallet, Banknote, PieChart, Percent, DollarSign, FileText, Clock } from "lucide-react"
+import { Pencil, Receipt, Hash, Wallet, Banknote, PieChart, Percent, DollarSign, FileText, Clock, ArrowUpRight } from "lucide-react"
 import { useLang } from "@/i18n/LanguageContext"
 
 interface Props {
@@ -12,6 +12,7 @@ interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   onEdit?: (tx: Transaction) => void
+  onViewFund?: (fundCode: string) => void
 }
 
 function actionBadge(tx: Transaction, actionLabels: Record<string, string>) {
@@ -36,7 +37,7 @@ function Row({ icon: Icon, label, value, mono }: { icon: React.ComponentType<{ c
   )
 }
 
-export default function TransactionDetailDialog({ tx, fundName, open, onOpenChange, onEdit }: Props) {
+export default function TransactionDetailDialog({ tx, fundName, open, onOpenChange, onEdit, onViewFund }: Props) {
   const { t } = useLang()
   if (!tx) return null
 
@@ -96,6 +97,11 @@ export default function TransactionDetailDialog({ tx, fundName, open, onOpenChan
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>{t.common.close}</Button>
+          {onViewFund && (
+            <Button variant="outline" onClick={() => { onViewFund(tx.fund_code); onOpenChange(false) }}>
+              <ArrowUpRight className="h-4 w-4 mr-1.5" /> {t.common.viewFund}
+            </Button>
+          )}
           {onEdit && (
             <Button onClick={() => { onEdit(tx); onOpenChange(false) }}>
               <Pencil className="h-4 w-4 mr-1.5" /> {t.common.edit}

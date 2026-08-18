@@ -6,6 +6,7 @@ const zh = {
     delete: "删除",
     edit: "编辑",
     close: "关闭",
+    viewFund: "查看基金",
     loading: "加载中...",
     processing: "处理中...",
     noData: "暂无数据",

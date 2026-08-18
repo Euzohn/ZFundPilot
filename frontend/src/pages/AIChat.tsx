@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { CalcFeeResponse } from "@/api/types"
@@ -41,11 +41,20 @@ export default function AIChat() {
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const mountedRef = useRef(false)
 
+  useLayoutEffect(() => {
+    if (!mountedRef.current && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
+      mountedRef.current = true
+    }
+  }, [])
+
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: mountedRef.current ? "smooth" : "auto" })
-    mountedRef.current = true
+    if (mountedRef.current) {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    }
   }, [messages, searching])
 
   const autoResize = useCallback(() => {
@@ -248,7 +257,7 @@ export default function AIChat() {
           )}
 
           {/* 消息列表 */}
-          <div className="flex-1 overflow-y-auto space-y-4 min-h-0">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto space-y-4 min-h-0">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">

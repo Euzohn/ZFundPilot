@@ -438,7 +438,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - fix: 首页低对比文字可读性提升（5 处 text-white/30 → /40~/50）
 - fix: Overview 数据元素移除 fade-in-up（useApi.reload 设 loading=true 导致卸载重挂、动画重播）
 - fix: 首页 bento 按钮补 cursor-pointer
-- fix: AI 对话页切回时滚动位置修复——组件重建时用 `behavior: "auto"` 瞬间跳到底部（`mountedRef` 区分挂载滚动 vs 新消息滚动），原 `behavior: "smooth"` 从顶部平滑滚下导致先显示对话开头
+- fix: AI 对话页切回时滚动位置修复——`useLayoutEffect`（绘制前）+ `scrollTop = scrollHeight` 直接设值消除顶部闪烁，`mountedRef` 区分挂载滚动（瞬间）vs 新消息滚动（smooth），原 `useEffect` + `scrollIntoView({ behavior: "smooth" })` 在绘制后触发导致先显示对话开头
 
 ### v0.17.0 - 2026-08-14
 

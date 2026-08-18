@@ -41,9 +41,11 @@ export default function AIChat() {
 
   const chatEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const mountedRef = useRef(false)
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    chatEndRef.current?.scrollIntoView({ behavior: mountedRef.current ? "smooth" : "auto" })
+    mountedRef.current = true
   }, [messages, searching])
 
   const autoResize = useCallback(() => {

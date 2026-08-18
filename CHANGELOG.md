@@ -15,6 +15,7 @@
 - 首页低对比文字可读性提升：5 处 `text-white/30` → `/40`~`/50`（bento 描述/版本号/免责声明/分隔符）
 - Overview 数据元素移除 `fade-in-up`：`useApi.reload()` 设 `loading=true` 导致卡片卸载重挂、动画每次刷新重播，移除后刷新不再闪烁
 - 首页 bento 导航按钮补 `cursor-pointer`，强化可点击暗示
+- AI 对话页切回时滚动位置修复：组件重建时改用 `behavior: "auto"` 瞬间跳到底部，避免 smooth 动画从顶部缓慢滚下导致先显示对话开头
 
 ## [0.17.0] - 2026-08-14
 

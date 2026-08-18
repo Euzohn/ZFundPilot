@@ -15,7 +15,7 @@
 - 首页低对比文字可读性提升：5 处 `text-white/30` → `/40`~`/50`（bento 描述/版本号/免责声明/分隔符）
 - Overview 数据元素移除 `fade-in-up`：`useApi.reload()` 设 `loading=true` 导致卡片卸载重挂、动画每次刷新重播，移除后刷新不再闪烁
 - 首页 bento 导航按钮补 `cursor-pointer`，强化可点击暗示
-- AI 对话页切回时滚动位置修复：改用 `useLayoutEffect`（绘制前触发）+ `scrollTop = scrollHeight` 直接设值，消除 `useEffect` 绘制后跳转导致的顶部闪烁；`mountedRef` 区分挂载滚动（瞬间）vs 新消息滚动（smooth）
+- AI 对话页切回时滚动位置修复：`useLayoutEffect`（绘制前）依赖 `[configured]`，在滚动容器实际渲染后（`aiConfig` 加载完成）才触发 `scrollTop = scrollHeight` 瞬间跳底；`mountedRef` 区分挂载滚动（瞬间）vs 新消息滚动（smooth）。原 `useEffect([])` 在 `aiConfig` 未加载、容器未渲染时触发，ref 为 null 导致滚动从未执行
 
 ## [0.17.0] - 2026-08-14
 

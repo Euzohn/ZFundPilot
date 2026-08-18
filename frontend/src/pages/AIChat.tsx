@@ -29,6 +29,7 @@ export default function AIChat() {
     handleConfirmTx, handleDiscardTx, setIncludeContext, setCurrentTitle,
   } = useChat()
   const { data: aiConfig } = useApi(() => api.getAIConfig(), [])
+  const configured = aiConfig?.base_url && aiConfig?.model
 
   const [input, setInput] = useState("")
   const [showSysPrompt, setShowSysPrompt] = useState(false)
@@ -49,7 +50,7 @@ export default function AIChat() {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight
       mountedRef.current = true
     }
-  }, [])
+  }, [configured])
 
   useEffect(() => {
     if (mountedRef.current) {
@@ -89,8 +90,6 @@ export default function AIChat() {
     if (title) setCurrentTitle(title)
     setEditingTitle(false)
   }
-
-  const configured = aiConfig?.base_url && aiConfig?.model
 
   return (
     <div className="flex flex-col h-[calc(100vh-9rem)] md:h-[calc(100vh-8rem)] max-w-4xl mx-auto">

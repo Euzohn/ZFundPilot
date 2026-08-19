@@ -17,17 +17,50 @@
 ## Screenshots
 
 <div align="center">
-  <img src="docs/screenshots/home_en.png" alt="Home Portal" width="90%">
+  <img src="assets/readme/screenshots_en/home.png" alt="Home Portal" width="90%">
   <p><b>Home Portal</b> — Dark tactical terminal style, key metrics + quick navigation + system status</p>
   <br>
-  <img src="docs/screenshots/overview.png" alt="Portfolio Overview" width="90%">
+  <img src="assets/readme/screenshots_en/overview.png" alt="Portfolio Overview" width="90%">
   <p><b>Portfolio Overview</b> — Cost, market value, P&L at a glance + asset/channel/sector distribution charts</p>
   <br>
-  <img src="docs/screenshots/positions.png" alt="Positions" width="90%">
+  <img src="assets/readme/screenshots_en/positions.png" alt="Positions" width="90%">
   <p><b>Positions</b> — Cross-channel merged view per fund, with NAV freshness indicator</p>
   <br>
-  <img src="docs/screenshots/transactions.png" alt="Transactions" width="90%">
-  <p><b>Transactions</b> — Dark/light dual theme, trade entry, transaction log, CSV import, and auto-invest plans</p>
+  <table>
+    <tr>
+      <td><img src="assets/readme/screenshots_en/transaction-1.png" alt="Trade Entry" width="100%"></td>
+      <td><img src="assets/readme/screenshots_en/transaction-2.png" alt="Transaction Log" width="100%"></td>
+    </tr>
+    <tr>
+      <td><img src="assets/readme/screenshots_en/transaction-3.png" alt="CSV Import/Export" width="100%"></td>
+      <td><img src="assets/readme/screenshots_en/transaction-4.png" alt="Auto-Invest Plans" width="100%"></td>
+    </tr>
+  </table>
+  <p><b>Transactions</b> — Trade entry, transaction log, CSV import/export, auto-invest plans</p>
+  <br>
+  <img src="assets/readme/screenshots_en/update.png" alt="NAV Updates" width="90%">
+  <p><b>NAV Updates</b> — AkShare primary, Tiantian Fund fallback, bulk NAV history fetch</p>
+  <br>
+  <img src="assets/readme/screenshots_en/returns.png" alt="Return Analysis" width="90%">
+  <p><b>Return Analysis</b> — Unrealized/realized P&L, portfolio curve, benchmark comparison, calendar view</p>
+  <br>
+  <img src="assets/readme/screenshots_en/risk.png" alt="Risk Assessment" width="90%">
+  <p><b>Risk Assessment</b> — Max drawdown, annualized volatility, concentration HHI, structure breakdown</p>
+  <br>
+  <img src="assets/readme/screenshots_en/compare.png" alt="Fund Compare" width="90%">
+  <p><b>Fund Compare</b> — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix</p>
+  <br>
+  <img src="assets/readme/screenshots_en/screener.png" alt="Fund Screener" width="90%">
+  <p><b>Fund Screener</b> — Full market filter + top 30 enriched metrics, sortable columns</p>
+  <br>
+  <img src="assets/readme/screenshots_en/watchlist.png" alt="Watchlist" width="90%">
+  <p><b>Watchlist</b> — Track funds of interest, held funds show "Held" badge</p>
+  <br>
+  <img src="assets/readme/screenshots_en/backtest.png" alt="DCA Backtest" width="90%">
+  <p><b>DCA Backtest</b> — DCA vs lump-sum, XIRR annualized return, max drawdown, Sharpe ratio</p>
+  <br>
+  <img src="assets/readme/screenshots_en/setting.png" alt="Settings" width="90%">
+  <p><b>Settings</b> — Account management, AI config, preferences, audit log</p>
 </div>
 
 ## What is this

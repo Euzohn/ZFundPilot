@@ -17,17 +17,50 @@
 ## 截图
 
 <div align="center">
-  <img src="docs/screenshots/home.png" alt="首页门户" width="90%">
+  <img src="assets/readme/screenshots_zh/home.png" alt="首页门户" width="90%">
   <p><b>首页门户</b> — 深色战术终端风格，核心指标 + 快捷导航 + 系统状态</p>
   <br>
-  <img src="docs/screenshots/overview.png" alt="组合总览" width="90%">
+  <img src="assets/readme/screenshots_zh/overview.png" alt="组合总览" width="90%">
   <p><b>组合总览</b> — 持仓成本、市值、盈亏一览 + 资产/渠道/板块分布图</p>
   <br>
-  <img src="docs/screenshots/positions.png" alt="持仓明细" width="90%">
+  <img src="assets/readme/screenshots_zh/positions.png" alt="持仓明细" width="90%">
   <p><b>持仓明细</b> — 按基金合并的跨渠道持仓视图，净值日期标注新鲜度</p>
   <br>
-  <img src="docs/screenshots/transactions.png" alt="交易管理" width="90%">
-  <p><b>交易管理</b> — 深色/浅色双主题，交易录入、流水查看、CSV 导入与定投计划</p>
+  <table>
+    <tr>
+      <td><img src="assets/readme/screenshots_zh/transaction-1.png" alt="交易录入" width="100%"></td>
+      <td><img src="assets/readme/screenshots_zh/transaction-2.png" alt="交易流水" width="100%"></td>
+    </tr>
+    <tr>
+      <td><img src="assets/readme/screenshots_zh/transaction-3.png" alt="CSV导入导出" width="100%"></td>
+      <td><img src="assets/readme/screenshots_zh/transaction-4.png" alt="定投计划" width="100%"></td>
+    </tr>
+  </table>
+  <p><b>交易管理</b> — 交易录入、流水查看、CSV 导入导出、定投计划自动执行</p>
+  <br>
+  <img src="assets/readme/screenshots_zh/update.png" alt="净值更新" width="90%">
+  <p><b>净值更新</b> — AkShare 优先、天天基金兜底，批量拉取净值历史</p>
+  <br>
+  <img src="assets/readme/screenshots_zh/returns.png" alt="收益分析" width="90%">
+  <p><b>收益分析</b> — 浮动/已实现盈亏、组合收益曲线、基准对比、日历视图</p>
+  <br>
+  <img src="assets/readme/screenshots_zh/risk.png" alt="风险评估" width="90%">
+  <p><b>风险评估</b> — 最大回撤、年化波动率、集中度 HHI、结构占比</p>
+  <br>
+  <img src="assets/readme/screenshots_zh/compare.png" alt="基金对比" width="90%">
+  <p><b>基金对比</b> — 多维度同框对比 + 净值走势叠加 + 相关性矩阵</p>
+  <br>
+  <img src="assets/readme/screenshots_zh/screener.png" alt="基金筛选" width="90%">
+  <p><b>基金筛选</b> — 全市场筛选 + Top 30 指标增强，列头可排序</p>
+  <br>
+  <img src="assets/readme/screenshots_zh/watchlist.png" alt="自选关注" width="90%">
+  <p><b>自选关注</b> — 追踪关注基金，已持有的标「持仓中」badge</p>
+  <br>
+  <img src="assets/readme/screenshots_zh/backtest.png" alt="定投回测" width="90%">
+  <p><b>定投回测</b> — DCA vs 一次性投入，XIRR 年化、最大回撤、夏普比率</p>
+  <br>
+  <img src="assets/readme/screenshots_zh/setting.png" alt="设置" width="90%">
+  <p><b>设置</b> — 账户管理、AI 配置、偏好设置、审计日志</p>
 </div>
 
 ## 这是什么

@@ -6,9 +6,17 @@
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-08-19
+
 ### Added
 - 自选页持仓基金标识：自选列表中已持有的基金显示「持仓中」绿色 badge，数据来自持仓列表（排除已清仓）
 - 交易详情弹窗新增「查看基金」按钮：点击跳转到该基金的详情页，仅在交易列表页弹窗中可见
+
+### Changed
+- README 截图区扩充至 15 张（中英双语），路径迁移 `docs/screenshots/` → `assets/readme/screenshots_{zh,en}/`，交易管理页拆 2×2 表格展示录入/流水/CSV/定投
+
+### Performance
+- README 截图压缩 PNG→WebP：`cwebp -q 85` 转换 30 张截图，全宽图缩放至 1600px、交易 2×2 图缩放至 1200px，总计 125MB→1.4MB，压缩率 99%
 
 ### Fixed
 - card-hover 悬停效果修复：补默认边框 + hover 柔和高亮（border 50% 透明 + primary 25% + 阴影 8%），原定义因 Card 组件无 `border` 类导致 `border-color` 不可见

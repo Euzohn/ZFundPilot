@@ -256,7 +256,16 @@ export const api = {
   parseCsv: async (file: File): Promise<CSVParseResult> => {
     const form = new FormData()
     form.append("file", file)
-    const res = await fetch(`${BASE}/csv/parse`, { method: "POST", body: form })
+    const token = getToken()
+    const headers: Record<string, string> = {}
+    if (token) headers["Authorization"] = `Bearer ${token}`
+    const res = await fetch(`${BASE}/csv/parse`, { method: "POST", body: form, headers })
+    if (res.status === 401) {
+      clearToken()
+      window.location.reload()
+      throw new Error(ERR_401[getCurrentLang()])
+    }
+    if (!res.ok) throw new Error(await res.text().catch(() => res.statusText))
     return res.json()
   },
   resetSectors: () => request<{ reset: number }>("/sectors/reset", { method: "POST" }),

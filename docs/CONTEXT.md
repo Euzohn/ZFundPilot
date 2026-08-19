@@ -439,6 +439,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - fix: Overview 数据元素移除 fade-in-up（useApi.reload 设 loading=true 导致卸载重挂、动画重播）
 - fix: 首页 bento 按钮补 cursor-pointer
 - fix: AI 对话页切回时滚动位置修复——`useLayoutEffect` 依赖 `[configured]`，在 `aiConfig` 加载完成、滚动容器实际渲染后才触发 `scrollTop = scrollHeight` 瞬间跳底（`mountedRef` 区分挂载滚动 vs 新消息滚动 smooth）。根因：原 `useEffect([])` 在 `aiConfig` 未加载、容器未渲染时触发，`scrollContainerRef.current = null` 导致滚动从未执行
+- fix: CSV 导入解析修复——`parseCsv` 裸 `fetch` 未带 `Authorization` 头，后端 auth 中间件返回 401 → `result.transactions` 为 `undefined` → 前端访问 `.length` 报 TypeError。补认证头 + 401/错误处理
 
 ### v0.17.0 - 2026-08-14
 

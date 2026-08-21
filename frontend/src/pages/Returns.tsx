@@ -509,7 +509,7 @@ export default function Returns() {
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
                 <XAxis type="number" tickFormatter={(v: number) => `${(v * 100).toFixed(1)}%`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" width={140} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} tickFormatter={(name: string) => name.length > 8 ? name.slice(0, 8) + '…' : name} />
-                <Tooltip formatter={(v: number) => pct(v)} labelStyle={{ color: 'hsl(var(--foreground))' }} contentStyle={{ background: "hsl(var(--card))", borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
+                <Tooltip formatter={(v: number) => pct(v)} labelStyle={{ color: 'hsl(var(--foreground))' }} itemStyle={{ color: 'hsl(var(--foreground))' }} contentStyle={{ background: "hsl(var(--card))", borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
                 <ReferenceLine x={0} stroke="hsl(var(--border))" />
                 <Bar dataKey="rate" radius={[0, 4, 4, 0]}>
                   {chartRows.map((row, i) => (

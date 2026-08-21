@@ -300,7 +300,7 @@ export default function Returns() {
             <div className="flex flex-wrap items-center gap-1">
               {([["day", t.returns.day], ["week", t.returns.week], ["month", t.returns.month], ["year", t.returns.year]] as const).map(([key, label]) => (
                 <Button key={key} size="sm" variant={pnlMode === key ? "default" : "outline"} className="h-6 px-2 text-[11px]"
-                  onClick={() => { setPnlMode(key); if (key !== "day") setChartView("bar") }}>
+                  onClick={() => setPnlMode(key)}>
                   {label}
                 </Button>
               ))}
@@ -315,7 +315,7 @@ export default function Returns() {
                   ))}
                 </>
               )}
-              {pnlMode !== "day" && (
+              {pnlMode !== "day" && chartView === "bar" && (
                 <>
                   <span className="text-muted-foreground mx-0.5">|</span>
                   {(["3m", "6m", "1y", "all"] as const).map(r => (
@@ -326,24 +326,24 @@ export default function Returns() {
                   ))}
                 </>
               )}
-              {pnlMode === "day" && (
-                <>
-                  <span className="text-muted-foreground mx-0.5">|</span>
-                  <Button size="sm" variant={chartView === "bar" ? "default" : "outline"} className="h-6 px-2 text-[11px]"
-                    onClick={() => setChartView("bar")}>
-                    <BarChart3 className="h-3 w-3" />
-                  </Button>
-                  <Button size="sm" variant={chartView === "calendar" ? "default" : "outline"} className="h-6 px-2 text-[11px]"
-                    onClick={() => setChartView("calendar")}>
-                    <CalendarDays className="h-3 w-3" />
-                  </Button>
-                </>
-              )}
+              <>
+                <span className="text-muted-foreground mx-0.5">|</span>
+                <Button size="sm" variant={chartView === "bar" ? "default" : "outline"} className="h-6 px-2 text-[11px]"
+                  onClick={() => setChartView("bar")}>
+                  <BarChart3 className="h-3 w-3" />
+                </Button>
+                <Button size="sm" variant={chartView === "calendar" ? "default" : "outline"} className="h-6 px-2 text-[11px]"
+                  onClick={() => setChartView("calendar")}>
+                  <CalendarDays className="h-3 w-3" />
+                </Button>
+              </>
             </div>
           </CardHeader>
           <CardContent>
             {pnlMode === "day" && chartView === "calendar" ? (
-              <PnLCalendar data={dailyDiffs} />
+              <PnLCalendar data={dailyDiffs} mode="day" />
+            ) : chartView === "calendar" ? (
+              <PnLCalendar data={dailyDiffs} mode={pnlMode} />
             ) : (
               <ResponsiveContainer width="100%" height={pnlMode === "day" ? 200 : 240}>
                 <BarChart data={pnlData} margin={{ left: 10, right: 10, top: 5 }}>

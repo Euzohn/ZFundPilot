@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Added
+- 收益分析页日历视图支持周/月/年粒度：`PnLCalendar` 新增 `mode` 属性切换四种粒度——日（现有月历网格）/周（12 行月份，每行 5 列周 cell，按月分组）/月（4×3 月格，年导航）/年（所有年份平铺）。每周/月/年 cell 复用 5 级 gain/loss 色阶，归一化按当前粒度计算。模式切换不再强制切回柱状图，日历切换按钮在所有模式下均可见
+
 ### Fixed
 - 收益分析页单基金明细表补显已清仓持仓：`getPositions(true)` 获取全部持仓，已清仓行 `opacity-60` + Badge 标识，汇总行 `realized_pnl`/`dividend_total` 改为累加全部持仓与顶部卡片一致
 - 浮动收益率排序图基金名称截断修复：YAxis `width` 120→140 + `tickFormatter` 截断长名（>8 字加省略号）

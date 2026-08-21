@@ -364,7 +364,7 @@ export default function FundCompare() {
         </Card>
       )}
 
-      {!loading && !error && data && data.ok && okFunds.length === 0 && count === 0 && (
+      {!loading && !error && count === 0 && (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             {t.compare.noFundsHint}

@@ -27,6 +27,7 @@ import { getColorTheme, getColorThemeAsync, applyColorTheme } from "@/lib/colorT
 import ThemeToggle from "./ThemeToggle"
 import LanguageToggle from "./LanguageToggle"
 import { useLang } from "@/i18n/LanguageContext"
+import { useCompare } from "@/contexts/CompareContext"
 
 const STORAGE_KEY = "zfundpilot_sidebar_collapsed"
 
@@ -62,7 +63,7 @@ const navGroups = [
 
 const bottomNav = { to: "/settings", labelKey: "settings" as const, icon: SettingsIcon }
 
-function NavLinks({ collapsed, onNavigate, pendingCount }: { collapsed: boolean; onNavigate?: () => void; pendingCount: number }) {
+function NavLinks({ collapsed, onNavigate, pendingCount, compareCount }: { collapsed: boolean; onNavigate?: () => void; pendingCount: number; compareCount: number }) {
   const { t } = useLang()
 
   const linkClass = (isActive: boolean) =>
@@ -83,6 +84,7 @@ function NavLinks({ collapsed, onNavigate, pendingCount }: { collapsed: boolean;
           )}
           {group.items.map(({ to, labelKey, icon: Icon }) => {
             const showBadge = to === "/transactions" && pendingCount > 0
+            const showCompareBadge = to === "/compare" && compareCount > 0
             return (
             <NavLink
               key={to}
@@ -97,11 +99,19 @@ function NavLinks({ collapsed, onNavigate, pendingCount }: { collapsed: boolean;
                 {collapsed && showBadge && (
                   <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-red-500 ring-1 ring-zinc-900" />
                 )}
+                {collapsed && showCompareBadge && (
+                  <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-blue-500 ring-1 ring-zinc-900" />
+                )}
               </span>
               {!collapsed && <span className="whitespace-nowrap">{t.nav[labelKey]}</span>}
               {!collapsed && showBadge && (
                 <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold">
                   {pendingCount > 99 ? "99+" : pendingCount}
+                </span>
+              )}
+              {!collapsed && showCompareBadge && (
+                <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-500 text-white text-[10px] font-semibold">
+                  {compareCount > 99 ? "99+" : compareCount}
                 </span>
               )}
             </NavLink>
@@ -126,6 +136,7 @@ function NavLinks({ collapsed, onNavigate, pendingCount }: { collapsed: boolean;
 
 export default function Layout() {
   const { t } = useLang()
+  const { count: compareCount } = useCompare()
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(STORAGE_KEY) === "true" } catch { return false }
   })
@@ -194,7 +205,7 @@ export default function Layout() {
           )}
         </div>
 
-        <NavLinks collapsed={collapsed} pendingCount={pendingCount} />
+        <NavLinks collapsed={collapsed} pendingCount={pendingCount} compareCount={compareCount} />
 
         <div className={cn("border-t border-zinc-800/60", collapsed ? "px-2 py-3" : "px-3 py-3")}>
           <a
@@ -271,7 +282,7 @@ export default function Layout() {
           </button>
         </div>
 
-        <NavLinks collapsed={false} onNavigate={() => setMobileOpen(false)} pendingCount={pendingCount} />
+        <NavLinks collapsed={false} onNavigate={() => setMobileOpen(false)} pendingCount={pendingCount} compareCount={compareCount} />
       </aside>
 
       {/* Main content */}

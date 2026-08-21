@@ -21,6 +21,7 @@ import { api } from "@/api/client"
 import { getToken } from "@/lib/auth"
 import { initUiTheme } from "@/lib/theme"
 import { ChatProvider } from "@/contexts/ChatContext"
+import { CompareProvider } from "@/contexts/CompareContext"
 
 export default function App() {
   const [authRequired, setAuthRequired] = useState<boolean | null>(null)
@@ -49,6 +50,7 @@ export default function App() {
 
   return (
     <ChatProvider>
+      <CompareProvider>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route element={<Layout />}>
@@ -67,6 +69,7 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
+      </CompareProvider>
     </ChatProvider>
   )
 }

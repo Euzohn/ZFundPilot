@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react"
+import { useState, useCallback, useMemo, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
@@ -10,10 +10,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { translateFundType, translateSector } from "@/lib/taxonomyLabels"
 import { translateMessage } from "@/lib/backendLabels"
 import ErrorState from "@/components/ErrorState"
-import { pct, money } from "@/lib/format"
+import { pct } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useLang } from "@/i18n/LanguageContext"
-import { GitCompare, Search, BarChart3, Table2, TrendingUp, Activity, DollarSign, RefreshCw } from "lucide-react"
+import { useCompare } from "@/contexts/CompareContext"
+import { GitCompare, Search, BarChart3, Table2, TrendingUp, Activity, DollarSign, X, Trash2 } from "lucide-react"
 import {
   LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
 } from "recharts"
@@ -22,20 +23,26 @@ import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
+import { Badge } from "@/components/ui/badge"
 
-function InputSection({ onSubmit, loading }: { onSubmit: (codes: string[]) => void; loading: boolean }) {
+function AddSection({ loading }: { loading: boolean }) {
   const { t } = useLang()
+  const { addCode, addCodes } = useCompare()
   const [raw, setRaw] = useState("")
   const [error, setError] = useState("")
 
-  const handleSubmit = () => {
+  const handleAdd = () => {
     const codes = raw.split(/[,，\s\n]+/).map((s) => s.trim()).filter(Boolean)
     if (codes.length === 0) { setError(t.compare.enterCode); return }
-    if (codes.length > 20) { setError(t.compare.maxFunds); return }
     const invalid = codes.filter((c) => !/^\d{6}$/.test(c))
     if (invalid.length > 0) { setError(`${t.compare.invalidCode}${invalid.join(", ")}`); return }
     setError("")
-    onSubmit(codes)
+    setRaw("")
+    if (codes.length === 1) {
+      addCode(codes[0])
+    } else {
+      addCodes(codes)
+    }
   }
 
   return (
@@ -44,13 +51,13 @@ function InputSection({ onSubmit, loading }: { onSubmit: (codes: string[]) => vo
         <Input
           value={raw}
           onChange={(e) => { setRaw(e.target.value); setError("") }}
-          onKeyDown={(e) => { if (e.key === "Enter") handleSubmit() }}
+          onKeyDown={(e) => { if (e.key === "Enter") handleAdd() }}
           placeholder={t.compare.inputPlaceholder}
           className="h-9 text-sm flex-1"
         />
-        <Button size="sm" onClick={handleSubmit} disabled={loading}>
-          {loading ? <RefreshCw className="mr-1 h-4 w-4 animate-spin" /> : <Search className="mr-1 h-4 w-4" />}
-          {loading ? t.common.loading : t.compare.compare}
+        <Button size="sm" onClick={handleAdd} disabled={loading}>
+          <Search className="mr-1 h-4 w-4" />
+          {t.compare.addFund}
         </Button>
       </div>
       {error && <p className="text-xs text-loss-600">{error}</p>}
@@ -266,11 +273,16 @@ function CorrelationMatrix({ funds, correlations }: { funds: FundCompareItem[]; 
 export default function FundCompare() {
   const { t } = useLang()
   const [searchParams, setSearchParams] = useSearchParams()
-  const initialCodes = useMemo(() => {
+  const { codes, addCode, addCodes, removeCode, clear, count } = useCompare()
+
+  useEffect(() => {
     const q = searchParams.get("codes") || ""
-    return q.split(",").filter(Boolean)
+    const urlCodes = q.split(",").filter((c) => /^\d{6}$/.test(c))
+    if (urlCodes.length > 0) {
+      addCodes(urlCodes)
+      setSearchParams({}, { replace: true })
+    }
   }, [])
-  const [codes, setCodes] = useState<string[]>(initialCodes)
 
   const RISK_LABELS: Record<string, string> = {
     max_drawdown: t.compare.maxDrawdown,
@@ -290,11 +302,6 @@ export default function FundCompare() {
   const okFunds = useMemo(() => data?.funds?.filter((f) => f.ok) ?? [], [data])
   const failedFunds = useMemo(() => data?.funds?.filter((f) => !f.ok) ?? [], [data])
 
-  const handleCompare = (newCodes: string[]) => {
-    setCodes(newCodes)
-    setSearchParams(newCodes.length > 0 ? { codes: newCodes.join(",") } : {}, { replace: true })
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
@@ -304,9 +311,38 @@ export default function FundCompare() {
 
       <Card>
         <CardContent className="p-4">
-          <InputSection onSubmit={handleCompare} loading={loading} />
+          <AddSection loading={loading} />
         </CardContent>
       </Card>
+
+      {count > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs text-muted-foreground">
+                {t.compare.resultCount.replace("{total}", String(count)).replace("{shown}", String(count))}
+              </p>
+              <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" onClick={clear}>
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                {t.common.clear}
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {codes.map((code) => (
+                <Badge key={code} variant="secondary" className="gap-1.5 pl-2 pr-1 py-1 text-xs font-normal">
+                  <span className="font-mono">{code}</span>
+                  <button
+                    onClick={() => removeCode(code)}
+                    className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20 transition-colors"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {error && <ErrorState message={error} onRetry={reload} />}
 
@@ -320,10 +356,18 @@ export default function FundCompare() {
         </Card>
       )}
 
-      {!loading && !error && data && data.ok && okFunds.length === 0 && (
+      {!loading && !error && data && data.ok && okFunds.length === 0 && count > 0 && (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             {t.compare.startCompare}
+          </CardContent>
+        </Card>
+      )}
+
+      {!loading && !error && data && data.ok && okFunds.length === 0 && count === 0 && (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            {t.compare.noFundsHint}
           </CardContent>
         </Card>
       )}

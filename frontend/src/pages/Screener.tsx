@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react"
-import { useNavigate } from "react-router-dom"
 import { api } from "@/api/client"
 import type { FundFilterItem } from "@/api/types"
 import { Card, CardContent } from "@/components/ui/card"
@@ -14,14 +13,15 @@ import { makeSortHeader } from "@/components/SortHeader"
 import { pct, pnlColor } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useLang } from "@/i18n/LanguageContext"
+import { useCompare } from "@/contexts/CompareContext"
 import { toast } from "sonner"
 import { Search, RefreshCw, Check, Star, GitCompare, Loader2 } from "lucide-react"
 
 type SortField = "code" | "1y" | "max_drawdown" | "volatility" | "scale"
 
 export default function Screener() {
-  const navigate = useNavigate()
   const { t } = useLang()
+  const { addCodes } = useCompare()
 
   const [types, setTypes] = useState<string[]>([])
   const [sectors, setSectors] = useState<string[]>([])
@@ -170,7 +170,9 @@ export default function Screener() {
 
   const handleAddToCompare = () => {
     if (selected.size === 0) return
-    navigate(`/compare?codes=${Array.from(selected).join(",")}`)
+    addCodes(Array.from(selected))
+    setSelected(new Set())
+    toast.success(t.screener.addedToCompare.replace("{count}", String(selected.size)))
   }
 
   const handleAddSelectedToWatchlist = async () => {

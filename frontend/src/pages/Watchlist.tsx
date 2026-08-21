@@ -14,6 +14,7 @@ import EmptyState from "@/components/EmptyState"
 import ErrorState from "@/components/ErrorState"
 import { Star, Trash2, GitCompare, ArrowLeftRight, ExternalLink, Plus } from "lucide-react"
 import { useLang } from "@/i18n/LanguageContext"
+import { useCompare } from "@/contexts/CompareContext"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
@@ -21,6 +22,7 @@ import { Badge } from "@/components/ui/badge"
 export default function Watchlist() {
   const navigate = useNavigate()
   const { t } = useLang()
+  const { addCode } = useCompare()
   const [code, setCode] = useState("")
   const [note, setNote] = useState("")
   const [groupName, setGroupName] = useState("")
@@ -91,7 +93,10 @@ export default function Watchlist() {
     }
   }
 
-  const addToCompare = (c: string) => navigate(`/compare?codes=${c}`)
+  const addToCompare = (c: string) => {
+    addCode(c)
+    toast.success(t.watchlist.addedToCompare)
+  }
   const buyFund = (c: string) => navigate(`/transactions?code=${c}&action=buy`)
   const viewDetail = (c: string) => navigate(`/fund/${c}`)
 

@@ -1,8 +1,9 @@
 """基金实时估值获取模块。
 
 数据源：
-1. AkShare fund_value_estimation_em（东方财富基金估值表）— 主源，目前不可用
-2. 指数/ETF 实时行情兜底 — 对指数型基金，用跟踪指数或 ETF 的实时涨跌估算
+1. AkShare fund_value_estimation_em（东方财富基金估值表）— 主源
+2. 天天基金 fundgz API（单只基金估值 JSONP）— 替补源，主源无数据时逐只补取
+3. 指数/ETF 实时行情兜底 — 对指数型基金，用跟踪指数或 ETF 的实时涨跌估算
 
 一次调用获取全市场基金估值 + 公布净值，30s 内存缓存。
 仅权益类基金（股票型/混合型/指数型/QDII）有估值数据，债券型/货币型无估值。
@@ -16,8 +17,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import time
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -154,31 +159,124 @@ def _get_all_estimates() -> list[FundEstimate]:
         return []
 
 
+# ---------------------------------------------------------------------------
+# 天天基金 fundgz API — 替补源（主源无数据时逐只补取）
+# ---------------------------------------------------------------------------
+_fundgz_cache: dict[str, tuple[float, FundEstimate | None]] = {}
+_FUNDGZ_TTL = 30  # 秒
+_fundgz_executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix="fundgz")
+
+_FUNDGZ_HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Referer": "https://fund.eastmoney.com/",
+}
+
+
+def _fetch_fundgz(fund_code: str) -> FundEstimate | None:
+    """从天天基金 fundgz API 获取单只基金估值。失败返回 None。
+
+    API: http://fundgz.1234567.com.cn/js/{code}.js
+    返回 JSONP: jsonpgz({"fundcode":"161725","name":"...","jzrq":"...",
+              "dwjz":"1.2345","gsz":"1.2400","gszzl":"0.45","gztime":"..."});;
+    """
+    cached = _fundgz_cache.get(fund_code)
+    if cached and time.time() - cached[0] < _FUNDGZ_TTL:
+        return cached[1]
+
+    url = f"http://fundgz.1234567.com.cn/js/{fund_code}.js"
+    try:
+        req = urllib.request.Request(url, headers=_FUNDGZ_HEADERS)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            text = resp.read().decode("utf-8", errors="ignore")
+        # 解析 JSONP: jsonpgz({...});;
+        m = re.search(r"jsonpgz\((.+?)\);?", text)
+        if not m:
+            _fundgz_cache[fund_code] = (time.time(), None)
+            return None
+        data = json.loads(m.group(1))
+        gsz = _safe_float(data.get("gsz"))
+        gszzl = _safe_pct(data.get("gszzl"))
+        dwjz = _safe_float(data.get("dwjz"))
+        # gsz 为空 → 当日净值已公布，无估算
+        ok = gsz > 0
+        est = FundEstimate(
+            fund_code=str(data.get("fundcode", fund_code)),
+            fund_name=str(data.get("name", "")),
+            jzrq=str(data.get("jzrq", "")),
+            dwjz=dwjz,
+            gsz=gsz if gsz > 0 else dwjz,
+            gszzl=gszzl,
+            gztime=str(data.get("gztime", "")),
+            ok=ok,
+            message="fundgz" if ok else "",
+            code="fundgz" if ok else "",
+        )
+        _fundgz_cache[fund_code] = (time.time(), est)
+        return est
+    except Exception:  # noqa: BLE001
+        _fundgz_cache[fund_code] = (time.time(), None)
+        return None
+
+
+def _fetch_fundgz_batch(fund_codes: list[str]) -> dict[str, FundEstimate]:
+    """批量 fundgz 估值（线程池并行）。返回 {code: FundEstimate}。"""
+    results: dict[str, FundEstimate] = {}
+    if not fund_codes:
+        return results
+    futures = {_fundgz_executor.submit(_fetch_fundgz, c): c for c in fund_codes}
+    for fut in futures:
+        code = futures[fut]
+        try:
+            est = fut.result(timeout=8)
+            if est and est.ok:
+                results[code] = est
+        except Exception:  # noqa: BLE001
+            pass
+    return results
+
+
 def fetch_estimate(fund_code: str) -> FundEstimate:
-    """获取单只基金的实时估值。不抛异常。"""
+    """获取单只基金的实时估值。不抛异常。
+
+    优先查主源（全市场估值表），未命中时用 fundgz 替补源逐只补取。
+    """
     fund_code = fund_code.strip()
     if not fund_code:
         return FundEstimate(fund_code, ok=False, message="基金代码为空", code="code_empty")
     for est in _get_all_estimates():
         if est.fund_code == fund_code:
             return est
+    # 替补源
+    gz = _fetch_fundgz(fund_code)
+    if gz and gz.ok:
+        return gz
     return FundEstimate(fund_code, ok=False, message="未找到", code="not_found")
 
 
 def fetch_estimates(fund_codes: list[str]) -> list[FundEstimate]:
-    """批量获取基金估值。"""
+    """批量获取基金估值。
+
+    优先查主源（全市场估值表），未命中的用 fundgz 替补源批量补取。
+    """
     all_ests = _get_all_estimates()
-    if not all_ests:
-        return [FundEstimate(code, ok=False, message="获取失败", code="fetch_failed") for code in fund_codes]
     est_map = {e.fund_code: e for e in all_ests}
+
+    # 找出主源未覆盖的基金（不在主源中，或主源无任何数据），用 fundgz 批量补取
+    missing = [c for c in fund_codes
+               if c not in est_map or (not est_map[c].ok and est_map[c].gsz <= 0)]
+    if missing:
+        gz_results = _fetch_fundgz_batch(missing)
+        est_map.update(gz_results)
+
     return [
-        est_map.get(code, FundEstimate(code, ok=False, message="未找到", code="not_found"))
+        est_map.get(code, FundEstimate(code, ok=False, message="获取失败", code="fetch_failed"))
         for code in fund_codes
     ]
 
 
 def clear_estimate_cache() -> None:
     _batch_cache.clear()
+    _fundgz_cache.clear()
 
 
 # ---------------------------------------------------------------------------

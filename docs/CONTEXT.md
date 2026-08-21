@@ -430,6 +430,11 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ## 十二、当前工作状态
 
+### Unreleased
+
+- fix: 收益分析页单基金明细表补显已清仓持仓——`getPositions(true)` 获取全部持仓，已清仓行 `opacity-60` + Badge 标识；汇总行 `realized_pnl`/`dividend_total` 改为累加全部持仓，与顶部卡片 `summary.realized_pnl`（后端 `calculate_summary` 已含已清仓）一致。浮动收益率排序图 YAxis `width` 120→140 + `tickFormatter` 截断长名（>8 字省略号）
+- fix: 收益分析页 tooltip 暗色模式不可读——组合曲线 + 收益率排序 tooltip 补 `background: hsl(var(--card))` + `labelStyle`/`itemStyle` 前景色。Recharts 默认 tooltip 白底 + item 颜色 `#000`（`DefaultTooltipContent.js:58`），暗色模式下白底白字/黑底黑字；`itemStyle` spread 在 `color` 之后（第 59 行）可覆盖
+
 ### v0.17.1 - 2026-08-19
 
 - feat: 交易详情弹窗新增「查看基金」按钮，点击跳转到基金详情页（`TransactionDetailDialog` 新增可选 `onViewFund` prop，仅在 `Transactions.tsx` 传入，`FundDetail.tsx` 不传自动隐藏）
@@ -442,7 +447,6 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - fix: 首页 bento 按钮补 cursor-pointer
 - fix: AI 对话页切回时滚动位置修复——`useLayoutEffect` 依赖 `[configured]`，在 `aiConfig` 加载完成、滚动容器实际渲染后才触发 `scrollTop = scrollHeight` 瞬间跳底（`mountedRef` 区分挂载滚动 vs 新消息滚动 smooth）。根因：原 `useEffect([])` 在 `aiConfig` 未加载、容器未渲染时触发，`scrollContainerRef.current = null` 导致滚动从未执行
 - fix: CSV 导入解析修复——`parseCsv` 裸 `fetch` 未带 `Authorization` 头，后端 auth 中间件返回 401 → `result.transactions` 为 `undefined` → 前端访问 `.length` 报 TypeError。补认证头 + 401/错误处理
-- fix: 收益分析页单基金明细表补显已清仓持仓——`getPositions(true)` 获取全部持仓，已清仓行 `opacity-60` + Badge 标识；汇总行 `realized_pnl`/`dividend_total` 改为累加全部持仓，与顶部卡片 `summary.realized_pnl`（后端 `calculate_summary` 已含已清仓）一致。浮动收益率排序图 YAxis `width` 120→140 + `tickFormatter` 截断长名（>8 字省略号）
 
 ### v0.17.0 - 2026-08-14
 

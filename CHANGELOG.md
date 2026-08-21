@@ -9,6 +9,7 @@
 ### Fixed
 - 收益分析页单基金明细表补显已清仓持仓：`getPositions(true)` 获取全部持仓，已清仓行 `opacity-60` + Badge 标识，汇总行 `realized_pnl`/`dividend_total` 改为累加全部持仓与顶部卡片一致
 - 浮动收益率排序图基金名称截断修复：YAxis `width` 120→140 + `tickFormatter` 截断长名（>8 字加省略号）
+- 收益分析页 tooltip 暗色模式不可读修复：组合曲线 + 收益率排序 tooltip 补 `background: hsl(var(--card))` + `labelStyle`/`itemStyle` 前景色，与 FundDetail/FundCompare 样式一致（Recharts 默认白底 + item 颜色 `#000` 在暗色模式下白底白字/黑底黑字）
 
 ## [0.17.1] - 2026-08-19
 

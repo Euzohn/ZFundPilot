@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- 收益分析页单基金明细表补显已清仓持仓：`getPositions(true)` 获取全部持仓，已清仓行 `opacity-60` + Badge 标识，汇总行 `realized_pnl`/`dividend_total` 改为累加全部持仓与顶部卡片一致
+- 浮动收益率排序图基金名称截断修复：YAxis `width` 120→140 + `tickFormatter` 截断长名（>8 字加省略号）
+
 ## [0.17.1] - 2026-08-19
 
 ### Added

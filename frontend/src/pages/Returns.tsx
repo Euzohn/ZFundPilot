@@ -417,7 +417,7 @@ export default function Returns() {
                   const benchLabels = BENCHMARK_DEFS.map(bd => t.returns[bd.labelKey])
                   if (name === t.returns.totalReturnRate || benchLabels.includes(name)) return [`${(value * 100).toFixed(2)}%`, name]
                   return [money(value), name]
-                }} labelStyle={{ color: 'hsl(var(--foreground))' }} contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
+                }} labelStyle={{ color: 'hsl(var(--foreground))' }} contentStyle={{ background: "hsl(var(--card))", borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} onClick={toggleLegend} />
                 <Area yAxisId="value" type="monotone" dataKey="total_value" name={t.returns.portfolioValue} stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#valueGradient)" hide={hiddenKeys.has("total_value")} />
                 <Line yAxisId="value" type="monotone" dataKey="invested_cost" name={t.returns.investedCost} stroke="hsl(var(--chart-4))" strokeWidth={2} dot={false} hide={hiddenKeys.has("invested_cost")} />
@@ -509,7 +509,7 @@ export default function Returns() {
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
                 <XAxis type="number" tickFormatter={(v: number) => `${(v * 100).toFixed(1)}%`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" width={140} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} tickFormatter={(name: string) => name.length > 8 ? name.slice(0, 8) + '…' : name} />
-                <Tooltip formatter={(v: number) => pct(v)} contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
+                <Tooltip formatter={(v: number) => pct(v)} labelStyle={{ color: 'hsl(var(--foreground))' }} contentStyle={{ background: "hsl(var(--card))", borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
                 <ReferenceLine x={0} stroke="hsl(var(--border))" />
                 <Bar dataKey="rate" radius={[0, 4, 4, 0]}>
                   {chartRows.map((row, i) => (

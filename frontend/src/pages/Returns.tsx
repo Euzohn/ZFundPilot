@@ -340,9 +340,7 @@ export default function Returns() {
             </div>
           </CardHeader>
           <CardContent>
-            {pnlMode === "day" && chartView === "calendar" ? (
-              <PnLCalendar data={dailyDiffs} mode="day" />
-            ) : chartView === "calendar" ? (
+            {chartView === "calendar" ? (
               <PnLCalendar data={dailyDiffs} mode={pnlMode} />
             ) : (
               <ResponsiveContainer width="100%" height={pnlMode === "day" ? 200 : 240}>

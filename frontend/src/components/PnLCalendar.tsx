@@ -131,7 +131,7 @@ export default function PnLCalendar({ data, mode = "day" }: Props) {
       <span className="ml-2 text-xs text-muted-foreground">
         <span className={sum >= 0 ? "text-gain" : "text-loss"}>{money(sum)}</span>
         {" · "}
-        {t.components.pnlCalendarWinLose.replace("{win}", String(win)).replace("{lose}", String(total - win)).replace("{u}", unit)}
+        {t.components.pnlCalendarWinLose.replace(/\{win\}/g, String(win)).replace(/\{lose\}/g, String(total - win)).replace(/\{u\}/g, unit)}
       </span>
     )
 

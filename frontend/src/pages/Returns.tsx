@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils"
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart, Cell, ReferenceLine } from "recharts"
 import PnLCalendar from "@/components/PnLCalendar"
 import { ChevronUp, ChevronDown, BarChart3, CalendarDays } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { getChannelColors, getChannelColorsAsync, getPalette } from "@/lib/channelColors"
 import { RANGE_DAYS } from "@/lib/rangeLabels"
 import { makeSortHeader } from "@/components/SortHeader"
@@ -55,7 +56,7 @@ export default function Returns() {
   const { data: summary, loading: sl, error: se, reload: reloadSummary } = useApi<PortfolioSummary>(() => api.getSummary())
   const { data: curve } = useApi<CurvePoint[]>(() => api.getPortfolioCurve())
   const { data: channelPnl } = useApi<ChannelPnLPoint[]>(() => api.getChannelPnl())
-  const { data: positions } = useApi<Position[]>(() => api.getPositions())
+  const { data: positions } = useApi<Position[]>(() => api.getPositions(true))
   const [sortField, setSortField] = useState("return_rate")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [pnlMode, setPnlMode] = useState<"day" | "week" | "month" | "year">("day")
@@ -102,6 +103,8 @@ export default function Returns() {
   }, [])
 
   const openPositions = positions?.filter((p) => p.is_open) ?? []
+  const allPositions = positions ?? []
+  const closedCount = allPositions.length - openPositions.length
 
   const toggleSort = (field: string) => {
     if (sortField === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"))
@@ -109,7 +112,7 @@ export default function Returns() {
   }
 
   const sortedPositions = useMemo(() => {
-    return [...openPositions].sort((a, b) => {
+    return [...allPositions].sort((a, b) => {
       const getVal = (p: Position): number | string => {
         switch (sortField) {
           case "fund_code": return p.fund_code
@@ -130,7 +133,7 @@ export default function Returns() {
       const cmp = typeof va === "string" && typeof vb === "string" ? va.localeCompare(vb) : (va as number) - (vb as number)
       return sortDir === "asc" ? cmp : -cmp
     })
-  }, [openPositions, sortField, sortDir])
+  }, [allPositions, sortField, sortDir])
 
   // 从 curve 计算每日 diff（供日历视图用）
   const dailyDiffs = useMemo(() => {
@@ -248,8 +251,8 @@ export default function Returns() {
     total_cost: openPositions.reduce((s, p) => s + p.total_cost, 0),
     market_value: openPositions.reduce((s, p) => s + p.market_value, 0),
     unrealized_pnl: openPositions.reduce((s, p) => s + p.unrealized_pnl, 0),
-    realized_pnl: openPositions.reduce((s, p) => s + p.realized_pnl, 0),
-    dividend_total: openPositions.reduce((s, p) => s + (p.dividend_total || 0), 0),
+    realized_pnl: allPositions.reduce((s, p) => s + p.realized_pnl, 0),
+    dividend_total: allPositions.reduce((s, p) => s + (p.dividend_total || 0), 0),
   }
   const totalRet = totals.total_cost ? totals.market_value / totals.total_cost - 1 : null
 
@@ -437,7 +440,7 @@ export default function Returns() {
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">{t.returns.perFundDetail}</CardTitle></CardHeader>
         <CardContent>
-          {openPositions.length === 0 ? (
+          {allPositions.length === 0 ? (
             <EmptyState title={t.returns.noPositions} />
           ) : (
             <Table>
@@ -457,9 +460,14 @@ export default function Returns() {
               </TableHeader>
               <TableBody>
                 {sortedPositions.map((p) => (
-                  <TableRow key={`${p.fund_code}-${p.channel}`}>
+                  <TableRow key={`${p.fund_code}-${p.channel}`} className={cn(!p.is_open && "opacity-60")}>
                     <TableCell className="font-mono text-xs">{p.fund_code}</TableCell>
-                    <TableCell className="font-medium">{p.fund_name}</TableCell>
+                    <TableCell className="font-medium">
+                      <span className="flex items-center gap-1.5">
+                        {p.fund_name}
+                        {!p.is_open && <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">{t.returns.closed}</Badge>}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{p.channel || "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{money(p.total_cost)}</TableCell>
                     <TableCell className="text-right tabular-nums">{money(p.market_value)}</TableCell>
@@ -472,7 +480,11 @@ export default function Returns() {
                 ))}
                 {/* 汇总行 */}
                 <TableRow className="border-t-2 border-border bg-muted/50 font-medium">
-                  <TableCell colSpan={3} className="text-sm">{t.returns.totalSummary.replace("{n}", String(openPositions.length))}</TableCell>
+                  <TableCell colSpan={3} className="text-sm">
+                    {closedCount > 0
+                      ? t.returns.totalSummaryWithClosed.replace("{n}", String(openPositions.length)).replace("{m}", String(closedCount))
+                      : t.returns.totalSummary.replace("{n}", String(openPositions.length))}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">{money(totals.total_cost)}</TableCell>
                   <TableCell className="text-right tabular-nums">{money(totals.market_value)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${pnlColor(totals.unrealized_pnl)}`}>{money(totals.unrealized_pnl)}</TableCell>
@@ -496,7 +508,7 @@ export default function Returns() {
               <BarChart data={chartRows} layout="vertical" margin={{ left: 10, right: 40, top: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
                 <XAxis type="number" tickFormatter={(v: number) => `${(v * 100).toFixed(1)}%`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" width={120} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" width={140} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} tickFormatter={(name: string) => name.length > 8 ? name.slice(0, 8) + '…' : name} />
                 <Tooltip formatter={(v: number) => pct(v)} contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
                 <ReferenceLine x={0} stroke="hsl(var(--border))" />
                 <Bar dataKey="rate" radius={[0, 4, 4, 0]}>

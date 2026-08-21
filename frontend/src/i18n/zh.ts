@@ -678,6 +678,8 @@ const zh = {
     weight: "占比",
     returnRanking: "浮动收益率排序",
     totalSummary: "合计（{n} 只）",
+    totalSummaryWithClosed: "合计（{n} 只持仓 / {m} 只已清仓）",
+    closed: "已清仓",
   },
   risk: {
     title: "风险与建议",

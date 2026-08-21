@@ -680,6 +680,8 @@ const en: typeof zh = {
     weight: "Weight",
     returnRanking: "Return Rate Ranking",
     totalSummary: "Total ({n} funds)",
+    totalSummaryWithClosed: "Total ({n} open / {m} closed)",
+    closed: "Closed",
   },
   risk: {
     title: "Risk & Advice",

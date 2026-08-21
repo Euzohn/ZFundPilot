@@ -432,6 +432,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### Unreleased
 
+- feat: 收益分析页日历视图支持周/月/年粒度——`PnLCalendar` 新增 `mode` 属性（day/week/month/year），内部按日数据聚合周（Monday-anchor）/月（YYYY-MM）/年（YYYY）buckets；日模式月历网格不变，周模式 12 行月份×5 列周 cell 按月分组，月模式 4×3 月格，年模式所有年份平铺。色阶复用 5 级 gain/loss 热力图，maxAbs 按当前粒度归一化。i18n 新增 `months`/`yearLabel`/`pnlCalendarUnit` 键，`pnlCalendarWinLose` 参数化单位。`Returns.tsx` 解除日历仅日模式限制，bar/calendar 切换按钮在所有模式下可见
 - fix: 收益分析页单基金明细表补显已清仓持仓——`getPositions(true)` 获取全部持仓，已清仓行 `opacity-60` + Badge 标识；汇总行 `realized_pnl`/`dividend_total` 改为累加全部持仓，与顶部卡片 `summary.realized_pnl`（后端 `calculate_summary` 已含已清仓）一致。浮动收益率排序图 YAxis `width` 120→140 + `tickFormatter` 截断长名（>8 字省略号）
 - fix: 收益分析页 tooltip 暗色模式不可读——组合曲线 + 收益率排序 tooltip 补 `background: hsl(var(--card))` + `labelStyle`/`itemStyle` 前景色。Recharts 默认 tooltip 白底 + item 颜色 `#000`（`DefaultTooltipContent.js:58`），暗色模式下白底白字/黑底黑字；`itemStyle` spread 在 `color` 之后（第 59 行）可覆盖
 

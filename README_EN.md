@@ -122,6 +122,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 
 - **Risk Analysis** — Max drawdown, annualized volatility, concentration (HHI), structure breakdown, risk flags
 - **Rebalancing Advice** — Structure-based optimization suggestions (not trading signals)
+- **Take-Profit / Stop-Loss Alerts** — Automatically checks fund returns after NAV update and alerts when thresholds are hit. State machine prevents repeats: after triggering, returns must fall back below the reset ratio before re-arming, avoiding repeated alerts after partial profit-taking. Independent take-profit/stop-loss toggles, globally configurable thresholds
 
 ### AI Assistant
 
@@ -188,7 +189,7 @@ ZFundPilot/
 │   ├── data_io.py        # CSV import/export + backup ZIP
 │   ├── api.py            # FastAPI REST API (37+ routes + auth middleware)
 │   ├── ai.py             # AI advisor chat (portfolio context + web search)
-│   └── scheduler.py      # APScheduler NAV auto-update
+│   └── scheduler.py      # APScheduler NAV update + auto-invest + dividend check + TP/SL check
 ├── tests/                # Pytest test suite (103 tests)
 │   ├── conftest.py       #   Shared fixtures
 │   └── test_*.py         #   9 test modules

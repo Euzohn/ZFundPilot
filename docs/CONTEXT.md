@@ -50,7 +50,7 @@ ZFundPilot/
 │   ├── backtest.py          # 定投策略回测（DCA + 一次性投入对比 + XIRR）
 │   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延）
 │   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
-│   ├── scheduler.py         # APScheduler 定时净值更新
+│   ├── scheduler.py         # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查
 │   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）
 │   └── data_io.py           # CSV 导入/导出 + 全量备份 ZIP
 ├── frontend/src/            # React 前端
@@ -61,7 +61,7 @@ ZFundPilot/
 │   │   ├── Transactions.tsx # 交易管理（录入/流水/CSV/定投计划）
 │   │   ├── NavUpdate.tsx    # 净值更新
 │   │   ├── Positions.tsx    # 持仓明细
-│   │   ├── Returns.tsx      # 收益分析（曲线/基准对比/排名/日历）
+│   │   ├── Returns.tsx      # 收益分析（曲线/基准对比/排名/日历/止盈止损提醒）
 │   │   ├── Risk.tsx         # 风险评估
 │   │   ├── FundCompare.tsx     # 基金对比（多维度同框对比 + 相关性矩阵）
 │   │   ├── Screener.tsx       # 基金筛选（全市场筛选 + 指标排序 + 加自选/对比）
@@ -69,9 +69,9 @@ ZFundPilot/
 │   │   ├── Backtest.tsx       # 定投回测（DCA vs 一次性投入 + 累计曲线 + 每期明细）
 │   │   ├── AIChat.tsx       # AI 投顾对话
 │   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 持仓卡片 + 排名 + 档案 + 交易标记）
-│   │   ├── Settings.tsx     # 设置（账户/AI/偏好）
+│   │   ├── Settings.tsx     # 设置（账户/AI/偏好/止盈止损提醒）
 │   │   └── Login.tsx        # 登录
-│   ├── components/          # Layout + Logo 系列 + PnLCalendar + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
+│   ├── components/          # Layout + Logo 系列 + PnLCalendar + TpSlAlertsPanel + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
 │   ├── i18n/                # LanguageContext（Provider + useLang hook + getCurrentLang）+ zh.ts + en.ts
 │   ├── api/                 # client.ts + types.ts
 │   ├── hooks/               # useCountUp（animejs 数字动画，formatter 用 ref 存储避免 effect 重跑）
@@ -108,8 +108,10 @@ ZFundPilot/
 | `portfolio_snapshots` | 组合每日快照 |
 | `watchlist` | 自选关注列表（fund_code + note + added_at，关联 funds 表） |
 | `ai_usage` | AI token 用量记录 |
-| `preferences` | 偏好设置 key-value（channels/channel_colors/color_theme/nav_auto_update/type_keywords_custom/sector_keywords_custom） |
+| `preferences` | 偏好设置 key-value（channels/channel_colors/color_theme/nav_auto_update/dividend_auto_check/tp_sl_*） |
 | `audit_log` | 审计日志（ts/ip/username/action/detail），记录敏感操作 |
+| `dividend_alerts` | 提醒列表（分红 + 止盈止损，`alert_type` 区分 `dividend`/`take_profit`/`stop_loss`，`triggered_return`/`threshold` 仅 tp_sl 用） |
+| `tp_sl_alert_states` | 止盈止损状态机（fund_code + alert_type → armed/last_triggered_return/handled_at），控制重复提醒 |
 
 ### 核心模型（models.py）
 
@@ -242,7 +244,8 @@ ZFundPilot/
 - `_bootstrap_auto_invest`: 启动时若已过 09:00 且今日未执行过，立即补跑
 - `_convert_dow()`: 标准 cron day_of_week 数值（0=周日, 1=周一）→ APScheduler 编号（0=周一, 6=周日），`re.sub(r'(?<!/)\d+', lambda m: str((int(m.group(0))-1)%7), dow)`。`(?<!/)` 跳过 `/` 后的步进值（如 `*/2` 中的 `2` 不被转换）。只在 day_of_week 为纯数字（无字母缩写）时执行转换
 - `config.TIMEZONE`: 所有 `datetime.now()` 调用使用此时区，不依赖系统时区
-- API: `GET /api/scheduler/status` + `PUT /api/scheduler/toggle` + `PUT /api/scheduler/cron`
+- **止盈止损检查**：嵌入 `_run_nav_update()` 末尾，净值更新完成后自动执行 `_run_tp_sl_check()`。扫描所有持仓 `return_rate`，≥ 止盈阈值或 ≤ 止损阈值时生成提醒。状态机：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio` 以下后重新 `armed`（避免部分止盈后重复提醒）。配置存 `preferences` 表（`tp_sl_enabled`/`tp_sl_take_profit`/`tp_sl_stop_loss`/`tp_sl_take_profit_enabled`/`tp_sl_stop_loss_enabled`/`tp_sl_reset_ratio`），默认关闭。`tp_sl_alert_states` 表记录每只基金每个方向的 armed 状态。复用 `dividend_alerts` 表（`alert_type` 区分 `dividend`/`take_profit`/`stop_loss`）
+- API: `GET /api/scheduler/status` + `PUT /api/scheduler/toggle` + `PUT /api/scheduler/cron`；`GET/PUT /api/alerts/config`（止盈止损配置）；`GET /api/alerts` + `GET /api/alerts/count`（统一提醒列表/计数，支持 `?type=tp_sl`）；`PUT /api/alerts/{id}`（标记已处理）
 
 ---
 
@@ -429,6 +432,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ---
 
 ## 十二、当前工作状态
+
+### Unreleased
+
+- feat: 止盈止损提醒功能——净值更新完成后自动扫描持仓收益率，≥ 止盈阈值或 ≤ 止损阈值时生成提醒。状态机防重复：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio`（复位比例，默认 80%）以下后重新 `armed`，避免部分止盈后剩余份额收益率不变导致重复提醒。复用 `dividend_alerts` 表（加 `alert_type`/`triggered_return`/`threshold` 列），新增 `tp_sl_alert_states` 状态表。Settings 页新增配置卡片（总开关即时生效 + 止盈/止损独立开关 + 阈值 + 复位比例），Returns 页新增 `TpSlAlertsPanel` 提醒列表（确认/忽略操作），Layout 红点合并显示所有 pending 提醒。配置存 `preferences` 表（`tp_sl_enabled` 默认关闭）。`get_dividend_alerts` 加 `alert_type='dividend'` 过滤确保现有分红提醒页不受 tp_sl 数据污染
 
 ### v0.18.0 - 2026-08-22
 

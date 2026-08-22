@@ -122,6 +122,7 @@ cd frontend && npm install && npm run dev
 
 - **风险分析** — 最大回撤、年化波动率、集中度（HHI）、结构占比、风险提示
 - **结构建议** — 基于组合结构给出再平衡建议（非交易指令）
+- **止盈止损提醒** — 净值更新后自动检查持仓收益率，达到阈值时生成提醒。状态机防重复：触发后需收益率回落到复位线以下才再次提醒，避免部分止盈后重复骚扰。止盈/止损独立开关，全局阈值可配置
 
 ### AI 辅助
 
@@ -188,7 +189,7 @@ ZFundPilot/
 │   ├── data_io.py        # CSV 导入/导出 + 全量备份 ZIP
 │   ├── api.py            # FastAPI REST API（37+ 路由 + 认证中间件）
 │   ├── ai.py             # AI 投顾对话（持仓上下文 + 联网搜索 + LLM 流式调用）
-│   └── scheduler.py      # APScheduler 定时净值更新
+│   └── scheduler.py      # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查
 ├── tests/                # Pytest 测试套件（103 个用例）
 │   ├── conftest.py       #   共享 fixtures
 │   └── test_*.py         #   9 个测试模块

@@ -835,6 +835,7 @@ const en: typeof zh = {
     profileYearsUnit: "yrs",
     dividendMethod: "Dividend",
     addToCompare: "Add to Compare",
+    removeFromCompare: "Remove from Compare",
   },
   backtest: {
     title: "DCA Backtest",
@@ -1037,6 +1038,7 @@ const en: typeof zh = {
   watchlist: {
     title: "Watchlist",
     addToWatchlist: "Add",
+    removeFromWatchlist: "Remove",
     codePlaceholder: "Fund code",
     notePlaceholder: "Note (optional)",
     groupPlaceholder: "Group (optional)",

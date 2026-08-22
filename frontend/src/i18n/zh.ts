@@ -833,6 +833,7 @@ const zh = {
     profileYearsUnit: "年",
     dividendMethod: "分红方式",
     addToCompare: "加入对比",
+    removeFromCompare: "移除对比",
   },
   backtest: {
     title: "定投回测",
@@ -1035,6 +1036,7 @@ const zh = {
   watchlist: {
     title: "自选关注",
     addToWatchlist: "加自选",
+    removeFromWatchlist: "移除自选",
     codePlaceholder: "基金代码",
     notePlaceholder: "备注（可选）",
     groupPlaceholder: "分组（可选）",

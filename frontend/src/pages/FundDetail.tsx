@@ -20,7 +20,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useLang } from "@/i18n/LanguageContext"
 import { useCompare } from "@/contexts/CompareContext"
-import { ArrowLeft, TrendingUp, TrendingDown, GitCompare, Pencil, Trash2 } from "lucide-react"
+import { ArrowLeft, TrendingUp, TrendingDown, GitCompare, Star, Pencil, Trash2 } from "lucide-react"
 import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, PieChart, Pie, LineChart } from "recharts"
 import MetricCard from "@/components/MetricCard"
 import ConfirmDialog from "@/components/ConfirmDialog"
@@ -34,6 +34,8 @@ export default function FundDetail() {
   const { code } = useParams<{ code: string }>()
   const navigate = useNavigate()
   const { addCode, hasCode, removeCode } = useCompare()
+  const { data: watchlist, reload: reloadWatchlist } = useApi(() => api.getWatchlist(), [])
+  const inWatchlist = watchlist?.some(w => w.fund_code === code) ?? false
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [viewingTx, setViewingTx] = useState<Transaction | null>(null)
   const [navRange, setNavRange] = useState<"1m" | "3m" | "6m" | "1y" | "hold" | "tx" | "custom">("1y")
@@ -255,21 +257,55 @@ const handleDelete = async (txId: number) => {
           </div>
         </div>
         <div className="flex gap-2 shrink-0">
-          <Button
-            size="sm"
-            variant="outline"
-            className="text-blue-500 border-blue-500/30 hover:bg-blue-500/5"
-            onClick={() => {
-              if (code && hasCode(code)) {
-                removeCode(code)
-              } else if (code) {
-                addCode(code)
-              }
-            }}
-          >
-            <GitCompare className="h-4 w-4" />
-            {code && hasCode(code) ? t.common.remove : t.fundDetail.addToCompare}
-          </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className={cn(
+                "h-8 w-8 p-0",
+                code && hasCode(code)
+                  ? "text-blue-500 border-blue-500/30 hover:bg-blue-500/5"
+                  : "text-muted-foreground border-border hover:bg-accent"
+              )}
+              onClick={() => {
+                if (code && hasCode(code)) {
+                  removeCode(code)
+                } else if (code) {
+                  addCode(code)
+                }
+              }}
+              title={code && hasCode(code) ? t.fundDetail.removeFromCompare : t.fundDetail.addToCompare}
+            >
+              <GitCompare className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className={cn(
+                "h-8 w-8 p-0",
+                inWatchlist
+                  ? "text-amber-500 border-amber-500/30 hover:bg-amber-500/5"
+                  : "text-muted-foreground border-border hover:bg-accent"
+              )}
+              onClick={async () => {
+                if (!code) return
+                try {
+                  if (inWatchlist) {
+                    await api.removeFromWatchlist(code)
+                    reloadWatchlist()
+                    toast.success(t.watchlist.removed)
+                  } else {
+                    await api.addToWatchlist(code)
+                    reloadWatchlist()
+                    toast.success(t.watchlist.added)
+                  }
+                } catch (e) {
+                  toast.error(`${t.common.operationFailed}: ${e}`)
+                }
+              }}
+              title={inWatchlist ? t.watchlist.removeFromWatchlist : t.watchlist.addToWatchlist}
+            >
+              <Star className={cn("h-4 w-4", inWatchlist && "fill-amber-500")} />
+            </Button>
           <Button
             size="sm"
             variant="outline"

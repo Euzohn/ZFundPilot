@@ -31,6 +31,7 @@ import type {
   FundProfile,
   KeywordMaps,
   SchedulerStatus,
+  TpSlConfig,
 } from "./types"
 import { getToken, clearToken } from "@/lib/auth"
 import { getCurrentLang } from "@/i18n/LanguageContext"
@@ -415,7 +416,7 @@ export const api = {
   getDividendAlerts: (status?: string) =>
     request<DividendAlert[]>(`/dividends/alerts${status ? `?status=${status}` : ""}`),
   getPendingAlertCount: () =>
-    request<{ count: number }>("/dividends/alerts/count"),
+    request<{ count: number }>("/alerts/count"),
   updateDividendAlert: (id: number, status: string, txId?: number) =>
     request<{ ok: boolean }>(`/dividends/alerts/${id}`, {
       method: "PUT",
@@ -427,5 +428,20 @@ export const api = {
     request<SchedulerStatus>("/dividends/auto-check", {
       method: "PUT",
       body: JSON.stringify({ enabled }),
+    }),
+
+  // TP/SL Alerts
+  getTpSlConfig: () => request<TpSlConfig>("/alerts/config"),
+  updateTpSlConfig: (config: Partial<TpSlConfig>) =>
+    request<TpSlConfig>("/alerts/config", {
+      method: "PUT",
+      body: JSON.stringify(config),
+    }),
+  getTpSlAlerts: (status?: string) =>
+    request<DividendAlert[]>(`/alerts?type=tp_sl${status ? `&status=${status}` : ""}`),
+  updateAlert: (id: number, status: string) =>
+    request<{ ok: boolean }>(`/alerts/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ status }),
     }),
 }

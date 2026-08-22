@@ -23,17 +23,29 @@ export interface DividendAlert {
   id: number
   fund_code: string
   fund_name: string
-  record_date: string | null
-  ex_date: string | null
-  per_share: number | null
-  pay_date: string | null
-  held_shares: number | null
-  estimated_amount: number | null
-  dividend_method: string
-  status: string  // 'pending' | 'confirmed' | 'ignored'
+  record_date?: string
+  ex_date?: string
+  per_share?: number
+  pay_date?: string
+  held_shares?: number
+  estimated_amount?: number
+  dividend_method?: string
+  alert_type?: string
+  triggered_return?: number
+  threshold?: number
+  status: "pending" | "confirmed" | "ignored"
   created_at: string
-  resolved_at: string | null
-  tx_id: number | null
+  resolved_at?: string
+  tx_id?: number
+}
+
+export interface TpSlConfig {
+  enabled: string
+  take_profit_enabled: string
+  stop_loss_enabled: string
+  take_profit: string
+  stop_loss: string
+  reset_ratio: string
 }
 
 export interface Transaction {
@@ -338,6 +350,8 @@ export interface SchedulerStatus {
   last_results: { fund_code: string; ok: boolean; written: number; latest_date: string | null; latest_nav: number | null }[] | null
   dividend_enabled: boolean
   dividend_last_run: string | null
+  tp_sl_enabled: boolean
+  tp_sl_last_run: string | null
 }
 
 // ── 实时估值 ──

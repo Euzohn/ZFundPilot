@@ -14,6 +14,7 @@ import EmptyState from "@/components/EmptyState"
 import { cn } from "@/lib/utils"
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart, Cell, ReferenceLine } from "recharts"
 import PnLCalendar from "@/components/PnLCalendar"
+import TpSlAlertsPanel from "@/components/TpSlAlertsPanel"
 import { ChevronUp, ChevronDown, BarChart3, CalendarDays } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { getChannelColors, getChannelColorsAsync, getPalette } from "@/lib/channelColors"
@@ -291,6 +292,9 @@ export default function Returns() {
           </p>
         </CardContent></Card>
       </div>
+
+      {/* TP/SL Alerts */}
+      <TpSlAlertsPanel />
 
       {/* P&L fluctuation chart — 日/周/月/年收益波动 */}
       {pnlData.length > 0 && (

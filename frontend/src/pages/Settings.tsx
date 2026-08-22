@@ -24,12 +24,13 @@ import ThemeToggle from "@/components/ThemeToggle"
 import { toast } from "sonner"
 import { useLang, type Lang } from "@/i18n/LanguageContext"
 import { cn } from "@/lib/utils"
-import type { AIUsageStats, AIUsageDaily, AuditLog, KeywordMaps, KeywordEntry, SchedulerStatus } from "@/api/types"
+import type { AIUsageStats, AIUsageDaily, AuditLog, KeywordMaps, KeywordEntry, SchedulerStatus, TpSlConfig } from "@/api/types"
 import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
   SlidersHorizontal, LogOut, Loader2, CheckCircle2, XCircle, Zap,
   Search, X, Palette, UserCircle, Clock, Archive, FileDown, Gift,
+  Bell, TrendingUp, TrendingDown,
 } from "lucide-react"
 
 const PROVIDER_NAMES: Record<string, { zh: string; en: string }> = {
@@ -192,6 +193,52 @@ export default function Settings() {
   const [cronTime, setCronTime] = useState("21:00")
   const [cronWeekdaysOnly, setCronWeekdaysOnly] = useState(true)
   const [cronSaving, setCronSaving] = useState(false)
+
+  // TP/SL Alerts config
+  const { data: tpSlConfig, reload: reloadTpSlConfig } = useApi<TpSlConfig>(() => api.getTpSlConfig(), [])
+  const [tpSlEnabled, setTpSlEnabled] = useState(false)
+  const [tpSlTakeProfitEnabled, setTpSlTakeProfitEnabled] = useState(true)
+  const [tpSlStopLossEnabled, setTpSlStopLossEnabled] = useState(true)
+  const [tpSlTakeProfit, setTpSlTakeProfit] = useState("20")
+  const [tpSlStopLoss, setTpSlStopLoss] = useState("15")
+  const [tpSlResetRatio, setTpSlResetRatio] = useState("80")
+  const [tpSlSaving, setTpSlSaving] = useState(false)
+
+  useEffect(() => {
+    if (tpSlConfig) {
+      setTpSlEnabled(tpSlConfig.enabled === "true")
+      setTpSlTakeProfitEnabled(tpSlConfig.take_profit_enabled === "true")
+      setTpSlStopLossEnabled(tpSlConfig.stop_loss_enabled === "true")
+      setTpSlTakeProfit(String(Math.round(parseFloat(tpSlConfig.take_profit) * 100)))
+      setTpSlStopLoss(String(Math.abs(Math.round(parseFloat(tpSlConfig.stop_loss) * 100))))
+      setTpSlResetRatio(String(Math.round(parseFloat(tpSlConfig.reset_ratio) * 100)))
+    }
+  }, [tpSlConfig])
+
+  const handleSaveTpSlConfig = async () => {
+    setTpSlSaving(true)
+    try {
+      const tp = parseFloat(tpSlTakeProfit) / 100
+      const sl = -parseFloat(tpSlStopLoss) / 100
+      const rr = parseFloat(tpSlResetRatio) / 100
+      if (Number.isNaN(tp) || Number.isNaN(sl) || Number.isNaN(rr)) {
+        toast.error(t.settings.invalidNumber)
+        setTpSlSaving(false)
+        return
+      }
+      await api.updateTpSlConfig({
+        enabled: String(tpSlEnabled),
+        take_profit_enabled: String(tpSlTakeProfitEnabled),
+        stop_loss_enabled: String(tpSlStopLossEnabled),
+        take_profit: String(tp),
+        stop_loss: String(sl),
+        reset_ratio: String(rr),
+      })
+      reloadTpSlConfig()
+      toast.success(t.settings.tpSlConfigSaved)
+    } catch (e) { toast.error(`${t.common.saveFailed}: ${e}`) }
+    finally { setTpSlSaving(false) }
+  }
 
   useEffect(() => {
     if (schedulerStatus?.cron) {
@@ -978,6 +1025,97 @@ export default function Settings() {
                       {t.settings.lastRun}<span className="font-semibold text-foreground ml-1">{schedulerStatus.dividend_last_run}</span>
                     </div>
                   )}
+                </div>
+              ) : (
+                <LoadingState size="xs" />
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 止盈止损提醒 */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Bell className="h-5 w-5 text-primary" />
+                {t.settings.tpSlAlerts}
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">{t.settings.tpSlAlertsDesc}</p>
+            </CardHeader>
+            <CardContent>
+              {tpSlConfig ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setTpSlEnabled(!tpSlEnabled)}
+                      className={cn(
+                        "rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+                        tpSlEnabled
+                          ? "border-primary/30 bg-primary/10 text-primary"
+                          : "border-border bg-background text-muted-foreground hover:bg-accent"
+                      )}
+                    >
+                      {tpSlEnabled ? t.settings.enabled : t.settings.paused}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="tp-take-profit-enabled"
+                          checked={tpSlTakeProfitEnabled}
+                          onCheckedChange={(v) => setTpSlTakeProfitEnabled(Boolean(v))}
+                        />
+                        <Label htmlFor="tp-take-profit-enabled" className="text-sm">{t.settings.takeProfitEnabled}</Label>
+                        <TrendingUp className="h-4 w-4 text-gain-500" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={tpSlTakeProfit}
+                          onChange={(e) => setTpSlTakeProfit(e.target.value)}
+                          className="h-8 text-xs"
+                        />
+                        <span className="text-xs text-muted-foreground">%</span>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="tp-stop-loss-enabled"
+                          checked={tpSlStopLossEnabled}
+                          onCheckedChange={(v) => setTpSlStopLossEnabled(Boolean(v))}
+                        />
+                        <Label htmlFor="tp-stop-loss-enabled" className="text-sm">{t.settings.stopLossEnabled}</Label>
+                        <TrendingDown className="h-4 w-4 text-loss-500" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={tpSlStopLoss}
+                          onChange={(e) => setTpSlStopLoss(e.target.value)}
+                          className="h-8 text-xs"
+                        />
+                        <span className="text-xs text-muted-foreground">%</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">{t.settings.resetRatio}</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        value={tpSlResetRatio}
+                        onChange={(e) => setTpSlResetRatio(e.target.value)}
+                        className="h-8 text-xs w-24"
+                      />
+                      <span className="text-xs text-muted-foreground">%</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{t.settings.resetRatioDesc}</p>
+                  </div>
+                  <Button size="sm" onClick={handleSaveTpSlConfig} disabled={tpSlSaving}>
+                    {tpSlSaving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
+                    {t.common.save}
+                  </Button>
                 </div>
               ) : (
                 <LoadingState size="xs" />

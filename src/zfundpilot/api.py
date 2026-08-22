@@ -407,6 +407,19 @@ class DividendAutoCheckBody(BaseModel):
     enabled: bool
 
 
+class TpSlConfigUpdate(BaseModel):
+    enabled: bool | None = None
+    take_profit_enabled: bool | None = None
+    stop_loss_enabled: bool | None = None
+    take_profit: float | None = None
+    stop_loss: float | None = None
+    reset_ratio: float | None = None
+
+
+class AlertUpdateBody(BaseModel):
+    status: str  # 'confirmed' or 'ignored'
+
+
 class CSVImportConfirm(BaseModel):
     transactions: list[TransactionCreate]
     clear_existing: bool = False
@@ -683,8 +696,8 @@ def get_dividend_alerts(status: str | None = None) -> list[dict]:
 
 @app.get("/api/dividends/alerts/count")
 def get_pending_alert_count() -> dict[str, int]:
-    """返回 pending 提醒数量（轻量，供前端红点轮询）。"""
-    return {"count": db.get_pending_alert_count()}
+    """返回 pending 分红提醒数量（仅 dividend 类型，向后兼容）。"""
+    return {"count": db.get_pending_alert_count("dividend")}
 
 
 @app.put("/api/dividends/alerts/{alert_id}")
@@ -1612,6 +1625,53 @@ def toggle_dividend_auto_check(request: Request, body: DividendAutoCheckBody) ->
     db.log_audit("dividend_auto_check_toggle", ip=_get_client_ip(request),
                  detail={"enabled": body.enabled})
     return scheduler.get_status()
+
+
+@app.get("/api/alerts/config")
+def get_alerts_config() -> dict[str, Any]:
+    """获取止盈止损提醒配置。"""
+    return db.get_tp_sl_config()
+
+
+@app.put("/api/alerts/config")
+def update_alerts_config(request: Request, body: TpSlConfigUpdate) -> dict[str, Any]:
+    """更新止盈止损提醒配置。"""
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    db.update_tp_sl_config(**updates)
+    db.log_audit("tp_sl_config_update", ip=_get_client_ip(request),
+                 detail=updates)
+    return db.get_tp_sl_config()
+
+
+@app.get("/api/alerts/count")
+def get_alerts_count(type: str | None = None) -> dict[str, int]:
+    """返回 pending 提醒数量。type='tp_sl' 只返回止盈止损，默认全部。"""
+    if type == "tp_sl":
+        return {"count": db.get_pending_tp_sl_alert_count()}
+    return {"count": db.get_pending_alert_count()}
+
+
+@app.get("/api/alerts")
+def get_alerts(type: str | None = None, status: str | None = None) -> list[dict]:
+    """获取提醒列表。type='tp_sl' 只返回止盈止损，默认全部。"""
+    if type == "tp_sl":
+        return db.get_tp_sl_alerts(status)
+    if status is None:
+        return db.get_dividend_alerts()
+    return db.get_dividend_alerts(status)
+
+
+@app.put("/api/alerts/{alert_id}")
+def update_alert(alert_id: int, request: Request, body: AlertUpdateBody) -> dict[str, bool]:
+    """更新提醒状态（confirmed / ignored）。"""
+    if body.status not in ("confirmed", "ignored"):
+        raise HTTPException(400, "status must be 'confirmed' or 'ignored'")
+    fields: dict = {"status": body.status,
+                    "resolved_at": datetime.now(config.TIMEZONE).isoformat()}
+    db.update_dividend_alert(alert_id, **fields)
+    db.log_audit("tp_sl_alert_update", ip=_get_client_ip(request),
+                 detail={"id": alert_id, "status": body.status})
+    return {"ok": True}
 
 
 if __name__ == "__main__":

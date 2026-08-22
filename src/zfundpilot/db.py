@@ -170,6 +170,7 @@ def init_db() -> None:
     _migrate_add_columns()
     _migrate_relax_transactions_schema()
     _migrate_legacy_holdings()
+    _migrate_tp_sl()
 
 
 def _migrate_add_columns() -> None:
@@ -189,6 +190,41 @@ def _migrate_add_columns() -> None:
             conn.execute(
                 "UPDATE transactions SET is_t1=1 WHERE note LIKE '%T+1确认%'"
             )
+
+
+def _migrate_tp_sl() -> None:
+    """止盈止损提醒相关迁移。幂等。"""
+    with get_connection() as conn:
+        da_cols = {r["name"] for r in
+                   conn.execute("PRAGMA table_info(dividend_alerts)").fetchall()}
+        if "alert_type" not in da_cols:
+            conn.execute(
+                "ALTER TABLE dividend_alerts ADD COLUMN alert_type TEXT DEFAULT 'dividend'"
+            )
+        if "triggered_return" not in da_cols:
+            conn.execute(
+                "ALTER TABLE dividend_alerts ADD COLUMN triggered_return REAL"
+            )
+        if "threshold" not in da_cols:
+            conn.execute(
+                "ALTER TABLE dividend_alerts ADD COLUMN threshold REAL"
+            )
+
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS tp_sl_alert_states (
+                fund_code           TEXT NOT NULL,
+                alert_type          TEXT NOT NULL,
+                last_alert_id       INTEGER,
+                last_triggered_return REAL,
+                handled_at          TEXT,
+                armed               INTEGER DEFAULT 1,
+                updated_at          TEXT DEFAULT (datetime('now','localtime')),
+                PRIMARY KEY (fund_code, alert_type)
+            );
+            """
+        )
+        # 兼容旧 dividend_alerts 已有数据：alert_type 默认为 'dividend' 无需回填
 
         # watchlist 表补充 group_name 列
         wl_cols = {r["name"] for r in
@@ -814,26 +850,32 @@ def add_dividend_alert(alert: dict) -> int:
 
 
 def get_dividend_alerts(status: str | None = None) -> list[dict]:
-    """获取分红提醒列表。status=None 返回全部，否则按状态过滤。"""
+    """获取分红提醒列表（仅 dividend 类型）。status=None 返回全部。"""
     with get_connection() as conn:
         if status is None:
             rows = conn.execute(
-                "SELECT * FROM dividend_alerts ORDER BY id DESC"
+                "SELECT * FROM dividend_alerts WHERE alert_type='dividend' OR alert_type IS NULL ORDER BY id DESC"
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM dividend_alerts WHERE status=? ORDER BY id DESC",
+                "SELECT * FROM dividend_alerts WHERE (alert_type='dividend' OR alert_type IS NULL) AND status=? ORDER BY id DESC",
                 (status,),
             ).fetchall()
     return [dict(r) for r in rows]
 
 
-def get_pending_alert_count() -> int:
-    """返回 pending 状态的提醒数量（轻量查询，供前端红点轮询）。"""
+def get_pending_alert_count(alert_type: str | None = None) -> int:
+    """返回 pending 状态的提醒数量。alert_type=None 返回全部。"""
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) c FROM dividend_alerts WHERE status='pending'"
-        ).fetchone()
+        if alert_type:
+            row = conn.execute(
+                "SELECT COUNT(*) c FROM dividend_alerts WHERE status='pending' AND alert_type=?",
+                (alert_type,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) c FROM dividend_alerts WHERE status='pending'"
+            ).fetchone()
     return row["c"] if row else 0
 
 
@@ -851,6 +893,112 @@ def update_dividend_alert(alert_id: int, **fields) -> None:
         conn.execute(
             f"UPDATE dividend_alerts SET {set_clause} WHERE id=?", vals
         )
+
+
+# ---------------------------------------------------------------------------
+# 止盈止损提醒 (tp_sl) CRUD
+# ---------------------------------------------------------------------------
+_PREF_TP_SL_PREFIX = "tp_sl_"
+
+
+def get_tp_sl_config() -> dict:
+    keys = {
+        "enabled": "false",
+        "take_profit_enabled": "true",
+        "stop_loss_enabled": "true",
+        "take_profit": "0.20",
+        "stop_loss": "-0.15",
+        "reset_ratio": "0.80",
+    }
+    for k, default in keys.items():
+        val = get_preference(_PREF_TP_SL_PREFIX + k)
+        if val is not None:
+            keys[k] = val
+    return keys
+
+
+def update_tp_sl_config(**kwargs) -> None:
+    allowed = {"enabled", "take_profit_enabled", "stop_loss_enabled",
+               "take_profit", "stop_loss", "reset_ratio"}
+    for k, v in kwargs.items():
+        if k in allowed:
+            upsert_preference(_PREF_TP_SL_PREFIX + k, str(v))
+
+
+def add_tp_sl_alert(alert: dict) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            """INSERT INTO dividend_alerts
+               (fund_code, fund_name, alert_type, triggered_return, threshold,
+                status, created_at)
+               VALUES(?,?,?,?,?,?,datetime('now','localtime'))""",
+            (alert["fund_code"], alert.get("fund_name", ""),
+             alert["alert_type"], alert.get("triggered_return"),
+             alert.get("threshold"), "pending"),
+        )
+        return int(cur.lastrowid)
+
+
+def tp_sl_alert_exists(fund_code: str, alert_type: str, trigger_date: str) -> bool:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM dividend_alerts WHERE fund_code=? AND alert_type=? AND date(created_at)=? LIMIT 1",
+            (fund_code, alert_type, trigger_date),
+        ).fetchone()
+    return row is not None
+
+
+def get_tp_sl_alerts(status: str | None = None) -> list[dict]:
+    with get_connection() as conn:
+        if status is None:
+            rows = conn.execute(
+                "SELECT * FROM dividend_alerts WHERE alert_type IN ('take_profit','stop_loss') ORDER BY id DESC"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM dividend_alerts WHERE alert_type IN ('take_profit','stop_loss') AND status=? ORDER BY id DESC",
+                (status,),
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_tp_sl_alert_state(fund_code: str, alert_type: str) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM tp_sl_alert_states WHERE fund_code=? AND alert_type=?",
+            (fund_code, alert_type),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_tp_sl_alert_state(fund_code: str, alert_type: str, **fields) -> None:
+    allowed = {"last_alert_id", "last_triggered_return", "handled_at", "armed"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return
+    insert_cols = ["fund_code", "alert_type"] + sorted(updates.keys())
+    insert_vals = [fund_code, alert_type] + [updates[k] for k in sorted(updates.keys())]
+    placeholders = ", ".join("?" for _ in insert_cols)
+    cols_str = ", ".join(insert_cols)
+    update_parts = [f"{k}=?" for k in sorted(updates.keys())]
+    update_parts.append("updated_at=datetime('now','localtime')")
+    set_clause = ", ".join(update_parts)
+    update_vals = [updates[k] for k in sorted(updates.keys())]
+    with get_connection() as conn:
+        conn.execute(
+            f"""INSERT INTO tp_sl_alert_states ({cols_str})
+                VALUES ({placeholders})
+                ON CONFLICT(fund_code, alert_type) DO UPDATE SET {set_clause}""",
+            insert_vals + update_vals,
+        )
+
+
+def get_pending_tp_sl_alert_count() -> int:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) c FROM dividend_alerts WHERE alert_type IN ('take_profit','stop_loss') AND status='pending'"
+        ).fetchone()
+    return row["c"] if row else 0
 
 
 def dividend_alert_exists(fund_code: str, ex_date: str) -> bool:

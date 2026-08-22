@@ -32,8 +32,10 @@ _auto_invest_lock = threading.Lock()
 _PREF_KEY_ENABLED = "nav_auto_update"
 _PREF_KEY_CRON = "nav_cron"
 _PREF_KEY_DIVIDEND = "dividend_auto_check"
+_PREF_KEY_TP_SL_ENABLED = "tp_sl_enabled"
 
 _last_dividend_run: datetime | None = None
+_last_tp_sl_run: datetime | None = None
 
 
 def _run_nav_update() -> None:
@@ -59,6 +61,8 @@ def _run_nav_update() -> None:
         ok = sum(1 for r in results if r.ok)
         fail = len(results) - ok
         logger.info("[scheduler] 净值更新完成: %d 成功, %d 失败", ok, fail)
+        # 净值更新完成后自动执行止盈止损检查
+        _run_tp_sl_check()
     except Exception:
         logger.exception("[scheduler] 定时净值更新任务异常")
         _last_run = datetime.now(config.TIMEZONE)
@@ -151,6 +155,102 @@ def _run_dividend_check() -> None:
     except Exception:
         logger.exception("[scheduler] 分红检测任务异常")
         _last_dividend_run = datetime.now(config.TIMEZONE)
+
+
+def _get_tp_sl_enabled() -> bool:
+    val = db.get_preference(_PREF_KEY_TP_SL_ENABLED)
+    if val is None:
+        return False
+    return val == "true"
+
+
+def _run_tp_sl_check() -> None:
+    """执行止盈止损检查（净值更新后自动调用）。
+
+    扫描所有持仓基金收益率，触发止盈/止损提醒。
+    状态机：触发后 disarmed，收益率回落到复位线以下后重新 armed。
+    """
+    global _last_tp_sl_run
+    if not _get_tp_sl_enabled():
+        return
+    logger.info("[scheduler] 止盈止损检查开始")
+    try:
+        cfg = db.get_tp_sl_config()
+        tp_enabled = cfg["take_profit_enabled"] == "true"
+        sl_enabled = cfg["stop_loss_enabled"] == "true"
+        tp_threshold = float(cfg["take_profit"])
+        sl_threshold = float(cfg["stop_loss"])
+        reset_ratio = float(cfg["reset_ratio"])
+
+        positions = analysis.calculate_positions(include_closed=False)
+        today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
+        new_count = 0
+
+        for pos in positions:
+            rr = pos.return_rate
+            if rr is None:
+                continue
+
+            if tp_enabled and rr >= tp_threshold:
+                state = db.get_tp_sl_alert_state(pos.fund_code, "take_profit")
+                armed = state is None or state.get("armed", 1) == 1
+                if armed and not db.tp_sl_alert_exists(pos.fund_code, "take_profit", today):
+                    alert_id = db.add_tp_sl_alert({
+                        "fund_code": pos.fund_code,
+                        "fund_name": pos.fund_name,
+                        "alert_type": "take_profit",
+                        "triggered_return": rr,
+                        "threshold": tp_threshold,
+                    })
+                    db.upsert_tp_sl_alert_state(
+                        pos.fund_code, "take_profit",
+                        last_alert_id=alert_id,
+                        last_triggered_return=rr,
+                        armed=0,
+                    )
+                    new_count += 1
+
+            if sl_enabled and rr <= sl_threshold:
+                state = db.get_tp_sl_alert_state(pos.fund_code, "stop_loss")
+                armed = state is None or state.get("armed", 1) == 1
+                if armed and not db.tp_sl_alert_exists(pos.fund_code, "stop_loss", today):
+                    alert_id = db.add_tp_sl_alert({
+                        "fund_code": pos.fund_code,
+                        "fund_name": pos.fund_name,
+                        "alert_type": "stop_loss",
+                        "triggered_return": rr,
+                        "threshold": sl_threshold,
+                    })
+                    db.upsert_tp_sl_alert_state(
+                        pos.fund_code, "stop_loss",
+                        last_alert_id=alert_id,
+                        last_triggered_return=rr,
+                        armed=0,
+                    )
+                    new_count += 1
+
+            # 复位检查：收益率回落到复位线以下后重新 armed
+            tp_reset = tp_threshold * reset_ratio
+            sl_reset = sl_threshold * reset_ratio
+            if tp_enabled:
+                tp_state = db.get_tp_sl_alert_state(pos.fund_code, "take_profit")
+                if tp_state and tp_state.get("armed", 1) == 0 and rr < tp_reset:
+                    db.upsert_tp_sl_alert_state(pos.fund_code, "take_profit", armed=1)
+            if sl_enabled:
+                sl_state = db.get_tp_sl_alert_state(pos.fund_code, "stop_loss")
+                if sl_state and sl_state.get("armed", 1) == 0 and rr > sl_reset:
+                    db.upsert_tp_sl_alert_state(pos.fund_code, "stop_loss", armed=1)
+
+        if new_count:
+            db.log_audit("tp_sl_alert", ip=None,
+                         detail={"new": new_count})
+            logger.info("[scheduler] 止盈止损检查完成: 新增 %d 条提醒", new_count)
+        else:
+            logger.info("[scheduler] 止盈止损检查完成: 无新增提醒")
+        _last_tp_sl_run = datetime.now(config.TIMEZONE)
+    except Exception:
+        logger.exception("[scheduler] 止盈止损检查异常")
+        _last_tp_sl_run = datetime.now(config.TIMEZONE)
 
 
 def init_scheduler() -> None:
@@ -333,4 +433,7 @@ def get_status() -> dict[str, Any]:
         "dividend_enabled": _get_dividend_enabled(),
         "dividend_last_run": (_last_dividend_run.strftime("%Y-%m-%d %H:%M:%S")
                               if _last_dividend_run else None),
+        "tp_sl_enabled": _get_tp_sl_enabled(),
+        "tp_sl_last_run": (_last_tp_sl_run.strftime("%Y-%m-%d %H:%M:%S")
+                           if _last_tp_sl_run else None),
     }

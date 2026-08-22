@@ -48,6 +48,8 @@ export default function Transactions() {
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [listReloadKey, setListReloadKey] = useState(0)
   const [prefill, setPrefill] = useState<{ code: string; action: string; channel?: string; amount?: string; date?: string; note?: string; alert_id?: number } | null>(null)
+  const [autoInvestPrefillCode, setAutoInvestPrefillCode] = useState<string | null>(null)
+  const [autoInvestPrefillChannel, setAutoInvestPrefillChannel] = useState<string | undefined>(undefined)
   const [dividendDialogOpen, setDividendDialogOpen] = useState(false)
   const consumedEditTx = useRef(false)
 
@@ -60,7 +62,13 @@ export default function Transactions() {
     const date = searchParams.get("date")
     const note = searchParams.get("note")
     const alertId = searchParams.get("alert_id")
-    if (code) {
+    const tab = searchParams.get("tab")
+    if (tab === "auto-invest" && code) {
+      setAutoInvestPrefillCode(code)
+      setAutoInvestPrefillChannel(channel || undefined)
+      setActiveTab("auto-invest")
+      setSearchParams({}, { replace: true })
+    } else if (code) {
       setPrefill({ code, action: action || "buy", channel: channel || undefined, amount: amount || undefined, date: date || undefined, note: note ? decodeURIComponent(note) : undefined, alert_id: alertId ? Number(alertId) : undefined })
       setActiveTab("form")
       setSearchParams({}, { replace: true })
@@ -128,7 +136,7 @@ export default function Transactions() {
           <TransactionList key={listReloadKey} onEdit={handleEdit} onViewFund={handleViewFund} />
         </TabsContent>
         <TabsContent value="csv"><CSVImportExport /></TabsContent>
-        <TabsContent value="auto-invest"><AutoInvestPlansPanel /></TabsContent>
+        <TabsContent value="auto-invest"><AutoInvestPlansPanel prefillCode={autoInvestPrefillCode} prefillChannel={autoInvestPrefillChannel} /></TabsContent>
       </Tabs>
     </div>
   )
@@ -1085,7 +1093,7 @@ function CSVImportExport() {
 // 定投计划
 // ---------------------------------------------------------------------------
 
-function AutoInvestPlansPanel() {
+function AutoInvestPlansPanel({ prefillCode, prefillChannel }: { prefillCode?: string | null; prefillChannel?: string | undefined }) {
   const { t } = useLang()
   const { data: plans, loading, error, reload } = useApi<AutoInvestPlan[]>(() => api.getAutoInvestPlans(), [])
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -1102,6 +1110,17 @@ function AutoInvestPlansPanel() {
   const [channel, setChannel] = useState("")
   const [note, setNote] = useState(t.transactions.autoInvest)
   const [channels] = useState<string[]>(() => getChannels())
+
+  useEffect(() => {
+    if (prefillCode) {
+      setCode(prefillCode)
+      setChannel(prefillChannel || "")
+      setEditingPlan(null)
+      setAmount(""); setCadence("week"); setDayOfWeek("0")
+      setDayOfMonth("15"); setNote(t.transactions.autoInvest)
+      setDialogOpen(true)
+    }
+  }, [prefillCode, prefillChannel, t.transactions.autoInvest])
 
   const cadenceDesc = (plan: AutoInvestPlan): string => {
     const base = plan.cadence === "daily" ? t.transactions.everyTradingDay

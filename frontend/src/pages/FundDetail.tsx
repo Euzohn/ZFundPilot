@@ -20,7 +20,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useLang } from "@/i18n/LanguageContext"
 import { useCompare } from "@/contexts/CompareContext"
-import { ArrowLeft, TrendingUp, TrendingDown, GitCompare, Star, Pencil, Trash2 } from "lucide-react"
+import { ArrowLeft, TrendingUp, TrendingDown, GitCompare, Star, Repeat, Pencil, Trash2 } from "lucide-react"
 import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, PieChart, Pie, LineChart } from "recharts"
 import MetricCard from "@/components/MetricCard"
 import ConfirmDialog from "@/components/ConfirmDialog"
@@ -330,6 +330,17 @@ const handleDelete = async (txId: number) => {
               <TrendingDown className="h-4 w-4" /> {t.transactions.sell}
             </Button>
           )}
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-primary border-primary/30 hover:bg-primary/5"
+            onClick={() => {
+              const ch = openPositions.length === 1 ? `&channel=${encodeURIComponent(openPositions[0].channel)}` : ""
+              navigate(`/transactions?tab=auto-invest&code=${code}${ch}`)
+            }}
+          >
+            <Repeat className="h-4 w-4" /> {t.transactions.autoInvestShort}
+          </Button>
         </div>
       </div>
 

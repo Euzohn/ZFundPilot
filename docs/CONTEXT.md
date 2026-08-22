@@ -13,7 +13,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.17.1`（git tag `v0.17.1`）
+- **版本**: `0.18.0`（git tag `v0.18.0`）
 - **License**: MIT
 
 ---
@@ -35,7 +35,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.17.1"
+│   ├── __init__.py          # __version__ = "0.18.0"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
@@ -145,7 +145,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.17.1")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.18.0")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
 - 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
@@ -430,11 +430,15 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ## 十二、当前工作状态
 
-### Unreleased
+### v0.18.0 - 2026-08-22
 
 - feat: 收益分析页日历视图支持周/月/年粒度——`PnLCalendar` 新增 `mode` 属性（day/week/month/year），内部按日数据聚合周（Monday-anchor）/月（YYYY-MM）/年（YYYY）buckets；日模式月历网格不变，周模式 12 行月份×5 列周 cell 按月分组，月模式 4×3 月格，年模式所有年份平铺。色阶复用 5 级 gain/loss 热力图，maxAbs 按当前粒度归一化。i18n 新增 `months`/`yearLabel`/`pnlCalendarUnit` 键，`pnlCalendarWinLose` 参数化单位。`Returns.tsx` 解除日历仅日模式限制，bar/calendar 切换按钮在所有模式下可见
+- feat: 基金对比页改为随时增减的对比篮模式——`CompareContext` 全局管理对比篮（localStorage 持久化），FundCompare 页头部显示已选基金 chips，支持 X 移除和清空。Screener/Watchlist 通过 `addToCompare` 直接加入（toast 提示不走跳转），FundDetail 顶栏加「加入对比」按钮，Layout 导航栏对比图标显示数量 badge
+- feat: 新增天天基金 fundgz 作为估值替补源——`_fetch_fundgz`/`_fetch_fundgz_batch` 并行补取，主源 `fund_value_estimation_em` 无数据时走替补链路，不替换主源。排除主源已有公布净值的基金（ok=False 且 gsz=0 才走替补），三级链路：主源 → fundgz 替补 → 指数/ETF 兜底
 - fix: 收益分析页单基金明细表补显已清仓持仓——`getPositions(true)` 获取全部持仓，已清仓行 `opacity-60` + Badge 标识；汇总行 `realized_pnl`/`dividend_total` 改为累加全部持仓，与顶部卡片 `summary.realized_pnl`（后端 `calculate_summary` 已含已清仓）一致。浮动收益率排序图 YAxis `width` 120→140 + `tickFormatter` 截断长名（>8 字省略号）
 - fix: 收益分析页 tooltip 暗色模式不可读——组合曲线 + 收益率排序 tooltip 补 `background: hsl(var(--card))` + `labelStyle`/`itemStyle` 前景色。Recharts 默认 tooltip 白底 + item 颜色 `#000`（`DefaultTooltipContent.js:58`），暗色模式下白底白字/黑底黑字；`itemStyle` spread 在 `color` 之后（第 59 行）可覆盖
+- fix: 对比页空篮提示不显示——条件不应依赖 `data.ok`（空篮时 `data` 为 null）
+- fix: PnLCalendar 周/月/年模式汇总文字 `{u}` 占位符未全局替换——`replace()` 只替换首个匹配，`"盈{win}{u} 亏{lose}{u}"` 有两处 `{u}`，第二个残留为字面量。改用正则 `/g` 全局替换
 
 ### v0.17.1 - 2026-08-19
 

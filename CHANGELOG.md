@@ -4,15 +4,19 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [0.18.0] - 2026-08-22
 
 ### Added
 - 收益分析页日历视图支持周/月/年粒度：`PnLCalendar` 新增 `mode` 属性切换四种粒度——日（现有月历网格）/周（12 行月份，每行 5 列周 cell，按月分组）/月（4×3 月格，年导航）/年（所有年份平铺）。每周/月/年 cell 复用 5 级 gain/loss 色阶，归一化按当前粒度计算。模式切换不再强制切回柱状图，日历切换按钮在所有模式下均可见
+- 基金对比页改为随时增减的对比篮模式：`CompareContext` 全局管理对比篮（localStorage 持久化），FundCompare 页头部显示已选基金 chips，支持 X 移除和清空。Screener/Watchlist 通过 `addToCompare` 直接加入（toast 提示不走跳转），FundDetail 顶栏加「加入对比」按钮，Layout 导航栏对比图标显示数量 badge
+- 新增天天基金 fundgz 作为估值替补源：主源 `fund_value_estimation_em` 无数据时，逐只通过 fundgz API 补取（6 线程并行，30s 缓存），不替换主源，仅新增 fallback 链路。排除主源已有公布净值的基金（ok=False 且 gsz=0 才走替补）
 
 ### Fixed
 - 收益分析页单基金明细表补显已清仓持仓：`getPositions(true)` 获取全部持仓，已清仓行 `opacity-60` + Badge 标识，汇总行 `realized_pnl`/`dividend_total` 改为累加全部持仓与顶部卡片一致
 - 浮动收益率排序图基金名称截断修复：YAxis `width` 120→140 + `tickFormatter` 截断长名（>8 字加省略号）
 - 收益分析页 tooltip 暗色模式不可读修复：组合曲线 + 收益率排序 tooltip 补 `background: hsl(var(--card))` + `labelStyle`/`itemStyle` 前景色，与 FundDetail/FundCompare 样式一致（Recharts 默认白底 + item 颜色 `#000` 在暗色模式下白底白字/黑底黑字）
+- 对比页空篮提示不显示：条件不应依赖 `data.ok`（空篮时 `data` 为 null）
+- PnLCalendar 周/月/年模式汇总文字 `{u}` 占位符未全局替换：`replace()` 只替换首个匹配，改用正则 `/g` 全局替换
 
 ## [0.17.1] - 2026-08-19
 

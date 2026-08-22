@@ -110,8 +110,8 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 
 - **NAV Updates** — AkShare primary, Tiantian Fund fallback. Auto-fetch fund name/type/sector on code entry
 - **Return Analysis** — Unrealized/realized P&L, portfolio return curve, benchmark comparison (CSI 300 / SSE Composite / ChiNext), return rate ranking, day/week/month/year calendar view, stacked bar by channel
-- **Live Estimates** — Real-time fund change estimates during trading hours. Auto-invalidates when actual NAV is published
-- **Fund Compare** — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix
+- **Live Estimates** — Real-time fund change estimates during trading hours. Auto-invalidates when actual NAV is published. Auto-falls back to fundgz API (6 threads) when primary source is unavailable, with index/ETF fallback tier
+- **Fund Compare** — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix. Global compare basket with add/remove, badge count in nav bar
 - **Fund Screener** — Filter from full market universe by type/sector/keyword, top 30 auto-enriched with returns/risk metrics, sortable columns, one-click add to compare or watchlist
 - **Watchlist** — Track funds of interest, held funds show a "Held" badge, auto-fetch name/type/sector on add, quick links to detail/compare/buy
 - **Fund Details** — NAV trend + asset allocation pie chart + top 10 holdings + peer ranking trend + fund profile (manager/assets/inception date) + risk level

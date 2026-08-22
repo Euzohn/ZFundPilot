@@ -68,7 +68,7 @@ ZFundPilot/
 │   │   ├── Watchlist.tsx      # 自选关注列表（追踪未持有基金，已持有的标「持仓中」badge）
 │   │   ├── Backtest.tsx       # 定投回测（DCA vs 一次性投入 + 累计曲线 + 每期明细）
 │   │   ├── AIChat.tsx       # AI 投顾对话
-│   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 持仓卡片 + 排名 + 档案 + 交易标记）
+│   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 持仓卡片 + 排名 + 档案 + 顶栏：对比/自选/买入/卖出/定投快捷入口）
 │   │   ├── Settings.tsx     # 设置（账户/AI/偏好/止盈止损提醒）
 │   │   └── Login.tsx        # 登录
 │   ├── components/          # Layout + Logo 系列 + PnLCalendar + TpSlAlertsPanel + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
@@ -436,6 +436,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ### Unreleased
 
 - feat: 止盈止损提醒功能——净值更新完成后自动扫描持仓收益率，≥ 止盈阈值或 ≤ 止损阈值时生成提醒。状态机防重复：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio`（复位比例，默认 80%）以下后重新 `armed`，避免部分止盈后剩余份额收益率不变导致重复提醒。复用 `dividend_alerts` 表（加 `alert_type`/`triggered_return`/`threshold` 列），新增 `tp_sl_alert_states` 状态表。Settings 页新增配置卡片（总开关即时生效 + 止盈/止损独立开关 + 阈值 + 复位比例），Returns 页新增 `TpSlAlertsPanel` 提醒列表（确认/忽略操作），Layout 红点合并显示所有 pending 提醒。配置存 `preferences` 表（`tp_sl_enabled` 默认关闭）。`get_dividend_alerts` 加 `alert_type='dividend'` 过滤确保现有分红提醒页不受 tp_sl 数据污染
+- feat: 基金详情顶栏新增「加入自选」按钮（`Star` 图标，已加入时实心黄色高亮）+ 对比/自选按钮改为纯图标（去掉文字加 tooltip）。新增「定投」按钮（`Repeat` 图标），跳转到交易管理页定投 tab 并预填基金代码/渠道，弹窗自动打开
+- fix: `AutoInvestPlansPanel` 的 `useEffect` 依赖 `t.transactions.autoInvest`，切换语言时弹窗被意外重新打开。改为 `onPrefillConsumed` 回调模式，依赖数组仅 `[prefillCode]`
 
 ### v0.18.0 - 2026-08-22
 

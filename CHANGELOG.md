@@ -8,10 +8,13 @@
 
 ### Added
 - 止盈止损提醒功能：净值更新完成后自动扫描持仓基金收益率，达到止盈/止损阈值时生成提醒。状态机防重复：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio`（复位比例，默认 80%）以下后重新 `armed`，避免部分止盈后剩余份额收益率不变导致重复提醒。复用 `dividend_alerts` 表（加 `alert_type`/`triggered_return`/`threshold` 列），新增 `tp_sl_alert_states` 状态表。Settings 页新增配置卡片（总开关即时生效 + 止盈/止损独立开关 + 阈值 + 复位比例），Returns 页新增提醒列表（确认/忽略操作），Layout 红点合并显示所有 pending 提醒
+- 基金详情顶栏新增「加入自选」按钮（`Star` 图标）：已加入时实心黄色高亮，点击切换添加/移除，toast 提示。对比按钮和自选按钮均改为纯图标（去掉文字），加 `title` tooltip
+- 基金详情顶栏新增「定投」按钮（`Repeat` 图标）：跳转到交易管理页定投 tab，自动预填基金代码和渠道，弹窗自动打开
 
 ### Fixed
 - `get_dividend_alerts` 加 `alert_type='dividend'` 过滤，确保现有分红提醒页不受 tp_sl 数据污染
 - `update_tp_sl_config` 布尔值存储格式修复：`str(True)` 产生 `"True"`（大写）但检查 `"true"`（小写）导致开关永远显示已暂停，改为 `isinstance(v, bool)` 时统一存 `"true"`/`"false"`
+- `AutoInvestPlansPanel` 的 `useEffect` 依赖数组包含 `t.transactions.autoInvest`，切换语言时弹窗被意外重新打开；改为 `onPrefillConsumed` 回调模式消费后清除，依赖数组仅 `[prefillCode]`
 
 ## [0.18.0] - 2026-08-22
 

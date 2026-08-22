@@ -136,7 +136,7 @@ export default function Transactions() {
           <TransactionList key={listReloadKey} onEdit={handleEdit} onViewFund={handleViewFund} />
         </TabsContent>
         <TabsContent value="csv"><CSVImportExport /></TabsContent>
-        <TabsContent value="auto-invest"><AutoInvestPlansPanel prefillCode={autoInvestPrefillCode} prefillChannel={autoInvestPrefillChannel} /></TabsContent>
+        <TabsContent value="auto-invest"><AutoInvestPlansPanel prefillCode={autoInvestPrefillCode} prefillChannel={autoInvestPrefillChannel} onPrefillConsumed={() => { setAutoInvestPrefillCode(null); setAutoInvestPrefillChannel(undefined) }} /></TabsContent>
       </Tabs>
     </div>
   )
@@ -1093,7 +1093,7 @@ function CSVImportExport() {
 // 定投计划
 // ---------------------------------------------------------------------------
 
-function AutoInvestPlansPanel({ prefillCode, prefillChannel }: { prefillCode?: string | null; prefillChannel?: string | undefined }) {
+function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }: { prefillCode?: string | null; prefillChannel?: string | undefined; onPrefillConsumed?: () => void }) {
   const { t } = useLang()
   const { data: plans, loading, error, reload } = useApi<AutoInvestPlan[]>(() => api.getAutoInvestPlans(), [])
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -1119,8 +1119,9 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel }: { prefillCode?: s
       setAmount(""); setCadence("week"); setDayOfWeek("0")
       setDayOfMonth("15"); setNote(t.transactions.autoInvest)
       setDialogOpen(true)
+      onPrefillConsumed?.()
     }
-  }, [prefillCode, prefillChannel, t.transactions.autoInvest])
+  }, [prefillCode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const cadenceDesc = (plan: AutoInvestPlan): string => {
     const base = plan.cadence === "daily" ? t.transactions.everyTradingDay

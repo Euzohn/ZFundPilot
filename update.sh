@@ -15,7 +15,7 @@ if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
   echo ""
   echo "⚠️  update.sh 会执行 git reset --hard origin/main，以上改动将被丢弃！"
   echo "💡  docker-compose.override.yml 和 .env 在 .gitignore 中不受影响"
-  echo "按 Ctrl+C 取消"
+  echo "按 Enter 继续，按 Ctrl+C 取消"
   read -r
 fi
 

@@ -922,6 +922,8 @@ def update_tp_sl_config(**kwargs) -> None:
                "take_profit", "stop_loss", "reset_ratio"}
     for k, v in kwargs.items():
         if k in allowed:
+            if isinstance(v, bool):
+                v = "true" if v else "false"
             upsert_preference(_PREF_TP_SL_PREFIX + k, str(v))
 
 

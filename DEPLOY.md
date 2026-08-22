@@ -237,28 +237,26 @@ server {
 
 ZFundPilot 是单用户设计，多人共用需**每人一个独立容器**，数据完全隔离。
 
-> ⚠️ **多实例必改三项**：`container_name`、端口、数据目录，三者任一相同都会冲突。`docker-compose.yml` 默认写死 `container_name: zfundpilot`，第二个实例必须改名（如 `zfundpilot_b`）或删掉该行让 Compose 自动命名（`{目录名}_zfundpilot_1`）。
-
-> 💡 关于 `.env`：两个实例若由**同一个人**使用，`.env` 可不改（密码相同无妨、`ZFUNDPILOT_SECRET` 留空时各自首次启动自动生成不同密钥、NAV cron 同时跑无冲突）。只有**多人独立账号**才需不同的 `ZFUNDPILOT_USERNAME` / `ZFUNDPILOT_PASSWORD`。
+> 💡 `container_name` 通过环境变量 `CONTAINER_NAME` 控制（默认 `zfundpilot`），写在 `.env` 里，`update.sh` 的 `git reset --hard` 不会覆盖 `.env`。
 
 #### 方式一：独立目录（最简单，推荐）
 
-整个项目复制到新目录，源码各自一份，数据目录天然隔离，只需改两处：
+整个项目复制到新目录，源码各自一份，数据目录天然隔离，只需改 `.env` + 端口：
 
 ```bash
 cp -r /opt/ZFundPilot /opt/ZFundPilot2
 cd /opt/ZFundPilot2
 
-# 1. docker-compose.yml：container_name 改成 zfundpilot_b（或删掉该行）
+# 1. .env 加一行：CONTAINER_NAME=zfundpilot2
 # 2. docker-compose.override.yml：端口改成 "8082:8000"
 
 docker compose up -d --build
 ```
 
-| 实例 | 目录 | container_name | 端口 | 数据目录 |
+| 实例 | 目录 | CONTAINER_NAME | 端口 | 数据目录 |
 |------|------|----------------|------|---------|
-| 1 | `/opt/ZFundPilot` | `zfundpilot` | `8081:8000` | `./data` |
-| 2 | `/opt/ZFundPilot2` | `zfundpilot_b` | `8082:8000` | `./data`（新目录下） |
+| 1 | `/opt/ZFundPilot` | `zfundpilot`（默认） | `8081:8000` | `./data` |
+| 2 | `/opt/ZFundPilot2` | `zfundpilot2` | `8082:8000` | `./data`（新目录下） |
 
 #### 方式二：同一源码 + 多 compose 文件（省磁盘）
 
@@ -321,8 +319,9 @@ for f in compose.user*.yml; do docker compose -f "$f" up -d --build; done
 
 #### 故障排查
 
-- **启动后出现 `zfundpilot-zfundpilot-1` 这种自动命名的容器**：说明 `container_name` 冲突——第二个实例没拿到预期名字，Docker 退而用 `{项目名}_{服务名}_1`。把第二个实例的 `container_name` 改成不同的名字即可。
-- **第二个实例启动后第一个不能访问了**：同上，`container_name` 相同导致冲突，第二个把第一个挤掉了。改 `container_name` 后重启两个实例。
+- **启动后出现 `zfundpilot-zfundpilot-1` 这种自动命名的容器**：说明 `container_name` 冲突——第二个实例没拿到预期名字，Docker 退而用 `{项目名}_{服务名}_1`。在 `.env` 里设置 `CONTAINER_NAME=zfundpilot2` 即可。
+- **第二个实例启动后第一个不能访问了**：同上，`container_name` 相同导致冲突，第二个把第一个挤掉了。在 `.env` 里设置不同的 `CONTAINER_NAME` 后重启两个实例。
+- **`update.sh` 后容器名变回 `zfundpilot` 导致冲突**：之前直接改 `docker-compose.yml` 的 `container_name` 会被 `git reset --hard` 覆盖。现在改为在 `.env` 里设 `CONTAINER_NAME`，`.env` 在 `.gitignore` 中不受影响。
 - **查看运行中的实例**：`docker ps --format 'table {{.Names}}\t{{.Ports}}\t{{.Status}}'`
 
 ---

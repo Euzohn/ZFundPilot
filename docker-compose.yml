@@ -1,7 +1,7 @@
 services:
   zfundpilot:
     build: .
-    container_name: zfundpilot
+    container_name: ${CONTAINER_NAME:-zfundpilot}
     restart: always
     env_file: .env
     volumes:

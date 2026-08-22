@@ -243,6 +243,20 @@ export default function Settings() {
     finally { setTpSlSaving(false) }
   }
 
+  const handleTpSlToggle = async () => {
+    const next = !tpSlEnabled
+    setTpSlEnabled(next)
+    setTpSlSaving(true)
+    try {
+      await api.updateTpSlConfig({ enabled: String(next) })
+      reloadTpSlConfig()
+      toast.success(next ? t.settings.enabled : t.settings.paused)
+    } catch (e) {
+      setTpSlEnabled(!next)
+      toast.error(`${t.common.operationFailed}: ${e}`)
+    } finally { setTpSlSaving(false) }
+  }
+
   useEffect(() => {
     if (schedulerStatus?.cron) {
       const parts = schedulerStatus.cron.split(/\s+/)
@@ -1049,7 +1063,8 @@ export default function Settings() {
                 <div className="space-y-4">
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => setTpSlEnabled(!tpSlEnabled)}
+                      onClick={handleTpSlToggle}
+                      disabled={tpSlSaving}
                       className={cn(
                         "rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                         tpSlEnabled
@@ -1057,7 +1072,7 @@ export default function Settings() {
                           : "border-border bg-background text-muted-foreground hover:bg-accent"
                       )}
                     >
-                      {tpSlEnabled ? t.settings.enabled : t.settings.paused}
+                      {tpSlSaving ? t.settings.switching : tpSlEnabled ? t.settings.enabled : t.settings.paused}
                     </button>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

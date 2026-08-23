@@ -225,6 +225,7 @@ ZFundPilot/
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式 |
 | `ZFUNDPILOT_HOME` | 项目根 | 数据目录所在位置 |
 | `ZFUNDPILOT_TRUSTED_PROXIES` | 空 | 信任代理网段（仅 Nginx/Caddy 反代后配置） |
+| `CONTAINER_NAME` | `zfundpilot` | Docker 容器名称，多实例部署时需为每个实例设置不同名称（详见 DEPLOY.md） |
 
 </details>
 

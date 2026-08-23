@@ -225,6 +225,7 @@ ZFundPilot/
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | Cron expression for scheduled NAV updates |
 | `ZFUNDPILOT_HOME` | project root | Location of the `data/` directory |
 | `ZFUNDPILOT_TRUSTED_PROXIES` | empty | Trusted proxy CIDRs (only needed behind Nginx/Caddy) |
+| `CONTAINER_NAME` | `zfundpilot` | Docker container name. Set a different value per instance for multi-instance deployments (see DEPLOY.md) |
 
 </details>
 

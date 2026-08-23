@@ -19,6 +19,8 @@
 | `watchlist` | 自选关注列表 | `fund_code` |
 | `ai_usage` | AI token 用量记录 | `id` (自增) |
 | `preferences` | 偏好设置 key-value | `key` |
+| `dividend_alerts` | 提醒列表（分红 + 止盈止损） | `id` (自增) |
+| `tp_sl_alert_states` | 止盈止损状态机 | `(fund_code, alert_type)` |
 
 ---
 
@@ -33,6 +35,7 @@
 | `fund_type` | TEXT | DEFAULT '其它' | 基金类型（混合型/指数型/QDII/债券型/股票型/其它） |
 | `sector` | TEXT | DEFAULT '' | 板块（如 科技/消费/医药） |
 | `tracking_index` | TEXT | DEFAULT '' | 跟踪指数关键词（指数型基金用于实时估值，如 沪深300/半导体材料设备） |
+| `dividend_method` | TEXT | DEFAULT 'cash' | 分红方式：`cash` / `reinvest`（FundDetail 页可设置） |
 | `created_at` | TEXT | DEFAULT datetime('now','localtime') | 创建时间 |
 | `updated_at` | TEXT | DEFAULT datetime('now','localtime') | 更新时间 |
 
@@ -179,6 +182,7 @@
 |---|---|---|---|
 | `fund_code` | TEXT | PRIMARY KEY | 基金代码 |
 | `note` | TEXT | DEFAULT '' | 用户备注 |
+| `group_name` | TEXT | DEFAULT '' | 分组名称（v0.15.0 起支持分组管理） |
 | `added_at` | TEXT | DEFAULT datetime('now','localtime') | 加入时间 |
 
 查询时 LEFT JOIN `funds` 表获取基金名称/类型/板块。
@@ -222,6 +226,62 @@
 | `nav_auto_update` | 纯文本 | 定时更新开关：`true` / `false` |
 | `type_keywords_custom` | JSON 数组字符串 | 自定义类型关键词映射 |
 | `sector_keywords_custom` | JSON 数组字符串 | 自定义板块关键词映射 |
+| `dividend_auto_check` | 纯文本 | 分红自动检测开关：`true` / `false` |
+| `t1_nav_fix_done` | 纯文本 | T+1 净值历史修复是否已完成：`1`/`0`（启动时一次性执行） |
+| `tp_sl_enabled` | 纯文本 | 止盈止损总开关：`true` / `false`（默认 `false`） |
+| `tp_sl_take_profit` | 纯文本 | 止盈阈值（数值字符串，如 `0.20` = 20%） |
+| `tp_sl_stop_loss` | 纯文本 | 止损阈值（数值字符串，如 `-0.15` = -15%） |
+| `tp_sl_take_profit_enabled` | 纯文本 | 止盈独立开关：`true` / `false`（默认 `true`） |
+| `tp_sl_stop_loss_enabled` | 纯文本 | 止损独立开关：`true` / `false`（默认 `true`） |
+| `tp_sl_reset_ratio` | 纯文本 | 止盈止损复位比例（默认 `0.80`，触发后收益率回落至 `threshold × ratio` 以下才重新 armed） |
+
+---
+
+## 10. dividend_alerts — 提醒列表
+
+分红 + 止盈止损共用，通过 `alert_type` 区分。分红提醒由分红定时检测（每天 09:30）写入，止盈止损提醒由净值更新完成后的 `_run_tp_sl_check()` 写入。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | 自增主键 |
+| `fund_code` | TEXT | NOT NULL | 基金代码 |
+| `fund_name` | TEXT | DEFAULT '' | 基金名称（tp_sl 写入时冗余） |
+| `record_date` | TEXT | | 分红登记日（仅分红用） |
+| `ex_date` | TEXT | | 除息日（仅分红用） |
+| `per_share` | REAL | | 每份分红金额（仅分红用） |
+| `pay_date` | TEXT | | 派息日（仅分红用） |
+| `held_shares` | REAL | | 持有份额（仅分红用） |
+| `estimated_amount` | REAL | | 预计分红金额（仅分红用） |
+| `dividend_method` | TEXT | DEFAULT 'cash' | 分红方式：`cash` / `reinvest`（仅分红用） |
+| `alert_type` | TEXT | DEFAULT 'dividend' | 提醒类型：`dividend` / `take_profit` / `stop_loss` |
+| `triggered_return` | REAL | | 触发时的收益率（仅 tp_sl 用） |
+| `threshold` | REAL | | 触发时的目标阈值（仅 tp_sl 用） |
+| `status` | TEXT | DEFAULT 'pending' | 状态：`pending` / `confirmed` / `ignored` |
+| `created_at` | TEXT | DEFAULT datetime('now','localtime') | 创建时间 |
+| `resolved_at` | TEXT | | 处理时间（确认/忽略） |
+| `tx_id` | INTEGER | | 关联交易 ID（分红确认入账时写入） |
+
+索引：`idx_alert_status` on `status`，`idx_alert_code_ex` on `(fund_code, ex_date)`。
+
+**兼容性**：`alert_type`/`triggered_return`/`threshold` 由 `_migrate_tp_sl()` 补充，旧数据 `alert_type` 默认为 `'dividend'` 无需回填。
+
+---
+
+## 11. tp_sl_alert_states — 止盈止损状态机
+
+记录每只基金每个方向（止盈/止损）的 armed 状态，用于避免重复提醒。触发后 `armed=0`（disarmed），收益率回落到 `threshold × reset_ratio` 以下后恢复 `armed=1`。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `fund_code` | TEXT | NOT NULL | 基金代码 |
+| `alert_type` | TEXT | NOT NULL | 方向：`take_profit` / `stop_loss` |
+| `last_alert_id` | INTEGER | | 最近一次生成的提醒 ID（关联 dividend_alerts.id） |
+| `last_triggered_return` | REAL | | 最近一次触发时的收益率 |
+| `handled_at` | TEXT | | 最近一次触发时间 |
+| `armed` | INTEGER | DEFAULT 1 | 是否可再次触发：1=armed / 0=disarmed |
+| `updated_at` | TEXT | DEFAULT datetime('now','localtime') | 更新时间 |
+
+**主键**：`PRIMARY KEY (fund_code, alert_type)` — 同一基金同一方向只有一条状态记录。
 
 ---
 
@@ -291,10 +351,11 @@
 
 `db.init_db()` 在应用启动时调用（幂等），包含以下迁移：
 
-1. **建表**：所有 `CREATE TABLE IF NOT EXISTS`（含 `audit_log`、`auto_invest_plans`、`watchlist`）
+1. **建表**：所有 `CREATE TABLE IF NOT EXISTS`（含 `audit_log`、`auto_invest_plans`、`watchlist`、`dividend_alerts`）
 2. **`_migrate_add_columns()`**: 为旧表补充新增列（`channel`、`is_t1`，回填 `note LIKE '%T+1确认%'` 的旧交易标记为 `is_t1=1`）
 3. **`_migrate_relax_transactions_schema()`**: 重建 transactions 表，移除 `CHECK(action IN ('buy','sell'))` 约束和 `NOT NULL` 约束，支持 dividend/reinvest 和待确认交易
 4. **`_migrate_legacy_holdings()`**: 旧版 `holdings` 表数据迁移为一条买入流水
+5. **`_migrate_tp_sl()`**: 为 `dividend_alerts` 补充 `alert_type`/`triggered_return`/`threshold` 列，新建 `tp_sl_alert_states` 表
 
 ---
 

@@ -11,10 +11,14 @@
 - 基金详情顶栏新增「加入自选」按钮（`Star` 图标）：已加入时实心黄色高亮，点击切换添加/移除，toast 提示。对比按钮和自选按钮均改为纯图标（去掉文字），加 `title` tooltip
 - 基金详情顶栏新增「定投」按钮（`Repeat` 图标）：跳转到交易管理页定投 tab，自动预填基金代码和渠道，弹窗自动打开
 
+### Changed
+- `docker-compose.yml` 的 `container_name` 改为环境变量 `${CONTAINER_NAME:-zfundpilot}`，同一机器运行多个实例时在 `.env` 设置不同 `CONTAINER_NAME` 即可避免容器名冲突。`.env.example` 新增 `CONTAINER_NAME` 说明，`DEPLOY.md` 新增多实例部署方式（独立目录 + 同源多 compose 文件）+ 容器名冲突故障排查
+
 ### Fixed
 - `get_dividend_alerts` 加 `alert_type='dividend'` 过滤，确保现有分红提醒页不受 tp_sl 数据污染
 - `update_tp_sl_config` 布尔值存储格式修复：`str(True)` 产生 `"True"`（大写）但检查 `"true"`（小写）导致开关永远显示已暂停，改为 `isinstance(v, bool)` 时统一存 `"true"`/`"false"`
 - `AutoInvestPlansPanel` 的 `useEffect` 依赖数组包含 `t.transactions.autoInvest`，切换语言时弹窗被意外重新打开；改为 `onPrefillConsumed` 回调模式消费后清除，依赖数组仅 `[prefillCode]`
+- `update.sh` 提示信息补全「按 Enter 继续」（原仅提示「按 Ctrl+C 取消」缺少继续指引）+ 补充 `.env` 和 `docker-compose.override.yml` 不受 `git reset --hard` 影响说明
 
 ## [0.18.0] - 2026-08-22
 

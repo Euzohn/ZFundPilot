@@ -16,6 +16,7 @@
 - `docker-compose.yml` 的 `container_name` 改为环境变量 `${CONTAINER_NAME:-zfundpilot}`，同一机器运行多个实例时在 `.env` 设置不同 `CONTAINER_NAME` 即可避免容器名冲突。`.env.example` 新增 `CONTAINER_NAME` 说明，`DEPLOY.md` 新增多实例部署方式（独立目录 + 同源多 compose 文件）+ 容器名冲突故障排查
 
 ### Fixed
+- 止盈止损提醒面板三问题修复：(1) 操作确认/忽略后整个面板卸载为 spinner 导致下方图表跳动闪烁，改为乐观更新（snapshot + setData）替代 reload()；(2) 已确认/已忽略的提醒占用空间，折叠为「已处理 (N) 条」可展开区域；(3) 已处理的提醒无法二次操作，新增「重新打开」按钮恢复为 pending 状态。`PUT /api/alerts/{id}` 新增 `pending` 状态支持，改回 pending 时清空 `resolved_at`
 - `get_dividend_alerts` 加 `alert_type='dividend'` 过滤，确保现有分红提醒页不受 tp_sl 数据污染
 - `update_tp_sl_config` 布尔值存储格式修复：`str(True)` 产生 `"True"`（大写）但检查 `"true"`（小写）导致开关永远显示已暂停，改为 `isinstance(v, bool)` 时统一存 `"true"`/`"false"`
 - `AutoInvestPlansPanel` 的 `useEffect` 依赖数组包含 `t.transactions.autoInvest`，切换语言时弹窗被意外重新打开；改为 `onPrefillConsumed` 回调模式消费后清除，依赖数组仅 `[prefillCode]`

@@ -246,7 +246,7 @@ ZFundPilot/
 - `_convert_dow()`: 标准 cron day_of_week 数值（0=周日, 1=周一）→ APScheduler 编号（0=周一, 6=周日），`re.sub(r'(?<!/)\d+', lambda m: str((int(m.group(0))-1)%7), dow)`。`(?<!/)` 跳过 `/` 后的步进值（如 `*/2` 中的 `2` 不被转换）。只在 day_of_week 为纯数字（无字母缩写）时执行转换
 - `config.TIMEZONE`: 所有 `datetime.now()` 调用使用此时区，不依赖系统时区
 - **止盈止损检查**：嵌入 `_run_nav_update()` 末尾，净值更新完成后自动执行 `_run_tp_sl_check()`。扫描所有持仓 `return_rate`，≥ 止盈阈值或 ≤ 止损阈值时生成提醒。状态机：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio` 以下后重新 `armed`（避免部分止盈后重复提醒）。配置存 `preferences` 表（`tp_sl_enabled`/`tp_sl_take_profit`/`tp_sl_stop_loss`/`tp_sl_take_profit_enabled`/`tp_sl_stop_loss_enabled`/`tp_sl_reset_ratio`），默认关闭。`tp_sl_alert_states` 表记录每只基金每个方向的 armed 状态。复用 `dividend_alerts` 表（`alert_type` 区分 `dividend`/`take_profit`/`stop_loss`）
-- API: `GET /api/scheduler/status` + `PUT /api/scheduler/toggle` + `PUT /api/scheduler/cron`；`GET/PUT /api/alerts/config`（止盈止损配置）；`GET /api/alerts` + `GET /api/alerts/count`（统一提醒列表/计数，支持 `?type=tp_sl`）；`PUT /api/alerts/{id}`（标记已处理）
+- API: `GET /api/scheduler/status` + `PUT /api/scheduler/toggle` + `PUT /api/scheduler/cron`；`GET/PUT /api/alerts/config`（止盈止损配置）；`GET /api/alerts` + `GET /api/alerts/count`（统一提醒列表/计数，支持 `?type=tp_sl`）；`PUT /api/alerts/{id}`（更新状态：confirmed/ignored/pending，pending 时清空 resolved_at）
 - **基准指数持久化**：`_update_benchmark_indices()` 在净值更新后调用，遍历 `config.BENCHMARK_INDICES`（沪深300/上证指数/创业板指）逐只拉取并持久化到 `index_history` 表，确保离线时基准对比数据可用。DB 已有最新数据时跳过
 
 ---
@@ -445,6 +445,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - changed: `docker-compose.yml` 的 `container_name` 改为环境变量 `${CONTAINER_NAME:-zfundpilot}`，支持多实例部署。`.env.example` 新增 `CONTAINER_NAME`，`DEPLOY.md` 新增多实例部署方式 + 容器名冲突故障排查
 - fix: `update.sh` 提示信息补全「按 Enter 继续」+ 补充 `.env` 和 `docker-compose.override.yml` 不受 `git reset --hard` 影响说明
 - fix: 红点提醒可发现性——侧边栏红点原为合计数仅标 Transactions，止盈止损提醒在 Returns 页导致指向错误。拆分为 Transactions 标分红 / Returns 标止盈止损。Transactions 页「检查分红」按钮加数字红点 badge + 「单笔录入」tab trigger 加红点
+- fix: 止盈止损提醒面板三问题——(1) 操作确认/忽略后面板卸载为 spinner 导致下方图表跳动闪烁，改为乐观更新（snapshot + setData）替代 reload()；(2) 已确认/已忽略提醒折叠为「已处理 (N) 条」可展开区域；(3) 已处理提醒无法二次操作，新增「重新打开」按钮恢复 pending。`PUT /api/alerts/{id}` 新增 `pending` 状态支持，改回 pending 时清空 `resolved_at`
 - fix: `AutoInvestPlansPanel` 的 `useEffect` 依赖 `t.transactions.autoInvest`，切换语言时弹窗被意外重新打开。改为 `onPrefillConsumed` 回调模式，依赖数组仅 `[prefillCode]`
 
 ### v0.18.0 - 2026-08-22

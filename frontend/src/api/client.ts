@@ -415,8 +415,10 @@ export const api = {
     }),
   getDividendAlerts: (status?: string) =>
     request<DividendAlert[]>(`/dividends/alerts${status ? `?status=${status}` : ""}`),
-  getPendingAlertCount: () =>
-    request<{ count: number }>("/alerts/count"),
+  getPendingAlertCount: (type?: string) =>
+    request<{ count: number }>(`/alerts/count${type ? `?type=${type}` : ""}`),
+  getPendingDividendAlertCount: () =>
+    request<{ count: number }>("/dividends/alerts/count"),
   updateDividendAlert: (id: number, status: string, txId?: number) =>
     request<{ ok: boolean }>(`/dividends/alerts/${id}`, {
       method: "PUT",

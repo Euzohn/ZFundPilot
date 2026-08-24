@@ -63,7 +63,7 @@ const navGroups = [
 
 const bottomNav = { to: "/settings", labelKey: "settings" as const, icon: SettingsIcon }
 
-function NavLinks({ collapsed, onNavigate, pendingCount, compareCount }: { collapsed: boolean; onNavigate?: () => void; pendingCount: number; compareCount: number }) {
+function NavLinks({ collapsed, onNavigate, dividendCount, tpSlCount, compareCount }: { collapsed: boolean; onNavigate?: () => void; dividendCount: number; tpSlCount: number; compareCount: number }) {
   const { t } = useLang()
 
   const linkClass = (isActive: boolean) =>
@@ -83,7 +83,8 @@ function NavLinks({ collapsed, onNavigate, pendingCount, compareCount }: { colla
             <p className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600">{t.nav[group.labelKey]}</p>
           )}
           {group.items.map(({ to, labelKey, icon: Icon }) => {
-            const showBadge = to === "/transactions" && pendingCount > 0
+            const showBadge = to === "/transactions" && dividendCount > 0
+            const showTpSlBadge = to === "/returns" && tpSlCount > 0
             const showCompareBadge = to === "/compare" && compareCount > 0
             return (
             <NavLink
@@ -99,6 +100,9 @@ function NavLinks({ collapsed, onNavigate, pendingCount, compareCount }: { colla
                 {collapsed && showBadge && (
                   <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-red-500 ring-1 ring-zinc-900" />
                 )}
+                {collapsed && showTpSlBadge && (
+                  <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-red-500 ring-1 ring-zinc-900" />
+                )}
                 {collapsed && showCompareBadge && (
                   <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-blue-500 ring-1 ring-zinc-900" />
                 )}
@@ -106,7 +110,12 @@ function NavLinks({ collapsed, onNavigate, pendingCount, compareCount }: { colla
               {!collapsed && <span className="whitespace-nowrap">{t.nav[labelKey]}</span>}
               {!collapsed && showBadge && (
                 <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold">
-                  {pendingCount > 99 ? "99+" : pendingCount}
+                  {dividendCount > 99 ? "99+" : dividendCount}
+                </span>
+              )}
+              {!collapsed && showTpSlBadge && (
+                <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold">
+                  {tpSlCount > 99 ? "99+" : tpSlCount}
                 </span>
               )}
               {!collapsed && showCompareBadge && (
@@ -141,7 +150,8 @@ export default function Layout() {
     try { return localStorage.getItem(STORAGE_KEY) === "true" } catch { return false }
   })
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [pendingCount, setPendingCount] = useState(0)
+  const [dividendCount, setDividendCount] = useState(0)
+  const [tpSlCount, setTpSlCount] = useState(0)
   const location = useLocation()
 
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
@@ -153,11 +163,12 @@ export default function Layout() {
 
   useEffect(() => {
     let active = true
-    const fetchCount = () => {
-      api.getPendingAlertCount().then(r => { if (active) setPendingCount(r.count) }).catch(() => {})
+    const fetchCounts = () => {
+      api.getPendingDividendAlertCount().then(r => { if (active) setDividendCount(r.count) }).catch(() => {})
+      api.getPendingAlertCount("tp_sl").then(r => { if (active) setTpSlCount(r.count) }).catch(() => {})
     }
-    fetchCount()
-    const timer = setInterval(fetchCount, 60000)
+    fetchCounts()
+    const timer = setInterval(fetchCounts, 60000)
     return () => { active = false; clearInterval(timer) }
   }, [])
 
@@ -205,7 +216,7 @@ export default function Layout() {
           )}
         </div>
 
-        <NavLinks collapsed={collapsed} pendingCount={pendingCount} compareCount={compareCount} />
+        <NavLinks collapsed={collapsed} dividendCount={dividendCount} tpSlCount={tpSlCount} compareCount={compareCount} />
 
         <div className={cn("border-t border-zinc-800/60", collapsed ? "px-2 py-3" : "px-3 py-3")}>
           <a
@@ -282,7 +293,7 @@ export default function Layout() {
           </button>
         </div>
 
-        <NavLinks collapsed={false} onNavigate={() => setMobileOpen(false)} pendingCount={pendingCount} compareCount={compareCount} />
+        <NavLinks collapsed={false} onNavigate={() => setMobileOpen(false)} dividendCount={dividendCount} tpSlCount={tpSlCount} compareCount={compareCount} />
       </aside>
 
       {/* Main content */}

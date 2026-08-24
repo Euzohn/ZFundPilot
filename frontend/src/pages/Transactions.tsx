@@ -51,6 +51,7 @@ export default function Transactions() {
   const [autoInvestPrefillCode, setAutoInvestPrefillCode] = useState<string | null>(null)
   const [autoInvestPrefillChannel, setAutoInvestPrefillChannel] = useState<string | undefined>(undefined)
   const [dividendDialogOpen, setDividendDialogOpen] = useState(false)
+  const [dividendAlertCount, setDividendAlertCount] = useState(0)
   const consumedEditTx = useRef(false)
 
   // 从 URL 参数消费预填数据（从持仓页/分红检查跳转过来）
@@ -88,6 +89,16 @@ export default function Transactions() {
     }
   }, [location.state])
 
+  useEffect(() => {
+    let active = true
+    const fetchCount = () => {
+      api.getPendingDividendAlertCount().then(r => { if (active) setDividendAlertCount(r.count) }).catch(() => {})
+    }
+    fetchCount()
+    const timer = setInterval(fetchCount, 60000)
+    return () => { active = false; clearInterval(timer) }
+  }, [])
+
   const handleEdit = (tx: Transaction) => {
     consumedEditTx.current = false
     setEditingTx(tx)
@@ -111,7 +122,13 @@ export default function Transactions() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-4 sm:inline-flex sm:w-auto">
           <TabsTrigger value="form" className="gap-1.5">
-            <Plus className="h-4 w-4" /> <span className="hidden sm:inline">{t.transactions.singleEntry}</span><span className="sm:hidden">{t.transactions.singleEntryShort}</span>
+            <span className="relative">
+              <Plus className="h-4 w-4" />
+              {dividendAlertCount > 0 && (
+                <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-red-500 ring-1 ring-background" />
+              )}
+            </span>
+            <span className="hidden sm:inline">{t.transactions.singleEntry}</span><span className="sm:hidden">{t.transactions.singleEntryShort}</span>
           </TabsTrigger>
           <TabsTrigger value="list" className="gap-1.5">
             <Receipt className="h-4 w-4" /> <span className="hidden sm:inline">{t.transactions.transactionFlow}</span><span className="sm:hidden">{t.transactions.flowShort}</span>
@@ -130,6 +147,7 @@ export default function Transactions() {
             onPrefillConsumed={() => setPrefill(null)}
             onDone={handleFormDone}
             onCheckDividends={() => setDividendDialogOpen(true)}
+            dividendAlertCount={dividendAlertCount}
           />
         </TabsContent>
         <TabsContent value="list">
@@ -145,12 +163,13 @@ export default function Transactions() {
 // ---------------------------------------------------------------------------
 // 单笔录入 / 编辑
 // ---------------------------------------------------------------------------
-function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onCheckDividends }: {
+function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onCheckDividends, dividendAlertCount }: {
   editingTx: Transaction | null
   prefill: { code: string; action: string; channel?: string; amount?: string; date?: string; note?: string; alert_id?: number } | null
   onPrefillConsumed: () => void
   onDone: (fundCode?: string) => void
   onCheckDividends?: () => void
+  dividendAlertCount: number
 }) {
   const { t } = useLang()
   const [code, setCode] = useState("")
@@ -453,9 +472,14 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
             {isEditing ? `${t.transactions.editTransaction} #${editingTx?.id}` : t.transactions.singleEntry}
           </CardTitle>
           {onCheckDividends && !isEditing && (
-            <Button variant="outline" size="sm" onClick={onCheckDividends}>
+            <Button variant="outline" size="sm" onClick={onCheckDividends} className="relative">
               <Gift className="h-4 w-4 mr-1.5" />
               {t.transactions.dividendCheck}
+              {dividendAlertCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold ring-1 ring-background">
+                  {dividendAlertCount > 99 ? "99+" : dividendAlertCount}
+                </span>
+              )}
             </Button>
           )}
         </div>

@@ -751,8 +751,10 @@ def scan_dividends(request: Request) -> dict[str, Any]:
             })
             new_count += 1
     db.log_audit("dividend_scan", ip=_get_client_ip(request),
-                 detail={"found": len(events), "new": new_count})
-    return {"found": len(events), "new": new_count}
+                 detail={"found": len(events), "new": new_count,
+                         "cleaned": fetch_dividend._last_cleanup_count})
+    return {"found": len(events), "new": new_count,
+            "cleaned": fetch_dividend._last_cleanup_count}
 
 
 @app.post("/api/sectors/reset")

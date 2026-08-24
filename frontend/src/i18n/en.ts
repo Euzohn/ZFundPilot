@@ -336,6 +336,7 @@ const en: typeof zh = {
     ignore: "Ignore",
     ignoreFailed: "Ignore failed",
     scanResult: "Found {found}, {new} new alerts",
+    scanCleaned: "Auto-cleaned {cleaned} invalid dividend alert(s)",
     exDate: "Ex-date",
     perShare: "CNY/share",
     recordDividend: "Record Dividend",

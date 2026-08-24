@@ -171,11 +171,13 @@ def _run_dividend_check() -> None:
                     "dividend_method": ev.dividend_method,
                 })
                 new_count += 1
-        if new_count:
+        cleaned = fetch_dividend._last_cleanup_count
+        if new_count or cleaned:
             db.log_audit("dividend_scan", ip=None,
-                         detail={"found": len(events), "new": new_count})
-            logger.info("[scheduler] 分红检测完成: 发现 %d, 新增 %d 条提醒",
-                        len(events), new_count)
+                         detail={"found": len(events), "new": new_count,
+                                 "cleaned": cleaned})
+            logger.info("[scheduler] 分红检测完成: 发现 %d, 新增 %d 条提醒, 清理 %d 条幽灵提醒",
+                        len(events), new_count, cleaned)
         else:
             logger.info("[scheduler] 分红检测完成: 发现 %d, 无新增提醒", len(events))
         _last_dividend_run = datetime.now(config.TIMEZONE)

@@ -96,6 +96,7 @@ function AuditLogPanel() {
     dividend_check: t.settings.auditLabels.dividend_check,
     dividend_scan: t.settings.auditLabels.dividend_scan,
     dividend_alert_update: t.settings.auditLabels.dividend_alert_update,
+    dividend_alert_delete: t.settings.auditLabels.dividend_alert_delete,
     dividend_auto_check_toggle: t.settings.auditLabels.dividend_auto_check_toggle,
     tp_sl_config_update: t.settings.auditLabels.tp_sl_config_update,
     tp_sl_alert: t.settings.auditLabels.tp_sl_alert,

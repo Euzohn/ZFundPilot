@@ -56,6 +56,9 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
       } else {
         toast.success(t.transactions.scanResult.replace("{found}", String(result.found)).replace("{new}", String(result.new)))
       }
+      if (result.cleaned > 0) {
+        toast.info(t.transactions.scanCleaned.replace("{cleaned}", String(result.cleaned)))
+      }
       await loadAlerts()
     } catch {
       toast.error(t.transactions.scanFailed)

@@ -427,7 +427,7 @@ export const api = {
   deleteDividendAlert: (id: number) =>
     request<{ ok: boolean }>(`/dividends/alerts/${id}`, { method: "DELETE" }),
   scanDividends: () =>
-    request<{ found: number; new: number }>("/dividends/scan", { method: "POST" }),
+    request<{ found: number; new: number; cleaned: number }>("/dividends/scan", { method: "POST" }),
   toggleDividendAutoCheck: (enabled: boolean) =>
     request<SchedulerStatus>("/dividends/auto-check", {
       method: "PUT",

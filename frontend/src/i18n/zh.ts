@@ -334,6 +334,7 @@ const zh = {
     ignore: "忽略",
     ignoreFailed: "忽略失败",
     scanResult: "发现 {found} 项，新增 {new} 项提醒",
+    scanCleaned: "自动清理 {cleaned} 条无效分红提醒",
     exDate: "除息日",
     perShare: "元/份",
     recordDividend: "记为分红",

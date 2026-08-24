@@ -443,7 +443,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - feat: 基准指数数据持久化——新增 `index_history` 表存储沪深300/上证指数/创业板指历史收盘价。`fetch_index_history()` 改为三级缓存（L1 内存 1h → L2 SQLite → L3 新浪在线），在线拉取后自动持久化到 DB，离线时从 DB 返回已有数据。scheduler 净值更新后自动拉取并持久化基准指数。`BENCHMARK_INDICES` 提取到 `config.py` 共享。新增 6 个测试用例（upsert/get/get_latest_date + 持久化 + 离线 fallback + DB 命中不拉取）
 - feat: 止盈止损提醒功能——净值更新完成后自动扫描持仓收益率，≥ 止盈阈值或 ≤ 止损阈值时生成提醒。状态机防重复：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio`（复位比例，默认 80%）以下后重新 `armed`，避免部分止盈后剩余份额收益率不变导致重复提醒。复用 `dividend_alerts` 表（加 `alert_type`/`triggered_return`/`threshold` 列），新增 `tp_sl_alert_states` 状态表。Settings 页新增配置卡片（总开关即时生效 + 止盈/止损独立开关 + 阈值 + 复位比例），Returns 页新增 `TpSlAlertsPanel` 提醒列表（确认/忽略操作），Layout 红点拆分显示（Transactions 标分红提醒 / Returns 标止盈止损提醒）。配置存 `preferences` 表（`tp_sl_enabled` 默认关闭）。`get_dividend_alerts` 加 `alert_type='dividend'` 过滤确保现有分红提醒页不受 tp_sl 数据污染
 - feat: 基金详情顶栏新增「加入自选」按钮（`Star` 图标，已加入时实心黄色高亮）+ 对比/自选按钮改为纯图标（去掉文字加 tooltip）。新增「定投」按钮（`Repeat` 图标），跳转到交易管理页定投 tab 并预填基金代码/渠道，弹窗自动打开
-- feat: 分红提醒删除接口——新增 `DELETE /api/dividends/alerts/{alert_id}` + `db.delete_dividend_alert()`，DividendCheckDialog 每条提醒左侧加 `Trash2` 图标按钮直接删除误报
+- feat: 分红提醒删除接口——新增 `DELETE /api/dividends/alerts/{alert_id}` + `db.delete_dividend_alert()`，DividendCheckDialog 每条提醒左侧加 `Trash2` 图标按钮直接删除误报。扫描响应新增 `cleaned` 字段，rescan toast + scheduler 日志/审计均含清理计数
 - changed: `docker-compose.yml` 的 `container_name` 改为环境变量 `${CONTAINER_NAME:-zfundpilot}`，支持多实例部署。`.env.example` 新增 `CONTAINER_NAME`，`DEPLOY.md` 新增多实例部署方式 + 容器名冲突故障排查
 - fix: `update.sh` 提示信息补全「按 Enter 继续」+ 补充 `.env` 和 `docker-compose.override.yml` 不受 `git reset --hard` 影响说明
 - fix: 红点提醒可发现性——侧边栏红点原为合计数仅标 Transactions，止盈止损提醒在 Returns 页导致指向错误。拆分为 Transactions 标分红 / Returns 标止盈止损。Transactions 页「检查分红」按钮加数字红点 badge + 「单笔录入」tab trigger 加红点

@@ -398,6 +398,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
     setCustomChannel(""); setNote(""); setAfterThree(false)
     setFeeCalcResult(null); feeManuallyEdited.current = false
     setPendingAlertId(null)
+    setPendingTpSlAlertId(null)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {

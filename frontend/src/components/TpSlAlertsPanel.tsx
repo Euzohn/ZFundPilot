@@ -17,12 +17,11 @@ import { toast } from "sonner"
 export default function TpSlAlertsPanel() {
   const { t } = useLang()
   const navigate = useNavigate()
-  const { data: alerts, loading, error, reload, setData } = useApi<DividendAlert[]>(() => api.getTpSlAlerts(), [])
+  const { data: alerts, loading, error, setData } = useApi<DividendAlert[]>(() => api.getTpSlAlerts(), [])
   const [updating, setUpdating] = useState<number | null>(null)
   const [showProcessed, setShowProcessed] = useState(false)
 
   const handleConfirm = (alert: DividendAlert) => {
-    setUpdating(alert.id)
     navigate(`/transactions?code=${alert.fund_code}&action=sell&tp_sl_alert_id=${alert.id}`)
   }
 

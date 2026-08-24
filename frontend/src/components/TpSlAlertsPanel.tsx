@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { api } from "@/api/client"
 import type { DividendAlert } from "@/api/types"
 import { useApi } from "@/lib/useApi"
@@ -15,16 +16,37 @@ import { toast } from "sonner"
 
 export default function TpSlAlertsPanel() {
   const { t } = useLang()
+  const navigate = useNavigate()
   const { data: alerts, loading, error, reload, setData } = useApi<DividendAlert[]>(() => api.getTpSlAlerts(), [])
   const [updating, setUpdating] = useState<number | null>(null)
   const [showProcessed, setShowProcessed] = useState(false)
 
-  const handleUpdate = async (id: number, newStatus: string) => {
+  const handleConfirm = (alert: DividendAlert) => {
+    setUpdating(alert.id)
+    navigate(`/transactions?code=${alert.fund_code}&action=sell&tp_sl_alert_id=${alert.id}`)
+  }
+
+  const handleIgnore = async (id: number) => {
     setUpdating(id)
     const snapshot = alerts
-    setData(prev => prev?.map(a => a.id === id ? { ...a, status: newStatus } as DividendAlert : a) ?? null)
+    setData(prev => prev?.map(a => a.id === id ? { ...a, status: "ignored" } as DividendAlert : a) ?? null)
     try {
-      await api.updateAlert(id, newStatus)
+      await api.updateAlert(id, "ignored")
+      toast.success(t.common.saved)
+    } catch (e) {
+      setData(snapshot)
+      toast.error(`${t.common.operationFailed}: ${e}`)
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  const handleReopen = async (id: number) => {
+    setUpdating(id)
+    const snapshot = alerts
+    setData(prev => prev?.map(a => a.id === id ? { ...a, status: "pending" } as DividendAlert : a) ?? null)
+    try {
+      await api.updateAlert(id, "pending")
       toast.success(t.common.saved)
     } catch (e) {
       setData(snapshot)
@@ -87,7 +109,7 @@ export default function TpSlAlertsPanel() {
                             size="sm"
                             variant="ghost"
                             className="h-7 w-7 p-0"
-                            onClick={() => handleUpdate(alert.id, "confirmed")}
+                            onClick={() => handleConfirm(alert)}
                             disabled={updating === alert.id}
                           >
                             <CheckCircle2 className="h-4 w-4 text-gain" />
@@ -96,7 +118,7 @@ export default function TpSlAlertsPanel() {
                             size="sm"
                             variant="ghost"
                             className="h-7 w-7 p-0"
-                            onClick={() => handleUpdate(alert.id, "ignored")}
+                            onClick={() => handleIgnore(alert.id)}
                             disabled={updating === alert.id}
                           >
                             <XCircle className="h-4 w-4 text-loss" />
@@ -141,7 +163,7 @@ export default function TpSlAlertsPanel() {
                           size="sm"
                           variant="ghost"
                           className="h-6 px-2 text-[10px] gap-1"
-                          onClick={() => handleUpdate(alert.id, "pending")}
+                          onClick={() => handleReopen(alert.id)}
                           disabled={updating === alert.id}
                         >
                           <RotateCcw className="h-3 w-3" />

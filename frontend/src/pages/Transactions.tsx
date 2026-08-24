@@ -47,7 +47,7 @@ export default function Transactions() {
   const [activeTab, setActiveTab] = useState("form")
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [listReloadKey, setListReloadKey] = useState(0)
-  const [prefill, setPrefill] = useState<{ code: string; action: string; channel?: string; amount?: string; date?: string; note?: string; alert_id?: number } | null>(null)
+  const [prefill, setPrefill] = useState<{ code: string; action: string; channel?: string; amount?: string; date?: string; note?: string; alert_id?: number; tp_sl_alert_id?: number } | null>(null)
   const [autoInvestPrefillCode, setAutoInvestPrefillCode] = useState<string | null>(null)
   const [autoInvestPrefillChannel, setAutoInvestPrefillChannel] = useState<string | undefined>(undefined)
   const [dividendDialogOpen, setDividendDialogOpen] = useState(false)
@@ -63,6 +63,7 @@ export default function Transactions() {
     const date = searchParams.get("date")
     const note = searchParams.get("note")
     const alertId = searchParams.get("alert_id")
+    const tpSlAlertId = searchParams.get("tp_sl_alert_id")
     const tab = searchParams.get("tab")
     if (tab === "auto-invest" && code) {
       setAutoInvestPrefillCode(code)
@@ -70,7 +71,7 @@ export default function Transactions() {
       setActiveTab("auto-invest")
       setSearchParams({}, { replace: true })
     } else if (code) {
-      setPrefill({ code, action: action || "buy", channel: channel || undefined, amount: amount || undefined, date: date || undefined, note: note ? decodeURIComponent(note) : undefined, alert_id: alertId ? Number(alertId) : undefined })
+      setPrefill({ code, action: action || "buy", channel: channel || undefined, amount: amount || undefined, date: date || undefined, note: note ? decodeURIComponent(note) : undefined, alert_id: alertId ? Number(alertId) : undefined, tp_sl_alert_id: tpSlAlertId ? Number(tpSlAlertId) : undefined })
       setActiveTab("form")
       setSearchParams({}, { replace: true })
     }
@@ -165,7 +166,7 @@ export default function Transactions() {
 // ---------------------------------------------------------------------------
 function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onCheckDividends, dividendAlertCount }: {
   editingTx: Transaction | null
-  prefill: { code: string; action: string; channel?: string; amount?: string; date?: string; note?: string; alert_id?: number } | null
+  prefill: { code: string; action: string; channel?: string; amount?: string; date?: string; note?: string; alert_id?: number; tp_sl_alert_id?: number } | null
   onPrefillConsumed: () => void
   onDone: (fundCode?: string) => void
   onCheckDividends?: () => void
@@ -194,6 +195,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
   const feeManuallyEdited = useRef(false)
   const feeCalcTimer = useRef<ReturnType<typeof setTimeout>>()
   const [pendingAlertId, setPendingAlertId] = useState<number | null>(null)
+  const [pendingTpSlAlertId, setPendingTpSlAlertId] = useState<number | null>(null)
   const isEditing = !!editingTx
 
   // 持仓数据（用于卖出时校验 + 快捷填入）
@@ -260,6 +262,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
     setMeta(null)
     setFeeCalcResult(null); feeManuallyEdited.current = false
     setPendingAlertId(prefill.alert_id ?? null)
+    setPendingTpSlAlertId(prefill.tp_sl_alert_id ?? null)
     // 渠道预填：预设渠道走 select，自定义渠道走 customChannel
     if (prefill.channel) {
       if (channels.includes(prefill.channel)) {
@@ -449,6 +452,11 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
         if (pendingAlertId) {
           api.updateDividendAlert(pendingAlertId, "confirmed", result.id).catch(() => {})
           setPendingAlertId(null)
+        }
+        // 从止盈止损提醒跳转来：保存成功后标记 alert 为 confirmed
+        if (pendingTpSlAlertId) {
+          api.updateAlert(pendingTpSlAlertId, "confirmed").catch(() => {})
+          setPendingTpSlAlertId(null)
         }
       }
       // 自动添加自定义渠道到系统列表

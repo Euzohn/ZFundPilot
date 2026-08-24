@@ -221,7 +221,7 @@ const handleDelete = async (txId: number) => {
                     <ChevronDown className="h-3 w-3 text-muted-foreground" />
                   </button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-1" align="start">
+                <PopoverContent className="w-auto p-1" align="center">
                   <div className="flex flex-col gap-0.5">
                     <button
                       onClick={async () => {

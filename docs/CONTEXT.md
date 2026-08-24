@@ -445,7 +445,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - changed: `docker-compose.yml` 的 `container_name` 改为环境变量 `${CONTAINER_NAME:-zfundpilot}`，支持多实例部署。`.env.example` 新增 `CONTAINER_NAME`，`DEPLOY.md` 新增多实例部署方式 + 容器名冲突故障排查
 - fix: `update.sh` 提示信息补全「按 Enter 继续」+ 补充 `.env` 和 `docker-compose.override.yml` 不受 `git reset --hard` 影响说明
 - fix: 红点提醒可发现性——侧边栏红点原为合计数仅标 Transactions，止盈止损提醒在 Returns 页导致指向错误。拆分为 Transactions 标分红 / Returns 标止盈止损。Transactions 页「检查分红」按钮加数字红点 badge + 「单笔录入」tab trigger 加红点
-- fix: 止盈止损提醒面板三问题——(1) 操作确认/忽略后面板卸载为 spinner 导致下方图表跳动闪烁，改为乐观更新（snapshot + setData）替代 reload()；(2) 已确认/已忽略提醒折叠为「已处理 (N) 条」可展开区域；(3) 已处理提醒无法二次操作，新增「重新打开」按钮恢复 pending。`PUT /api/alerts/{id}` 新增 `pending` 状态支持，改回 pending 时清空 `resolved_at`
+- fix: 止盈止损提醒面板三问题——(1) 操作确认/忽略后面板卸载为 spinner 导致下方图表跳动闪烁，改为乐观更新（snapshot + setData）替代 reload()；(2) 已确认/已忽略提醒折叠为「已处理 (N) 条」可展开区域；(3) 已处理提醒无法二次操作，新增「重新打开」按钮恢复 pending。`PUT /api/alerts/{id}` 新增 `pending` 状态支持，改回 pending 时清空 `resolved_at`。确认按钮跳转交易页预填卖出，交易保存后自动标记 confirmed
 - fix: `AutoInvestPlansPanel` 的 `useEffect` 依赖 `t.transactions.autoInvest`，切换语言时弹窗被意外重新打开。改为 `onPrefillConsumed` 回调模式，依赖数组仅 `[prefillCode]`
 
 ### v0.18.0 - 2026-08-22

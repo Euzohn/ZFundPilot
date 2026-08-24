@@ -421,6 +421,7 @@ const zh = {
       dividend_check: "分红检查",
       dividend_scan: "分红扫描",
       dividend_alert_update: "分红提醒处理",
+      dividend_alert_delete: "删除分红提醒",
       dividend_auto_check_toggle: "分红自动检测开关",
       tp_sl_config_update: "止盈止损配置更新",
       tp_sl_alert: "止盈止损提醒触发",

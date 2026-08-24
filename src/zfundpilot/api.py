@@ -717,6 +717,16 @@ def update_dividend_alert(alert_id: int, body: DividendAlertUpdate,
     return {"ok": True}
 
 
+@app.delete("/api/dividends/alerts/{alert_id}")
+def delete_dividend_alert_route(alert_id: int, request: Request) -> dict[str, bool]:
+    """删除一条分红提醒（误报等场景）。"""
+    if not db.delete_dividend_alert(alert_id):
+        raise HTTPException(404, "Alert not found")
+    db.log_audit("dividend_alert_delete", ip=_get_client_ip(request),
+                 detail={"id": alert_id})
+    return {"ok": True}
+
+
 @app.post("/api/dividends/scan")
 def scan_dividends(request: Request) -> dict[str, Any]:
     """手动触发分红扫描，新发现的存入 dividend_alerts 表。

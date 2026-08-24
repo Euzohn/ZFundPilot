@@ -424,6 +424,8 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ status, tx_id: txId ?? null }),
     }),
+  deleteDividendAlert: (id: number) =>
+    request<{ ok: boolean }>(`/dividends/alerts/${id}`, { method: "DELETE" }),
   scanDividends: () =>
     request<{ found: number; new: number }>("/dividends/scan", { method: "POST" }),
   toggleDividendAutoCheck: (enabled: boolean) =>

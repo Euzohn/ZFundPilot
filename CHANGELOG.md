@@ -11,11 +11,13 @@
 - 止盈止损提醒功能：净值更新完成后自动扫描持仓基金收益率，达到止盈/止损阈值时生成提醒。状态机防重复：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio`（复位比例，默认 80%）以下后重新 `armed`，避免部分止盈后剩余份额收益率不变导致重复提醒。复用 `dividend_alerts` 表（加 `alert_type`/`triggered_return`/`threshold` 列），新增 `tp_sl_alert_states` 状态表。Settings 页新增配置卡片（总开关即时生效 + 止盈/止损独立开关 + 阈值 + 复位比例），Returns 页新增提醒列表（确认/忽略操作），Layout 红点拆分显示（Transactions 标分红提醒 / Returns 标止盈止损提醒）
 - 基金详情顶栏新增「加入自选」按钮（`Star` 图标）：已加入时实心黄色高亮，点击切换添加/移除，toast 提示。对比按钮和自选按钮均改为纯图标（去掉文字），加 `title` tooltip
 - 基金详情顶栏新增「定投」按钮（`Repeat` 图标）：跳转到交易管理页定投 tab，自动预填基金代码和渠道，弹窗自动打开
+- 分红提醒删除接口：新增 `DELETE /api/dividends/alerts/{alert_id}` 端点 + `db.delete_dividend_alert()`，支持删除误报提醒（非仅标记 ignored）。DividendCheckDialog 每条提醒左侧加 `Trash2` 图标按钮直接删除
 
 ### Changed
 - `docker-compose.yml` 的 `container_name` 改为环境变量 `${CONTAINER_NAME:-zfundpilot}`，同一机器运行多个实例时在 `.env` 设置不同 `CONTAINER_NAME` 即可避免容器名冲突。`.env.example` 新增 `CONTAINER_NAME` 说明，`DEPLOY.md` 新增多实例部署方式（独立目录 + 同源多 compose 文件）+ 容器名冲突故障排查
 
 ### Fixed
+- 分红提醒幽灵数据自动清理：AkShare `fund_open_fund_info_em` 偶尔返回错误分红数据（后源数据修正但 DB 中提醒永久残留）。`check_dividends()` 抓取数据时同步收集 `fetched_ex_dates`/`fetched_funds`，校验现有 pending 提醒是否仍存在于源数据，不存在则自动标记为 ignored。仅校验成功获取非空数据的基金，避免网络错误误清有效提醒
 - 止盈止损提醒面板三问题修复：(1) 操作确认/忽略后整个面板卸载为 spinner 导致下方图表跳动闪烁，改为乐观更新（snapshot + setData）替代 reload()；(2) 已确认/已忽略的提醒占用空间，折叠为「已处理 (N) 条」可展开区域；(3) 已处理的提醒无法二次操作，新增「重新打开」按钮恢复为 pending 状态。`PUT /api/alerts/{id}` 新增 `pending` 状态支持，改回 pending 时清空 `resolved_at`。确认按钮改为跳转交易页预填卖出，交易保存后自动标记 confirmed。`resetForm()` 补 `setPendingTpSlAlertId(null)` 防止取消后手动保存误标记错误提醒
 - 基金详情页分红方式标识圆点与文字间距修复：`button` 缺 `gap-1.5`（其他 Badge 均有），补齐后间距一致。加 `ChevronDown` 图标区分可点击修改的标识与不可点击的 Badge。下拉选项框 `align="start"` → `align="center"` 居中显示
 - `get_dividend_alerts` 加 `alert_type='dividend'` 过滤，确保现有分红提醒页不受 tp_sl 数据污染

@@ -968,6 +968,16 @@ def update_dividend_alert(alert_id: int, **fields) -> None:
         )
 
 
+def delete_dividend_alert(alert_id: int) -> bool:
+    """删除一条分红提醒（仅 dividend 类型）。返回是否删除成功。"""
+    with get_connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM dividend_alerts WHERE id=? AND (alert_type='dividend' OR alert_type IS NULL)",
+            (alert_id,),
+        )
+        return cur.rowcount > 0
+
+
 # ---------------------------------------------------------------------------
 # 止盈止损提醒 (tp_sl) CRUD
 # ---------------------------------------------------------------------------

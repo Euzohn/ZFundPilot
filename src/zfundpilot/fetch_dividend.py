@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from . import analysis, db
+from . import analysis, config, db
 from .models import ACTION_DIVIDEND, ACTION_REINVEST
 
 logger = logging.getLogger(__name__)
@@ -130,6 +130,41 @@ def _date_close(d1: str, d2: str, tolerance: int = 3) -> bool:
         return False
 
 
+def _cleanup_stale_alerts(
+    fetched_ex_dates: set[tuple[str, str]],
+    fetched_funds: set[str],
+) -> int:
+    """校验 pending 分红提醒是否仍存在于源数据中，不存在则标记为 ignored。
+
+    仅校验 fetched_funds 中的基金（成功获取到非空数据的基金），
+    避免因网络错误返回空列表误清 valid 提醒。
+
+    返回清理数量。
+    """
+    pending = db.get_dividend_alerts(status="pending")
+    cleaned = 0
+    for alert in pending:
+        code = alert["fund_code"]
+        ex_date = alert.get("ex_date", "")
+        if not ex_date:
+            continue
+        if code not in fetched_funds:
+            continue
+        if (code, ex_date) in fetched_ex_dates:
+            continue
+        db.update_dividend_alert(
+            alert["id"],
+            status="ignored",
+            resolved_at=datetime.now(config.TIMEZONE).isoformat(),
+        )
+        logger.info(
+            "[fetch_dividend] 自动清理幽灵分红提醒: %s %s (源数据已无此记录)",
+            code, ex_date,
+        )
+        cleaned += 1
+    return cleaned
+
+
 def check_dividends() -> list[DividendEvent]:
     """检查持仓基金的分红事件，返回未记录的分红列表。
 
@@ -138,6 +173,8 @@ def check_dividends() -> list[DividendEvent]:
     3. 过滤最近 _LOOKBACK_DAYS 天的事件
     4. 查已有 dividend/reinvest 交易做去重
     5. 按基金 dividend_method 预选 action
+
+    同时校验现有 pending 提醒是否仍存在于源数据中，不存在则自动标记为 ignored。
     """
     positions = analysis.calculate_positions()
     held = {p.fund_code: p for p in positions if p.is_open}
@@ -148,6 +185,9 @@ def check_dividends() -> list[DividendEvent]:
 
     all_events: list[DividendEvent] = []
     cutoff = (datetime.now() - timedelta(days=_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+
+    fetched_ex_dates: set[tuple[str, str]] = set()
+    fetched_funds: set[str] = set()
 
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
         future_map = {
@@ -164,16 +204,24 @@ def check_dividends() -> list[DividendEvent]:
                 rows = future.result()
             except Exception:
                 continue
+            if not rows:
+                continue
+            fetched_funds.add(code)
             for row in rows:
                 ev = _parse_dividend_row(row, code, fund_name)
                 if not ev or not ev.ex_date:
                     continue
+                fetched_ex_dates.add((code, ev.ex_date))
                 if ev.ex_date < cutoff:
                     continue
                 ev.held_shares = pos.held_shares
                 ev.estimated_amount = round(pos.held_shares * ev.per_share, 2)
                 ev.dividend_method = method
                 all_events.append(ev)
+
+    cleaned = _cleanup_stale_alerts(fetched_ex_dates, fetched_funds)
+    if cleaned:
+        logger.info("[fetch_dividend] 清理 %d 条幽灵分红提醒", cleaned)
 
     if not all_events:
         return []

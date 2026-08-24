@@ -166,6 +166,7 @@ class TestCheckDividends:
                 patch("zfundpilot.fetch_dividend.analysis.calculate_positions", return_value=positions),
                 patch("zfundpilot.fetch_dividend.db.get_funds", return_value=funds_list),
                 patch("zfundpilot.fetch_dividend.db.get_transactions", return_value=[]),
+                patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=[]),
                 patch.dict(sys.modules, {"akshare": fake}),
             ):
                 # patch _LOOKBACK_DAYS to a large value so the event is within window
@@ -202,6 +203,7 @@ class TestCheckDividends:
                 patch("zfundpilot.fetch_dividend.analysis.calculate_positions", return_value=positions),
                 patch("zfundpilot.fetch_dividend.db.get_funds", return_value=funds_list),
                 patch("zfundpilot.fetch_dividend.db.get_transactions", return_value=existing_txs),
+                patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=[]),
                 patch.dict(sys.modules, {"akshare": fake}),
             ):
                 with patch.object(fetch_dividend, "_LOOKBACK_DAYS", 36500):
@@ -224,6 +226,7 @@ class TestCheckDividends:
                 patch("zfundpilot.fetch_dividend.analysis.calculate_positions", return_value=positions),
                 patch("zfundpilot.fetch_dividend.db.get_funds", return_value=funds_list),
                 patch("zfundpilot.fetch_dividend.db.get_transactions", return_value=[]),
+                patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=[]),
                 patch.dict(sys.modules, {"akshare": fake}),
             ):
                 events = fetch_dividend.check_dividends()
@@ -246,6 +249,7 @@ class TestCheckDividends:
                 patch("zfundpilot.fetch_dividend.analysis.calculate_positions", return_value=positions),
                 patch("zfundpilot.fetch_dividend.db.get_funds", return_value=funds_list),
                 patch("zfundpilot.fetch_dividend.db.get_transactions", return_value=[]),
+                patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=[]),
                 patch.dict(sys.modules, {"akshare": fake}),
             ):
                 with patch.object(fetch_dividend, "_LOOKBACK_DAYS", 36500):
@@ -271,6 +275,7 @@ class TestCheckDividends:
                 patch("zfundpilot.fetch_dividend.analysis.calculate_positions", return_value=positions),
                 patch("zfundpilot.fetch_dividend.db.get_funds", return_value=funds_list),
                 patch("zfundpilot.fetch_dividend.db.get_transactions", return_value=[]),
+                patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=[]),
                 patch.dict(sys.modules, {"akshare": fake}),
             ):
                 with patch.object(fetch_dividend, "_LOOKBACK_DAYS", 36500):
@@ -278,6 +283,96 @@ class TestCheckDividends:
 
         assert len(events) == 1
         assert events[0].dividend_method == "cash"
+
+
+class TestCleanupStaleAlerts:
+    """_cleanup_stale_alerts 幽灵分红提醒清理测试。"""
+
+    def test_phantom_alert_marked_ignored(self):
+        """pending 提醒的 ex_date 不在 fetched_ex_dates 中 → 标记 ignored。"""
+        pending_alerts = [
+            {"id": 1, "fund_code": "000001", "ex_date": "2026-06-17"},
+        ]
+        fetched_ex_dates = {("000001", "2022-06-23")}  # 只有真实记录
+        fetched_funds = {"000001"}
+
+        with (
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=pending_alerts),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+        ):
+            cleaned = fetch_dividend._cleanup_stale_alerts(fetched_ex_dates, fetched_funds)
+
+        assert cleaned == 1
+        mock_update.assert_called_once()
+        call_args = mock_update.call_args
+        assert call_args[0][0] == 1  # alert_id
+        assert call_args[1]["status"] == "ignored"
+        assert "resolved_at" in call_args[1]
+
+    def test_valid_alert_not_cleaned(self):
+        """pending 提醒的 ex_date 在 fetched_ex_dates 中 → 不清理。"""
+        pending_alerts = [
+            {"id": 1, "fund_code": "000001", "ex_date": "2022-06-23"},
+        ]
+        fetched_ex_dates = {("000001", "2022-06-23")}
+        fetched_funds = {"000001"}
+
+        with (
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=pending_alerts),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+        ):
+            cleaned = fetch_dividend._cleanup_stale_alerts(fetched_ex_dates, fetched_funds)
+
+        assert cleaned == 0
+        mock_update.assert_not_called()
+
+    def test_unfetched_fund_not_cleaned(self):
+        """基金不在 fetched_funds 中（fetch error 或已清仓）→ 不清理。"""
+        pending_alerts = [
+            {"id": 1, "fund_code": "000999", "ex_date": "2026-06-17"},
+        ]
+        fetched_ex_dates = {("000001", "2022-06-23")}
+        fetched_funds = {"000001"}  # 000999 不在其中
+
+        with (
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=pending_alerts),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+        ):
+            cleaned = fetch_dividend._cleanup_stale_alerts(fetched_ex_dates, fetched_funds)
+
+        assert cleaned == 0
+        mock_update.assert_not_called()
+
+    def test_multiple_alerts_partial_cleanup(self):
+        """多条提醒，部分幽灵部分有效 → 只清理幽灵的。"""
+        pending_alerts = [
+            {"id": 1, "fund_code": "000001", "ex_date": "2026-06-17"},  # 幽灵
+            {"id": 2, "fund_code": "000001", "ex_date": "2022-06-23"},  # 有效
+            {"id": 3, "fund_code": "000002", "ex_date": "2026-06-17"},  # 000002 不在 fetched_funds
+        ]
+        fetched_ex_dates = {("000001", "2022-06-23"), ("000001", "2021-12-28")}
+        fetched_funds = {"000001"}
+
+        with (
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=pending_alerts),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+        ):
+            cleaned = fetch_dividend._cleanup_stale_alerts(fetched_ex_dates, fetched_funds)
+
+        assert cleaned == 1
+        mock_update.assert_called_once()
+        assert mock_update.call_args[0][0] == 1  # 只清理 id=1
+
+    def test_no_pending_alerts(self):
+        """无 pending 提醒 → 0 清理。"""
+        with (
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=[]),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+        ):
+            cleaned = fetch_dividend._cleanup_stale_alerts(set(), set())
+
+        assert cleaned == 0
+        mock_update.assert_not_called()
 
 
 class TestDividendAlertsDB:
@@ -388,6 +483,51 @@ class TestDividendAlertsDB:
             assert len(db.get_dividend_alerts("ignored")) == 1
             assert len(db.get_dividend_alerts("confirmed")) == 1
             assert len(db.get_dividend_alerts()) == 3
+        finally:
+            self._teardown(original)
+
+    def test_delete_alert(self, tmp_path):
+        db, original = self._setup_db(tmp_path)
+        try:
+            alert_id = db.add_dividend_alert({
+                "fund_code": "000001", "ex_date": "2025-09-22",
+                "per_share": 0.01, "held_shares": 1000,
+                "estimated_amount": 10.0,
+            })
+            assert db.delete_dividend_alert(alert_id) is True
+            assert len(db.get_dividend_alerts()) == 0
+            # 重复删除返回 False
+            assert db.delete_dividend_alert(alert_id) is False
+        finally:
+            self._teardown(original)
+
+    def test_delete_does_not_affect_tp_sl(self, tmp_path):
+        """删除分红提醒不影响 tp_sl 提醒。"""
+        db, original = self._setup_db(tmp_path)
+        try:
+            div_id = db.add_dividend_alert({
+                "fund_code": "000001", "ex_date": "2025-09-22",
+                "per_share": 0.01, "held_shares": 1000,
+                "estimated_amount": 10.0,
+            })
+            # 手动插入一条 tp_sl 提醒
+            with db.get_connection() as conn:
+                tp_sl_id = conn.execute(
+                    """INSERT INTO dividend_alerts
+                       (fund_code, fund_name, ex_date, per_share, held_shares,
+                        estimated_amount, alert_type, triggered_return, threshold, status)
+                       VALUES(?,?,?,?,?,?,'take_profit',0.15,0.15,'pending')""",
+                    ("000002", "基金B", "2025-09-22", 0, 0, 0),
+                ).lastrowid
+            # 删除分红提醒
+            assert db.delete_dividend_alert(div_id) is True
+            # tp_sl 提醒仍在
+            assert len(db.get_dividend_alerts()) == 0  # get_dividend_alerts 只返回 dividend 类型
+            with db.get_connection() as conn:
+                row = conn.execute(
+                    "SELECT * FROM dividend_alerts WHERE id=?", (tp_sl_id,)
+                ).fetchone()
+                assert row is not None
         finally:
             self._teardown(original)
 

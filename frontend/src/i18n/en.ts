@@ -423,6 +423,7 @@ const en: typeof zh = {
       dividend_check: "Dividend check",
       dividend_scan: "Dividend scan",
       dividend_alert_update: "Dividend alert update",
+      dividend_alert_delete: "Delete dividend alert",
       dividend_auto_check_toggle: "Dividend auto-check toggle",
       tp_sl_config_update: "TP/SL config update",
       tp_sl_alert: "TP/SL alert triggered",

@@ -42,6 +42,7 @@ ZFundPilot/
 │   ├── models.py            # 数据结构（Fund/Transaction/Position/PortfolioSummary）
 │   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）+ 重仓股/排名/档案
 │   ├── fetch_estimate.py   # 基金实时估值（东财估值 + 指数/ETF 兜底）+ 指数历史收盘价持久化
+│   ├── fetch_dividend.py  # 基金分红检测（AkShare 分红送配 + 90 天窗口 + 交易去重 + 幽灵提醒自动清理）
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
 │   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）
 │   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）
@@ -442,9 +443,11 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - feat: 基准指数数据持久化——新增 `index_history` 表存储沪深300/上证指数/创业板指历史收盘价。`fetch_index_history()` 改为三级缓存（L1 内存 1h → L2 SQLite → L3 新浪在线），在线拉取后自动持久化到 DB，离线时从 DB 返回已有数据。scheduler 净值更新后自动拉取并持久化基准指数。`BENCHMARK_INDICES` 提取到 `config.py` 共享。新增 6 个测试用例（upsert/get/get_latest_date + 持久化 + 离线 fallback + DB 命中不拉取）
 - feat: 止盈止损提醒功能——净值更新完成后自动扫描持仓收益率，≥ 止盈阈值或 ≤ 止损阈值时生成提醒。状态机防重复：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio`（复位比例，默认 80%）以下后重新 `armed`，避免部分止盈后剩余份额收益率不变导致重复提醒。复用 `dividend_alerts` 表（加 `alert_type`/`triggered_return`/`threshold` 列），新增 `tp_sl_alert_states` 状态表。Settings 页新增配置卡片（总开关即时生效 + 止盈/止损独立开关 + 阈值 + 复位比例），Returns 页新增 `TpSlAlertsPanel` 提醒列表（确认/忽略操作），Layout 红点拆分显示（Transactions 标分红提醒 / Returns 标止盈止损提醒）。配置存 `preferences` 表（`tp_sl_enabled` 默认关闭）。`get_dividend_alerts` 加 `alert_type='dividend'` 过滤确保现有分红提醒页不受 tp_sl 数据污染
 - feat: 基金详情顶栏新增「加入自选」按钮（`Star` 图标，已加入时实心黄色高亮）+ 对比/自选按钮改为纯图标（去掉文字加 tooltip）。新增「定投」按钮（`Repeat` 图标），跳转到交易管理页定投 tab 并预填基金代码/渠道，弹窗自动打开
+- feat: 分红提醒删除接口——新增 `DELETE /api/dividends/alerts/{alert_id}` + `db.delete_dividend_alert()`，DividendCheckDialog 每条提醒左侧加 `Trash2` 图标按钮直接删除误报
 - changed: `docker-compose.yml` 的 `container_name` 改为环境变量 `${CONTAINER_NAME:-zfundpilot}`，支持多实例部署。`.env.example` 新增 `CONTAINER_NAME`，`DEPLOY.md` 新增多实例部署方式 + 容器名冲突故障排查
 - fix: `update.sh` 提示信息补全「按 Enter 继续」+ 补充 `.env` 和 `docker-compose.override.yml` 不受 `git reset --hard` 影响说明
 - fix: 红点提醒可发现性——侧边栏红点原为合计数仅标 Transactions，止盈止损提醒在 Returns 页导致指向错误。拆分为 Transactions 标分红 / Returns 标止盈止损。Transactions 页「检查分红」按钮加数字红点 badge + 「单笔录入」tab trigger 加红点
+- fix: 分红提醒幽灵数据自动清理——AkShare `fund_open_fund_info_em` 偶尔返回错误分红数据（后源数据修正但 DB 中提醒永久残留，如 004572 万家家瑞债券C 出现不存在的 2026-06-17 除息日）。`check_dividends()` 抓取数据时同步收集 `fetched_ex_dates`/`fetched_funds`，校验现有 pending 提醒是否仍存在于源数据，不存在则自动标记为 ignored。仅校验成功获取非空数据的基金，避免网络错误误清有效提醒。新增 `TestCleanupStaleAlerts` 5 个测试用例
 - fix: 止盈止损提醒面板三问题——(1) 操作确认/忽略后面板卸载为 spinner 导致下方图表跳动闪烁，改为乐观更新（snapshot + setData）替代 reload()；(2) 已确认/已忽略提醒折叠为「已处理 (N) 条」可展开区域；(3) 已处理提醒无法二次操作，新增「重新打开」按钮恢复 pending。`PUT /api/alerts/{id}` 新增 `pending` 状态支持，改回 pending 时清空 `resolved_at`。确认按钮跳转交易页预填卖出，交易保存后自动标记 confirmed。`resetForm()` 补 `setPendingTpSlAlertId(null)` 防止取消后手动保存误标记错误提醒
 - fix: 基金详情页分红方式标识圆点与文字间距（`button` 缺 `gap-1.5`）+ 加 `ChevronDown` 图标区分可点击标识 + 下拉框 `align="center"` 居中显示
 - fix: `AutoInvestPlansPanel` 的 `useEffect` 依赖 `t.transactions.autoInvest`，切换语言时弹窗被意外重新打开。改为 `onPrefillConsumed` 回调模式，依赖数组仅 `[prefillCode]`

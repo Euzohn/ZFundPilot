@@ -10,7 +10,7 @@ import EmptyState from "@/components/EmptyState"
 import { money } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { Gift, ArrowRight, RefreshCw, X } from "lucide-react"
+import { Gift, ArrowRight, RefreshCw, X, Trash2 } from "lucide-react"
 
 interface DividendCheckDialogProps {
   open: boolean
@@ -85,6 +85,15 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
     }
   }
 
+  const handleDelete = async (alertId: number) => {
+    try {
+      await api.deleteDividendAlert(alertId)
+      setAlerts(prev => prev.filter(a => a.id !== alertId))
+    } catch {
+      toast.error(t.common.deleteFailed)
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
@@ -117,6 +126,7 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
                 alert={alert}
                 onConfirm={handleConfirm}
                 onIgnore={handleIgnore}
+                onDelete={handleDelete}
               />
             ))}
           </div>
@@ -126,10 +136,11 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
   )
 }
 
-function DividendAlertRow({ alert, onConfirm, onIgnore }: {
+function DividendAlertRow({ alert, onConfirm, onIgnore, onDelete }: {
   alert: DividendAlert
   onConfirm: (alert: DividendAlert, overrideMethod?: string) => void
   onIgnore: (alertId: number) => void
+  onDelete: (alertId: number) => void
 }) {
   const { t } = useLang()
   const [method, setMethod] = useState(alert.dividend_method)
@@ -175,6 +186,9 @@ function DividendAlertRow({ alert, onConfirm, onIgnore }: {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onClick={() => onDelete(alert.id)}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
           <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => onIgnore(alert.id)}>
             <X className="h-3.5 w-3.5 mr-0.5" />
             {t.transactions.ignore}

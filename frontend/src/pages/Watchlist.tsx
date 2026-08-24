@@ -18,6 +18,7 @@ import { useCompare } from "@/contexts/CompareContext"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
+import { makeSortHeader } from "@/components/SortHeader"
 
 export default function Watchlist() {
   const navigate = useNavigate()
@@ -53,6 +54,43 @@ export default function Watchlist() {
     if (activeGroup === "__ungrouped__") return items.filter((it) => !it.group_name)
     return items.filter((it) => it.group_name === activeGroup)
   }, [items, activeGroup])
+
+  type SortField = "code" | "name" | "type" | "sector" | "group" | "added_at"
+  const [sortField, setSortField] = useState<SortField>("added_at")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+
+  const toggleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDir((d) => d === "asc" ? "desc" : "asc")
+    } else {
+      setSortField(field as SortField)
+      setSortDir("desc")
+    }
+  }
+
+  const getSortValue = (item: WatchlistItem, field: SortField): string => {
+    switch (field) {
+      case "code": return item.fund_code
+      case "name": return item.fund_name ?? ""
+      case "type": return item.fund_type ?? ""
+      case "sector": return item.sector ?? ""
+      case "group": return item.group_name ?? ""
+      case "added_at": return item.added_at ?? ""
+    }
+  }
+
+  const sorted = useMemo(() => {
+    const copy = [...filtered]
+    copy.sort((a, b) => {
+      const va = getSortValue(a, sortField)
+      const vb = getSortValue(b, sortField)
+      const cmp = va.localeCompare(vb)
+      return sortDir === "asc" ? cmp : -cmp
+    })
+    return copy
+  }, [filtered, sortField, sortDir])
+
+  const SortHeader = makeSortHeader({ sortField, sortDir, toggleSort })
 
   const handleAdd = async () => {
     const c = code.trim()
@@ -200,18 +238,18 @@ export default function Watchlist() {
             <Table className="w-full text-sm">
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <TableHead className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.code}</TableHead>
-                  <TableHead className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.name}</TableHead>
-                  <TableHead className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.type}</TableHead>
-                  <TableHead className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.compare.sector}</TableHead>
-                  <TableHead className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.watchlist.group}</TableHead>
+                  <SortHeader field="code" className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.code}</SortHeader>
+                  <SortHeader field="name" className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.name}</SortHeader>
+                  <SortHeader field="type" className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.type}</SortHeader>
+                  <SortHeader field="sector" className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.compare.sector}</SortHeader>
+                  <SortHeader field="group" className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.watchlist.group}</SortHeader>
                   <TableHead className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.note}</TableHead>
-                  <TableHead className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.watchlist.addedAt}</TableHead>
+                  <SortHeader field="added_at" className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.watchlist.addedAt}</SortHeader>
                   <TableHead className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">{t.common.actions}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((item) => (
+                {sorted.map((item) => (
                   <TableRow key={item.fund_code} className="border-t border-border/50">
                     <TableCell className="px-3 py-2 font-mono text-xs">{item.fund_code}</TableCell>
                     <TableCell className="max-w-[200px] px-3 py-2 text-xs">

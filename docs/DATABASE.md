@@ -266,6 +266,16 @@
 
 **兼容性**：`alert_type`/`triggered_return`/`threshold` 由 `_migrate_tp_sl()` 补充，旧数据 `alert_type` 默认为 `'dividend'` 无需回填。
 
+**幽灵提醒自动清理**：`fetch_dividend.check_dividends()` 抓取数据时同步收集 `fetched_ex_dates`/`fetched_funds`，调用 `_cleanup_stale_alerts()` 校验现有 pending 分红提醒是否仍存在于源数据。不存在则自动标记为 `ignored`（`resolved_at` 设为当前时间）。仅校验成功获取非空数据的基金（`fetched_funds`），避免网络错误误清有效提醒。清理数量存入 `fetch_dividend._last_cleanup_count` 供 `POST /api/dividends/scan` 和 `scheduler._run_dividend_check` 读取。
+
+**相关函数**（db.py）：
+- `add_dividend_alert(alert: dict) -> int`: 新增分红提醒，返回 id
+- `get_dividend_alerts(status: str | None) -> list[dict]`: 获取分红提醒列表（仅 `alert_type='dividend'`），`status` 过滤 pending/confirmed/ignored
+- `get_pending_alert_count(alert_type: str | None) -> int`: 返回 pending 状态的提醒数量
+- `update_dividend_alert(alert_id: int, **fields)`: 更新提醒字段（status/resolved_at/tx_id）
+- `delete_dividend_alert(alert_id: int) -> bool`: 物理删除分红提醒，`WHERE alert_type='dividend' OR alert_type IS NULL` 确保不影响 tp_sl 提醒
+- `dividend_alert_exists(fund_code: str, ex_date: str) -> bool`: 检查提醒是否已存在（任意状态），用于去重
+
 ---
 
 ## 11. tp_sl_alert_states — 止盈止损状态机

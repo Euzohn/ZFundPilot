@@ -249,6 +249,8 @@ ZFundPilot/
 - **止盈止损检查**：嵌入 `_run_nav_update()` 末尾，净值更新完成后自动执行 `_run_tp_sl_check()`。扫描所有持仓 `return_rate`，≥ 止盈阈值或 ≤ 止损阈值时生成提醒。状态机：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio` 以下后重新 `armed`（避免部分止盈后重复提醒）。配置存 `preferences` 表（`tp_sl_enabled`/`tp_sl_take_profit`/`tp_sl_stop_loss`/`tp_sl_take_profit_enabled`/`tp_sl_stop_loss_enabled`/`tp_sl_reset_ratio`），默认关闭。`tp_sl_alert_states` 表记录每只基金每个方向的 armed 状态。复用 `dividend_alerts` 表（`alert_type` 区分 `dividend`/`take_profit`/`stop_loss`）
 - API: `GET /api/scheduler/status` + `PUT /api/scheduler/toggle` + `PUT /api/scheduler/cron`；`GET/PUT /api/alerts/config`（止盈止损配置）；`GET /api/alerts` + `GET /api/alerts/count`（统一提醒列表/计数，支持 `?type=tp_sl`）；`PUT /api/alerts/{id}`（更新状态：confirmed/ignored/pending，pending 时清空 resolved_at）
 - **基准指数持久化**：`_update_benchmark_indices()` 在净值更新后调用，遍历 `config.BENCHMARK_INDICES`（沪深300/上证指数/创业板指）逐只拉取并持久化到 `index_history` 表，确保离线时基准对比数据可用。DB 已有最新数据时跳过
+- **分红检测任务**：每天 09:30 执行 `_run_dividend_check()`（`dividend_check` cron job），扫描持仓基金的未记录分红事件，新发现的存入 `dividend_alerts` 表。开关存 `preferences` 表 key=`dividend_auto_check`，默认启用。`_bootstrap_dividend_check()` 启动时若已过 09:30 且今日未执行过，立即补跑
+- **幽灵分红提醒自动清理**：`check_dividends()` 抓取数据时同步收集 `fetched_ex_dates`/`fetched_funds`，调用 `_cleanup_stale_alerts()` 校验现有 pending 分红提醒是否仍存在于源数据中，不存在则自动标记为 `ignored`。仅校验成功获取非空数据的基金，避免网络错误误清有效提醒。清理数量存入 `fetch_dividend._last_cleanup_count`，`POST /api/dividends/scan` 响应含 `cleaned` 字段，scheduler 日志/审计也含清理计数
 
 ---
 

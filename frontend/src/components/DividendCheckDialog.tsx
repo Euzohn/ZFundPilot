@@ -91,10 +91,10 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
   const handleDelete = async (alertId: number) => {
     try {
       await api.deleteDividendAlert(alertId)
-      setAlerts(prev => prev.filter(a => a.id !== alertId))
     } catch {
       toast.error(t.common.deleteFailed)
     }
+    setAlerts(prev => prev.filter(a => a.id !== alertId))
   }
 
   return (

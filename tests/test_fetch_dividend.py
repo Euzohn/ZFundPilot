@@ -151,6 +151,7 @@ class TestCheckDividends:
             patch("zfundpilot.fetch_dividend.db.get_transactions", return_value=[]),
         ):
             assert fetch_dividend.check_dividends() == []
+        assert fetch_dividend._last_cleanup_count == 0
 
     def test_with_holdings_and_events(self):
         div_rows = [
@@ -534,6 +535,9 @@ class TestDividendAlertsDB:
 
 class TestRunDividendCheck:
     """scheduler._run_dividend_check 去重逻辑测试。"""
+
+    def setup_method(self):
+        fetch_dividend._last_cleanup_count = 0
 
     def test_new_alerts_added(self):
         """新发现的分红事件存入 alerts 表。"""

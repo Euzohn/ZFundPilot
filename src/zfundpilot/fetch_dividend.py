@@ -181,6 +181,7 @@ def check_dividends() -> list[DividendEvent]:
     清理数量存入 _last_cleanup_count 供调用方（scan 端点）读取。
     """
     global _last_cleanup_count
+    _last_cleanup_count = 0
     positions = analysis.calculate_positions()
     held = {p.fund_code: p for p in positions if p.is_open}
     if not held:
@@ -224,10 +225,14 @@ def check_dividends() -> list[DividendEvent]:
                 ev.dividend_method = method
                 all_events.append(ev)
 
-    cleaned = _cleanup_stale_alerts(fetched_ex_dates, fetched_funds)
-    _last_cleanup_count = cleaned
-    if cleaned:
-        logger.info("[fetch_dividend] 清理 %d 条幽灵分红提醒", cleaned)
+    try:
+        cleaned = _cleanup_stale_alerts(fetched_ex_dates, fetched_funds)
+        _last_cleanup_count = cleaned
+        if cleaned:
+            logger.info("[fetch_dividend] 清理 %d 条幽灵分红提醒", cleaned)
+    except Exception:
+        logger.exception("[fetch_dividend] _cleanup_stale_alerts 异常")
+        _last_cleanup_count = 0
 
     if not all_events:
         return []

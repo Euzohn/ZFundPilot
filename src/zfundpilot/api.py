@@ -1170,11 +1170,8 @@ def get_portfolio_curve() -> list[dict[str, Any]]:
     return curve.to_dict(orient="records")
 
 
-BENCHMARK_INDICES: dict[str, str] = {
-    "000300": "沪深300",
-    "000001": "上证指数",
-    "399006": "创业板指",
-}
+# 基准指数代码 → 名称（从 config 导入，scheduler 共用）
+BENCHMARK_INDICES = config.BENCHMARK_INDICES
 
 
 @app.get("/api/portfolio/benchmark")

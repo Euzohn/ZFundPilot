@@ -15,7 +15,7 @@ from typing import Any
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from . import analysis, auto_invest, config, db, fetch_fund
+from . import analysis, auto_invest, config, db, fetch_estimate, fetch_fund
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,6 +36,31 @@ _PREF_KEY_TP_SL_ENABLED = "tp_sl_enabled"
 
 _last_dividend_run: datetime | None = None
 _last_tp_sl_run: datetime | None = None
+_last_benchmark_run: datetime | None = None
+
+
+def _update_benchmark_indices() -> None:
+    """拉取并持久化基准指数历史收盘价。
+
+    在净值更新后调用，确保 index_history 表保持最新。
+    失败不阻塞主流程（已有 DB 缓存可用）。
+    """
+    global _last_benchmark_run
+    logger.info("[scheduler] 基准指数更新开始")
+    today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
+    for code, name in config.BENCHMARK_INDICES.items():
+        db_latest = db.get_index_latest_date(code)
+        if db_latest and db_latest >= today:
+            logger.debug("[scheduler] %s(%s) 已是最新 %s，跳过", name, code, db_latest)
+            continue
+        # fetch_index_history 会自动持久化到 DB
+        hist = fetch_estimate.fetch_index_history(code, "2010-01-01", today)
+        if hist:
+            logger.info("[scheduler] %s(%s) 更新到 %s (%d 条)",
+                        name, code, hist[-1]["date"], len(hist))
+        else:
+            logger.warning("[scheduler] %s(%s) 拉取失败", name, code)
+    _last_benchmark_run = datetime.now(config.TIMEZONE)
 
 
 def _run_nav_update() -> None:
@@ -63,6 +88,8 @@ def _run_nav_update() -> None:
         logger.info("[scheduler] 净值更新完成: %d 成功, %d 失败", ok, fail)
         # 净值更新完成后自动执行止盈止损检查
         _run_tp_sl_check()
+        # 持久化基准指数数据（确保离线可用）
+        _update_benchmark_indices()
     except Exception:
         logger.exception("[scheduler] 定时净值更新任务异常")
         _last_run = datetime.now(config.TIMEZONE)

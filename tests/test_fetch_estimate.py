@@ -260,3 +260,140 @@ class TestIndexFallback:
             from zfundpilot.api import _index_fallback
             _index_fallback([est], merged)
         assert not est.ok
+
+
+# ---------------------------------------------------------------------------
+# fetch_index_history：DB 持久化 + 离线 fallback
+# ---------------------------------------------------------------------------
+class TestIndexHistoryDB:
+    """index_history 表 CRUD + fetch_index_history 三级缓存测试。"""
+
+    def _setup_db(self, tmp_path):
+        import os
+
+        import zfundpilot.db as db_module
+        from zfundpilot import config
+
+        db_path = os.path.join(str(tmp_path), "test.db")
+        original = config.DB_PATH
+        config.DB_PATH = db_path
+        db_module.init_db()
+        return db_module, original
+
+    def _teardown(self, original):
+        from zfundpilot import config
+        config.DB_PATH = original
+        # 清空内存缓存
+        from zfundpilot.fetch_estimate import clear_index_hist_cache
+        clear_index_hist_cache()
+
+    def test_upsert_and_get_index_history(self, tmp_path):
+        """upsert_index_history + get_index_history 基本读写。"""
+        db, original = self._setup_db(tmp_path)
+        try:
+            db.upsert_index_history("000300", [
+                ("2026-01-01", 3800.0),
+                ("2026-01-02", 3850.0),
+                ("2026-01-03", 3900.0),
+            ])
+            rows = db.get_index_history("000300", "2026-01-02", "2026-01-03")
+            assert len(rows) == 2
+            assert rows[0]["date"] == "2026-01-02"
+            assert float(rows[0]["close"]) == 3850.0
+            assert rows[1]["date"] == "2026-01-03"
+        finally:
+            self._teardown(original)
+
+    def test_upsert_is_idempotent(self, tmp_path):
+        """重复 upsert 不报错，close 被更新。"""
+        db, original = self._setup_db(tmp_path)
+        try:
+            db.upsert_index_history("000300", [("2026-01-01", 3800.0)])
+            db.upsert_index_history("000300", [("2026-01-01", 3801.0)])
+            rows = db.get_index_history("000300")
+            assert len(rows) == 1
+            assert float(rows[0]["close"]) == 3801.0
+        finally:
+            self._teardown(original)
+
+    def test_get_index_latest_date(self, tmp_path):
+        """get_index_latest_date 返回最新日期。"""
+        db, original = self._setup_db(tmp_path)
+        try:
+            assert db.get_index_latest_date("000300") is None
+            db.upsert_index_history("000300", [
+                ("2026-01-01", 3800.0),
+                ("2026-01-03", 3900.0),
+            ])
+            assert db.get_index_latest_date("000300") == "2026-01-03"
+        finally:
+            self._teardown(original)
+
+    def test_fetch_index_history_persists_to_db(self, tmp_path):
+        """fetch_index_history 成功拉取后持久化到 DB。"""
+        db, original = self._setup_db(tmp_path)
+        try:
+            # 模拟 AkShare 返回数据
+            import pandas as pd
+            mock_df = pd.DataFrame({
+                "date": ["2026-01-01", "2026-01-02", "2026-01-03"],
+                "close": [3800.0, 3850.0, 3900.0],
+            })
+            with patch("zfundpilot.fetch_estimate.ak.stock_zh_index_daily",
+                       return_value=mock_df):
+                from zfundpilot.fetch_estimate import fetch_index_history
+                result = fetch_index_history("000300", "2026-01-01", "2026-01-03")
+            assert len(result) == 3
+            assert result[0] == {"date": "2026-01-01", "close": 3800.0}
+            # 验证 DB 已持久化
+            rows = db.get_index_history("000300")
+            assert len(rows) == 3
+            assert db.get_index_latest_date("000300") == "2026-01-03"
+        finally:
+            self._teardown(original)
+
+    def test_fetch_index_history_offline_fallback(self, tmp_path):
+        """离线场景：AkShare 失败时从 DB 返回缓存数据。"""
+        db, original = self._setup_db(tmp_path)
+        try:
+            # 先写入 DB 数据
+            db.upsert_index_history("000300", [
+                ("2026-01-01", 3800.0),
+                ("2026-01-02", 3850.0),
+            ])
+            # 模拟今天日期 = 2026-01-03（DB 最新 01-02 < today → need_fetch=True）
+            # AkShare 失败 → fallback DB
+            with (
+                patch("zfundpilot.fetch_estimate.ak.stock_zh_index_daily",
+                      side_effect=Exception("network error")),
+                patch("zfundpilot.fetch_estimate.datetime") as mock_dt,
+            ):
+                from datetime import datetime as real_dt
+                mock_dt.now.return_value = real_dt(2026, 1, 3)
+                from zfundpilot.fetch_estimate import fetch_index_history
+                result = fetch_index_history("000300", "2026-01-01", "2026-01-02")
+            # 离线 fallback：返回 DB 缓存数据
+            assert len(result) == 2
+            assert result[0]["date"] == "2026-01-01"
+            assert result[0]["close"] == 3800.0
+        finally:
+            self._teardown(original)
+
+    def test_fetch_index_history_db_hit_no_fetch(self, tmp_path):
+        """DB 已有最新数据时不再在线拉取。"""
+        db, original = self._setup_db(tmp_path)
+        try:
+            from datetime import datetime as real_dt
+            # DB 最新日期 = today → need_fetch=False → 不调 AkShare
+            today_str = real_dt.now().strftime("%Y-%m-%d")
+            db.upsert_index_history("000300", [
+                ("2026-01-01", 3800.0),
+                (today_str, 3900.0),
+            ])
+            with patch("zfundpilot.fetch_estimate.ak.stock_zh_index_daily") as mock_ak:
+                from zfundpilot.fetch_estimate import fetch_index_history
+                result = fetch_index_history("000300", "2026-01-01", today_str)
+                mock_ak.assert_not_called()
+            assert len(result) == 2
+        finally:
+            self._teardown(original)

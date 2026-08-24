@@ -4,7 +4,8 @@
 - funds               基金基础信息（代码/名称/类型/板块）
 - transactions        买入/卖出流水
 - nav_history         基金净值历史
-- portfolio_snapshots 组合每日快照
+- index_history        指数历史收盘价（基准对比，持久化缓存）
+- portfolio_snapshots  组合每日快照
 
 设计：持仓不再单独存表，而是由 transactions 流水汇总计算（见 analysis.py）。
 兼容旧版：若检测到旧 holdings 表，自动迁移为一条买入流水。
@@ -165,6 +166,17 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_alert_status ON dividend_alerts(status);
             CREATE INDEX IF NOT EXISTS idx_alert_code_ex ON dividend_alerts(fund_code, ex_date);
+
+            CREATE TABLE IF NOT EXISTS index_history (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                code       TEXT NOT NULL,
+                date       TEXT NOT NULL,
+                close      REAL NOT NULL,
+                source     TEXT DEFAULT 'sina',
+                created_at TEXT DEFAULT (datetime('now','localtime')),
+                UNIQUE(code, date)
+            );
+            CREATE INDEX IF NOT EXISTS idx_index_code_date ON index_history(code, date);
             """
         )
     _migrate_add_columns()
@@ -585,6 +597,67 @@ def get_nav_on_date(fund_code: str, date_str: str) -> sqlite3.Row | None:
 def get_nav_last_update() -> str | None:
     with get_connection() as conn:
         row = conn.execute("SELECT MAX(date) AS d FROM nav_history").fetchone()
+    return row["d"] if row and row["d"] else None
+
+
+# ---------------------------------------------------------------------------
+# 指数历史（基准对比）
+# ---------------------------------------------------------------------------
+def upsert_index_history(code: str,
+                         points: Iterable[tuple[str, float]]) -> int:
+    """批量写入指数历史收盘价。
+
+    Args:
+        code: 指数代码，如 "000300"
+        points: [(date, close), ...]
+
+    Returns:
+        写入行数。
+    """
+    rows = [(code, d, c, "sina") for d, c in points]
+    if not rows:
+        return 0
+    with get_connection() as conn:
+        conn.executemany(
+            """
+            INSERT INTO index_history(code, date, close, source)
+            VALUES(?, ?, ?, ?)
+            ON CONFLICT(code, date) DO UPDATE SET
+                close=excluded.close, source=excluded.source
+            """,
+            rows,
+        )
+    return len(rows)
+
+
+def get_index_history(code: str,
+                      start_date: str | None = None,
+                      end_date: str | None = None) -> list[sqlite3.Row]:
+    """查询指数历史收盘价（date ASC，含端点）。
+
+    start_date / end_date 为 None 时不限该端。
+    """
+    clauses = ["code=?"]
+    params: list[str] = [code]
+    if start_date:
+        clauses.append("date>=?")
+        params.append(start_date)
+    if end_date:
+        clauses.append("date<=?")
+        params.append(end_date)
+    sql = ("SELECT * FROM index_history WHERE "
+           + " AND ".join(clauses) + " ORDER BY date ASC")
+    with get_connection() as conn:
+        return conn.execute(sql, params).fetchall()
+
+
+def get_index_latest_date(code: str) -> str | None:
+    """返回某指数在 DB 中的最新日期。"""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT MAX(date) AS d FROM index_history WHERE code=?",
+            (code,),
+        ).fetchone()
     return row["d"] if row and row["d"] else None
 
 

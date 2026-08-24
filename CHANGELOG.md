@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Added
+- 基准指数数据持久化：新增 `index_history` 表存储沪深300/上证指数/创业板指历史收盘价。`fetch_index_history()` 改为三级缓存（L1 内存 1h → L2 SQLite → L3 新浪在线），在线拉取后自动持久化到 DB，离线时从 DB 返回已有数据。scheduler 净值更新后自动拉取并持久化基准指数，确保离线可用。`BENCHMARK_INDICES` 提取到 `config.py` 共享
 - 止盈止损提醒功能：净值更新完成后自动扫描持仓基金收益率，达到止盈/止损阈值时生成提醒。状态机防重复：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio`（复位比例，默认 80%）以下后重新 `armed`，避免部分止盈后剩余份额收益率不变导致重复提醒。复用 `dividend_alerts` 表（加 `alert_type`/`triggered_return`/`threshold` 列），新增 `tp_sl_alert_states` 状态表。Settings 页新增配置卡片（总开关即时生效 + 止盈/止损独立开关 + 阈值 + 复位比例），Returns 页新增提醒列表（确认/忽略操作），Layout 红点拆分显示（Transactions 标分红提醒 / Returns 标止盈止损提醒）
 - 基金详情顶栏新增「加入自选」按钮（`Star` 图标）：已加入时实心黄色高亮，点击切换添加/移除，toast 提示。对比按钮和自选按钮均改为纯图标（去掉文字），加 `title` tooltip
 - 基金详情顶栏新增「定投」按钮（`Repeat` 图标）：跳转到交易管理页定投 tab，自动预填基金代码和渠道，弹窗自动打开

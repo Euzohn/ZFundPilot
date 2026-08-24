@@ -21,6 +21,7 @@
 | `preferences` | 偏好设置 key-value | `key` |
 | `dividend_alerts` | 提醒列表（分红 + 止盈止损） | `id` (自增) |
 | `tp_sl_alert_states` | 止盈止损状态机 | `(fund_code, alert_type)` |
+| `index_history` | 指数历史收盘价（基准对比，持久化缓存） | `id` (自增)，`UNIQUE(code, date)` |
 
 ---
 
@@ -285,6 +286,37 @@
 
 ---
 
+## 12. index_history — 指数历史收盘价
+
+存储基准指数（沪深300/上证指数/创业板指）的历史日收盘价，作为 `fetch_index_history()` 的 L2 持久化缓存。在线拉取后自动写入，离线时从 DB 返回已有数据。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | INTEGER | PK AUTOINCREMENT | 自增主键 |
+| `code` | TEXT | NOT NULL | 指数代码（如 `000300` 沪深300） |
+| `date` | TEXT | NOT NULL | 日期 `YYYY-MM-DD` |
+| `close` | REAL | NOT NULL | 收盘价 |
+| `source` | TEXT | DEFAULT 'sina' | 数据来源 |
+| `created_at` | TEXT | DEFAULT datetime('now','localtime') | 创建时间 |
+
+**唯一约束**：`UNIQUE(code, date)` — 同一指数同一日期只有一条记录，upsert 更新。
+
+**索引**：`idx_index_code_date ON index_history(code, date)`
+
+**相关函数**（db.py）：
+- `upsert_index_history(code, points)`: 批量写入，`ON CONFLICT(code, date) DO UPDATE`
+- `get_index_history(code, start_date?, end_date?)`: 按区间查询（date ASC）
+- `get_index_latest_date(code)`: 返回某指数 DB 中最新日期
+
+**三级缓存**（`fetch_estimate.fetch_index_history`）：
+1. L1 内存缓存（`_index_hist_cache`，1h TTL）→ 命中即返回
+2. L2 SQLite（`index_history` 表）→ DB 最新日期 < today 时触发 L3
+3. L3 新浪在线（`ak.stock_zh_index_daily`）→ 成功后持久化到 L2，失败时从 L2 返回
+
+**scheduler 集成**：`_update_benchmark_indices()` 在净值更新后调用，遍历 `config.BENCHMARK_INDICES` 逐只拉取并持久化。
+
+---
+
 ## Python 数据模型（models.py）
 
 数据库表通过 Python dataclass 映射，不使用 ORM。
@@ -351,11 +383,13 @@
 
 `db.init_db()` 在应用启动时调用（幂等），包含以下迁移：
 
-1. **建表**：所有 `CREATE TABLE IF NOT EXISTS`（含 `audit_log`、`auto_invest_plans`、`watchlist`、`dividend_alerts`）
+1. **建表**：所有 `CREATE TABLE IF NOT EXISTS`（含 `audit_log`、`auto_invest_plans`、`watchlist`、`dividend_alerts`、`index_history`）
 2. **`_migrate_add_columns()`**: 为旧表补充新增列（`channel`、`is_t1`，回填 `note LIKE '%T+1确认%'` 的旧交易标记为 `is_t1=1`）
 3. **`_migrate_relax_transactions_schema()`**: 重建 transactions 表，移除 `CHECK(action IN ('buy','sell'))` 约束和 `NOT NULL` 约束，支持 dividend/reinvest 和待确认交易
 4. **`_migrate_legacy_holdings()`**: 旧版 `holdings` 表数据迁移为一条买入流水
 5. **`_migrate_tp_sl()`**: 为 `dividend_alerts` 补充 `alert_type`/`triggered_return`/`threshold` 列，新建 `tp_sl_alert_states` 表
+
+> `index_history` 表通过 `init_db()` 中的 `CREATE TABLE IF NOT EXISTS` 创建，无需单独迁移函数（新表，无历史数据兼容问题）。
 
 ---
 

@@ -41,7 +41,7 @@ ZFundPilot/
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
 │   ├── models.py            # 数据结构（Fund/Transaction/Position/PortfolioSummary）
 │   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）+ 重仓股/排名/档案
-│   ├── fetch_estimate.py   # 基金实时估值（东财估值 + 指数/ETF 兜底）
+│   ├── fetch_estimate.py   # 基金实时估值（东财估值 + 指数/ETF 兜底）+ 指数历史收盘价持久化
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
 │   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）
 │   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）
@@ -50,7 +50,7 @@ ZFundPilot/
 │   ├── backtest.py          # 定投策略回测（DCA + 一次性投入对比 + XIRR）
 │   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延）
 │   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
-│   ├── scheduler.py         # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查
+│   ├── scheduler.py         # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查 + 基准指数持久化
 │   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）
 │   └── data_io.py           # CSV 导入/导出 + 全量备份 ZIP
 ├── frontend/src/            # React 前端
@@ -112,6 +112,7 @@ ZFundPilot/
 | `audit_log` | 审计日志（ts/ip/username/action/detail），记录敏感操作 |
 | `dividend_alerts` | 提醒列表（分红 + 止盈止损，`alert_type` 区分 `dividend`/`take_profit`/`stop_loss`，`triggered_return`/`threshold` 仅 tp_sl 用） |
 | `tp_sl_alert_states` | 止盈止损状态机（fund_code + alert_type → armed/last_triggered_return/handled_at），控制重复提醒 |
+| `index_history` | 指数历史收盘价（沪深300/上证/创业板，持久化缓存，`UNIQUE(code, date)`） |
 
 ### 核心模型（models.py）
 
@@ -222,7 +223,7 @@ ZFundPilot/
 - `gztime` 从估值列名提取日期（如 `2024-07-30-估算数据-估算值` → `2024-07-30 15:00`），而非用 `datetime.now()`，避免跨日数据时间戳错误
 - 估算失效检测：`jzrq == gztime[:10]` 时标记 `ok=False`（真实净值已公布）
 - API: `GET /api/estimate`（批量 + 组合汇总，含指数兜底）+ `GET /api/funds/{code}/estimate`（单只，含指数兜底）
-- `fetch_index_history(symbol, start_date, end_date)`: 获取指数历史收盘价（新浪源 `ak.stock_zh_index_daily`），1h 缓存，按日期范围过滤返回。`_to_sina_symbol()` 转换代码格式（000300→sh000300），用于基准对比
+- `fetch_index_history(symbol, start_date, end_date)`: 获取指数历史收盘价（新浪源 `ak.stock_zh_index_daily`），三级缓存（L1 内存 1h → L2 SQLite `index_history` 表 → L3 新浪在线）。在线拉取后自动持久化到 DB，离线时从 DB 返回已有数据。`_to_sina_symbol()` 转换代码格式（000300→sh000300），用于基准对比。`BENCHMARK_INDICES` 定义在 `config.py` 共享
 
 ### analysis.py — 收益计算
 
@@ -246,6 +247,7 @@ ZFundPilot/
 - `config.TIMEZONE`: 所有 `datetime.now()` 调用使用此时区，不依赖系统时区
 - **止盈止损检查**：嵌入 `_run_nav_update()` 末尾，净值更新完成后自动执行 `_run_tp_sl_check()`。扫描所有持仓 `return_rate`，≥ 止盈阈值或 ≤ 止损阈值时生成提醒。状态机：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio` 以下后重新 `armed`（避免部分止盈后重复提醒）。配置存 `preferences` 表（`tp_sl_enabled`/`tp_sl_take_profit`/`tp_sl_stop_loss`/`tp_sl_take_profit_enabled`/`tp_sl_stop_loss_enabled`/`tp_sl_reset_ratio`），默认关闭。`tp_sl_alert_states` 表记录每只基金每个方向的 armed 状态。复用 `dividend_alerts` 表（`alert_type` 区分 `dividend`/`take_profit`/`stop_loss`）
 - API: `GET /api/scheduler/status` + `PUT /api/scheduler/toggle` + `PUT /api/scheduler/cron`；`GET/PUT /api/alerts/config`（止盈止损配置）；`GET /api/alerts` + `GET /api/alerts/count`（统一提醒列表/计数，支持 `?type=tp_sl`）；`PUT /api/alerts/{id}`（标记已处理）
+- **基准指数持久化**：`_update_benchmark_indices()` 在净值更新后调用，遍历 `config.BENCHMARK_INDICES`（沪深300/上证指数/创业板指）逐只拉取并持久化到 `index_history` 表，确保离线时基准对比数据可用。DB 已有最新数据时跳过
 
 ---
 
@@ -437,6 +439,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### Unreleased
 
+- feat: 基准指数数据持久化——新增 `index_history` 表存储沪深300/上证指数/创业板指历史收盘价。`fetch_index_history()` 改为三级缓存（L1 内存 1h → L2 SQLite → L3 新浪在线），在线拉取后自动持久化到 DB，离线时从 DB 返回已有数据。scheduler 净值更新后自动拉取并持久化基准指数。`BENCHMARK_INDICES` 提取到 `config.py` 共享。新增 6 个测试用例（upsert/get/get_latest_date + 持久化 + 离线 fallback + DB 命中不拉取）
 - feat: 止盈止损提醒功能——净值更新完成后自动扫描持仓收益率，≥ 止盈阈值或 ≤ 止损阈值时生成提醒。状态机防重复：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio`（复位比例，默认 80%）以下后重新 `armed`，避免部分止盈后剩余份额收益率不变导致重复提醒。复用 `dividend_alerts` 表（加 `alert_type`/`triggered_return`/`threshold` 列），新增 `tp_sl_alert_states` 状态表。Settings 页新增配置卡片（总开关即时生效 + 止盈/止损独立开关 + 阈值 + 复位比例），Returns 页新增 `TpSlAlertsPanel` 提醒列表（确认/忽略操作），Layout 红点拆分显示（Transactions 标分红提醒 / Returns 标止盈止损提醒）。配置存 `preferences` 表（`tp_sl_enabled` 默认关闭）。`get_dividend_alerts` 加 `alert_type='dividend'` 过滤确保现有分红提醒页不受 tp_sl 数据污染
 - feat: 基金详情顶栏新增「加入自选」按钮（`Star` 图标，已加入时实心黄色高亮）+ 对比/自选按钮改为纯图标（去掉文字加 tooltip）。新增「定投」按钮（`Repeat` 图标），跳转到交易管理页定投 tab 并预填基金代码/渠道，弹窗自动打开
 - changed: `docker-compose.yml` 的 `container_name` 改为环境变量 `${CONTAINER_NAME:-zfundpilot}`，支持多实例部署。`.env.example` 新增 `CONTAINER_NAME`，`DEPLOY.md` 新增多实例部署方式 + 容器名冲突故障排查

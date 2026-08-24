@@ -456,11 +456,38 @@ def _to_sina_symbol(code: str) -> str:
     return code
 
 
+def _fetch_index_full_from_sina(symbol: str) -> list[dict]:
+    """从新浪数据源拉取指数全量历史收盘价。
+
+    返回 [{date, close}, ...] 全量数据，失败返回空列表。
+    """
+    sina_symbol = _to_sina_symbol(symbol)
+    try:
+        df = ak.stock_zh_index_daily(symbol=sina_symbol)
+        if df is None or len(df) == 0:
+            logger.warning("fetch_index_history: no data for %s", symbol)
+            return []
+        full = []
+        for _, row in df.iterrows():
+            d = str(row.get("date", "")).strip()[:10]
+            c = _safe_float(row.get("close"))
+            if d and c:
+                full.append({"date": d, "close": c})
+        return full
+    except Exception:  # noqa: BLE001
+        logger.exception("fetch_index_history failed: %s", symbol)
+        return []
+
+
 def fetch_index_history(symbol: str, start_date: str, end_date: str) -> list[dict]:
     """获取指数历史收盘价。
 
-    使用新浪数据源（ak.stock_zh_index_daily），返回日期范围内 [{date, close}]。
-    全量数据按 symbol 缓存 1h，按日期范围过滤返回。
+    三级数据源（L1 内存缓存 → L2 SQLite → L3 新浪在线）：
+    - L1：内存缓存 1h TTL，命中即返回
+    - L2：DB 持久化缓存（index_history 表），有数据且非过期时直接返回
+    - L3：在线拉取 AkShare，成功后持久化到 DB，再从 DB 返回
+
+    离线场景：L3 失败时从 L2 DB 返回已有数据（可能非最新，但不空）。
 
     Args:
         symbol: 指数代码，如 "000300"(沪深300) "000001"(上证指数) "399006"(创业板指)
@@ -469,31 +496,57 @@ def fetch_index_history(symbol: str, start_date: str, end_date: str) -> list[dic
 
     Returns:
         [{date: "YYYY-MM-DD", close: 3800.5}, ...]，按日期升序。
-        失败返回空列表。
+        所有数据源都失败返回空列表。
     """
+    # L1：内存缓存
     cached = _index_hist_cache.get(symbol)
     if cached and time.time() - cached[0] < _INDEX_HIST_TTL:
         full = cached[1]
-    else:
-        sina_symbol = _to_sina_symbol(symbol)
-        try:
-            df = ak.stock_zh_index_daily(symbol=sina_symbol)
-            if df is None or len(df) == 0:
-                logger.warning("fetch_index_history: no data for %s", symbol)
-                return []
-            full = []
-            for _, row in df.iterrows():
-                d = str(row.get("date", "")).strip()[:10]
-                c = _safe_float(row.get("close"))
-                if d and c:
-                    full.append({"date": d, "close": c})
+        return [pt for pt in full if start_date <= pt["date"] <= end_date]
+
+    # L2/L3：DB 优先，不够新再在线拉取
+    from . import db  # 延迟导入，避免循环依赖
+
+    db_latest = db.get_index_latest_date(symbol)
+    today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
+
+    need_fetch = not db_latest or db_latest < today
+
+    if need_fetch:
+        full = _fetch_index_full_from_sina(symbol)
+        if full:
+            # 持久化到 DB
+            db.upsert_index_history(
+                symbol, [(pt["date"], pt["close"]) for pt in full]
+            )
+            # 更新内存缓存
             _index_hist_cache[symbol] = (time.time(), full)
-        except Exception:  # noqa: BLE001
-            logger.exception("fetch_index_history failed: %s", symbol)
+            return [pt for pt in full if start_date <= pt["date"] <= end_date]
+
+        # L3 失败 → 从 L2 DB fallback（离线容灾）
+        if db_latest:
+            logger.info(
+                "fetch_index_history: 在线拉取失败，使用 DB 缓存 %s (最新 %s)",
+                symbol, db_latest,
+            )
+        else:
             return []
-    return [pt for pt in full if start_date <= pt["date"] <= end_date]
+
+    # 从 DB 返回
+    rows = db.get_index_history(symbol, start_date, end_date)
+    if not rows:
+        return []
+    result = [{"date": r["date"], "close": float(r["close"])} for r in rows]
+    # 填充内存缓存（全量，避免下次仍跳过 L1）
+    all_rows = db.get_index_history(symbol)
+    if all_rows:
+        _index_hist_cache[symbol] = (
+            time.time(),
+            [{"date": r["date"], "close": float(r["close"])} for r in all_rows],
+        )
+    return result
 
 
 def clear_index_hist_cache() -> None:
-    """清空指数历史缓存。"""
+    """清空指数历史内存缓存（DB 数据保留）。"""
     _index_hist_cache.clear()

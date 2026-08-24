@@ -1660,11 +1660,11 @@ def get_alerts(type: str | None = None, status: str | None = None) -> list[dict]
 
 @app.put("/api/alerts/{alert_id}")
 def update_alert(alert_id: int, request: Request, body: AlertUpdateBody) -> dict[str, bool]:
-    """更新提醒状态（confirmed / ignored）。"""
-    if body.status not in ("confirmed", "ignored"):
-        raise HTTPException(400, "status must be 'confirmed' or 'ignored'")
+    """更新提醒状态（confirmed / ignored / pending）。"""
+    if body.status not in ("confirmed", "ignored", "pending"):
+        raise HTTPException(400, "status must be 'confirmed', 'ignored' or 'pending'")
     fields: dict = {"status": body.status,
-                    "resolved_at": datetime.now(config.TIMEZONE).isoformat()}
+                    "resolved_at": None if body.status == "pending" else datetime.now(config.TIMEZONE).isoformat()}
     db.update_dividend_alert(alert_id, **fields)
     db.log_audit("tp_sl_alert_update", ip=_get_client_ip(request),
                  detail={"id": alert_id, "status": body.status})

@@ -705,6 +705,8 @@ const en: typeof zh = {
     stopLoss: "Stop Loss",
     triggeredReturn: "Triggered Return",
     threshold: "Threshold",
+    processedAlerts: "Processed ({n})",
+    reopen: "Reopen",
   },
   risk: {
     title: "Risk & Advice",

@@ -703,6 +703,8 @@ const zh = {
     stopLoss: "止损",
     triggeredReturn: "触发收益率",
     threshold: "阈值",
+    processedAlerts: "已处理 {n} 条",
+    reopen: "重新打开",
   },
   risk: {
     title: "风险与建议",

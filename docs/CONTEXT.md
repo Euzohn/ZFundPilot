@@ -66,7 +66,7 @@ ZFundPilot/
 │   │   ├── Risk.tsx         # 风险评估
 │   │   ├── FundCompare.tsx     # 基金对比（多维度同框对比 + 相关性矩阵）
 │   │   ├── Screener.tsx       # 基金筛选（全市场筛选 + 指标排序 + 加自选/对比）
-│   │   ├── Watchlist.tsx      # 自选关注列表（追踪未持有基金，已持有的标「持仓中」badge）
+│   │   ├── Watchlist.tsx      # 自选关注列表（追踪未持有基金，已持有的标「持仓中」badge，列头可排序）
 │   │   ├── Backtest.tsx       # 定投回测（DCA vs 一次性投入 + 累计曲线 + 每期明细）
 │   │   ├── AIChat.tsx       # AI 投顾对话
 │   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 持仓卡片 + 排名 + 档案 + 顶栏：对比/自选/买入/卖出/定投快捷入口）
@@ -439,6 +439,11 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ---
 
 ## 十二、当前工作状态
+
+### Unreleased
+
+- feat: 自选页列头点击排序——复用 `SortHeader` 组件（与 Screener/Positions/Returns/Transactions 一致），6 列可排序（代码/名称/类型/板块/分组/添加时间），默认按添加时间降序。点击同列切换升降序，切换列默认降序
+- fix: DividendCheckDialog 关闭时 aria-hidden 警告——点击「记为分红」时 `onOpenChange(false)` + `navigate()` 同时触发，Radix Dialog 在退出动画期间对 `#root` 应用 `aria-hidden`，`onCloseAutoFocus` 尝试恢复焦点到隐藏元素触发浏览器警告。`DialogContent` 添加 `onCloseAutoFocus={(e) => e.preventDefault()}` 阻止焦点恢复
 
 ### v0.19.0 - 2026-08-25
 

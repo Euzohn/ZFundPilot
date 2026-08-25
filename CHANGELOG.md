@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+### Added
+- 自选页列头点击排序：复用 `SortHeader` 组件（与 Screener/Positions/Returns/Transactions 一致），6 列可排序（代码/名称/类型/板块/分组/添加时间），默认按添加时间降序。点击同列切换升降序，切换列默认降序
+
+### Fixed
+- DividendCheckDialog 关闭时 aria-hidden 警告：点击「记为分红」时 `onOpenChange(false)` + `navigate()` 同时触发，Radix Dialog 在退出动画期间对 `#root` 应用 `aria-hidden`，`onCloseAutoFocus` 尝试恢复焦点到隐藏元素触发浏览器警告。`DialogContent` 添加 `onCloseAutoFocus={(e) => e.preventDefault()}` 阻止焦点恢复
+
 ## [0.19.0] - 2026-08-25
 
 ### Added

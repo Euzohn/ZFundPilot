@@ -54,7 +54,7 @@
   <p><b>Fund Screener</b> — Full market filter + top 30 enriched metrics, sortable columns</p>
   <br>
   <img src="assets/readme/screenshots_en/watchlist.webp" alt="Watchlist" width="90%">
-  <p><b>Watchlist</b> — Track funds of interest, held funds show "Held" badge</p>
+  <p><b>Watchlist</b> — Track funds of interest, held funds show "Held" badge, sortable columns</p>
   <br>
   <img src="assets/readme/screenshots_en/backtest.webp" alt="DCA Backtest" width="90%">
   <p><b>DCA Backtest</b> — DCA vs lump-sum, XIRR annualized return, max drawdown, Sharpe ratio</p>
@@ -113,7 +113,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **Live Estimates** — Real-time fund change estimates during trading hours. Auto-invalidates when actual NAV is published. Auto-falls back to fundgz API (6 threads) when primary source is unavailable, with index/ETF fallback tier
 - **Fund Compare** — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix. Global compare basket with add/remove, badge count in nav bar
 - **Fund Screener** — Filter from full market universe by type/sector/keyword, top 30 auto-enriched with returns/risk metrics, sortable columns, one-click add to compare or watchlist
-- **Watchlist** — Track funds of interest, held funds show a "Held" badge, auto-fetch name/type/sector on add, quick links to detail/compare/buy
+- **Watchlist** — Track funds of interest, held funds show a "Held" badge, sortable columns, auto-fetch name/type/sector on add, quick links to detail/compare/buy
 - **Fund Details** — NAV trend + asset allocation pie chart + top 10 holdings + peer ranking trend + fund profile (manager/assets/inception date) + risk level + quick actions (compare/watchlist/buy/sell/auto-invest)
 - **DCA Backtest** — Simulate DCA (monthly/biweekly/weekly) vs lump-sum with historical NAV data. Calculates XIRR, max drawdown, Sharpe ratio
 - **Auto-Invest Plan** — Set up daily/weekly/biweekly/monthly auto-buy, auto-skip non-trading days, auto-calculate fees, T+1 NAV backfill

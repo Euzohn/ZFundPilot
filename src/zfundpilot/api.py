@@ -395,16 +395,17 @@ def test_vision_connection() -> dict[str, Any]:
 
 
 @app.post("/api/ai/parse-screenshot")
-async def parse_screenshot(file: UploadFile = File(...), mode: str = "transactions", channel_hint: str = "") -> dict[str, Any]:
+async def parse_screenshot(file: UploadFile = File(...), mode: str = "transactions", channel_hint: str = "", user_hint: str = "") -> dict[str, Any]:
     """上传截图，视觉模型解析为结构化数据（不落库）。
 
     mode: "transactions"（交易流水）| "holdings"（持仓对账）
+    user_hint: 用户补充说明，追加到视觉模型提示词
     交易模式自动标记已存在的重复交易（is_duplicate=True）。
     """
     image = await file.read()
     if not image:
         return {"ok": False, "items": [], "error": "图片为空"}
-    result = ai.parse_screenshot(image, mode, channel_hint, file.content_type or "")
+    result = ai.parse_screenshot(image, mode, channel_hint, file.content_type or "", user_hint)
     if result["ok"] and mode == "transactions":
         _mark_duplicates(result["items"])
     return result

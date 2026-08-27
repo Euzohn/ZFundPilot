@@ -31,6 +31,7 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
 
   const [mode, setMode] = useState<Mode>("transactions")
   const [channel, setChannel] = useState(channels[0] || "")
+  const [userHint, setUserHint] = useState("")
   const [image, setImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string>("")
   const [parsing, setParsing] = useState(false)
@@ -58,11 +59,12 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
     setParsing(false)
     setReconciling(false)
     setImporting(false)
+    setUserHint("")
   }
 
   const handleImageSelect = (file: File | null | undefined) => {
     if (!file || !file.type.startsWith("image/")) {
-      toast.error(t.transactions.screenshotParseFailed.replace("{error}", "not an image"))
+      toast.error(t.transactions.screenshotParseFailed.replace("{error}", t.transactions.screenshotNotImage))
       return
     }
     setImage(file)
@@ -97,7 +99,7 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
     setHoldingItems([])
     setReconcileResult(null)
     try {
-      const result = await api.parseScreenshot(image, mode, channel)
+      const result = await api.parseScreenshot(image, mode, channel, userHint)
       if (!result.ok) {
         setParseError(result.error)
         return
@@ -259,6 +261,20 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
               {mode === "transactions" ? t.transactions.screenshotModeTxHint : t.transactions.screenshotModeHoldingsHint}
             </p>
           </div>
+
+          {/* 用户补充说明 */}
+          {!hasParsed && !reconcileResult && (
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{t.transactions.screenshotUserHint}</Label>
+              <textarea
+                value={userHint}
+                onChange={(e) => setUserHint(e.target.value.slice(0, 500))}
+                rows={2}
+                placeholder={t.transactions.screenshotUserHintPlaceholder}
+                className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-xs leading-relaxed outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 placeholder:text-muted-foreground/50"
+              />
+            </div>
+          )}
 
           {/* Upload area */}
           {!hasParsed && !reconcileResult && (

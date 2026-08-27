@@ -513,8 +513,9 @@ async def chat_stream(
 _TEST_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
 
 
-def _build_screenshot_prompt(mode: str, channel_hint: str = "") -> str:
+def _build_screenshot_prompt(mode: str, channel_hint: str = "", user_hint: str = "") -> str:
     """根据模式构建视觉解析提示词。布局无关，适用于支付宝/理财通/天天基金/银行 app 截图。"""
+    hint_block = f"\n\n以下是用户的补充说明，请优先参考：\n{user_hint}" if user_hint.strip() else ""
     if mode == "holdings":
         return """你是基金持仓截图解析助手。从用户上传的截图中提取当前持仓信息。
 
@@ -528,7 +529,7 @@ def _build_screenshot_prompt(mode: str, channel_hint: str = "") -> str:
 - fund_code 不确定时填 null，切勿编造
 - 不确定的数值填 null，切勿编造
 - 只输出 JSON 数组，不要输出任何其他文字
-- 截图中有几只基金就输出几个元素"""
+- 截图中有几只基金就输出几个元素""" + hint_block
 
     # transactions 模式
     channel_line = f"\n- 渠道：可参考「{channel_hint}」，但从截图 UI 识别到的渠道优先" if channel_hint else "\n- 渠道：从截图 UI 识别（支付宝/理财通/天天基金/银行/券商/其它），识别不到留空串"
@@ -552,7 +553,7 @@ def _build_screenshot_prompt(mode: str, channel_hint: str = "") -> str:
 - fund_code 不确定时填 null，切勿编造
 - 不确定的数值填 null，切勿编造
 - 只输出 JSON 数组，不要输出任何其他文字
-{channel_line}"""
+{channel_line}""" + hint_block
 
 
 def _extract_json_list(content: str) -> list | None:
@@ -610,7 +611,7 @@ def _resolve_codes(items: list[dict]) -> list[dict]:
     return items
 
 
-def parse_screenshot(image_bytes: bytes, mode: str, channel_hint: str = "", content_type: str = "") -> dict:
+def parse_screenshot(image_bytes: bytes, mode: str, channel_hint: str = "", content_type: str = "", user_hint: str = "") -> dict:
     """调用视觉模型解析截图，返回结构化数据。
 
     mode: "transactions"（交易流水）| "holdings"（持仓对账）
@@ -621,7 +622,7 @@ def parse_screenshot(image_bytes: bytes, mode: str, channel_hint: str = "", cont
     if not config.AI_VISION_BASE_URL or not config.AI_VISION_API_KEY or not config.AI_VISION_MODEL:
         return {"ok": False, "items": [], "error": "视觉模型未配置，请先到设置页面配置。"}
 
-    prompt = _build_screenshot_prompt(mode, channel_hint)
+    prompt = _build_screenshot_prompt(mode, channel_hint, user_hint)
     mime = content_type if content_type.startswith("image/") else "image/jpeg"
     data_url = f"data:{mime};base64," + base64.b64encode(image_bytes).decode("ascii")
 

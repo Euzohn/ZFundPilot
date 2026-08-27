@@ -202,6 +202,26 @@ class TestParseScreenshot:
         assert r["ok"] is True
         assert r["items"][0]["fund_code"] == "005827"
 
+    def test_user_hint_included_in_prompt(self):
+        """user_hint 追加到视觉模型提示词。"""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "choices": [{"message": {"content": '```json\n[{"fund_name": "易方达蓝筹精选混合", "fund_code": "005827", "action": "buy", "amount": 1000}]```'}}]
+        }
+        with patch("zfundpilot.ai.config") as mock_cfg, \
+             patch("zfundpilot.ai.httpx.post", return_value=mock_resp) as mock_post, \
+             _mock_universe():
+            mock_cfg.AI_VISION_BASE_URL = "https://api.test.com/v1"
+            mock_cfg.AI_VISION_API_KEY = "sk-test"
+            mock_cfg.AI_VISION_MODEL = "test-vl"
+            ai.parse_screenshot(b"img", "transactions", user_hint="这是支付宝8月的购买记录")
+        _, kwargs = mock_post.call_args
+        body = kwargs["json"]
+        prompt = body["messages"][0]["content"][0]["text"]
+        assert "这是支付宝8月的购买记录" in prompt
+        assert "以下是用户的补充说明，请优先参考" in prompt
+
     def test_api_error(self):
         mock_resp = MagicMock()
         mock_resp.status_code = 401

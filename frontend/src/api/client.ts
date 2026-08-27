@@ -296,13 +296,14 @@ export const api = {
     }),
 
   // Screenshot Import (vision model)
-  parseScreenshot: async (file: File | Blob, mode: 'transactions' | 'holdings', channelHint: string = ''): Promise<ParseScreenshotResult> => {
+  parseScreenshot: async (file: File | Blob, mode: 'transactions' | 'holdings', channelHint: string = '', userHint: string = ''): Promise<ParseScreenshotResult> => {
     const form = new FormData()
     form.append("file", file)
     const token = getToken()
     const headers: Record<string, string> = {}
     if (token) headers["Authorization"] = `Bearer ${token}`
-    const res = await fetch(`${BASE}/ai/parse-screenshot?mode=${mode}&channel_hint=${encodeURIComponent(channelHint)}`, {
+    const params = new URLSearchParams({ mode, channel_hint: channelHint, user_hint: userHint })
+    const res = await fetch(`${BASE}/ai/parse-screenshot?${params}`, {
       method: "POST",
       body: form,
       headers,

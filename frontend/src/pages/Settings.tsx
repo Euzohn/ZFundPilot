@@ -791,7 +791,78 @@ export default function Settings() {
                 )}
               </div>
 
-              {/* 分隔线 */}
+              {/* 分隔线 — AI 配置 / 视觉模型 */}
+              <div className="border-t border-border/60" />
+
+              {/* 视觉模型配置（截图导入） */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Camera className="h-4 w-4 text-primary" />
+                  <p className="text-sm font-medium">{t.settings.visionModel}</p>
+                </div>
+                <p className="text-xs text-muted-foreground -mt-2">{t.settings.visionModelHint}</p>
+
+                {/* API 配置 */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.aiBaseUrl}</Label>
+                    <Input value={visionBaseUrl} onChange={(e) => setVisionBaseUrl(e.target.value)}
+                      className="h-8 text-xs" placeholder="https://open.bigmodel.cn/v1" />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.aiApiKey}</Label>
+                    <Input type="password" value={visionApiKey} onChange={(e) => setVisionApiKey(e.target.value)}
+                      className="h-8 text-xs"
+                      placeholder={visionConfig?.has_key ? t.settings.apiKeyConfigured : "sk-..."} />
+                  </div>
+                  <div>
+                    <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.aiModel}</Label>
+                    <Input value={visionModel} onChange={(e) => setVisionModel(e.target.value)}
+                      className="h-8 text-xs" placeholder={t.settings.visionModelPlaceholder} />
+                  </div>
+                </div>
+
+                {/* 平台快捷预设 */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{t.settings.quickFill}</span>
+                  {VISION_PRESETS.map((p) => (
+                    <button
+                      key={p.name.zh}
+                      type="button"
+                      onClick={() => { setVisionBaseUrl(p.baseUrl); setVisionModel(p.model) }}
+                      className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                    >
+                      {p.name[lang]}{p.recommended ? ` · ${t.settings.visionRecommended}` : ""}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 操作按钮 */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button size="sm" onClick={handleSaveVision} disabled={savingVision}>
+                    <Save className="mr-1.5 h-3.5 w-3.5" /> {savingVision ? t.settings.saving : t.settings.saveConfig}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleTestVision} disabled={testingVision}>
+                    {testingVision ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Zap className="mr-1.5 h-3.5 w-3.5" />}
+                    {testingVision ? t.settings.visionTesting : t.settings.testConnection}
+                  </Button>
+                </div>
+
+                {/* 测试结果 */}
+                {visionTestResult && (
+                  <div className={cn(
+                    "flex items-center gap-1.5 rounded-md px-3 py-2 text-xs",
+                    visionTestResult.ok ? "bg-success/10 text-success border border-success/30" : "bg-destructive/10 text-destructive border border-destructive/30"
+                  )}>
+                    {visionTestResult.ok
+                      ? <><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> {t.settings.visionTestOk} · {visionTestResult.model}</>
+                      : <><XCircle className="h-3.5 w-3.5 shrink-0" /> {visionTestResult.error}</>
+                    }
+                  </div>
+                )}
+              </div>
+
+              {/* 分隔线 — 视觉模型 / Token 用量 */}
               <div className="border-t border-border/60" />
 
               {/* Token 用量 */}
@@ -850,79 +921,6 @@ export default function Settings() {
                   </div>
                 ) : (
                   !usageStats && <LoadingState size="sm" />
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 视觉模型配置（截图导入） */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Camera className="h-4 w-4 text-primary" />
-                <CardTitle className="text-base">{t.settings.visionModel}</CardTitle>
-              </div>
-              <p className="text-sm text-muted-foreground">{t.settings.visionModelHint}</p>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="space-y-3">
-                {/* API 配置 */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.aiBaseUrl}</Label>
-                    <Input value={visionBaseUrl} onChange={(e) => setVisionBaseUrl(e.target.value)}
-                      className="h-8 text-xs" placeholder="https://open.bigmodel.cn/v1" />
-                  </div>
-                  <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.aiApiKey}</Label>
-                    <Input type="password" value={visionApiKey} onChange={(e) => setVisionApiKey(e.target.value)}
-                      className="h-8 text-xs"
-                      placeholder={visionConfig?.has_key ? t.settings.apiKeyConfigured : "sk-..."} />
-                  </div>
-                  <div>
-                    <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.aiModel}</Label>
-                    <Input value={visionModel} onChange={(e) => setVisionModel(e.target.value)}
-                      className="h-8 text-xs" placeholder={t.settings.visionModelPlaceholder} />
-                  </div>
-                </div>
-
-                {/* 平台快捷预设 */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-muted-foreground">{t.settings.quickFill}</span>
-                  {VISION_PRESETS.map((p) => (
-                    <button
-                      key={p.name.zh}
-                      type="button"
-                      onClick={() => { setVisionBaseUrl(p.baseUrl); setVisionModel(p.model) }}
-                      className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
-                    >
-                      {p.name[lang]}{p.recommended ? ` · ${t.settings.visionRecommended}` : ""}
-                    </button>
-                  ))}
-                </div>
-
-                {/* 操作按钮 */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button size="sm" onClick={handleSaveVision} disabled={savingVision}>
-                    <Save className="mr-1.5 h-3.5 w-3.5" /> {savingVision ? t.settings.saving : t.settings.saveConfig}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={handleTestVision} disabled={testingVision}>
-                    {testingVision ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Zap className="mr-1.5 h-3.5 w-3.5" />}
-                    {testingVision ? t.settings.visionTesting : t.settings.testConnection}
-                  </Button>
-                </div>
-
-                {/* 测试结果 */}
-                {visionTestResult && (
-                  <div className={cn(
-                    "flex items-center gap-1.5 rounded-md px-3 py-2 text-xs",
-                    visionTestResult.ok ? "bg-success/10 text-success border border-success/30" : "bg-destructive/10 text-destructive border border-destructive/30"
-                  )}>
-                    {visionTestResult.ok
-                      ? <><CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> {t.settings.visionTestOk} · {visionTestResult.model}</>
-                      : <><XCircle className="h-3.5 w-3.5 shrink-0" /> {visionTestResult.error}</>
-                    }
-                  </div>
                 )}
               </div>
             </CardContent>

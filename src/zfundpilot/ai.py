@@ -649,6 +649,16 @@ def parse_screenshot(image_bytes: bytes, mode: str, channel_hint: str = "", cont
         if resp.status_code != 200:
             return {"ok": False, "items": [], "error": f"API 返回 {resp.status_code}: {resp.text[:200]}"}
         data = resp.json()
+        # 记录 token 用量（与对话 AI 一致，写入 ai_usage 表）
+        usage = data.get("usage")
+        if usage and usage.get("total_tokens"):
+            db.add_ai_usage(
+                config.AI_VISION_MODEL,
+                usage.get("prompt_tokens", 0) or 0,
+                usage.get("completion_tokens", 0) or 0,
+                usage.get("total_tokens", 0) or 0,
+                1,
+            )
         choices = data.get("choices") or []
         if not choices:
             return {"ok": False, "items": [], "error": "模型未返回内容"}

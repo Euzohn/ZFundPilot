@@ -343,6 +343,7 @@ const en: typeof zh = {
     recordReinvest: "Record Reinvest",
 
     screenshotImport: "Screenshot Import",
+    screenshotImportShort: "Screenshot",
     screenshotImportTitle: "Import Transactions / Reconcile Holdings from Screenshot",
     screenshotImportHint: "Upload a purchase record or holdings screenshot for AI recognition",
     screenshotModeTx: "Transactions",

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { useLang } from "@/i18n/LanguageContext"
 import { api } from "@/api/client"
 import type { ParsedTxItem, ParsedHoldingItem, ReconcileResponse, Transaction } from "@/api/types"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,9 +12,7 @@ import { getChannels } from "@/lib/channels"
 import { Camera, Upload, Loader2, Image as ImageIcon, X, RefreshCw, CheckCircle2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-interface ScreenshotImportDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
+interface ScreenshotImportPanelProps {
   onImported?: () => void
 }
 
@@ -26,7 +24,7 @@ function todayStr(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-export default function ScreenshotImportDialog({ open, onOpenChange, onImported }: ScreenshotImportDialogProps) {
+export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPanelProps) {
   const { t } = useLang()
   const channels = getChannels()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -44,26 +42,23 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
   const [reconciling, setReconciling] = useState(false)
   const [importing, setImporting] = useState(false)
 
-  // Reset when dialog closes
-  useEffect(() => {
-    if (!open) {
-      setImage(null)
-      setImagePreview("")
-      setParseError("")
-      setTxItems([])
-      setHoldingItems([])
-      setReconcileResult(null)
-      setSelectedDiff(new Set())
-      setParsing(false)
-      setReconciling(false)
-      setImporting(false)
-    }
-  }, [open])
-
   // Cleanup object URL
   useEffect(() => {
     if (imagePreview) return () => URL.revokeObjectURL(imagePreview)
   }, [imagePreview])
+
+  const resetState = () => {
+    setImage(null)
+    setImagePreview("")
+    setParseError("")
+    setTxItems([])
+    setHoldingItems([])
+    setReconcileResult(null)
+    setSelectedDiff(new Set())
+    setParsing(false)
+    setReconciling(false)
+    setImporting(false)
+  }
 
   const handleImageSelect = (file: File | null | undefined) => {
     if (!file || !file.type.startsWith("image/")) {
@@ -132,7 +127,6 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
         channel,
       )
       setReconcileResult(result)
-      // Default-select all buy/new/sell (not maybe_sold)
       const defaultSel = new Set<number>()
       result.items.forEach((it, i) => {
         if (it.status !== "ok" && it.status !== "maybe_sold") defaultSel.add(i)
@@ -196,7 +190,7 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
     try {
       const res = await api.confirmImport(txs, false, true)
       toast.success(t.transactions.screenshotImportSuccess.replace("{n}", String(res.imported)))
-      onOpenChange(false)
+      resetState()
       onImported?.()
     } catch (e) {
       toast.error(`${t.transactions.importFailed}: ${e}`)
@@ -221,17 +215,17 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
     : reconcileResult ? reconcileResult.items.filter((_, i) => selectedDiff.has(i)).length : 0
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col" onCloseAutoFocus={(e) => e.preventDefault()}>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Camera className="h-5 w-5" />
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Camera className="h-4 w-4" />
             {t.transactions.screenshotImportTitle}
-          </DialogTitle>
-          <DialogDescription>{t.transactions.screenshotImportHint}</DialogDescription>
-        </DialogHeader>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">{t.transactions.screenshotImportHint}</p>
 
-        <div className="flex-1 overflow-y-auto space-y-4 pr-1">
           {/* Mode + Channel */}
           <div className="flex flex-wrap items-end gap-3">
             <div>
@@ -324,213 +318,219 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
               {t.transactions.screenshotParseFailed.replace("{error}", parseError)}
             </div>
           )}
+        </CardContent>
+      </Card>
 
-          {/* Transactions preview */}
-          {mode === "transactions" && txItems.length > 0 && (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                {t.transactions.screenshotPreviewTx.replace("{n}", String(txItems.length))}
-              </p>
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full text-xs">
-                  <thead className="bg-muted/50">
-                    <tr>
-                      <th className="px-2 py-1.5 text-left font-medium">{t.transactions.fundCode}</th>
-                      <th className="px-2 py-1.5 text-left font-medium">{t.transactions.action}</th>
-                      <th className="px-2 py-1.5 text-left font-medium">{t.transactions.dateLabel}</th>
-                      <th className="px-2 py-1.5 text-right font-medium">{t.transactions.amountYuan}</th>
-                      <th className="px-2 py-1.5 text-right font-medium">{t.common.shares}</th>
-                      <th className="px-2 py-1.5 text-right font-medium">{t.common.nav}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {txItems.map((it, idx) => (
-                      <tr key={idx} className={cn("border-t",
-                        it.is_duplicate ? "bg-muted/30" : "",
-                        !it.fund_code || !/^\d{6}$/.test(it.fund_code) ? "bg-destructive/5" : "",
-                      )}>
-                        <td className="px-2 py-1">
-                          <div className="flex items-center gap-1">
-                            <FundCodeCell item={it} onChange={(patch) => updateTxItem(idx, patch)} placeholder={t.transactions.screenshotSelectCode} />
-                            {it.is_duplicate && (
-                              <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">{t.transactions.screenshotDuplicate}</span>
-                            )}
-                          </div>
-                          <span className="block text-[10px] text-muted-foreground truncate max-w-[120px]">{it.fund_name}</span>
-                        </td>
-                        <td className="px-2 py-1">
-                          <select
-                            value={it.action}
-                            onChange={(e) => updateTxItem(idx, { action: e.target.value })}
-                            className="h-7 rounded border border-border bg-background px-1 text-xs"
-                          >
-                            <option value="buy">{t.transactions.buy}</option>
-                            <option value="sell">{t.transactions.sell}</option>
-                            <option value="dividend">{t.transactions.dividend}</option>
-                            <option value="reinvest">{t.transactions.reinvest}</option>
-                          </select>
-                        </td>
-                        <td className="px-2 py-1">
-                          <Input
-                            type="date"
-                            value={it.date || ""}
-                            onChange={(e) => updateTxItem(idx, { date: e.target.value })}
-                            className="h-7 text-xs w-[120px]"
-                          />
-                        </td>
-                        <td className="px-2 py-1 text-right">
-                          <Input
-                            type="number"
-                            value={it.amount ?? ""}
-                            onChange={(e) => updateTxItem(idx, { amount: e.target.value ? Number(e.target.value) : null })}
-                            className="h-7 text-xs text-right w-[100px]"
-                            placeholder="—"
-                          />
-                        </td>
-                        <td className="px-2 py-1 text-right">
-                          <Input
-                            type="number"
-                            value={it.shares ?? ""}
-                            onChange={(e) => updateTxItem(idx, { shares: e.target.value ? Number(e.target.value) : null })}
-                            className="h-7 text-xs text-right w-[100px]"
-                            placeholder="—"
-                          />
-                        </td>
-                        <td className="px-2 py-1 text-right">
-                          <Input
-                            type="number"
-                            value={it.nav ?? ""}
-                            onChange={(e) => updateTxItem(idx, { nav: e.target.value ? Number(e.target.value) : null })}
-                            className="h-7 text-xs text-right w-[80px]"
-                            placeholder="—"
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">
-                  {t.transactions.screenshotValidCount.replace("{valid}", String(validTxCount)).replace("{total}", String(txItems.length))}
-                  {dupCount > 0 && <span className="ml-2 text-muted-foreground/60">{t.transactions.screenshotDuplicatesSkipped.replace("{n}", String(dupCount))}</span>}
-                </p>
-                <Button onClick={handleConfirmImport} disabled={importing || validTxCount === 0}>
-                  {importing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4" />}
-                  {t.transactions.screenshotConfirmImport.replace("{n}", String(validTxCount))}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Holdings preview */}
-          {mode === "holdings" && holdingItems.length > 0 && !reconcileResult && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  {t.transactions.screenshotPreviewHoldings.replace("{n}", String(holdingItems.length))}
-                </p>
-                <Button onClick={handleReconcile} disabled={reconciling} size="sm">
-                  {reconciling ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1.5 h-4 w-4" />}
-                  {t.transactions.screenshotReconcile}
-                </Button>
-              </div>
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full text-xs">
-                  <thead className="bg-muted/50">
-                    <tr>
-                      <th className="px-2 py-1.5 text-left font-medium">{t.transactions.fundCode}</th>
-                      <th className="px-2 py-1.5 text-left font-medium">{t.transactions.fundName}</th>
-                      <th className="px-2 py-1.5 text-right font-medium">{t.common.shares}</th>
-                      <th className="px-2 py-1.5 text-right font-medium">{t.positions.marketValue}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {holdingItems.map((it, idx) => (
-                      <tr key={idx} className={cn("border-t", !it.fund_code || !/^\d{6}$/.test(it.fund_code) ? "bg-destructive/5" : "")}>
-                        <td className="px-2 py-1">
-                          <FundCodeCell item={it} onChange={(patch) => updateHoldingItem(idx, patch)} placeholder={t.transactions.screenshotSelectCode} />
-                        </td>
-                        <td className="px-2 py-1 text-muted-foreground max-w-[160px] truncate">{it.fund_name}</td>
-                        <td className="px-2 py-1 text-right">
-                          <Input
-                            type="number"
-                            value={it.shares ?? ""}
-                            onChange={(e) => updateHoldingItem(idx, { shares: e.target.value ? Number(e.target.value) : null })}
-                            className="h-7 text-xs text-right w-[100px]"
-                            placeholder="—"
-                          />
-                        </td>
-                        <td className="px-2 py-1 text-right tabular-nums">
-                          {it.market_value != null ? it.market_value.toFixed(2) : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Reconcile result */}
-          {reconcileResult && (
-            <div className="space-y-3">
-              <p className="text-sm font-medium">{t.transactions.screenshotReconcile}</p>
-              <div className="overflow-x-auto rounded-md border">
-                <table className="w-full text-xs">
-                  <thead className="bg-muted/50">
-                    <tr>
-                      <th className="px-2 py-1.5 w-8"></th>
-                      <th className="px-2 py-1.5 text-left font-medium">{t.transactions.fundCode}</th>
-                      <th className="px-2 py-1.5 text-right font-medium">{t.transactions.screenshotReconciledShares}</th>
-                      <th className="px-2 py-1.5 text-right font-medium">{t.transactions.screenshotShares}</th>
-                      <th className="px-2 py-1.5 text-right font-medium">{t.transactions.screenshotDelta}</th>
-                      <th className="px-2 py-1.5 text-center font-medium">{t.transactions.screenshotSuggestedAction}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {reconcileResult.items.map((it, idx) => (
-                      <tr key={idx} className={cn("border-t",
-                        it.status === "ok" ? "opacity-50" : "",
-                        it.status === "maybe_sold" ? "bg-warning/5" : "",
-                      )}>
-                        <td className="px-2 py-1.5 text-center">
-                          {it.status !== "ok" && (
-                            <Checkbox checked={selectedDiff.has(idx)} onCheckedChange={() => toggleDiff(idx)} />
+      {/* Transactions preview */}
+      {mode === "transactions" && txItems.length > 0 && (
+        <Card>
+          <CardContent className="pt-4 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {t.transactions.screenshotPreviewTx.replace("{n}", String(txItems.length))}
+            </p>
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left font-medium">{t.transactions.fundCode}</th>
+                    <th className="px-2 py-1.5 text-left font-medium">{t.transactions.action}</th>
+                    <th className="px-2 py-1.5 text-left font-medium">{t.transactions.dateLabel}</th>
+                    <th className="px-2 py-1.5 text-right font-medium">{t.transactions.amountYuan}</th>
+                    <th className="px-2 py-1.5 text-right font-medium">{t.common.shares}</th>
+                    <th className="px-2 py-1.5 text-right font-medium">{t.common.nav}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {txItems.map((it, idx) => (
+                    <tr key={idx} className={cn("border-t",
+                      it.is_duplicate ? "bg-muted/30" : "",
+                      !it.fund_code || !/^\d{6}$/.test(it.fund_code) ? "bg-destructive/5" : "",
+                    )}>
+                      <td className="px-2 py-1">
+                        <div className="flex items-center gap-1">
+                          <FundCodeCell item={it} onChange={(patch) => updateTxItem(idx, patch)} placeholder={t.transactions.screenshotSelectCode} />
+                          {it.is_duplicate && (
+                            <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">{t.transactions.screenshotDuplicate}</span>
                           )}
-                        </td>
-                        <td className="px-2 py-1.5 font-mono">{it.fund_code}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{it.recorded_shares.toFixed(2)}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{it.screenshot_shares.toFixed(2)}</td>
-                        <td className={cn("px-2 py-1.5 text-right tabular-nums", it.delta > 0 ? "text-success" : it.delta < 0 ? "text-destructive" : "")}>
-                          {it.delta > 0 ? "+" : ""}{it.delta.toFixed(2)}
-                        </td>
-                        <td className="px-2 py-1.5 text-center">
-                          {it.status === "ok" ? "✓" :
-                           it.status === "buy" ? t.transactions.buy :
-                           it.status === "sell" ? t.transactions.sell :
-                           it.status === "new" ? t.transactions.screenshotStatusNew :
-                           it.status === "maybe_sold" ? t.transactions.screenshotStatusMaybeSold : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="flex items-center justify-between">
-                <Button variant="ghost" size="sm" onClick={() => { setReconcileResult(null); setSelectedDiff(new Set()) }}>
-                  ← {t.transactions.screenshotBack}
-                </Button>
-                <Button onClick={handleConfirmImport} disabled={importing || selectedTxCount === 0}>
-                  {importing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4" />}
-                  {t.transactions.screenshotConfirmImport.replace("{n}", String(selectedTxCount))}
-                </Button>
-              </div>
+                        </div>
+                        <span className="block text-[10px] text-muted-foreground truncate max-w-[120px]">{it.fund_name}</span>
+                      </td>
+                      <td className="px-2 py-1">
+                        <select
+                          value={it.action}
+                          onChange={(e) => updateTxItem(idx, { action: e.target.value })}
+                          className="h-7 rounded border border-border bg-background px-1 text-xs"
+                        >
+                          <option value="buy">{t.transactions.buy}</option>
+                          <option value="sell">{t.transactions.sell}</option>
+                          <option value="dividend">{t.transactions.dividend}</option>
+                          <option value="reinvest">{t.transactions.reinvest}</option>
+                        </select>
+                      </td>
+                      <td className="px-2 py-1">
+                        <Input
+                          type="date"
+                          value={it.date || ""}
+                          onChange={(e) => updateTxItem(idx, { date: e.target.value })}
+                          className="h-7 text-xs w-[120px]"
+                        />
+                      </td>
+                      <td className="px-2 py-1 text-right">
+                        <Input
+                          type="number"
+                          value={it.amount ?? ""}
+                          onChange={(e) => updateTxItem(idx, { amount: e.target.value ? Number(e.target.value) : null })}
+                          className="h-7 text-xs text-right w-[100px]"
+                          placeholder="—"
+                        />
+                      </td>
+                      <td className="px-2 py-1 text-right">
+                        <Input
+                          type="number"
+                          value={it.shares ?? ""}
+                          onChange={(e) => updateTxItem(idx, { shares: e.target.value ? Number(e.target.value) : null })}
+                          className="h-7 text-xs text-right w-[100px]"
+                          placeholder="—"
+                        />
+                      </td>
+                      <td className="px-2 py-1 text-right">
+                        <Input
+                          type="number"
+                          value={it.nav ?? ""}
+                          onChange={(e) => updateTxItem(idx, { nav: e.target.value ? Number(e.target.value) : null })}
+                          className="h-7 text-xs text-right w-[80px]"
+                          placeholder="—"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">
+                {t.transactions.screenshotValidCount.replace("{valid}", String(validTxCount)).replace("{total}", String(txItems.length))}
+                {dupCount > 0 && <span className="ml-2 text-muted-foreground/60">{t.transactions.screenshotDuplicatesSkipped.replace("{n}", String(dupCount))}</span>}
+              </p>
+              <Button onClick={handleConfirmImport} disabled={importing || validTxCount === 0}>
+                {importing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4" />}
+                {t.transactions.screenshotConfirmImport.replace("{n}", String(validTxCount))}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Holdings preview */}
+      {mode === "holdings" && holdingItems.length > 0 && !reconcileResult && (
+        <Card>
+          <CardContent className="pt-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                {t.transactions.screenshotPreviewHoldings.replace("{n}", String(holdingItems.length))}
+              </p>
+              <Button onClick={handleReconcile} disabled={reconciling} size="sm">
+                {reconciling ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1.5 h-4 w-4" />}
+                {t.transactions.screenshotReconcile}
+              </Button>
+            </div>
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left font-medium">{t.transactions.fundCode}</th>
+                    <th className="px-2 py-1.5 text-left font-medium">{t.transactions.fundName}</th>
+                    <th className="px-2 py-1.5 text-right font-medium">{t.common.shares}</th>
+                    <th className="px-2 py-1.5 text-right font-medium">{t.positions.marketValue}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {holdingItems.map((it, idx) => (
+                    <tr key={idx} className={cn("border-t", !it.fund_code || !/^\d{6}$/.test(it.fund_code) ? "bg-destructive/5" : "")}>
+                      <td className="px-2 py-1">
+                        <FundCodeCell item={it} onChange={(patch) => updateHoldingItem(idx, patch)} placeholder={t.transactions.screenshotSelectCode} />
+                      </td>
+                      <td className="px-2 py-1 text-muted-foreground max-w-[160px] truncate">{it.fund_name}</td>
+                      <td className="px-2 py-1 text-right">
+                        <Input
+                          type="number"
+                          value={it.shares ?? ""}
+                          onChange={(e) => updateHoldingItem(idx, { shares: e.target.value ? Number(e.target.value) : null })}
+                          className="h-7 text-xs text-right w-[100px]"
+                          placeholder="—"
+                        />
+                      </td>
+                      <td className="px-2 py-1 text-right tabular-nums">
+                        {it.market_value != null ? it.market_value.toFixed(2) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Reconcile result */}
+      {reconcileResult && (
+        <Card>
+          <CardContent className="pt-4 space-y-3">
+            <p className="text-sm font-medium">{t.transactions.screenshotReconcile}</p>
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="px-2 py-1.5 w-8"></th>
+                    <th className="px-2 py-1.5 text-left font-medium">{t.transactions.fundCode}</th>
+                    <th className="px-2 py-1.5 text-right font-medium">{t.transactions.screenshotReconciledShares}</th>
+                    <th className="px-2 py-1.5 text-right font-medium">{t.transactions.screenshotShares}</th>
+                    <th className="px-2 py-1.5 text-right font-medium">{t.transactions.screenshotDelta}</th>
+                    <th className="px-2 py-1.5 text-center font-medium">{t.transactions.screenshotSuggestedAction}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reconcileResult.items.map((it, idx) => (
+                    <tr key={idx} className={cn("border-t",
+                      it.status === "ok" ? "opacity-50" : "",
+                      it.status === "maybe_sold" ? "bg-warning/5" : "",
+                    )}>
+                      <td className="px-2 py-1.5 text-center">
+                        {it.status !== "ok" && (
+                          <Checkbox checked={selectedDiff.has(idx)} onCheckedChange={() => toggleDiff(idx)} />
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 font-mono">{it.fund_code}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{it.recorded_shares.toFixed(2)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{it.screenshot_shares.toFixed(2)}</td>
+                      <td className={cn("px-2 py-1.5 text-right tabular-nums", it.delta > 0 ? "text-success" : it.delta < 0 ? "text-destructive" : "")}>
+                        {it.delta > 0 ? "+" : ""}{it.delta.toFixed(2)}
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        {it.status === "ok" ? "✓" :
+                         it.status === "buy" ? t.transactions.buy :
+                         it.status === "sell" ? t.transactions.sell :
+                         it.status === "new" ? t.transactions.screenshotStatusNew :
+                         it.status === "maybe_sold" ? t.transactions.screenshotStatusMaybeSold : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center justify-between">
+              <Button variant="ghost" size="sm" onClick={() => { setReconcileResult(null); setSelectedDiff(new Set()) }}>
+                ← {t.transactions.screenshotBack}
+              </Button>
+              <Button onClick={handleConfirmImport} disabled={importing || selectedTxCount === 0}>
+                {importing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4" />}
+                {t.transactions.screenshotConfirmImport.replace("{n}", String(selectedTxCount))}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   )
 }
 

@@ -341,6 +341,7 @@ const zh = {
     recordReinvest: "记为再投",
 
     screenshotImport: "截图导入",
+    screenshotImportShort: "截图",
     screenshotImportTitle: "截图导入交易 / 持仓对账",
     screenshotImportHint: "上传购买记录或持仓截图，AI 自动识别",
     screenshotModeTx: "交易流水",

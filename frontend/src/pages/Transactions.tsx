@@ -27,7 +27,7 @@ import { useLang } from "@/i18n/LanguageContext"
 import ConfirmDialog from "@/components/ConfirmDialog"
 import TransactionDetailDialog from "@/components/TransactionDetailDialog"
 import DividendCheckDialog from "@/components/DividendCheckDialog"
-import ScreenshotImportDialog from "@/components/ScreenshotImportDialog"
+import ScreenshotImportPanel from "@/components/ScreenshotImportDialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 
 function actionBadgeClass(action: string): string {
@@ -52,7 +52,6 @@ export default function Transactions() {
   const [autoInvestPrefillCode, setAutoInvestPrefillCode] = useState<string | null>(null)
   const [autoInvestPrefillChannel, setAutoInvestPrefillChannel] = useState<string | undefined>(undefined)
   const [dividendDialogOpen, setDividendDialogOpen] = useState(false)
-  const [screenshotOpen, setScreenshotOpen] = useState(false)
   const [dividendAlertCount, setDividendAlertCount] = useState(0)
   const consumedEditTx = useRef(false)
 
@@ -120,17 +119,10 @@ export default function Transactions() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t.transactions.title} actions={
-        <Button variant="outline" size="sm" onClick={() => setScreenshotOpen(true)}>
-          <Camera className="mr-1.5 h-4 w-4" />
-          <span className="hidden sm:inline">{t.transactions.screenshotImport}</span>
-          <span className="sm:hidden">截图</span>
-        </Button>
-      } />
-      <ScreenshotImportDialog open={screenshotOpen} onOpenChange={setScreenshotOpen} onImported={() => setListReloadKey((k) => k + 1)} />
+      <PageHeader title={t.transactions.title} />
       <DividendCheckDialog open={dividendDialogOpen} onOpenChange={setDividendDialogOpen} />
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4 sm:inline-flex sm:w-auto">
+        <TabsList className="grid w-full grid-cols-5 sm:inline-flex sm:w-auto">
           <TabsTrigger value="form" className="gap-1.5">
             <span className="relative">
               <Plus className="h-4 w-4" />
@@ -149,6 +141,9 @@ export default function Transactions() {
           <TabsTrigger value="auto-invest" className="gap-1.5">
             <Repeat className="h-4 w-4" /> <span className="hidden sm:inline">{t.transactions.autoInvestPlans}</span><span className="sm:hidden">{t.transactions.autoInvestShort}</span>
           </TabsTrigger>
+          <TabsTrigger value="screenshot" className="gap-1.5">
+            <Camera className="h-4 w-4" /> <span className="hidden sm:inline">{t.transactions.screenshotImport}</span><span className="sm:hidden">{t.transactions.screenshotImportShort}</span>
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="form">
           <TransactionForm
@@ -165,6 +160,7 @@ export default function Transactions() {
         </TabsContent>
         <TabsContent value="csv"><CSVImportExport /></TabsContent>
         <TabsContent value="auto-invest"><AutoInvestPlansPanel prefillCode={autoInvestPrefillCode} prefillChannel={autoInvestPrefillChannel} onPrefillConsumed={() => { setAutoInvestPrefillCode(null); setAutoInvestPrefillChannel(undefined) }} /></TabsContent>
+        <TabsContent value="screenshot"><ScreenshotImportPanel onImported={() => setListReloadKey((k) => k + 1)} /></TabsContent>
       </Tabs>
     </div>
   )

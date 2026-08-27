@@ -13,7 +13,7 @@ WORKDIR /app
 
 # 设置时区为 Asia/Shanghai（修复 datetime.now() 返回 UTC 的问题）
 ENV TZ=Asia/Shanghai
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata && \
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata libjpeg62-turbo && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
     rm -rf /var/lib/apt/lists/*
 

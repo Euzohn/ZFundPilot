@@ -154,6 +154,68 @@ class TestResolveCodes:
 
 
 # ---------------------------------------------------------------------------
+# _compress_image（图片缩放）
+# ---------------------------------------------------------------------------
+class TestCompressImage:
+    def _make_png(self, w: int, h: int) -> bytes:
+        from io import BytesIO
+
+        from PIL import Image
+        img = Image.new("RGB", (w, h), color=(255, 0, 0))
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_resize_large_image(self):
+        """超大图片缩到最长边 1280px。"""
+        raw = self._make_png(2000, 1000)
+        compressed, mime = ai._compress_image(raw)
+        from io import BytesIO
+
+        from PIL import Image
+        img = Image.open(BytesIO(compressed))
+        assert max(img.size) <= 1280
+        assert mime == "image/jpeg"
+
+    def test_small_image_not_enlarged(self):
+        """小图不放大。"""
+        raw = self._make_png(400, 300)
+        compressed, mime = ai._compress_image(raw)
+        from io import BytesIO
+
+        from PIL import Image
+        img = Image.open(BytesIO(compressed))
+        assert img.size == (400, 300)
+
+    def test_output_is_jpeg(self):
+        """输出始终是 JPEG。"""
+        raw = self._make_png(100, 100)
+        compressed, mime = ai._compress_image(raw)
+        assert mime == "image/jpeg"
+        # JPEG magic bytes
+        assert compressed[:3] == b"\xff\xd8\xff"
+
+    def test_invalid_image_returns_original(self):
+        """非图片数据 → 原样返回。"""
+        raw = b"not an image"
+        compressed, mime = ai._compress_image(raw)
+        assert compressed == raw
+        assert mime == "image/jpeg"
+
+    def test_rgba_converted_to_rgb(self):
+        """RGBA 透明通道转 RGB。"""
+        from io import BytesIO
+
+        from PIL import Image
+        img = Image.new("RGBA", (100, 100), color=(255, 0, 0, 128))
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        compressed, _ = ai._compress_image(buf.getvalue())
+        result = Image.open(BytesIO(compressed))
+        assert result.mode == "RGB"
+
+
+# ---------------------------------------------------------------------------
 # parse_screenshot
 # ---------------------------------------------------------------------------
 class TestParseScreenshot:

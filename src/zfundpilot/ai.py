@@ -611,6 +611,34 @@ def _resolve_codes(items: list[dict]) -> list[dict]:
     return items
 
 
+def _compress_image(image_bytes: bytes, max_size: int = 1280, quality: int = 85) -> tuple[bytes, str]:
+    """缩放图片到最长边 max_size 并转为 JPEG，减少视觉模型 token 消耗。
+
+    返回 (compressed_bytes, mime)。
+    缩放失败（非图片/解码错误）时原样返回，mime 用通用 image/jpeg。
+    """
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        img = Image.open(BytesIO(image_bytes))
+        # RGBA → RGB（JPEG 不支持透明通道）
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        # 缩放：最长边不超过 max_size
+        w, h = img.size
+        if max(w, h) > max_size:
+            scale = max_size / max(w, h)
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=quality)
+        return buf.getvalue(), "image/jpeg"
+    except Exception:
+        logger.debug("图片缩放失败，使用原图", exc_info=True)
+        return image_bytes, "image/jpeg"
+
+
 def parse_screenshot(image_bytes: bytes, mode: str, channel_hint: str = "", content_type: str = "", user_hint: str = "") -> dict:
     """调用视觉模型解析截图，返回结构化数据。
 
@@ -618,13 +646,14 @@ def parse_screenshot(image_bytes: bytes, mode: str, channel_hint: str = "", cont
     返回 {"ok": bool, "items": [...], "error": str}。
     每条 item 的 fund_code 已通过 resolve_fund_code 后处理填充/标记。
     不写库，交前端预览编辑后批量保存。
+    图片自动缩放到最长边 1280px 并转 JPEG，减少 token 消耗。
     """
     if not config.AI_VISION_BASE_URL or not config.AI_VISION_API_KEY or not config.AI_VISION_MODEL:
         return {"ok": False, "items": [], "error": "视觉模型未配置，请先到设置页面配置。"}
 
     prompt = _build_screenshot_prompt(mode, channel_hint, user_hint)
-    mime = content_type if content_type.startswith("image/") else "image/jpeg"
-    data_url = f"data:{mime};base64," + base64.b64encode(image_bytes).decode("ascii")
+    compressed, mime = _compress_image(image_bytes)
+    data_url = f"data:{mime};base64," + base64.b64encode(compressed).decode("ascii")
 
     url = f"{config.AI_VISION_BASE_URL.rstrip('/')}/chat/completions"
     headers = {

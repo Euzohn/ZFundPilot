@@ -376,6 +376,76 @@ class TestCleanupStaleAlerts:
         mock_update.assert_not_called()
 
 
+    def test_empty_fetch_cleanup(self):
+        """基金无分红历史（fetch 返回空）→ fetched_funds 包含 code → ghost 被清理。
+
+        复现 017641 摩根标普500 QDII 场景：AkShare 返回空 DataFrame，
+        fund 不加入 fetched_funds 导致 ghost alert 永远不被清理。
+        修复：fetched_funds.add(code) 移到 if not rows 之前。
+        """
+        pending_alerts = [
+            {"id": 1, "fund_code": "017641", "ex_date": "2026-06-26"},
+        ]
+        fetched_ex_dates = set()  # 空基金无任何 ex_date
+        fetched_funds = {"017641"}  # 修复后空 fetch 也加入 fetched_funds
+
+        with (
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=pending_alerts),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+        ):
+            cleaned = fetch_dividend._cleanup_stale_alerts(fetched_ex_dates, fetched_funds)
+
+        assert cleaned == 1
+        mock_update.assert_called_once()
+        assert mock_update.call_args[1]["status"] == "ignored"
+
+    def test_ttl_cleanup_old_pending(self):
+        """pending 超 _LOOKBACK_DAYS 天 → 自动 ignore（兜底清理）。
+
+        created_at 用 SQLite datetime('now','localtime') 格式（朴素无时区），
+        验证代码对朴素 datetime 补时区后能正确比较。
+        """
+        from datetime import datetime, timedelta
+
+        old_date = (datetime.now() - timedelta(days=91)).strftime("%Y-%m-%d %H:%M:%S")
+        pending_alerts = [
+            {"id": 1, "fund_code": "000001", "ex_date": "2026-06-26",
+             "created_at": old_date},
+        ]
+        fetched_ex_dates = set()
+        fetched_funds = set()
+
+        with (
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=pending_alerts),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+        ):
+            cleaned = fetch_dividend._cleanup_stale_alerts(fetched_ex_dates, fetched_funds)
+
+        assert cleaned == 1
+        assert mock_update.call_args[1]["status"] == "ignored"
+
+    def test_ttl_not_clean_recent(self):
+        """pending 不到 _LOOKBACK_DAYS 天 → 不被 TTL 清理。"""
+        from datetime import datetime, timedelta
+
+        recent_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+        pending_alerts = [
+            {"id": 1, "fund_code": "000001", "ex_date": "2026-06-26",
+             "created_at": recent_date},
+        ]
+        fetched_ex_dates = set()
+        fetched_funds = set()
+
+        with (
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=pending_alerts),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+        ):
+            cleaned = fetch_dividend._cleanup_stale_alerts(fetched_ex_dates, fetched_funds)
+
+        assert cleaned == 0
+        mock_update.assert_not_called()
+
+
 class TestDividendAlertsDB:
     """dividend_alerts 表 CRUD 测试（用临时数据库）。"""
 
@@ -600,3 +670,62 @@ class TestRunDividendCheck:
         with patch("zfundpilot.fetch_dividend.check_dividends",
                    side_effect=Exception("network")):
             scheduler._run_dividend_check()  # 不应抛异常
+
+
+class TestCheckDividendsGhostCleanup:
+    """check_dividends 空 fetch + ghost 清理集成测试。"""
+
+    def setup_method(self):
+        fetch_dividend._last_cleanup_count = 0
+        fetch_dividend._DIV_CACHE.clear()
+
+    def test_empty_fetch_cleanup_ghost(self):
+        """空 fetch 结果的基金：fetched_funds 包含 code → ghost 被清理。
+
+        复现 017641 场景：AkShare 对该基金返回空 DataFrame，
+        check_dividends 不应跳过它的 ghost alert。
+        """
+        from zfundpilot import analysis
+
+        pos = MagicMock(fund_code="017641", is_open=True, held_shares=100)
+        pos.fund_name = "摩根标普500指数"
+
+        fund = MagicMock(fund_code="017641", fund_name="摩根标普500", dividend_method="cash")
+
+        # _fetch_fund_dividends 返回空 → 模拟 AkShare 对 QDII 无分红数据
+        with (
+            patch.object(analysis, "calculate_positions", return_value=[pos]),
+            patch("zfundpilot.fetch_dividend.db.get_funds", return_value=[fund]),
+            patch("zfundpilot.fetch_dividend._fetch_fund_dividends", return_value=[]),
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=[
+                {"id": 1, "fund_code": "017641", "ex_date": "2026-06-26"},
+            ]),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+            patch("zfundpilot.fetch_dividend.db.get_transactions", return_value=[]),
+        ):
+            fetch_dividend.check_dividends()
+
+        assert mock_update.call_count == 1
+        assert mock_update.call_args[1]["status"] == "ignored"
+
+    def test_exception_fetch_preserves_alert(self):
+        """fetch 异常的基金：不加入 fetched_funds → ghost 不被清理。"""
+        from zfundpilot import analysis
+
+        pos = MagicMock(fund_code="000001", is_open=True, held_shares=1000)
+        fund = MagicMock(fund_code="000001", fund_name="基金A", dividend_method="cash")
+
+        with (
+            patch.object(analysis, "calculate_positions", return_value=[pos]),
+            patch("zfundpilot.fetch_dividend.db.get_funds", return_value=[fund]),
+            patch("zfundpilot.fetch_dividend._fetch_fund_dividends",
+                  side_effect=Exception("network error")),
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=[
+                {"id": 1, "fund_code": "000001", "ex_date": "2026-06-26"},
+            ]),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+            patch("zfundpilot.fetch_dividend.db.get_transactions", return_value=[]),
+        ):
+            fetch_dividend.check_dividends()
+
+        mock_update.assert_not_called()

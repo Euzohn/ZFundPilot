@@ -85,6 +85,7 @@ nohup uvicorn zfundpilot.api:app --host 0.0.0.0 --port 8000 > zfundpilot.log 2>&
 | `ZFUNDPILOT_SECRET` | 自动生成 | **仅首次启动**时用于初始化 token 签名密钥。首次启动后自动生成随机密钥并存储在 `data/auth.json` |
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式（工作日 21:00）。可在设置页面暂停/启用 |
 | `ZFUNDPILOT_TIMEZONE` | `Asia/Shanghai` | 系统时区（IANA 名称），影响定时任务触发时间、交易日期、日志时间戳。需重启应用生效 |
+| `ZFUNDPILOT_TRUSTED_PROXIES` | 空 | 反向代理信任网段，逗号分隔 CIDR（如 `127.0.0.1/32,10.0.0.0/8`）。仅在 Nginx/Caddy 等反代后需配置，用于登录限流正确读取客户端 IP。公网直连不要设置 |
 
 ```bash
 # 示例：设置用户名 + 访问密码 + 自定义数据目录
@@ -189,6 +190,8 @@ sudo firewall-cmd --permanent --add-port=8080/tcp && sudo firewall-cmd --reload
 | `ZFUNDPILOT_NAV_CRON` | 可选，默认 `0 21 * * 1-5` | 净值定时更新 cron 表达式（工作日 21:00）。可在设置页面暂停/启用 |
 | `ZFUNDPILOT_HOME` | 可选 | 数据目录位置，默认 `/app/data` |
 | `ZFUNDPILOT_TRUSTED_PROXIES` | 可选 | 反向代理信任网段，逗号分隔 CIDR（如 `127.0.0.1/32,10.0.0.0/8`）。仅在 Nginx/Caddy 等反代后需配置，用于登录限流正确读取客户端 IP |
+| `ZFUNDPILOT_TIMEZONE` | 可选，默认 `Asia/Shanghai` | 系统时区（IANA 名称），影响定时任务触发时间、交易日期、日志时间戳。Dockerfile 已内置 `TZ=Asia/Shanghai`，海外用户改时区需同时设置此项。需重启容器生效 |
+| `CONTAINER_NAME` | 可选，默认 `zfundpilot` | 容器名称。同一机器运行多实例时需为每个实例设置不同名称，避免容器名冲突 |
 
 > ⚠️ 服务器对外暴露时**务必设置 `ZFUNDPILOT_PASSWORD`**，否则任何人都能查看你的持仓。
 

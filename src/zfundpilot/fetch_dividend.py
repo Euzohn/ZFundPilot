@@ -139,16 +139,43 @@ def _cleanup_stale_alerts(
 ) -> int:
     """校验 pending 分红提醒是否仍存在于源数据中，不存在则标记为 ignored。
 
-    仅校验 fetched_funds 中的基金（成功获取到非空数据的基金），
-    避免因网络错误返回空列表误清 valid 提醒。
+    两层清理：
+    1. fetched_funds 中的基金：源数据无此 ex_date → ignored（幽灵数据清理）
+    2. pending 超 _LOOKBACK_DAYS 天：自动 ignore（兜底，覆盖基金已清仓/
+       抓取持续失败/缓存返回旧数据等场景）
 
     返回清理数量。
     """
     pending = db.get_dividend_alerts(status="pending")
+    now = datetime.now(config.TIMEZONE)
+    cutoff = now - timedelta(days=_LOOKBACK_DAYS)
     cleaned = 0
     for alert in pending:
         code = alert["fund_code"]
         ex_date = alert.get("ex_date", "")
+        # --- 兜底：pending 超 90 天 → 自动 ignore ---
+        created = alert.get("created_at", "")
+        if created:
+            try:
+                created_dt = datetime.fromisoformat(created)
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=config.TIMEZONE)
+                if created_dt < cutoff:
+                    db.update_dividend_alert(
+                        alert["id"],
+                        status="ignored",
+                        resolved_at=now.isoformat(),
+                    )
+                    logger.info(
+                        "[fetch_dividend] 自动清理过期分红提醒: %s %s "
+                        "(pending 超 %d 天)",
+                        code, ex_date, _LOOKBACK_DAYS,
+                    )
+                    cleaned += 1
+                    continue
+            except (ValueError, TypeError):
+                pass
+        # --- 正常：fetched_funds 中无此 ex_date → ignored ---
         if not ex_date:
             continue
         if code not in fetched_funds:
@@ -158,7 +185,7 @@ def _cleanup_stale_alerts(
         db.update_dividend_alert(
             alert["id"],
             status="ignored",
-            resolved_at=datetime.now(config.TIMEZONE).isoformat(),
+            resolved_at=now.isoformat(),
         )
         logger.info(
             "[fetch_dividend] 自动清理幽灵分红提醒: %s %s (源数据已无此记录)",
@@ -210,9 +237,9 @@ def check_dividends() -> list[DividendEvent]:
                 rows = future.result()
             except Exception:
                 continue
+            fetched_funds.add(code)
             if not rows:
                 continue
-            fetched_funds.add(code)
             for row in rows:
                 ev = _parse_dividend_row(row, code, fund_name)
                 if not ev or not ev.ex_date:

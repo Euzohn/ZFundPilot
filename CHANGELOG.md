@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Added
+- 截图导入交易/持仓对账：Transactions 页新增「截图导入」按钮，上传购买记录或持仓截图，AI 视觉模型自动解析为结构化数据。两种模式：交易模式（解析交易行 → 预览编辑 → 批量保存）；持仓对账模式（解析持仓 → 按渠道对比已记录份额 → 生成差额调整交易 → 勾选确认）。视觉模型独立配置（Settings 新增视觉模型卡片，4 个预设：智谱 GLM-4V 推荐/通义千问 VL/OpenAI GPT-4o/Kimi 视觉），与对话 AI 解耦。截图常只有基金名称无代码，后端 `resolve_fund_code` 用 fund universe 自动解析名称→代码（精确/多候选下拉选/无匹配手填），模型输出的代码经 `verify_fund_code` 校验防编造。对账成本用 latest_nav 估算并标注「请核实」，预览表可编辑
 - 自选页列头点击排序：复用 `SortHeader` 组件（与 Screener/Positions/Returns/Transactions 一致），6 列可排序（代码/名称/类型/板块/分组/添加时间），默认按添加时间降序。点击同列切换升降序，切换列默认降序
 
 ### Fixed

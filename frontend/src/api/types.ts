@@ -529,3 +529,74 @@ export interface AutoInvestPlan {
   created_at: string
   updated_at: string
 }
+
+// ── 视觉模型配置 ──
+export interface VisionConfig {
+  base_url: string
+  model: string
+  has_key: boolean
+}
+
+// ── 截图解析结果 ──
+export interface FundCandidate {
+  code: string
+  name: string
+}
+
+export interface ParsedTxItem {
+  fund_name: string
+  fund_code: string | null
+  action: string
+  date: string | null
+  amount: number | null
+  shares: number | null
+  nav: number | null
+  fee: number | null
+  channel: string
+  note: string
+  is_t1: boolean
+  code_status: 'exact' | 'multiple' | 'none'
+  candidates: FundCandidate[]
+}
+
+export interface ParsedHoldingItem {
+  fund_name: string
+  fund_code: string | null
+  shares: number | null
+  market_value: number | null
+  code_status: 'exact' | 'multiple' | 'none'
+  candidates: FundCandidate[]
+}
+
+export interface ParseScreenshotResult {
+  ok: boolean
+  items: ParsedTxItem[] | ParsedHoldingItem[]
+  error: string
+}
+
+// ── 持仓对账 ──
+export interface ReconcileDiffItem {
+  fund_code: string
+  fund_name: string
+  recorded_shares: number
+  screenshot_shares: number
+  delta: number
+  status: 'buy' | 'sell' | 'ok' | 'new' | 'maybe_sold'
+  suggested_tx: {
+    fund_code: string
+    action: string
+    date: string | null
+    amount: number | null
+    shares: number
+    nav: number | null
+    fee: number
+    channel: string
+    note: string
+    is_t1: boolean
+  } | null
+}
+
+export interface ReconcileResponse {
+  channel: string
+  items: ReconcileDiffItem[]
+}

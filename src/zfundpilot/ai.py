@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
+import re
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -502,3 +504,203 @@ async def chat_stream(
     except Exception as e:
         logger.exception("LLM chat stream error")
         yield json.dumps({"error": f"内部错误: {e}"}, ensure_ascii=False)
+
+
+# ---------------------------------------------------------------------------
+# 视觉模型 — 截图解析（交易流水 / 持仓对账）
+# ---------------------------------------------------------------------------
+# 1x1 红点 PNG，用于测试视觉模型是否支持图片输入
+_TEST_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+
+
+def _build_screenshot_prompt(mode: str, channel_hint: str = "") -> str:
+    """根据模式构建视觉解析提示词。布局无关，适用于支付宝/理财通/天天基金/银行 app 截图。"""
+    if mode == "holdings":
+        return """你是基金持仓截图解析助手。从用户上传的截图中提取当前持仓信息。
+
+提取字段，输出 JSON 数组，每元素：
+- fund_name: 基金名称（必填，从截图中识别）
+- fund_code: 6 位代码（截图可见则填，否则填 null，切勿编造）
+- shares: 持有份额（数字，不确定填 null）
+- market_value: 当前市值（数字，不确定填 null）
+
+规则：
+- fund_code 不确定时填 null，切勿编造
+- 不确定的数值填 null，切勿编造
+- 只输出 JSON 数组，不要输出任何其他文字
+- 截图中有几只基金就输出几个元素"""
+
+    # transactions 模式
+    channel_line = f"\n- 渠道：可参考「{channel_hint}」，但从截图 UI 识别到的渠道优先" if channel_hint else "\n- 渠道：从截图 UI 识别（支付宝/理财通/天天基金/银行/券商/其它），识别不到留空串"
+    return f"""你是基金交易截图解析助手。从用户上传的截图中提取交易记录。
+
+提取字段，输出 JSON 数组，每元素：
+- fund_name: 基金名称（必填，从截图中识别）
+- fund_code: 6 位代码（截图可见则填，否则填 null，切勿编造）
+- action: 交易类型，buy(买入)、sell(卖出)、dividend(现金分红)、reinvest(红利再投资)
+- date: YYYY-MM-DD 格式日期（不确定填 null）
+- amount: 金额（数字，不确定填 null）
+- shares: 份额（数字，不确定填 null）
+- nav: 单位净值（数字，不确定填 null）
+- fee: 手续费（数字，不确定填 null，无则填 0）
+- channel: 渠道（支付宝/理财通/天天基金/银行/券商/其它）
+- is_t1: 截图显示「待确认」「T+1」「15:00 后下单」时为 true，否则 false
+
+规则：
+- 单笔确认页或多行流水列表都输出 JSON 数组
+- 买入待确认：amount 已知、shares 填 null、is_t1 为 true
+- fund_code 不确定时填 null，切勿编造
+- 不确定的数值填 null，切勿编造
+- 只输出 JSON 数组，不要输出任何其他文字
+{channel_line}"""
+
+
+def _extract_json_list(content: str) -> list | None:
+    """从模型返回内容中提取 JSON 数组。容错：```json 块 / 裸 JSON / 前后多余文字。"""
+    m = re.search(r"```(?:json)?\s*([\s\S]*?)```", content)
+    if m:
+        try:
+            parsed = json.loads(m.group(1).strip())
+            if isinstance(parsed, list):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+    try:
+        parsed = json.loads(content.strip())
+        if isinstance(parsed, list):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+    start = content.find("[")
+    end = content.rfind("]")
+    if start != -1 and end > start:
+        try:
+            parsed = json.loads(content[start : end + 1])
+            if isinstance(parsed, list):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def _resolve_codes(items: list[dict]) -> list[dict]:
+    """对每条记录用 fund universe 解析名称→代码，填充 code_status + candidates。
+
+    - 模型给了 code → 校验是否在 universe，不存在则丢弃走名称匹配（防编造）
+    - 仅有 name → resolve_fund_code 精确/多候选/无匹配
+    """
+    from . import fund_filter
+
+    for item in items:
+        name = str(item.get("fund_name", "") or "")
+        code = item.get("fund_code")
+        if code:
+            code = str(code).strip()
+            if code and fund_filter.verify_fund_code(code):
+                item["fund_code"] = code
+                item["code_status"] = "exact"
+                item["candidates"] = []
+                continue
+            # code 不在 universe，丢弃走名称匹配
+            item["fund_code"] = None
+        result = fund_filter.resolve_fund_code(name)
+        item["fund_code"] = result["code"]
+        item["code_status"] = result["status"]
+        item["candidates"] = result["candidates"]
+    return items
+
+
+def parse_screenshot(image_bytes: bytes, mode: str, channel_hint: str = "") -> dict:
+    """调用视觉模型解析截图，返回结构化数据。
+
+    mode: "transactions"（交易流水）| "holdings"（持仓对账）
+    返回 {"ok": bool, "items": [...], "error": str}。
+    每条 item 的 fund_code 已通过 resolve_fund_code 后处理填充/标记。
+    不写库，交前端预览编辑后批量保存。
+    """
+    if not config.AI_VISION_BASE_URL or not config.AI_VISION_API_KEY or not config.AI_VISION_MODEL:
+        return {"ok": False, "items": [], "error": "视觉模型未配置，请先到设置页面配置。"}
+
+    prompt = _build_screenshot_prompt(mode, channel_hint)
+    data_url = "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode("ascii")
+
+    url = f"{config.AI_VISION_BASE_URL.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {config.AI_VISION_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    body: dict[str, Any] = {
+        "model": config.AI_VISION_MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                ],
+            }
+        ],
+        "stream": False,
+    }
+
+    try:
+        resp = httpx.post(url, headers=headers, json=body, timeout=60)
+        if resp.status_code != 200:
+            return {"ok": False, "items": [], "error": f"API 返回 {resp.status_code}: {resp.text[:200]}"}
+        data = resp.json()
+        choices = data.get("choices") or []
+        if not choices:
+            return {"ok": False, "items": [], "error": "模型未返回内容"}
+        content = choices[0].get("message", {}).get("content", "")
+        items = _extract_json_list(content)
+        if items is None:
+            return {"ok": False, "items": [], "error": "模型返回内容无法解析为 JSON"}
+        items = _resolve_codes(items)
+        return {"ok": True, "items": items, "error": ""}
+    except httpx.ConnectError:
+        logger.exception("parse_screenshot 连接失败")
+        return {"ok": False, "items": [], "error": "连接失败，请检查网络或 Base URL"}
+    except httpx.TimeoutException:
+        return {"ok": False, "items": [], "error": "请求超时（60s），请稍后重试"}
+    except Exception as e:
+        logger.exception("parse_screenshot 异常")
+        return {"ok": False, "items": [], "error": f"内部错误: {e}"}
+
+
+def test_vision_connection() -> dict:
+    """测试视觉模型是否可用（发 1×1 测试图，验证模型支持图片输入）。"""
+    if not config.AI_VISION_BASE_URL or not config.AI_VISION_API_KEY or not config.AI_VISION_MODEL:
+        return {"ok": False, "error": "配置不完整（Base URL / API Key / Model）"}
+    try:
+        data_url = f"data:image/png;base64,{_TEST_PNG_B64}"
+        url = f"{config.AI_VISION_BASE_URL.rstrip('/')}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {config.AI_VISION_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "model": config.AI_VISION_MODEL,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "回复 ok"},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                }
+            ],
+            "max_tokens": 10,
+            "stream": False,
+        }
+        resp = httpx.post(url, headers=headers, json=body, timeout=30)
+        if resp.status_code == 200:
+            return {"ok": True, "model": config.AI_VISION_MODEL}
+        logger.error("视觉模型测试返回 %s: %s", resp.status_code, resp.text[:300])
+        return {"ok": False, "error": f"API 返回 {resp.status_code}（模型可能不支持图片输入）"}
+    except httpx.ConnectError:
+        return {"ok": False, "error": "连接失败，请检查 Base URL 或网络"}
+    except httpx.TimeoutException:
+        return {"ok": False, "error": "请求超时（30s）"}
+    except Exception:
+        logger.exception("视觉模型测试连接异常")
+        return {"ok": False, "error": "连接失败，请稍后再试"}

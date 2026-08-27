@@ -20,13 +20,14 @@ import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2, Receipt, ArrowUpDown, Repeat, Gift } from "lucide-react"
+import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, ChevronDown, Loader2, Receipt, ArrowUpDown, Repeat, Gift, Camera } from "lucide-react"
 import { getChannels, getChannelsAsync, saveChannels } from "@/lib/channels"
 import { makeSortHeader } from "@/components/SortHeader"
 import { useLang } from "@/i18n/LanguageContext"
 import ConfirmDialog from "@/components/ConfirmDialog"
 import TransactionDetailDialog from "@/components/TransactionDetailDialog"
 import DividendCheckDialog from "@/components/DividendCheckDialog"
+import ScreenshotImportDialog from "@/components/ScreenshotImportDialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 
 function actionBadgeClass(action: string): string {
@@ -51,6 +52,7 @@ export default function Transactions() {
   const [autoInvestPrefillCode, setAutoInvestPrefillCode] = useState<string | null>(null)
   const [autoInvestPrefillChannel, setAutoInvestPrefillChannel] = useState<string | undefined>(undefined)
   const [dividendDialogOpen, setDividendDialogOpen] = useState(false)
+  const [screenshotOpen, setScreenshotOpen] = useState(false)
   const [dividendAlertCount, setDividendAlertCount] = useState(0)
   const consumedEditTx = useRef(false)
 
@@ -119,6 +121,14 @@ export default function Transactions() {
   return (
     <div className="space-y-6">
       <PageHeader title={t.transactions.title} />
+      <div className="flex items-center justify-end">
+        <Button variant="outline" size="sm" onClick={() => setScreenshotOpen(true)}>
+          <Camera className="mr-1.5 h-4 w-4" />
+          <span className="hidden sm:inline">{t.transactions.screenshotImport}</span>
+          <span className="sm:hidden">截图</span>
+        </Button>
+      </div>
+      <ScreenshotImportDialog open={screenshotOpen} onOpenChange={setScreenshotOpen} onImported={() => setListReloadKey((k) => k + 1)} />
       <DividendCheckDialog open={dividendDialogOpen} onOpenChange={setDividendDialogOpen} />
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-4 sm:inline-flex sm:w-auto">

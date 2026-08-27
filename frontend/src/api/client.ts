@@ -32,6 +32,9 @@ import type {
   KeywordMaps,
   SchedulerStatus,
   TpSlConfig,
+  VisionConfig,
+  ParseScreenshotResult,
+  ReconcileResponse,
 } from "./types"
 import { getToken, clearToken } from "@/lib/auth"
 import { getCurrentLang } from "@/i18n/LanguageContext"
@@ -117,6 +120,17 @@ export const api = {
   // AI Connection Test
   testAIConnection: () =>
     request<{ ok: boolean; provider?: string; model?: string; has_search?: boolean; error?: string }>("/ai/test", { method: "POST" }),
+
+  // Vision Model Config
+  getVisionConfig: () =>
+    request<VisionConfig>("/settings/vision"),
+  updateVisionConfig: (base_url: string, api_key: string, model: string) =>
+    request<{ ok: boolean }>("/settings/vision", {
+      method: "PUT",
+      body: JSON.stringify({ base_url, api_key, model }),
+    }),
+  testVision: () =>
+    request<{ ok: boolean; model?: string; error?: string }>("/ai/vision-test", { method: "POST" }),
 
   // AI Usage Daily (for sparkline)
   getAIUsageDaily: (days = 7) => request<AIUsageDaily[]>(`/ai/usage/daily?days=${days}`),
@@ -279,6 +293,33 @@ export const api = {
         clear_existing: clearExisting,
         fetch_meta: fetchMeta,
       }),
+    }),
+
+  // Screenshot Import (vision model)
+  parseScreenshot: async (file: File | Blob, mode: 'transactions' | 'holdings', channelHint: string = ''): Promise<ParseScreenshotResult> => {
+    const form = new FormData()
+    form.append("file", file)
+    const token = getToken()
+    const headers: Record<string, string> = {}
+    if (token) headers["Authorization"] = `Bearer ${token}`
+    const res = await fetch(`${BASE}/ai/parse-screenshot?mode=${mode}&channel_hint=${encodeURIComponent(channelHint)}`, {
+      method: "POST",
+      body: form,
+      headers,
+    })
+    if (res.status === 401) {
+      clearToken()
+      window.location.reload()
+      throw new Error(ERR_401[getCurrentLang()])
+    }
+    if (!res.ok) throw new Error(await res.text().catch(() => res.statusText))
+    return res.json()
+  },
+
+  reconcileHoldings: (items: { fund_code: string; shares: number | null; market_value: number | null }[], channel: string) =>
+    request<ReconcileResponse>("/ai/reconcile", {
+      method: "POST",
+      body: JSON.stringify({ items, channel }),
     }),
 
   // Preferences

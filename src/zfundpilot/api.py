@@ -304,6 +304,23 @@ class AIConfigUpdate(BaseModel):
     custom_prompt: str = ""
 
 
+class VisionConfigUpdate(BaseModel):
+    base_url: str
+    api_key: str = ""
+    model: str
+
+
+class ReconcileItem(BaseModel):
+    fund_code: str
+    shares: float | None = None
+    market_value: float | None = None
+
+
+class ReconcileRequest(BaseModel):
+    items: list[ReconcileItem]
+    channel: str = ""
+
+
 class ChatRequest(BaseModel):
     messages: list[dict[str, str]]
 
@@ -348,6 +365,52 @@ def get_system_prompt(include_context: bool = True) -> dict[str, Any]:
 def test_ai_connection() -> dict[str, Any]:
     """测试当前 AI 配置是否可用。"""
     return ai.test_connection()
+
+
+@app.get("/api/settings/vision")
+def get_vision_config() -> dict[str, Any]:
+    """返回视觉模型配置（不返回明文 API Key）。"""
+    return {
+        "base_url": config.AI_VISION_BASE_URL,
+        "model": config.AI_VISION_MODEL,
+        "has_key": bool(config.AI_VISION_API_KEY),
+    }
+
+
+@app.put("/api/settings/vision")
+def update_vision_config(request: Request, body: VisionConfigUpdate) -> dict[str, Any]:
+    """保存视觉模型配置。api_key 为空时保留原值。"""
+    api_key = body.api_key if body.api_key else config.AI_VISION_API_KEY
+    config.update_vision_config(body.base_url, api_key, body.model)
+    db.log_audit("update_vision_config", ip=_get_client_ip(request),
+                 username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                 detail={"base_url": body.base_url, "model": body.model, "has_key": bool(body.api_key)})
+    return {"ok": True}
+
+
+@app.post("/api/ai/vision-test")
+def test_vision_connection() -> dict[str, Any]:
+    """测试视觉模型是否可用（发 1×1 测试图）。"""
+    return ai.test_vision_connection()
+
+
+@app.post("/api/ai/parse-screenshot")
+async def parse_screenshot(file: UploadFile = File(...), mode: str = "transactions", channel_hint: str = "") -> dict[str, Any]:
+    """上传截图，视觉模型解析为结构化数据（不落库）。
+
+    mode: "transactions"（交易流水）| "holdings"（持仓对账）
+    """
+    image = await file.read()
+    if not image:
+        return {"ok": False, "items": [], "error": "图片为空"}
+    return ai.parse_screenshot(image, mode, channel_hint)
+
+
+@app.post("/api/ai/reconcile")
+def reconcile(body: ReconcileRequest) -> dict[str, Any]:
+    """持仓对账：截图持仓 vs 已记录持仓（按渠道），生成差额调整交易建议。"""
+    items = [{"fund_code": it.fund_code, "shares": it.shares, "market_value": it.market_value} for it in body.items]
+    return analysis.reconcile_holdings(items, body.channel)
 
 
 @app.get("/api/ai/usage/daily")

@@ -44,22 +44,22 @@ ZFundPilot/
 │   ├── fetch_estimate.py   # 基金实时估值（东财估值 + 指数/ETF 兜底）+ 指数历史收盘价持久化
 │   ├── fetch_dividend.py  # 基金分红检测（AkShare 分红送配 + 90 天窗口 + 交易去重 + 幽灵提醒自动清理）
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
-│   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）
-│   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）
+│   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）+ resolve_fund_code 名称→代码解析 + verify_fund_code 校验
+│   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）+ reconcile_holdings 截图持仓对账
 │   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI）
 │   ├── rebalance.py         # 再平衡建议
 │   ├── backtest.py          # 定投策略回测（DCA + 一次性投入对比 + XIRR）
 │   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延）
 │   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
 │   ├── scheduler.py         # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查 + 基准指数持久化
-│   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）
+│   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）+ 视觉模型截图解析（parse_screenshot + resolve_fund_code 名称→代码后处理）
 │   └── data_io.py           # CSV 导入/导出 + 全量备份 ZIP
 ├── frontend/src/            # React 前端
 │   ├── App.tsx              # 路由（/ → Home 独立页，其余在 Layout 内）
 │   ├── pages/               # 15 个页面
 │   │   ├── Home.tsx         # 首页（brutalist 战术终端风格，中英双语切换）
 │   │   ├── Overview.tsx     # 组合总览
-│   │   ├── Transactions.tsx # 交易管理（录入/流水/CSV/定投计划）
+│   │   ├── Transactions.tsx # 交易管理（录入/流水/CSV/定投计划/截图导入）
 │   │   ├── NavUpdate.tsx    # 净值更新
 │   │   ├── Positions.tsx    # 持仓明细
 │   │   ├── Returns.tsx      # 收益分析（曲线/基准对比/排名/日历/止盈止损提醒）
@@ -72,7 +72,7 @@ ZFundPilot/
 │   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 持仓卡片 + 排名 + 档案 + 顶栏：对比/自选/买入/卖出/定投快捷入口）
 │   │   ├── Settings.tsx     # 设置（账户/AI/偏好/止盈止损提醒）
 │   │   └── Login.tsx        # 登录
-│   ├── components/          # Layout + Logo 系列 + PnLCalendar + TpSlAlertsPanel + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
+│   ├── components/          # Layout + Logo 系列 + PnLCalendar + TpSlAlertsPanel + ScreenshotImportDialog + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
 │   ├── i18n/                # LanguageContext（Provider + useLang hook + getCurrentLang）+ zh.ts + en.ts
 │   ├── api/                 # client.ts + types.ts
 │   ├── hooks/               # useCountUp（animejs 数字动画，formatter 用 ref 存储避免 effect 重跑）
@@ -157,6 +157,7 @@ ZFundPilot/
 - 静态文件: 生产模式挂载 `frontend/dist/` 到 `/`
 - i18n 序列化: `/api/risk` flags 和 `/api/rebalance` advice 输出 `code`+`params`，前端 `backendLabels.ts` 按 code 翻译
 - 自选列表: `POST/GET/DELETE /api/watchlist`，加入时自动获取基金 meta 并 upsert 到 `funds` 表
+- 截图导入: `POST /api/ai/parse-screenshot`（multipart 上传截图 → 视觉模型解析 → 返回结构化数据，不落库）+ `POST /api/ai/reconcile`（持仓对账 → 生成差额调整交易建议）+ `GET/PUT /api/settings/vision`（视觉模型配置）+ `POST /api/ai/vision-test`（测试视觉模型）。批量保存复用 `POST /api/csv/import`
 - 数据备份: `GET /api/export/zip`，ZIP 含 5 个 CSV（交易/基金/自选/定投/偏好），净值历史不含
 - 基准对比: `GET /api/portfolio/benchmark?indices=000300,000001,399006`，返回基准累计收益率（`close / close_at_start - 1`），按组合曲线日期 ffill 对齐。`BENCHMARK_INDICES` 白名单控制可选指数
 
@@ -164,7 +165,7 @@ ZFundPilot/
 
 - 路径: `ZFUNDPILOT_HOME` 环境变量 → 项目根 → `data/` 目录
 - 认证: `auth.json` 存储 `{username, password_hash, secret}`；`ZFUNDPILOT_USERNAME`/`ZFUNDPILOT_PASSWORD` 仅首次迁移；密码哈希为 bcrypt（兼容旧 SHA-256）；`ZFUNDPILOT_TRUSTED_PROXIES` 控制代理信任网段
-- AI: `ai_config.json` 存储 `{base_url, api_key, model, web_search}`，其中 `api_key` 加密存储（见 `crypto.py`）
+- AI: `ai_config.json` 存储 `{base_url, api_key, model, web_search, custom_prompt, vision_base_url, vision_api_key, vision_model}`，其中 `api_key` 和 `vision_api_key` 加密存储（见 `crypto.py`）
 - 定时: `ZFUNDPILOT_NAV_CRON` 环境变量（默认 `0 21 * * 1-5`）
 
 ### crypto.py — 敏感字段加密
@@ -442,6 +443,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### Unreleased
 
+- feat: 截图导入交易/持仓对账——Transactions 页新增「截图导入」按钮（`ScreenshotImportDialog`），上传购买记录或持仓截图，AI 视觉模型自动解析。两种模式：交易模式（解析交易行 → 预览编辑 → 批量保存，复用 `POST /api/csv/import`）；持仓对账模式（解析持仓 → 按渠道对比已记录份额 → 生成差额调整交易 → 勾选确认）。视觉模型独立配置（`ai_config.json` 新增 `vision_base_url`/`vision_api_key`/`vision_model`，Settings 新增视觉模型卡片，4 预设：智谱 GLM-4V 推荐/通义千问 VL/GPT-4o/Kimi 视觉）。后端 `ai.parse_screenshot` 非流式调用 `chat/completions`（content 含 image_url），`fund_filter.resolve_fund_code` 用 fund universe 名称→代码解析（精确/多候选前端下拉/无匹配手填），`verify_fund_code` 校验模型输出代码防编造。`analysis.reconcile_holdings` 按渠道对比份额，buy/new 用 latest_nav 估算成本标注「请核实」，maybe_sold 建议卖出全部。新增 `tests/test_vision.py`（29 用例）+ `tests/test_reconcile.py`（9 用例），总测试 178→216
 - feat: 自选页列头点击排序——复用 `SortHeader` 组件（与 Screener/Positions/Returns/Transactions 一致），6 列可排序（代码/名称/类型/板块/分组/添加时间），默认按添加时间降序。点击同列切换升降序，切换列默认降序
 - fix: DividendCheckDialog 关闭时 aria-hidden 警告——点击「记为分红」时 `onOpenChange(false)` + `navigate()` 同时触发，Radix Dialog 在退出动画期间对 `#root` 应用 `aria-hidden`，`onCloseAutoFocus` 尝试恢复焦点到隐藏元素触发浏览器警告。`DialogContent` 添加 `onCloseAutoFocus={(e) => e.preventDefault()}` 阻止焦点恢复
 

@@ -664,3 +664,111 @@ def recalculate_t1_transactions() -> list[dict[str, Any]]:
             "new_fee": tx.fee,
         })
     return fixed
+
+
+# ---------------------------------------------------------------------------
+# 持仓对账（截图导入用）
+# ---------------------------------------------------------------------------
+def reconcile_holdings(screenshot_items: list[dict], channel: str = "") -> dict:
+    """截图持仓与已记录持仓按渠道对账，生成差额调整交易建议。
+
+    screenshot_items: [{fund_code, shares(, market_value)}]（来自视觉解析）
+    channel: 指定渠道过滤持仓（同一基金不同渠道分开计算）
+    返回 {"channel": str, "items": [diff_item]}。
+    diff_item:
+      - status: "buy"(截图多) | "sell"(截图少) | "ok"(一致) | "new"(截图新增) | "maybe_sold"(系统有截图无)
+      - suggested_tx: 建议交易（status="ok" 时为 None）
+    成本基础说明：截图无成本，故 buy/new 的 nav 取 latest_nav（估算）或 market_value/shares，
+    amount = shares×nav，note 标注「请核实」。前端预览表可编辑。
+    """
+    positions = calculate_positions()
+    if channel:
+        positions = [p for p in positions if (p.channel or "") == channel]
+
+    # 已记录持仓：fund_code → position
+    recorded: dict[str, Position] = {p.fund_code: p for p in positions}
+
+    # 截图基金集合
+    shot_codes = set()
+    items: list[dict] = []
+
+    for item in screenshot_items:
+        code = str(item.get("fund_code") or "").strip()
+        shot_shares = item.get("shares")
+        market_value = item.get("market_value")
+        if not code or shot_shares is None:
+            continue
+        try:
+            shot_shares = float(shot_shares)
+        except (TypeError, ValueError):
+            continue
+        shot_codes.add(code)
+
+        pos = recorded.get(code)
+        rec_shares = pos.held_shares if pos else 0.0
+        latest_nav = pos.latest_nav if pos else None
+
+        # 新基金（系统无记录）：用 market_value/shares 估算 nav
+        if pos is None and market_value and shot_shares:
+            try:
+                latest_nav = round(float(market_value) / shot_shares, 4)
+            except (TypeError, ZeroDivisionError):
+                latest_nav = None
+
+        delta = round(shot_shares - rec_shares, 4)
+        fund_name = pos.fund_name if pos else code
+
+        if abs(delta) < 1e-6:
+            items.append({
+                "fund_code": code, "fund_name": fund_name,
+                "recorded_shares": round(rec_shares, 4), "screenshot_shares": round(shot_shares, 4),
+                "delta": 0.0, "status": "ok", "suggested_tx": None,
+            })
+        elif delta > 0:
+            tx = _build_adjust_tx(code, "buy", delta, latest_nav, channel)
+            items.append({
+                "fund_code": code, "fund_name": fund_name,
+                "recorded_shares": round(rec_shares, 4), "screenshot_shares": round(shot_shares, 4),
+                "delta": delta, "status": "new" if pos is None else "buy", "suggested_tx": tx,
+            })
+        else:
+            tx = _build_adjust_tx(code, "sell", abs(delta), latest_nav, channel)
+            items.append({
+                "fund_code": code, "fund_name": fund_name,
+                "recorded_shares": round(rec_shares, 4), "screenshot_shares": round(shot_shares, 4),
+                "delta": delta, "status": "sell", "suggested_tx": tx,
+            })
+
+    # 系统有、截图无 → 疑似清仓
+    for code, pos in recorded.items():
+        if code in shot_codes:
+            continue
+        if pos.held_shares <= 1e-6:
+            continue
+        tx = _build_adjust_tx(code, "sell", round(pos.held_shares, 4), pos.latest_nav, channel)
+        items.append({
+            "fund_code": code, "fund_name": pos.fund_name,
+            "recorded_shares": round(pos.held_shares, 4), "screenshot_shares": 0.0,
+            "delta": round(-pos.held_shares, 4), "status": "maybe_sold", "suggested_tx": tx,
+        })
+
+    return {"channel": channel, "items": items}
+
+
+def _build_adjust_tx(fund_code: str, action: str, shares: float,
+                     nav: float | None, channel: str) -> dict:
+    """构建一笔调整交易建议。nav 已知时估算 amount = shares×nav。"""
+    note = "截图对账估算成本，请核实" if action == "buy" else "截图对账调整"
+    amount = round(shares * nav, 2) if (shares and nav) else None
+    return {
+        "fund_code": fund_code,
+        "action": action,
+        "date": None,  # 前端填当日
+        "amount": amount,
+        "shares": round(shares, 4),
+        "nav": nav,
+        "fee": 0,
+        "channel": channel,
+        "note": note,
+        "is_t1": False,
+    }

@@ -258,9 +258,11 @@ def _load_ai_config() -> dict:
         with open(AI_CONFIG_PATH, encoding="utf-8") as f:
             data = json.load(f)
         # 解密 api_key（加密格式 enc:<token>，旧版明文自动兼容）
+        from . import crypto
         if data.get("api_key"):
-            from . import crypto
             data["api_key"] = crypto.decrypt(data["api_key"])
+        if data.get("vision_api_key"):
+            data["vision_api_key"] = crypto.decrypt(data["vision_api_key"])
         return data
     except (json.JSONDecodeError, OSError):
         return {}
@@ -268,10 +270,12 @@ def _load_ai_config() -> dict:
 
 def _save_ai_config(data: dict) -> None:
     # 加密 api_key 后再落盘，避免密钥明文存储
+    from . import crypto
     to_save = dict(data)
     if to_save.get("api_key"):
-        from . import crypto
         to_save["api_key"] = crypto.encrypt(to_save["api_key"])
+    if to_save.get("vision_api_key"):
+        to_save["vision_api_key"] = crypto.encrypt(to_save["vision_api_key"])
     with open(AI_CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(to_save, f, indent=2)
 
@@ -290,6 +294,27 @@ def update_ai_config(base_url: str, api_key: str, model: str, web_search: bool, 
         "model": model,
         "web_search": web_search,
         "custom_prompt": custom_prompt,
+        "vision_base_url": AI_VISION_BASE_URL,
+        "vision_api_key": AI_VISION_API_KEY,
+        "vision_model": AI_VISION_MODEL,
+    })
+
+
+def update_vision_config(base_url: str, api_key: str, model: str) -> None:
+    """更新视觉模型配置（内存 + 持久化）。视觉模型独立于对话 AI，用于截图解析。"""
+    global AI_VISION_BASE_URL, AI_VISION_API_KEY, AI_VISION_MODEL
+    AI_VISION_BASE_URL = base_url
+    AI_VISION_API_KEY = api_key
+    AI_VISION_MODEL = model
+    _save_ai_config({
+        "base_url": AI_BASE_URL,
+        "api_key": AI_API_KEY,
+        "model": AI_MODEL,
+        "web_search": AI_WEB_SEARCH,
+        "custom_prompt": AI_CUSTOM_PROMPT,
+        "vision_base_url": base_url,
+        "vision_api_key": api_key,
+        "vision_model": model,
     })
 
 
@@ -299,6 +324,10 @@ AI_API_KEY: str = _ai_config.get("api_key", "")
 AI_MODEL: str = _ai_config.get("model", "")
 AI_WEB_SEARCH: bool = _ai_config.get("web_search", True)
 AI_CUSTOM_PROMPT: str = _ai_config.get("custom_prompt", "")
+# 视觉模型配置（独立于对话 AI，用于截图解析交易/持仓）
+AI_VISION_BASE_URL: str = _ai_config.get("vision_base_url", "")
+AI_VISION_API_KEY: str = _ai_config.get("vision_api_key", "")
+AI_VISION_MODEL: str = _ai_config.get("vision_model", "")
 
 
 # ---------------------------------------------------------------------------

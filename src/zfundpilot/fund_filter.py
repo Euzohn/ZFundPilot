@@ -185,3 +185,96 @@ def filter_funds(
         _enrich_with_metrics(items)
 
     return FilterResponse(funds=items, total=total)
+
+
+# ---------------------------------------------------------------------------
+# 名称 → 代码解析（截图导入用）
+# ---------------------------------------------------------------------------
+_CLASS_RE = re.compile(r"[A-Za-z]类?$")
+_TYPE_SUFFIXES = (
+    "联接", "ETF联接", "ETF", "FOF", "混合", "指数", "债券",
+    "股票", "发起式", "证券投资基金", "基金", "类",
+)
+
+
+def _normalize_name(name: str) -> str:
+    """去除基金名称尾部的类别字母和类型后缀，用于模糊匹配。"""
+    n = name.strip()
+    changed = True
+    while changed:
+        changed = False
+        n = _CLASS_RE.sub("", n).strip()
+        for suf in _TYPE_SUFFIXES:
+            if n.endswith(suf):
+                n = n[: -len(suf)].strip()
+                changed = True
+                break
+    return n
+
+
+def _candidate(code: str, name: str) -> dict:
+    return {"code": code, "name": name}
+
+
+def resolve_fund_code(name: str) -> dict:
+    """根据基金名称解析代码。
+
+    返回 {"code": str|None, "candidates": [{"code","name"}], "status": str}。
+    status: "exact"（唯一匹配，code 已填） | "multiple"（多候选，前端下拉选） | "none"（无匹配，前端手填）。
+    匹配策略：精确 → 双向子串包含 → 归一化后子串包含。
+    """
+    name = (name or "").strip()
+    if not name:
+        return {"code": None, "candidates": [], "status": "none"}
+
+    universe = load_fund_universe()
+    if not universe:
+        return {"code": None, "candidates": [], "status": "none"}
+
+    # 1. 精确匹配
+    exact = [f for f in universe if f["name"] == name]
+    if len(exact) == 1:
+        return {"code": exact[0]["code"], "candidates": [], "status": "exact"}
+    if len(exact) > 1:
+        return {"code": None, "candidates": [_candidate(f["code"], f["name"]) for f in exact], "status": "multiple"}
+
+    # 2. 双向子串包含（截图名是全名子串，或全名是截图名子串）
+    substr = [f for f in universe if name in f["name"] or f["name"] in name]
+    if len(substr) == 1:
+        return {"code": substr[0]["code"], "candidates": [], "status": "exact"}
+
+    # 3. 归一化后双向子串包含（处理 A/C 类、联接、混合等后缀差异）
+    norm = _normalize_name(name)
+    norm_matches: list[dict] = []
+    if norm and norm != name:
+        for f in universe:
+            fn = _normalize_name(f["name"])
+            if norm in fn or fn in norm:
+                norm_matches.append(f)
+        if len(norm_matches) == 1:
+            return {"code": norm_matches[0]["code"], "candidates": [], "status": "exact"}
+
+    # 合并候选
+    seen = {f["code"] for f in substr}
+    combined = list(substr) + [f for f in norm_matches if f["code"] not in seen]
+    if len(combined) == 1:
+        return {"code": combined[0]["code"], "candidates": [], "status": "exact"}
+    if combined:
+        return {
+            "code": None,
+            "candidates": [_candidate(f["code"], f["name"]) for f in combined[:20]],
+            "status": "multiple",
+        }
+
+    return {"code": None, "candidates": [], "status": "none"}
+
+
+def verify_fund_code(code: str) -> bool:
+    """校验 6 位代码是否存在于基金池中。防视觉模型编造代码。"""
+    code = (code or "").strip()
+    if not code:
+        return False
+    universe = load_fund_universe()
+    if not universe:
+        return False
+    return any(f["code"] == code for f in universe)

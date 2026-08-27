@@ -158,7 +158,7 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
     let txs: Transaction[] = []
     if (mode === "transactions") {
       txs = txItems
-        .filter(it => it.fund_code && /^\d{6}$/.test(it.fund_code))
+        .filter(it => it.fund_code && /^\d{6}$/.test(it.fund_code) && !it.is_duplicate)
         .map(it => ({
           fund_code: it.fund_code!,
           action: it.action || "buy",
@@ -214,7 +214,8 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
 
   const hasImage = !!image
   const hasParsed = mode === "transactions" ? txItems.length > 0 : holdingItems.length > 0
-  const validTxCount = txItems.filter(it => it.fund_code && /^\d{6}$/.test(it.fund_code)).length
+  const validTxCount = txItems.filter(it => it.fund_code && /^\d{6}$/.test(it.fund_code) && !it.is_duplicate).length
+  const dupCount = txItems.filter(it => it.is_duplicate).length
   const selectedTxCount = mode === "transactions"
     ? validTxCount
     : reconcileResult ? reconcileResult.items.filter((_, i) => selectedDiff.has(i)).length : 0
@@ -344,9 +345,17 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
                   </thead>
                   <tbody>
                     {txItems.map((it, idx) => (
-                      <tr key={idx} className={cn("border-t", !it.fund_code || !/^\d{6}$/.test(it.fund_code) ? "bg-destructive/5" : "")}>
+                      <tr key={idx} className={cn("border-t",
+                        it.is_duplicate ? "bg-muted/30" : "",
+                        !it.fund_code || !/^\d{6}$/.test(it.fund_code) ? "bg-destructive/5" : "",
+                      )}>
                         <td className="px-2 py-1">
-                          <FundCodeCell item={it} onChange={(patch) => updateTxItem(idx, patch)} placeholder={t.transactions.screenshotSelectCode} />
+                          <div className="flex items-center gap-1">
+                            <FundCodeCell item={it} onChange={(patch) => updateTxItem(idx, patch)} placeholder={t.transactions.screenshotSelectCode} />
+                            {it.is_duplicate && (
+                              <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">{t.transactions.screenshotDuplicate}</span>
+                            )}
+                          </div>
                           <span className="block text-[10px] text-muted-foreground truncate max-w-[120px]">{it.fund_name}</span>
                         </td>
                         <td className="px-2 py-1">
@@ -404,6 +413,7 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
               <div className="flex items-center justify-between">
                 <p className="text-xs text-muted-foreground">
                   {t.transactions.screenshotValidCount.replace("{valid}", String(validTxCount)).replace("{total}", String(txItems.length))}
+                  {dupCount > 0 && <span className="ml-2 text-muted-foreground/60">{t.transactions.screenshotDuplicatesSkipped.replace("{n}", String(dupCount))}</span>}
                 </p>
                 <Button onClick={handleConfirmImport} disabled={importing || validTxCount === 0}>
                   {importing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4" />}

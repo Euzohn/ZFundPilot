@@ -120,14 +120,13 @@ export default function Transactions() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t.transactions.title} />
-      <div className="flex items-center justify-end">
+      <PageHeader title={t.transactions.title} actions={
         <Button variant="outline" size="sm" onClick={() => setScreenshotOpen(true)}>
           <Camera className="mr-1.5 h-4 w-4" />
           <span className="hidden sm:inline">{t.transactions.screenshotImport}</span>
           <span className="sm:hidden">截图</span>
         </Button>
-      </div>
+      } />
       <ScreenshotImportDialog open={screenshotOpen} onOpenChange={setScreenshotOpen} onImported={() => setListReloadKey((k) => k + 1)} />
       <DividendCheckDialog open={dividendDialogOpen} onOpenChange={setDividendDialogOpen} />
       <Tabs value={activeTab} onValueChange={setActiveTab}>

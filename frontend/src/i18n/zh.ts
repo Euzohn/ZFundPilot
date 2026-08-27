@@ -369,6 +369,8 @@ const zh = {
     screenshotSelectCode: "选择代码...",
     screenshotConfirmImport: "确认导入 {n} 笔",
     screenshotValidCount: "{valid}/{total} 笔有效",
+    screenshotDuplicate: "已存在",
+    screenshotDuplicatesSkipped: "{n} 笔已存在，已跳过",
     screenshotImportSuccess: "已导入 {n} 笔交易",
     screenshotNoSelected: "请至少选择一笔交易",
     screenshotVisionNotConfigured: "视觉模型未配置，请先到设置页配置",

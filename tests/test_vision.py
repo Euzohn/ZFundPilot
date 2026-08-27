@@ -254,3 +254,66 @@ class TestTestVisionConnection:
             r = ai.test_vision_connection()
         assert r["ok"] is True
         assert r["model"] == "test-vl"
+
+
+# ---------------------------------------------------------------------------
+# _mark_duplicates（API 层重复交易检测）
+# ---------------------------------------------------------------------------
+class TestMarkDuplicates:
+    def _call(self, items, existing_txs):
+        from zfundpilot import api as api_module
+        from zfundpilot.models import Transaction
+
+        tx_objs = [Transaction(**{**tx, "id": i + 1}) for i, tx in enumerate(existing_txs)]
+        with patch("zfundpilot.api.db") as mock_db:
+            mock_db.get_transactions.return_value = tx_objs
+            api_module._mark_duplicates(items)
+        return items
+
+    def test_duplicate_buy(self):
+        """同基金同日同金额 → 重复。"""
+        items = [{"fund_code": "005827", "action": "buy", "date": "2026-01-01", "amount": 1000.0, "shares": None}]
+        existing = [{"fund_code": "005827", "action": "buy", "date": "2026-01-01", "amount": 1000.0, "shares": 500, "nav": 2.0, "fee": 0}]
+        result = self._call(items, existing)
+        assert result[0]["is_duplicate"] is True
+
+    def test_different_amount_not_duplicate(self):
+        """同基金同日不同金额 → 非重复。"""
+        items = [{"fund_code": "005827", "action": "buy", "date": "2026-01-01", "amount": 2000.0, "shares": None}]
+        existing = [{"fund_code": "005827", "action": "buy", "date": "2026-01-01", "amount": 1000.0, "shares": 500, "nav": 2.0, "fee": 0}]
+        result = self._call(items, existing)
+        assert result[0]["is_duplicate"] is False
+
+    def test_different_date_not_duplicate(self):
+        """同基金不同日 → 非重复。"""
+        items = [{"fund_code": "005827", "action": "buy", "date": "2026-01-02", "amount": 1000.0, "shares": None}]
+        existing = [{"fund_code": "005827", "action": "buy", "date": "2026-01-01", "amount": 1000.0, "shares": 500, "nav": 2.0, "fee": 0}]
+        result = self._call(items, existing)
+        assert result[0]["is_duplicate"] is False
+
+    def test_duplicate_by_shares(self):
+        """卖出按 shares 匹配。"""
+        items = [{"fund_code": "005827", "action": "sell", "date": "2026-02-01", "amount": None, "shares": 200.0}]
+        existing = [{"fund_code": "005827", "action": "sell", "date": "2026-02-01", "amount": 600.0, "shares": 200.0, "nav": 3.0, "fee": 0}]
+        result = self._call(items, existing)
+        assert result[0]["is_duplicate"] is True
+
+    def test_no_date_not_checked(self):
+        """date 为 null → 不检测（is_duplicate=False）。"""
+        items = [{"fund_code": "005827", "action": "buy", "date": None, "amount": 1000.0, "shares": None}]
+        existing = [{"fund_code": "005827", "action": "buy", "date": "2026-01-01", "amount": 1000.0, "shares": 500, "nav": 2.0, "fee": 0}]
+        result = self._call(items, existing)
+        assert result[0]["is_duplicate"] is False
+
+    def test_no_existing_not_duplicate(self):
+        """DB 无交易 → 全部非重复。"""
+        items = [{"fund_code": "005827", "action": "buy", "date": "2026-01-01", "amount": 1000.0, "shares": None}]
+        result = self._call(items, [])
+        assert result[0]["is_duplicate"] is False
+
+    def test_amount_tolerance(self):
+        """金额 0.01 容差内 → 重复。"""
+        items = [{"fund_code": "005827", "action": "buy", "date": "2026-01-01", "amount": 1000.005, "shares": None}]
+        existing = [{"fund_code": "005827", "action": "buy", "date": "2026-01-01", "amount": 1000.0, "shares": 500, "nav": 2.0, "fee": 0}]
+        result = self._call(items, existing)
+        assert result[0]["is_duplicate"] is True

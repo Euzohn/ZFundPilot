@@ -557,6 +557,7 @@ export interface ParsedTxItem {
   is_t1: boolean
   code_status: 'exact' | 'multiple' | 'none'
   candidates: FundCandidate[]
+  is_duplicate?: boolean
 }
 
 export interface ParsedHoldingItem {

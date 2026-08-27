@@ -371,6 +371,8 @@ const en: typeof zh = {
     screenshotSelectCode: "Select code...",
     screenshotConfirmImport: "Import {n} transaction(s)",
     screenshotValidCount: "{valid}/{total} valid",
+    screenshotDuplicate: "Exists",
+    screenshotDuplicatesSkipped: "{n} already exist, skipped",
     screenshotImportSuccess: "Imported {n} transactions",
     screenshotNoSelected: "Please select at least one transaction",
     screenshotVisionNotConfigured: "Vision model not configured, please configure in Settings",

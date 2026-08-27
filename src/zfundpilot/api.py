@@ -399,11 +399,45 @@ async def parse_screenshot(file: UploadFile = File(...), mode: str = "transactio
     """上传截图，视觉模型解析为结构化数据（不落库）。
 
     mode: "transactions"（交易流水）| "holdings"（持仓对账）
+    交易模式自动标记已存在的重复交易（is_duplicate=True）。
     """
     image = await file.read()
     if not image:
         return {"ok": False, "items": [], "error": "图片为空"}
-    return ai.parse_screenshot(image, mode, channel_hint, file.content_type or "")
+    result = ai.parse_screenshot(image, mode, channel_hint, file.content_type or "")
+    if result["ok"] and mode == "transactions":
+        _mark_duplicates(result["items"])
+    return result
+
+
+def _mark_duplicates(items: list[dict]) -> None:
+    """标记重复交易：与已有交易对比 fund_code+action+date+amount/shares。
+
+    判定为重复的条件（全部满足）：
+    - fund_code 相同
+    - action 相同
+    - date 相同（parsed tx 的 date 非空）
+    - amount 相近（abs < 0.01）或 shares 相近
+    """
+    existing = db.get_transactions()
+    for item in items:
+        item["is_duplicate"] = False
+        code = str(item.get("fund_code") or "").strip()
+        date = item.get("date")
+        if not code or not date:
+            continue
+        action = item.get("action", "")
+        amount = item.get("amount")
+        shares = item.get("shares")
+        for tx in existing:
+            if tx.fund_code != code or tx.action != action or tx.date != date:
+                continue
+            if amount is not None and tx.amount is not None and abs(tx.amount - amount) < 0.01:
+                item["is_duplicate"] = True
+                break
+            if shares is not None and tx.shares is not None and abs(tx.shares - shares) < 0.01:
+                item["is_duplicate"] = True
+                break
 
 
 @app.post("/api/ai/reconcile")

@@ -271,7 +271,8 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
               onPaste={handlePaste}
               onDrop={handleDrop}
               onDragOver={(e) => e.preventDefault()}
-              className="relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-border/60 p-8 text-center transition-colors hover:border-primary/40"
+              tabIndex={0}
+              className="relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-border/60 p-8 text-center transition-colors hover:border-primary/40 focus:outline-none focus:ring-2 focus:ring-ring"
             >
               {imagePreview ? (
                 <div className="relative">
@@ -312,7 +313,7 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
           {hasImage && !hasParsed && !reconcileResult && (
             <Button onClick={handleParse} disabled={parsing} className="w-full">
               {parsing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Camera className="mr-1.5 h-4 w-4" />}
-              {parsing ? t.transactions.screenshotParsing : t.transactions.screenshotUpload}
+              {parsing ? t.transactions.screenshotParsing : t.transactions.screenshotParseBtn}
             </Button>
           )}
 
@@ -345,7 +346,7 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
                     {txItems.map((it, idx) => (
                       <tr key={idx} className={cn("border-t", !it.fund_code || !/^\d{6}$/.test(it.fund_code) ? "bg-destructive/5" : "")}>
                         <td className="px-2 py-1">
-                          <FundCodeCell item={it} onChange={(patch) => updateTxItem(idx, patch)} />
+                          <FundCodeCell item={it} onChange={(patch) => updateTxItem(idx, patch)} placeholder={t.transactions.screenshotSelectCode} />
                           <span className="block text-[10px] text-muted-foreground truncate max-w-[120px]">{it.fund_name}</span>
                         </td>
                         <td className="px-2 py-1">
@@ -402,7 +403,7 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
               </div>
               <div className="flex items-center justify-between">
                 <p className="text-xs text-muted-foreground">
-                  {validTxCount}/{txItems.length} {t.transactions.screenshotConfirmImport.replace("{n}", "").trim()}
+                  {t.transactions.screenshotValidCount.replace("{valid}", String(validTxCount)).replace("{total}", String(txItems.length))}
                 </p>
                 <Button onClick={handleConfirmImport} disabled={importing || validTxCount === 0}>
                   {importing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4" />}
@@ -438,7 +439,7 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
                     {holdingItems.map((it, idx) => (
                       <tr key={idx} className={cn("border-t", !it.fund_code || !/^\d{6}$/.test(it.fund_code) ? "bg-destructive/5" : "")}>
                         <td className="px-2 py-1">
-                          <FundCodeCell item={it} onChange={(patch) => updateHoldingItem(idx, patch)} />
+                          <FundCodeCell item={it} onChange={(patch) => updateHoldingItem(idx, patch)} placeholder={t.transactions.screenshotSelectCode} />
                         </td>
                         <td className="px-2 py-1 text-muted-foreground max-w-[160px] truncate">{it.fund_name}</td>
                         <td className="px-2 py-1 text-right">
@@ -508,7 +509,7 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
               </div>
               <div className="flex items-center justify-between">
                 <Button variant="ghost" size="sm" onClick={() => { setReconcileResult(null); setSelectedDiff(new Set()) }}>
-                  ← {t.transactions.screenshotModeHoldings}
+                  ← {t.transactions.screenshotBack}
                 </Button>
                 <Button onClick={handleConfirmImport} disabled={importing || selectedTxCount === 0}>
                   {importing ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4" />}
@@ -524,9 +525,10 @@ export default function ScreenshotImportDialog({ open, onOpenChange, onImported 
 }
 
 // ── Fund code cell: 3 states (exact/multiple/none) ──
-function FundCodeCell({ item, onChange }: {
+function FundCodeCell({ item, onChange, placeholder }: {
   item: { fund_code: string | null; code_status: string; candidates: { code: string; name: string }[] }
   onChange: (patch: Partial<ParsedTxItem & ParsedHoldingItem>) => void
+  placeholder: string
 }) {
   if (item.code_status === "exact" && item.fund_code) {
     return <span className="font-mono text-xs">{item.fund_code}</span>
@@ -538,7 +540,7 @@ function FundCodeCell({ item, onChange }: {
         onChange={(e) => onChange({ fund_code: e.target.value, code_status: "exact", candidates: [] })}
         className="h-7 rounded border border-border bg-background px-1 text-xs w-[110px]"
       >
-        <option value="">{t_placeholder}</option>
+        <option value="">{placeholder}</option>
         {item.candidates.map(c => <option key={c.code} value={c.code}>{c.code} {c.name.slice(0, 10)}</option>)}
       </select>
     )
@@ -554,6 +556,3 @@ function FundCodeCell({ item, onChange }: {
     />
   )
 }
-
-// Placeholder for the select option (kept simple to avoid i18n complexity in sub-component)
-const t_placeholder = "选择..."

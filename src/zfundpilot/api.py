@@ -403,7 +403,7 @@ async def parse_screenshot(file: UploadFile = File(...), mode: str = "transactio
     image = await file.read()
     if not image:
         return {"ok": False, "items": [], "error": "图片为空"}
-    return ai.parse_screenshot(image, mode, channel_hint)
+    return ai.parse_screenshot(image, mode, channel_hint, file.content_type or "")
 
 
 @app.post("/api/ai/reconcile")

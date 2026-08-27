@@ -610,7 +610,7 @@ def _resolve_codes(items: list[dict]) -> list[dict]:
     return items
 
 
-def parse_screenshot(image_bytes: bytes, mode: str, channel_hint: str = "") -> dict:
+def parse_screenshot(image_bytes: bytes, mode: str, channel_hint: str = "", content_type: str = "") -> dict:
     """调用视觉模型解析截图，返回结构化数据。
 
     mode: "transactions"（交易流水）| "holdings"（持仓对账）
@@ -622,7 +622,8 @@ def parse_screenshot(image_bytes: bytes, mode: str, channel_hint: str = "") -> d
         return {"ok": False, "items": [], "error": "视觉模型未配置，请先到设置页面配置。"}
 
     prompt = _build_screenshot_prompt(mode, channel_hint)
-    data_url = "data:image/jpeg;base64," + base64.b64encode(image_bytes).decode("ascii")
+    mime = content_type if content_type.startswith("image/") else "image/jpeg"
+    data_url = f"data:{mime};base64," + base64.b64encode(image_bytes).decode("ascii")
 
     url = f"{config.AI_VISION_BASE_URL.rstrip('/')}/chat/completions"
     headers = {

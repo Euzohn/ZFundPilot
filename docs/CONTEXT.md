@@ -72,7 +72,7 @@ ZFundPilot/
 │   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 持仓卡片 + 排名 + 档案 + 顶栏：对比/自选/买入/卖出/定投快捷入口）
 │   │   ├── Settings.tsx     # 设置（账户/AI/偏好/止盈止损提醒）
 │   │   └── Login.tsx        # 登录
-│   ├── components/          # Layout + Logo 系列 + PnLCalendar + TpSlAlertsPanel + ScreenshotImportDialog + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
+│   ├── components/          # Layout + Logo 系列 + PnLCalendar + TpSlAlertsPanel + ScreenshotImportPanel + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
 │   ├── i18n/                # LanguageContext（Provider + useLang hook + getCurrentLang）+ zh.ts + en.ts
 │   ├── api/                 # client.ts + types.ts
 │   ├── hooks/               # useCountUp（animejs 数字动画，formatter 用 ref 存储避免 effect 重跑）
@@ -443,7 +443,11 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### Unreleased
 
-- feat: 截图导入交易/持仓对账——Transactions 页新增「截图导入」按钮（`ScreenshotImportDialog`），上传购买记录或持仓截图，AI 视觉模型自动解析。两种模式：交易模式（解析交易行 → 预览编辑 → 批量保存，复用 `POST /api/csv/import`）；持仓对账模式（解析持仓 → 按渠道对比已记录份额 → 生成差额调整交易 → 勾选确认）。视觉模型独立配置（`ai_config.json` 新增 `vision_base_url`/`vision_api_key`/`vision_model`，Settings 新增视觉模型卡片，4 预设：智谱 GLM-4V 推荐/通义千问 VL/GPT-4o/Kimi 视觉）。后端 `ai.parse_screenshot` 非流式调用 `chat/completions`（content 含 image_url），`fund_filter.resolve_fund_code` 用 fund universe 名称→代码解析（精确/多候选前端下拉/无匹配手填），`verify_fund_code` 校验模型输出代码防编造。`analysis.reconcile_holdings` 按渠道对比份额，buy/new 用 latest_nav 估算成本标注「请核实」，maybe_sold 建议卖出全部。新增 `tests/test_vision.py`（29 用例）+ `tests/test_reconcile.py`（9 用例），总测试 178→216
+- feat: 截图导入交易/持仓对账——Transactions 页新增第 5 个 tab「截图导入」（inline 面板 `ScreenshotImportPanel`，切 tab 自动卸载重置，替代原 Dialog），上传购买记录或持仓截图，AI 视觉模型自动解析。两种模式：交易模式（解析交易行 → 预览编辑 → 批量保存，复用 `POST /api/csv/import`）；持仓对账模式（解析持仓 → 按渠道对比已记录份额 → 生成差额调整交易 → 勾选确认）。视觉模型独立配置（`ai_config.json` 新增 `vision_base_url`/`vision_api_key`/`vision_model`，Settings 新增视觉模型卡片，4 预设：智谱 GLM-4V 推荐/通义千问 VL/GPT-4o/Kimi 视觉）。后端 `ai.parse_screenshot` 非流式调用 `chat/completions`（content 含 image_url），`fund_filter.resolve_fund_code` 用 fund universe 名称→代码解析（精确/多候选前端下拉/无匹配手填），`verify_fund_code` 校验模型输出代码防编造。`analysis.reconcile_holdings` 按渠道对比份额，buy/new 用 latest_nav 估算成本标注「请核实」，maybe_sold 建议卖出全部。新增 `tests/test_vision.py`（29 用例）+ `tests/test_reconcile.py`（9 用例），总测试 178→216
+- feat: 截图导入去重——`_mark_duplicates` 按 fund_code+action+date+amount（0.01 容差）或 shares 匹配标记疑似重复，预览表重复行加「重复」badge + 默认跳过不入库（+7 测试，216→223）
+- feat: 截图导入视觉模型 token 用量追踪——`parse_screenshot` 从响应提取 `usage` 调用 `db.add_ai_usage`，与对话 AI 用量统一记录
+- feat: 截图导入用户补充说明——解析前可输入 `user_hint` 补充语境（前端 textarea → client → API → prompt 末尾追加），提升无上下文截图解析准确率（+1 测试，223→224）
+- perf: 截图导入图片自动缩放——发送前用 Pillow `_compress_image` 将图片缩到最长边 1280px + 转 JPEG quality 85（RGBA→RGB），手机截图（1080×2340）image tokens 减少 50-70%、网络 payload 同步减小。Dockerfile 加 `libjpeg62-turbo`，`pyproject.toml`/`requirements.txt` 加 Pillow 依赖（+5 测试，224→229）
 - feat: 自选页列头点击排序——复用 `SortHeader` 组件（与 Screener/Positions/Returns/Transactions 一致），6 列可排序（代码/名称/类型/板块/分组/添加时间），默认按添加时间降序。点击同列切换升降序，切换列默认降序
 - fix: DividendCheckDialog 关闭时 aria-hidden 警告——点击「记为分红」时 `onOpenChange(false)` + `navigate()` 同时触发，Radix Dialog 在退出动画期间对 `#root` 应用 `aria-hidden`，`onCloseAutoFocus` 尝试恢复焦点到隐藏元素触发浏览器警告。`DialogContent` 添加 `onCloseAutoFocus={(e) => e.preventDefault()}` 阻止焦点恢复
 

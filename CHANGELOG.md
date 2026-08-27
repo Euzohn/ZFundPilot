@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-08-28
+
 ### Added
 - 截图导入交易/持仓对账：Transactions 页新增第 5 个 tab「截图导入」（inline 面板，切 tab 自动卸载重置），上传购买记录或持仓截图，AI 视觉模型自动解析为结构化数据。两种模式：交易模式（解析交易行 → 预览编辑 → 批量保存）；持仓对账模式（解析持仓 → 按渠道对比已记录份额 → 生成差额调整交易 → 勾选确认）。视觉模型独立配置（Settings 新增视觉模型卡片，4 个预设：智谱 GLM-4V 推荐/通义千问 VL/OpenAI GPT-4o/Kimi 视觉），与对话 AI 解耦。截图常只有基金名称无代码，后端 `resolve_fund_code` 用 fund universe 自动解析名称→代码（精确/多候选下拉选/无匹配手填），模型输出的代码经 `verify_fund_code` 校验防编造。对账成本用 latest_nav 估算并标注「请核实」，预览表可编辑
 - 截图导入去重：后端 `_mark_duplicates` 按 fund_code+action+date+amount（0.01 容差）或 shares 匹配标记疑似重复，预览表重复行加「重复」badge，默认跳过不入库
@@ -16,6 +18,7 @@
 
 ### Fixed
 - DividendCheckDialog 关闭时 aria-hidden 警告：点击「记为分红」时 `onOpenChange(false)` + `navigate()` 同时触发，Radix Dialog 在退出动画期间对 `#root` 应用 `aria-hidden`，`onCloseAutoFocus` 尝试恢复焦点到隐藏元素触发浏览器警告。`DialogContent` 添加 `onCloseAutoFocus={(e) => e.preventDefault()}` 阻止焦点恢复
+- 幽灵分红提醒二次修复：v0.19.0 的 `_cleanup_stale_alerts` 仍无法清理部分幽灵提醒。(1) `fetched_funds.add(code)` 在空响应检查之后执行，AkShare 返回空 DataFrame 的基金（如 QDII 017641 摩根标普500）不进入 `fetched_funds`，其 pending 提醒被跳过永不清理。修复：将 `fetched_funds.add(code)` 移到空响应检查之前。(2) TTL 90 天兜底失效：SQLite `created_at` 是朴素无时区字符串（`datetime('now','localtime')`），与 aware `cutoff` 比较抛 `TypeError` 被 except 吞掉导致 TTL 静默失效。修复：检测 `created_dt.tzinfo is None` 时补 `config.TIMEZONE`（+5 测试，229→234）
 
 ## [0.19.0] - 2026-08-25
 

@@ -13,7 +13,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.19.0`（git tag `v0.19.0`）
+- **版本**: `0.20.0`（git tag `v0.20.0`）
 - **License**: MIT
 
 ---
@@ -35,7 +35,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.19.0"
+│   ├── __init__.py          # __version__ = "0.20.0"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
@@ -91,7 +91,7 @@ ZFundPilot/
 │   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12 并行) → tsc → build
 ├── tests/                   # Pytest 测试套件
 │   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
-│   └── test_*.py            #   178 个测试用例
+│   └── test_*.py            #   234 个测试用例
 └── docs/CONTEXT.md              # 本文件（不追踪）
 ```
 
@@ -149,7 +149,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.19.0")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.20.0")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
 - 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
@@ -251,7 +251,7 @@ ZFundPilot/
 - API: `GET /api/scheduler/status` + `PUT /api/scheduler/toggle` + `PUT /api/scheduler/cron`；`GET/PUT /api/alerts/config`（止盈止损配置）；`GET /api/alerts` + `GET /api/alerts/count`（统一提醒列表/计数，支持 `?type=tp_sl`）；`PUT /api/alerts/{id}`（更新状态：confirmed/ignored/pending，pending 时清空 resolved_at）
 - **基准指数持久化**：`_update_benchmark_indices()` 在净值更新后调用，遍历 `config.BENCHMARK_INDICES`（沪深300/上证指数/创业板指）逐只拉取并持久化到 `index_history` 表，确保离线时基准对比数据可用。DB 已有最新数据时跳过
 - **分红检测任务**：每天 09:30 执行 `_run_dividend_check()`（`dividend_check` cron job），扫描持仓基金的未记录分红事件，新发现的存入 `dividend_alerts` 表。开关存 `preferences` 表 key=`dividend_auto_check`，默认启用。`_bootstrap_dividend_check()` 启动时若已过 09:30 且今日未执行过，立即补跑
-- **幽灵分红提醒自动清理**：`check_dividends()` 抓取数据时同步收集 `fetched_ex_dates`/`fetched_funds`，调用 `_cleanup_stale_alerts()` 校验现有 pending 分红提醒是否仍存在于源数据中，不存在则自动标记为 `ignored`。仅校验成功获取非空数据的基金，避免网络错误误清有效提醒。清理数量存入 `fetch_dividend._last_cleanup_count`，`POST /api/dividends/scan` 响应含 `cleaned` 字段，scheduler 日志/审计也含清理计数
+- **幽灵分红提醒自动清理**：`check_dividends()` 抓取数据时同步收集 `fetched_ex_dates`/`fetched_funds`（`fetched_funds.add(code)` 在空响应检查之前执行，确保 AkShare 返回空 DataFrame 的基金如 QDII 其提醒也被清理），调用 `_cleanup_stale_alerts()` 校验现有 pending 提醒是否仍存在于源数据中，不存在则自动标记为 `ignored`。TTL 兜底：pending 超 90 天（`_LOOKBACK_DAYS`）自动 ignore，防 fetch 持续失败的基金提醒永久残留。SQLite `created_at` 是朴素无时区字符串，与 aware `cutoff` 比较前补 `config.TIMEZONE`。清理数量存入 `fetch_dividend._last_cleanup_count`，`POST /api/dividends/scan` 响应含 `cleaned` 字段，scheduler 日志/审计也含清理计数
 
 ---
 
@@ -441,7 +441,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ## 十二、当前工作状态
 
-### Unreleased
+### v0.20.0 - 2026-08-28
 
 - feat: 截图导入交易/持仓对账——Transactions 页新增第 5 个 tab「截图导入」（inline 面板 `ScreenshotImportPanel`，切 tab 自动卸载重置，替代原 Dialog），上传购买记录或持仓截图，AI 视觉模型自动解析。两种模式：交易模式（解析交易行 → 预览编辑 → 批量保存，复用 `POST /api/csv/import`）；持仓对账模式（解析持仓 → 按渠道对比已记录份额 → 生成差额调整交易 → 勾选确认）。视觉模型独立配置（`ai_config.json` 新增 `vision_base_url`/`vision_api_key`/`vision_model`，Settings 新增视觉模型卡片，4 预设：智谱 GLM-4V 推荐/通义千问 VL/GPT-4o/Kimi 视觉）。后端 `ai.parse_screenshot` 非流式调用 `chat/completions`（content 含 image_url），`fund_filter.resolve_fund_code` 用 fund universe 名称→代码解析（精确/多候选前端下拉/无匹配手填），`verify_fund_code` 校验模型输出代码防编造。`analysis.reconcile_holdings` 按渠道对比份额，buy/new 用 latest_nav 估算成本标注「请核实」，maybe_sold 建议卖出全部。新增 `tests/test_vision.py`（29 用例）+ `tests/test_reconcile.py`（9 用例），总测试 178→216
 - feat: 截图导入去重——`_mark_duplicates` 按 fund_code+action+date+amount（0.01 容差）或 shares 匹配标记疑似重复，预览表重复行加「重复」badge + 默认跳过不入库（+7 测试，216→223）
@@ -450,6 +450,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - perf: 截图导入图片自动缩放——发送前用 Pillow `_compress_image` 将图片缩到最长边 1280px + 转 JPEG quality 85（RGBA→RGB），手机截图（1080×2340）image tokens 减少 50-70%、网络 payload 同步减小。Dockerfile 加 `libjpeg62-turbo`，`pyproject.toml`/`requirements.txt` 加 Pillow 依赖（+5 测试，224→229）
 - feat: 自选页列头点击排序——复用 `SortHeader` 组件（与 Screener/Positions/Returns/Transactions 一致），6 列可排序（代码/名称/类型/板块/分组/添加时间），默认按添加时间降序。点击同列切换升降序，切换列默认降序
 - fix: DividendCheckDialog 关闭时 aria-hidden 警告——点击「记为分红」时 `onOpenChange(false)` + `navigate()` 同时触发，Radix Dialog 在退出动画期间对 `#root` 应用 `aria-hidden`，`onCloseAutoFocus` 尝试恢复焦点到隐藏元素触发浏览器警告。`DialogContent` 添加 `onCloseAutoFocus={(e) => e.preventDefault()}` 阻止焦点恢复
+- fix: 幽灵分红提醒二次修复——v0.19.0 的 `_cleanup_stale_alerts` 仍无法清理部分幽灵提醒。(1) `fetched_funds.add(code)` 在 `if not rows: continue` 之后执行，AkShare 返回空 DataFrame 的基金（如 QDII 017641 摩根标普500）不进入 `fetched_funds`，其 pending 提醒被跳过永不清理。修复：移到空响应检查之前。(2) TTL 90 天兜底失效：SQLite `created_at` 是朴素无时区字符串（`datetime('now','localtime')`），与 aware `cutoff` 比较抛 TypeError 被 except 吞掉 → TTL 静默失效。修复：`created_dt.tzinfo is None` 时补 `config.TIMEZONE`（+5 测试，229→234）
 
 ### v0.19.0 - 2026-08-25
 

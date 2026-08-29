@@ -60,6 +60,7 @@ class _PatchEnv:
         self.mock_db = db_patch.start()
         self.mock_db.add_transaction.return_value = 42
         self.mock_db.update_auto_invest_plan = MagicMock()
+        self.mock_db.get_auto_invest_plan.return_value = None  # will be set per test
         self._patches.append(db_patch)
 
         fee_patch = patch("zfundpilot.auto_invest.fetch_fund")
@@ -85,8 +86,10 @@ class TestExecutePlanT1Logic:
     def test_before_15_no_t1(self):
         """09:00 执行 → is_t1=False。"""
         mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan()
         with _PatchEnv(mock_dt) as env:
-            result = execute_plan(_make_plan(), manual=True)
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            result = execute_plan(plan, manual=True)
             assert result["after_three"] is False
             assert result["ok"] is True
             tx = env.mock_db.add_transaction.call_args[0][0]
@@ -98,8 +101,10 @@ class TestExecutePlanT1Logic:
     def test_after_15_adds_t1(self):
         """20:00 执行 → is_t1=True。"""
         mock_dt = datetime(2026, 1, 5, 20, 0, tzinfo=_TZ)
+        plan = _make_plan()
         with _PatchEnv(mock_dt) as env:
-            result = execute_plan(_make_plan(), manual=True)
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            result = execute_plan(plan, manual=True)
             assert result["after_three"] is True
             tx = env.mock_db.add_transaction.call_args[0][0]
             assert tx.is_t1 is True
@@ -108,8 +113,10 @@ class TestExecutePlanT1Logic:
     def test_boundary_15_is_t1(self):
         """15:00 整 → 算 T+1（边界）。"""
         mock_dt = datetime(2026, 1, 5, 15, 0, tzinfo=_TZ)
+        plan = _make_plan()
         with _PatchEnv(mock_dt) as env:
-            result = execute_plan(_make_plan(), manual=True)
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            result = execute_plan(plan, manual=True)
             assert result["after_three"] is True
             tx = env.mock_db.add_transaction.call_args[0][0]
             assert tx.is_t1 is True
@@ -117,8 +124,10 @@ class TestExecutePlanT1Logic:
     def test_boundary_14_59_no_t1(self):
         """14:59 → 不算 T+1（边界）。"""
         mock_dt = datetime(2026, 1, 5, 14, 59, tzinfo=_TZ)
+        plan = _make_plan()
         with _PatchEnv(mock_dt) as env:
-            result = execute_plan(_make_plan(), manual=True)
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            result = execute_plan(plan, manual=True)
             assert result["after_three"] is False
             tx = env.mock_db.add_transaction.call_args[0][0]
             assert tx.is_t1 is False
@@ -126,8 +135,10 @@ class TestExecutePlanT1Logic:
     def test_note_preserved_with_t1(self):
         """note 不被 T+1 标记污染，is_t1 独立记录。"""
         mock_dt = datetime(2026, 1, 5, 20, 0, tzinfo=_TZ)
+        plan = _make_plan(note="加仓")
         with _PatchEnv(mock_dt) as env:
-            result = execute_plan(_make_plan(note="加仓"), manual=True)
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            result = execute_plan(plan, manual=True)
             assert result["after_three"] is True
             tx = env.mock_db.add_transaction.call_args[0][0]
             assert tx.note == "加仓"
@@ -140,8 +151,10 @@ class TestExecutePlanManual:
     def test_manual_no_next_run_update(self):
         """手动执行不调用 update_auto_invest_plan 更新 next_run。"""
         mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan()
         with _PatchEnv(mock_dt) as env:
-            execute_plan(_make_plan(), manual=True)
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            execute_plan(plan, manual=True)
             assert env.mock_db.update_auto_invest_plan.call_count == 1
             call = env.mock_db.update_auto_invest_plan.call_args
             assert "next_run" not in call.kwargs
@@ -149,9 +162,11 @@ class TestExecutePlanManual:
     def test_auto_updates_next_run(self):
         """自动执行调用 update_auto_invest_plan 一次（last_run + next_run 原子写入）。"""
         mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan()
         with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_auto_invest_plan.return_value = plan
             env.mock_db.get_nav_on_or_after.return_value = {"date": "2026-01-12"}
-            execute_plan(_make_plan(), manual=False)
+            execute_plan(plan, manual=False)
             assert env.mock_db.update_auto_invest_plan.call_count == 1
             call = env.mock_db.update_auto_invest_plan.call_args
             assert "next_run" in call.kwargs

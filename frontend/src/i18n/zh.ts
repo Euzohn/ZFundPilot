@@ -307,6 +307,7 @@ const zh = {
     paused: "已暂停",
     planExecuteSuccess: "定投执行成功，交易 ID: {id}",
     executeFailed: "执行失败",
+    alreadyExecutedToday: "该定投计划今日已执行",
     autoInvestDesc: "自动定期买入，每次创建一笔买入交易",
     newPlan: "新建定投",
     noPlansHintClick: "点击「新建定投」开始设置自动买入",

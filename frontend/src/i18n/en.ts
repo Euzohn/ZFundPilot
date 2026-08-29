@@ -309,6 +309,7 @@ const en: typeof zh = {
     paused: "Paused",
     planExecuteSuccess: "Executed, tx ID: {id}",
     executeFailed: "Execute failed",
+    alreadyExecutedToday: "This plan was already executed today",
     autoInvestDesc: "Auto periodic buy, creates a buy transaction each run",
     newPlan: "New Plan",
     noPlansHintClick: 'Click "New Plan" to start',

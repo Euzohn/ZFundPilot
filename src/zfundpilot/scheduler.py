@@ -16,6 +16,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from . import analysis, auto_invest, config, db, fetch_estimate, fetch_fund
+from .nav_update_state import nav_update_lock as _nav_update_lock
+from .nav_update_state import nav_update_state as _nav_update_state
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,18 +66,42 @@ def _update_benchmark_indices() -> None:
 
 
 def _run_nav_update() -> None:
-    """执行净值更新任务（由调度器调用）。"""
+    """执行净值更新任务（由调度器调用）。
+
+    与 api._nav_update_lock 共享锁，与手动触发互斥。
+    """
     global _last_run, _last_results
-    logger.info("[scheduler] 定时净值更新任务开始")
+
+    with _nav_update_lock:
+        if _nav_update_state["running"]:
+            logger.info("[scheduler] 净值更新正在进行中, 跳过定时任务")
+            return
+        _nav_update_state["running"] = True
+        _nav_update_state["total"] = 0
+        _nav_update_state["done"] = 0
+        _nav_update_state["current"] = ""
+        _nav_update_state["results"] = []
+        _nav_update_state["error"] = ""
+
     try:
         positions = analysis.calculate_positions()
         codes = [p.fund_code for p in positions if p.is_open]
         if not codes:
             logger.info("[scheduler] 无持仓基金，跳过")
+            with _nav_update_lock:
+                _nav_update_state["running"] = False
             _last_run = datetime.now(config.TIMEZONE)
             _last_results = []
             return
-        results = fetch_fund.update_all_holdings_nav(codes=codes)
+
+        _nav_update_state["total"] = len(codes)
+
+        def _progress(i: int, total: int, code: str) -> None:
+            _nav_update_state["done"] = i
+            _nav_update_state["total"] = total
+            _nav_update_state["current"] = code
+
+        results = fetch_fund.update_all_holdings_nav(codes=codes, progress=_progress)
         updated = analysis.backfill_transaction_navs()
         if updated:
             db.log_audit("nav_backfill", ip=None,
@@ -83,6 +109,7 @@ def _run_nav_update() -> None:
         analysis.clear_analysis_cache()
         _last_results = [r.__dict__ for r in results]
         _last_run = datetime.now(config.TIMEZONE)
+        _nav_update_state["results"] = [r.__dict__ for r in results]
         ok = sum(1 for r in results if r.ok)
         fail = len(results) - ok
         logger.info("[scheduler] 净值更新完成: %d 成功, %d 失败", ok, fail)
@@ -90,10 +117,15 @@ def _run_nav_update() -> None:
         _run_tp_sl_check()
         # 持久化基准指数数据（确保离线可用）
         _update_benchmark_indices()
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
         logger.exception("[scheduler] 定时净值更新任务异常")
         _last_run = datetime.now(config.TIMEZONE)
         _last_results = None
+        _nav_update_state["error"] = str(exc)
+    finally:
+        with _nav_update_lock:
+            _nav_update_state["running"] = False
+            _nav_update_state["current"] = ""
 
 
 def _convert_dow(dow: str) -> str:

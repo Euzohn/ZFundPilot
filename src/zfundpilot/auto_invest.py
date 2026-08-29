@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -18,6 +19,8 @@ from .models import ACTION_BUY, Transaction
 
 logger = logging.getLogger(__name__)
 CADENCES = ("daily", "week", "biweek", "month")
+
+_execute_lock = threading.Lock()
 
 
 def _next_trading_day(fund_code: str, from_date: str) -> str:
@@ -108,55 +111,74 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
     更新计划的 last_run / last_tx_id。
     手动执行（manual=True）时不更新 next_run。
 
+    幂等保护：加锁后重新拉取 plan，检查 last_run == today 则跳过，
+    防止定时+手动或双击导致重复买入交易。
+
     返回执行结果 dict。
     """
-    fund_code = plan["fund_code"]
-    amount = plan["amount"]
-    channel = plan.get("channel", "")
-    note = plan.get("note", "定投")
-    now = datetime.now(config.TIMEZONE)
-    today = now.strftime("%Y-%m-%d")
-    is_after_three = now.hour >= 15
+    with _execute_lock:
+        fresh = db.get_auto_invest_plan(plan["id"])
+        if not fresh:
+            raise ValueError(f"定投计划 {plan['id']} 不存在")
 
-    # 自动计算手续费
-    fee_result = fetch_fund.calc_purchase_fee(fund_code, amount)
-    fee = fee_result.fee
+        now = datetime.now(config.TIMEZONE)
+        today = now.strftime("%Y-%m-%d")
 
-    tx = Transaction(
-        fund_code=fund_code,
-        action=ACTION_BUY,
-        date=today,
-        amount=amount,
-        shares=None,
-        nav=None,
-        fee=fee,
-        channel=channel,
-        note=note,
-        is_t1=is_after_three,
-    )
-    tx_id = db.add_transaction(tx)
-    analysis.clear_analysis_cache()
+        if fresh.get("last_run") == today:
+            return {
+                "ok": False,
+                "skipped": True,
+                "reason": "今日已执行",
+                "tx_id": fresh.get("last_tx_id"),
+                "fund_code": fresh["fund_code"],
+                "amount": fresh["amount"],
+                "date": today,
+            }
 
-    update_fields: dict[str, Any] = {
-        "last_run": today,
-        "last_tx_id": tx_id,
-    }
+        fund_code = fresh["fund_code"]
+        amount = fresh["amount"]
+        channel = fresh.get("channel", "")
+        note = fresh.get("note", "定投")
+        is_after_three = now.hour >= 15
 
-    if not manual:
-        plan["last_run"] = today
-        update_fields["next_run"] = calculate_next_run(plan)
+        fee_result = fetch_fund.calc_purchase_fee(fund_code, amount)
+        fee = fee_result.fee
 
-    db.update_auto_invest_plan(plan["id"], **update_fields)
+        tx = Transaction(
+            fund_code=fund_code,
+            action=ACTION_BUY,
+            date=today,
+            amount=amount,
+            shares=None,
+            nav=None,
+            fee=fee,
+            channel=channel,
+            note=note,
+            is_t1=is_after_three,
+        )
+        tx_id = db.add_transaction(tx)
+        analysis.clear_analysis_cache()
 
-    return {
-        "ok": True,
-        "tx_id": tx_id,
-        "fund_code": fund_code,
-        "amount": amount,
-        "fee": fee,
-        "date": today,
-        "after_three": is_after_three,
-    }
+        update_fields: dict[str, Any] = {
+            "last_run": today,
+            "last_tx_id": tx_id,
+        }
+
+        if not manual:
+            fresh["last_run"] = today
+            update_fields["next_run"] = calculate_next_run(fresh)
+
+        db.update_auto_invest_plan(plan["id"], **update_fields)
+
+        return {
+            "ok": True,
+            "tx_id": tx_id,
+            "fund_code": fund_code,
+            "amount": amount,
+            "fee": fee,
+            "date": today,
+            "after_three": is_after_three,
+        }
 
 
 def run_all_due() -> list[dict[str, Any]]:
@@ -171,9 +193,13 @@ def run_all_due() -> list[dict[str, Any]]:
         try:
             result = execute_plan(p, manual=False)
             result["plan_id"] = p["id"]
-            result["status"] = "success"
-            logger.info("[auto_invest] 执行定投 plan#%d %s 金额 %.2f",
-                        p["id"], p["fund_code"], p["amount"])
+            if result.get("skipped"):
+                result["status"] = "skipped"
+                logger.info("[auto_invest] plan#%d %s 今日已执行, 跳过", p["id"], p["fund_code"])
+            else:
+                result["status"] = "success"
+                logger.info("[auto_invest] 执行定投 plan#%d %s 金额 %.2f",
+                            p["id"], p["fund_code"], p["amount"])
         except Exception as exc:
             logger.exception("[auto_invest] 定投执行失败 plan#%d", p["id"])
             result = {

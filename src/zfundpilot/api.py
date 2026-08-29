@@ -43,20 +43,12 @@ from . import (
     scheduler,
 )
 from .models import Fund, Transaction
+from .nav_update_state import nav_update_lock as _nav_update_lock
+from .nav_update_state import nav_update_state as _nav_update_state
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="ZFundPilot API", version="0.20.0")
-
-_nav_update_state: dict[str, Any] = {
-    "running": False,
-    "total": 0,
-    "done": 0,
-    "current": "",
-    "results": [],
-    "error": "",
-}
-_nav_update_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # 登录速率限制（in-memory，单 uvicorn worker）
@@ -1675,6 +1667,8 @@ def execute_auto_invest_plan(request: Request, plan_id: int) -> dict[str, Any]:
     if not plan:
         raise HTTPException(404, "定投计划不存在")
     result = auto_invest.execute_plan(plan, manual=True)
+    if result.get("skipped"):
+        raise HTTPException(409, "该定投计划今日已执行")
     analysis.clear_analysis_cache()
     db.log_audit("auto_invest_execute", ip=_get_client_ip(request),
                   username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,

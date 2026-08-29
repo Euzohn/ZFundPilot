@@ -1253,7 +1253,12 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
       toast.success(t.transactions.planExecuteSuccess.replace("{id}", String(res.tx_id)))
       reload()
     } catch (e: any) {
-      toast.error(e.message || t.transactions.executeFailed)
+      const msg = e?.body?.detail || e?.message || ""
+      if (e?.status === 409 || msg.includes("已执行")) {
+        toast.warning(t.transactions.alreadyExecutedToday)
+      } else {
+        toast.error(msg || t.transactions.executeFailed)
+      }
     } finally {
       setExecuting(null)
     }

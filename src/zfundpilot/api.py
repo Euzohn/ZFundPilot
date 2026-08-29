@@ -1232,6 +1232,24 @@ def nav_update_status() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 净值
 # ---------------------------------------------------------------------------
+@app.get("/api/nav/latest")
+def get_latest_navs() -> list[dict[str, Any]]:
+    """返回所有基金的基础信息 + 最新净值（单次查询，前端无需合并）。"""
+    funds = db.get_funds()
+    result = []
+    for f in funds:
+        latest = db.get_latest_nav(f.fund_code)
+        result.append({
+            "fund_code": f.fund_code,
+            "fund_name": f.fund_name,
+            "fund_type": f.fund_type,
+            "sector": f.sector,
+            "date": latest["date"] if latest else None,
+            "nav": float(latest["nav"]) if latest else None,
+        })
+    return result
+
+
 @app.get("/api/nav/{code}")
 def get_nav_history(code: str, date: str | None = None) -> list[dict[str, Any]]:
     if date:
@@ -1249,24 +1267,6 @@ def get_nav_history(code: str, date: str | None = None) -> list[dict[str, Any]]:
         fetch_fund.update_fund_nav(code)
         rows = db.get_nav_history(code)
     return [dict(r) for r in rows]
-
-
-@app.get("/api/nav/latest")
-def get_latest_navs() -> list[dict[str, Any]]:
-    """返回所有基金的基础信息 + 最新净值（单次查询，前端无需合并）。"""
-    funds = db.get_funds()
-    result = []
-    for f in funds:
-        latest = db.get_latest_nav(f.fund_code)
-        result.append({
-            "fund_code": f.fund_code,
-            "fund_name": f.fund_name,
-            "fund_type": f.fund_type,
-            "sector": f.sector,
-            "date": latest["date"] if latest else None,
-            "nav": float(latest["nav"]) if latest else None,
-        })
-    return result
 
 
 # ---------------------------------------------------------------------------

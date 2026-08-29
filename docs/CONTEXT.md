@@ -223,6 +223,7 @@ ZFundPilot/
   - 指数缓存 30s，ETF 缓存 60s（拉取较慢）
 - `fetch_estimate(fund_code)`: 获取单只基金估值（`gsz`/`gszzl`/`gztime`），30s 内存缓存
 - `fetch_estimates(fund_codes)`: 批量获取，30s 批量缓存
+- `FundEstimate` 是 `@dataclass`，`fetch_estimates` 返回的 list 元素是缓存（`_batch_cache`/`_fundgz_cache`）中的共享引用。**调用方不得原地改写字段**（会污染缓存，30s 内其他请求看到被篡改值）。api.py 的 `_index_fallback` 和 `get_estimates` DB-override 分支均用 `dataclasses.replace` 生成新对象写回 list，不触碰缓存对象
 - `stale-if-error`: API 失败时优先返回过期缓存而非空列表，避免短暂网络波动导致前端显示断档
 - `gztime` 从估值列名提取日期（如 `2024-07-30-估算数据-估算值` → `2024-07-30 15:00`），而非用 `datetime.now()`，避免跨日数据时间戳错误
 - 估算失效检测：`jzrq == gztime[:10]` 时标记 `ok=False`（真实净值已公布）

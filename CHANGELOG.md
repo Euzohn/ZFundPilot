@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Fixed
+- 净值缓存污染：`_index_fallback` 与 `get_estimates` 的 DB-override 分支原地改写 `FundEstimate` 字段（`dwjz`/`gsz`/`gszzl`/`ok`），这些对象是 30s 批量缓存（`_batch_cache`/`_fundgz_cache`）中的共享引用 → 缓存窗口内其他请求看到被篡改的估值。修复：两处均改用 `dataclasses.replace` 生成新对象并写回 list，不再触碰缓存对象。新增 2 个回归测试（`test_no_cache_mutation` + `TestGetEstimatesCacheMutation`，234→236）
 - 定投计划重复执行：`execute_plan` 加 `_execute_lock` + `get_auto_invest_plan` 重新拉取，`last_run == today` 则跳过（幂等）。定时 + 手动或双击不再产生重复买入交易。`run_all_due` 处理 skipped 状态，手动执行遇重复返回 HTTP 409，前端捕获显示「今日已执行」warning
 - 净值更新 TOCTOU 竞态（scheduler 侧）：`_run_nav_update` 与 api 手动触发共用 `nav_update_state.py` 的共享锁/状态，两路更新互斥，`running=True` 在锁内同步设置、`finally` 复位加锁
 

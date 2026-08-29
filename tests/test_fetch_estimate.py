@@ -218,11 +218,37 @@ class TestIndexFallback:
                   return_value={"nav": 2.0, "date": "2026-01-05"}),
         ):
             from zfundpilot.api import _index_fallback
-            _index_fallback([est], merged)
-        assert est.ok
-        assert est.gsz == 2.03
-        assert est.gszzl == 1.5
-        assert est.code == "index_estimate"
+            estimates = [est]
+            _index_fallback(estimates, merged)
+        assert estimates[0].ok
+        assert estimates[0].gsz == 2.03
+        assert estimates[0].gszzl == 1.5
+        assert estimates[0].code == "index_estimate"
+
+    def test_no_cache_mutation(self):
+        """缓存污染修复验证：_index_fallback 不得原地改写缓存共享对象。
+
+        传入的 FundEstimate 对象是 30s 批量缓存的引用，调用后原始对象字段
+        必须保持不变；兜底结果应写入新对象并放回 list。
+        """
+        est = _make_est(dwjz=2.0, jzrq="2026-01-05")
+        merged = {"001": {"tracking_index": "沪深300", "latest_date": None}}
+        with (
+            patch("zfundpilot.api.fetch_estimate.fetch_index_quotes",
+                  return_value={"沪深300": 1.5}),
+            patch("zfundpilot.api.db.get_latest_nav",
+                  return_value={"nav": 2.0, "date": "2026-01-05"}),
+        ):
+            from zfundpilot.api import _index_fallback
+            estimates = [est]
+            _index_fallback(estimates, merged)
+        assert not est.ok
+        assert est.dwjz == 2.0
+        assert est.jzrq == "2026-01-05"
+        assert est.gsz == 0.0
+        assert est.gszzl == 0.0
+        assert est.code == ""
+        assert estimates[0] is not est
 
     def test_skips_db_override(self):
         """当日净值已入库（latest_date == today）→ 跳过。"""
@@ -260,6 +286,57 @@ class TestIndexFallback:
             from zfundpilot.api import _index_fallback
             _index_fallback([est], merged)
         assert not est.ok
+
+
+# ---------------------------------------------------------------------------
+# get_estimates DB-override 缓存污染回归
+# ---------------------------------------------------------------------------
+class TestGetEstimatesCacheMutation:
+    """get_estimates 的 DB-override 分支不得改写缓存共享对象。"""
+
+    def _position(self, fund_code, latest_date):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            fund_code=fund_code,
+            fund_name="测试基金",
+            is_open=True,
+            held_shares=100.0,
+            latest_date=latest_date,
+            tracking_index="",
+        )
+
+    def test_db_override_no_cache_mutation(self):
+        """当日净值已入库时 DB-override 改写为新对象，原缓存对象不变。"""
+        from zfundpilot import config
+
+        today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
+        est = FundEstimate(
+            fund_code="001", fund_name="测试基金", ok=True,
+            dwjz=1.0, gsz=1.1, gszzl=10.0, gztime="2026-01-05 15:00",
+        )
+        positions = [self._position("001", today)]
+        with (
+            patch("zfundpilot.api.analysis.calculate_positions", return_value=positions),
+            patch("zfundpilot.api.fetch_estimate.fetch_estimates", return_value=[est]),
+            patch("zfundpilot.api.db.get_latest_nav",
+                  return_value={"nav": 1.2, "date": today}),
+            patch("zfundpilot.api.db.get_prev_nav",
+                  return_value={"nav": 1.0, "date": "2026-01-05"}),
+        ):
+            from zfundpilot.api import get_estimates
+            resp = get_estimates()
+
+        # 缓存共享对象未被原地改写
+        assert est.ok is True
+        assert est.dwjz == 1.0
+        assert est.gsz == 1.1
+        assert est.gszzl == 10.0
+        # 响应使用 DB override 后的数据
+        f = resp["funds"][0]
+        assert f["ok"] is False
+        assert f["gsz"] == 1.2
+        assert f["dwjz"] == 1.0
+        assert f["gszzl"] == 20.0
 
 
 # ---------------------------------------------------------------------------

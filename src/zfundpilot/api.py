@@ -17,6 +17,7 @@ import logging
 import os
 import threading
 import time
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -910,14 +911,17 @@ def _index_fallback(estimates: list, merged: dict[str, dict]) -> None:
         prev_nav = float(latest_nav["nav"])
         prev_date = str(latest_nav["date"])
         est = estimates[i]
-        est.dwjz = prev_nav
-        est.jzrq = prev_date
-        est.gsz = round(prev_nav * (1 + change_pct / 100), 4)
-        est.gszzl = round(change_pct, 2)
-        est.gztime = now_str
-        est.ok = True
-        est.code = "index_estimate"
-        est.message = "指数估值"
+        estimates[i] = replace(
+            est,
+            dwjz=prev_nav,
+            jzrq=prev_date,
+            gsz=round(prev_nav * (1 + change_pct / 100), 4),
+            gszzl=round(change_pct, 2),
+            gztime=now_str,
+            ok=True,
+            code="index_estimate",
+            message="指数估值",
+        )
 
 
 @app.get("/api/estimate")
@@ -948,7 +952,7 @@ def get_estimates() -> dict[str, Any]:
     total_prev_value = 0.0
     latest_gztime = ""
     today_str = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
-    for est in estimates:
+    for idx, est in enumerate(estimates):
         info = merged.get(est.fund_code, {})
         shares = info.get("shares", 0)
 
@@ -958,10 +962,12 @@ def get_estimates() -> dict[str, Any]:
             latest_nav = db.get_latest_nav(est.fund_code)
             prev_nav = db.get_prev_nav(est.fund_code)
             if latest_nav and prev_nav:
-                est.dwjz = float(prev_nav["nav"])
-                est.gsz = float(latest_nav["nav"])
-                est.gszzl = round((est.gsz - est.dwjz) / est.dwjz * 100, 2) if est.dwjz else 0
-                est.ok = False
+                # 用 replace 生成新对象写回，避免污染缓存中的共享引用
+                new_dwjz = float(prev_nav["nav"])
+                new_gsz = float(latest_nav["nav"])
+                new_gszzl = round((new_gsz - new_dwjz) / new_dwjz * 100, 2) if new_dwjz else 0
+                est = replace(est, dwjz=new_dwjz, gsz=new_gsz, gszzl=new_gszzl, ok=False)
+                estimates[idx] = est
                 db_override = True
 
         if est.ok:
@@ -985,7 +991,7 @@ def get_estimates() -> dict[str, Any]:
                 total_est_pnl += est_pnl
                 total_prev_value += prev_value
             else:
-                est.gszzl = 0
+                est = replace(est, gszzl=0)
                 est_pnl = 0
                 prev_value = 0
         funds.append({

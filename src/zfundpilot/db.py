@@ -31,6 +31,7 @@ def get_connection() -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 5000")
     try:
         yield conn
         conn.commit()
@@ -47,6 +48,7 @@ def get_connection() -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     """创建所有表（若不存在），并迁移旧数据。幂等。"""
     with get_connection() as conn:
+        conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS funds (
@@ -695,7 +697,7 @@ def add_ai_usage(model: str, prompt_tokens: int, completion_tokens: int,
     with get_connection() as conn:
         conn.execute(
             "INSERT INTO ai_usage(created_at,model,prompt_tokens,completion_tokens,total_tokens,turns)"
-            " VALUES(datetime('now'),?,?,?,?,?)",
+            " VALUES(datetime('now','localtime'),?,?,?,?,?)",
             (model, prompt_tokens, completion_tokens, total_tokens, turns),
         )
 
@@ -705,7 +707,7 @@ def get_ai_usage_stats() -> dict:
     with get_connection() as conn:
         today = conn.execute(
             "SELECT COALESCE(SUM(total_tokens),0) AS t FROM ai_usage"
-            " WHERE created_at >= date('now')"
+            " WHERE created_at >= date('now','localtime')"
         ).fetchone()["t"]
 
         total = conn.execute(
@@ -736,12 +738,12 @@ def get_ai_usage_daily(days: int = 7) -> list[dict]:
         rows = conn.execute(
             "SELECT date(created_at) AS d, COALESCE(SUM(total_tokens),0) AS t"
             " FROM ai_usage"
-            " WHERE created_at >= date('now', ?)"
+            " WHERE created_at >= date('now','localtime', ?)"
             " GROUP BY date(created_at) ORDER BY d ASC",
             (f"-{days} days",),
         ).fetchall()
     usage_map = {r["d"]: r["t"] for r in rows}
-    today = dt.datetime.now(dt.timezone.utc).date()
+    today = datetime.now(config.TIMEZONE).date()
     dates = [(today - dt.timedelta(days=days - 1 - i)).isoformat() for i in range(days)]
     return [{"date": d, "tokens": usage_map.get(d, 0)} for d in dates]
 

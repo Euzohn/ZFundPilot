@@ -2,7 +2,7 @@
 
 数据库：SQLite，文件路径 `data/fund.db`（由 `config.DB_PATH` 指定）。
 
-连接管理：`db.get_connection()` 上下文管理器，每次请求独立连接，`row_factory = sqlite3.Row`，自动 commit/rollback/close。
+连接管理：`db.get_connection()` 上下文管理器，每次请求独立连接，`row_factory = sqlite3.Row`，自动 commit/rollback/close。启用 `PRAGMA busy_timeout = 5000`（每连接，写入等待而非立即报 `database is locked`）与 `PRAGMA journal_mode = WAL`（`init_db()` 设置，读写并发且崩溃更安全）。
 
 ---
 

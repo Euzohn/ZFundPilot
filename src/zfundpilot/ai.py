@@ -96,8 +96,8 @@ def _fetch_market_index() -> str:
 
         import akshare as ak
 
-        end = datetime.now().strftime("%Y%m%d")
-        start = (datetime.now() - timedelta(days=7)).strftime("%Y%m%d")
+        end = datetime.now(config.TIMEZONE).strftime("%Y%m%d")
+        start = (datetime.now(config.TIMEZONE) - timedelta(days=7)).strftime("%Y%m%d")
         results = []
         for symbol, name in [
             ("000001", "上证指数"),

@@ -10,6 +10,9 @@
 - 净值缓存污染：`_index_fallback` 与 `get_estimates` 的 DB-override 分支原地改写 `FundEstimate` 字段（`dwjz`/`gsz`/`gszzl`/`ok`），这些对象是 30s 批量缓存（`_batch_cache`/`_fundgz_cache`）中的共享引用 → 缓存窗口内其他请求看到被篡改的估值。修复：两处均改用 `dataclasses.replace` 生成新对象并写回 list，不再触碰缓存对象。新增 2 个回归测试（`test_no_cache_mutation` + `TestGetEstimatesCacheMutation`，234→236）
 - 定投计划重复执行：`execute_plan` 加 `_execute_lock` + `get_auto_invest_plan` 重新拉取，`last_run == today` 则跳过（幂等）。定时 + 手动或双击不再产生重复买入交易。`run_all_due` 处理 skipped 状态，手动执行遇重复返回 HTTP 409，前端捕获显示「今日已执行」warning
 - 净值更新 TOCTOU 竞态（scheduler 侧）：`_run_nav_update` 与 api 手动触发共用 `nav_update_state.py` 的共享锁/状态，两路更新互斥，`running=True` 在锁内同步设置、`finally` 复位加锁
+- SQLite 并发健壮性：`get_connection()` 加 `PRAGMA busy_timeout = 5000`，`init_db()` 加 `PRAGMA journal_mode = WAL`（原 rollback journal 下读写互相阻塞，易 `database is locked`）。WAL 允许读写并发且崩溃更安全（新增 2 个测试，239→241）
+- AI 用量时区：存储（`add_ai_usage` 原 `datetime('now')` UTC）与读取（`get_ai_usage_stats` today 过滤、`get_ai_usage_daily` 日期轴与过滤）四处在写读两侧统一为本地时间（`datetime('now','localtime')` / `date('now','localtime')` / `datetime.now(config.TIMEZONE)`），修复上海时区早 8 点前当日 token 归到前一天的问题（新增 3 个测试，238→241）
+- 朴素 datetime 收敛约定：`ai.py` 的 `_fetch_market_index` 与 `fetch_dividend.py` 的 `check_dividends` 改用 `datetime.now(config.TIMEZONE)` 替代裸 `datetime.now()`，与全仓时区约定一致（现有 `config.TIMEZONE` 已覆盖，行为不变）
 
 ## [0.20.0] - 2026-08-28
 

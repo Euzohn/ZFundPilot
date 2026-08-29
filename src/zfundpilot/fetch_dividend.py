@@ -217,7 +217,7 @@ def check_dividends() -> list[DividendEvent]:
     funds = {f.fund_code: f for f in db.get_funds()}
 
     all_events: list[DividendEvent] = []
-    cutoff = (datetime.now() - timedelta(days=_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(config.TIMEZONE) - timedelta(days=_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
 
     fetched_ex_dates: set[tuple[str, str]] = set()
     fetched_funds: set[str] = set()

@@ -56,6 +56,7 @@ _nav_update_state: dict[str, Any] = {
     "results": [],
     "error": "",
 }
+_nav_update_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # 登录速率限制（in-memory，单 uvicorn worker）
@@ -1187,20 +1188,22 @@ def calc_fund_fee(code: str, action: str = "buy",
 # ---------------------------------------------------------------------------
 @app.post("/api/nav/update")
 def update_nav(request: Request) -> dict[str, Any]:
-    if _nav_update_state["running"]:
-        raise HTTPException(409, "净值更新正在进行中")
+    with _nav_update_lock:
+        if _nav_update_state["running"]:
+            raise HTTPException(409, "净值更新正在进行中")
+        _nav_update_state["running"] = True
+        _nav_update_state["total"] = 0
+        _nav_update_state["done"] = 0
+        _nav_update_state["current"] = ""
+        _nav_update_state["results"] = []
+        _nav_update_state["error"] = ""
 
     positions = analysis.calculate_positions()
     codes = [p.fund_code for p in positions if p.is_open]
     client_ip = _get_client_ip(request)
 
     def _run() -> None:
-        _nav_update_state["running"] = True
         _nav_update_state["total"] = len(codes)
-        _nav_update_state["done"] = 0
-        _nav_update_state["current"] = ""
-        _nav_update_state["results"] = []
-        _nav_update_state["error"] = ""
         try:
             def _progress(i: int, total: int, code: str) -> None:
                 _nav_update_state["done"] = i
@@ -1217,8 +1220,9 @@ def update_nav(request: Request) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             _nav_update_state["error"] = str(exc)
         finally:
-            _nav_update_state["running"] = False
-            _nav_update_state["current"] = ""
+            with _nav_update_lock:
+                _nav_update_state["running"] = False
+                _nav_update_state["current"] = ""
 
     threading.Thread(target=_run, daemon=True).start()
     return {"ok": True, "message": "净值更新已启动", "total": len(codes)}

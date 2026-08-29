@@ -51,6 +51,7 @@ ZFundPilot/
 │   ├── backtest.py          # 定投策略回测（DCA + 一次性投入对比 + XIRR）
 │   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延）
 │   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
+│   ├── nav_update_state.py  # 净值更新共享状态+锁（api.py/scheduler.py 共用，避免循环导入）
 │   ├── scheduler.py         # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查 + 基准指数持久化
 │   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）+ 视觉模型截图解析（parse_screenshot + resolve_fund_code 名称→代码后处理）
 │   └── data_io.py           # CSV 导入/导出 + 全量备份 ZIP
@@ -190,7 +191,8 @@ ZFundPilot/
 - 4 种频率：`daily`（每个交易日）/ `week`（每周）/ `biweek`（每双周）/ `month`（每月）
 - `calculate_next_run(plan)`: 根据频率计算下次执行日，遇非交易日顺延到最近的交易日（有净值数据时用净值数据推断；将来日期无净值数据时至少跳过周末）。`from_date` 缺省时取 `max(next_run, today)`，跳过停机期间错过的期数
 - `execute_plan(plan, manual)`: 创建一笔买入交易（`nav=NULL`，等回填），自动通过 `fetch_fund.calc_purchase_fee` 计算手续费，更新 `last_run`/`last_tx_id`。手动执行（`manual=True`）不更新 `next_run`。15:00 前不加 T+1 标记（用当天净值），15:00 后加 `T+1确认` 标记（用次日净值）
-- `run_all_due()`: 被 `scheduler.py` 每天 09:00 调用，检查所有 `enabled=1` 且 `next_run <= today` 的计划，逐个执行
+  - **幂等保护**：`_execute_lock` 加锁后重新 `db.get_auto_invest_plan` 拉取最新 plan，若 `last_run == today` 则直接返回 `{ok: False, skipped: True}`，防止定时 + 手动或双击导致重复买入交易。返回 skipped 时不写入新交易
+- `run_all_due()`: 被 `scheduler.py` 每天 09:00 调用，检查所有 `enabled=1` 且 `next_run <= today` 的计划，逐个执行；skipped 的状态标记为 `"skipped"`
 - API: 6 个端点 `POST/GET/PUT/DELETE /api/auto-invest/plans` + `/toggle` + `/execute`
 
 ### fetch_fund.py — 净值获取
@@ -249,6 +251,7 @@ ZFundPilot/
 - `config.TIMEZONE`: 所有 `datetime.now()` 调用使用此时区，不依赖系统时区
 - **止盈止损检查**：嵌入 `_run_nav_update()` 末尾，净值更新完成后自动执行 `_run_tp_sl_check()`。扫描所有持仓 `return_rate`，≥ 止盈阈值或 ≤ 止损阈值时生成提醒。状态机：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio` 以下后重新 `armed`（避免部分止盈后重复提醒）。配置存 `preferences` 表（`tp_sl_enabled`/`tp_sl_take_profit`/`tp_sl_stop_loss`/`tp_sl_take_profit_enabled`/`tp_sl_stop_loss_enabled`/`tp_sl_reset_ratio`），默认关闭。`tp_sl_alert_states` 表记录每只基金每个方向的 armed 状态。复用 `dividend_alerts` 表（`alert_type` 区分 `dividend`/`take_profit`/`stop_loss`）
 - API: `GET /api/scheduler/status` + `PUT /api/scheduler/toggle` + `PUT /api/scheduler/cron`；`GET/PUT /api/alerts/config`（止盈止损配置）；`GET /api/alerts` + `GET /api/alerts/count`（统一提醒列表/计数，支持 `?type=tp_sl`）；`PUT /api/alerts/{id}`（更新状态：confirmed/ignored/pending，pending 时清空 resolved_at）
+- **净值更新共享锁**：`_run_nav_update()` 与 `api.py` 的手动触发共用 `nav_update_lock`/`nav_update_state`（定义在 `nav_update_state.py`，避免循环导入）。定时与手动两路更新互斥，且共享进度/结果状态供前端显示。`running=True` 在锁内同步设置，`finally` 复位也加锁，进程启动（前）后无 TOCTOU 竞态
 - **基准指数持久化**：`_update_benchmark_indices()` 在净值更新后调用，遍历 `config.BENCHMARK_INDICES`（沪深300/上证指数/创业板指）逐只拉取并持久化到 `index_history` 表，确保离线时基准对比数据可用。DB 已有最新数据时跳过
 - **分红检测任务**：每天 09:30 执行 `_run_dividend_check()`（`dividend_check` cron job），扫描持仓基金的未记录分红事件，新发现的存入 `dividend_alerts` 表。开关存 `preferences` 表 key=`dividend_auto_check`，默认启用。`_bootstrap_dividend_check()` 启动时若已过 09:30 且今日未执行过，立即补跑
 - **幽灵分红提醒自动清理**：`check_dividends()` 抓取数据时同步收集 `fetched_ex_dates`/`fetched_funds`（`fetched_funds.add(code)` 在空响应检查之前执行，确保 AkShare 返回空 DataFrame 的基金如 QDII 其提醒也被清理），调用 `_cleanup_stale_alerts()` 校验现有 pending 提醒是否仍存在于源数据中，不存在则自动标记为 `ignored`。TTL 兜底：pending 超 90 天（`_LOOKBACK_DAYS`）自动 ignore，防 fetch 持续失败的基金提醒永久残留。SQLite `created_at` 是朴素无时区字符串，与 aware `cutoff` 比较前补 `config.TIMEZONE`。清理数量存入 `fetch_dividend._last_cleanup_count`，`POST /api/dividends/scan` 响应含 `cleaned` 字段，scheduler 日志/审计也含清理计数

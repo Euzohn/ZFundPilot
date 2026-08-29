@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- 定投计划重复执行：`execute_plan` 加 `_execute_lock` + `get_auto_invest_plan` 重新拉取，`last_run == today` 则跳过（幂等）。定时 + 手动或双击不再产生重复买入交易。`run_all_due` 处理 skipped 状态，手动执行遇重复返回 HTTP 409，前端捕获显示「今日已执行」warning
+- 净值更新 TOCTOU 竞态（scheduler 侧）：`_run_nav_update` 与 api 手动触发共用 `nav_update_state.py` 的共享锁/状态，两路更新互斥，`running=True` 在锁内同步设置、`finally` 复位加锁
+
 ## [0.20.0] - 2026-08-28
 
 ### Added

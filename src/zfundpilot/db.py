@@ -461,18 +461,44 @@ def delete_all_transactions() -> None:
         conn.execute("DELETE FROM transactions")
 
 
-def get_transactions(fund_code: str | None = None) -> list[Transaction]:
-    """返回流水，按日期升序（同日按 id）。可按基金过滤。"""
+def get_transactions(
+    fund_code: str | None = None,
+    *,
+    fund_codes: list[str] | None = None,
+    actions: list[str] | None = None,
+    dates: list[str] | None = None,
+) -> list[Transaction]:
+    """返回流水，按日期升序（同日按 id）。支持多种过滤。
+
+    fund_code: 单只基金过滤（兼容旧调用）
+    fund_codes: 多基金过滤（IN 子句）
+    actions: 按操作类型过滤（IN 子句）
+    dates: 按日期过滤（IN 子句，精确匹配）
+    """
+    clauses: list[str] = []
+    params: list[str | int] = []
+
+    if fund_code:
+        clauses.append("fund_code=?")
+        params.append(fund_code)
+    if fund_codes:
+        ph = ",".join("?" for _ in fund_codes)
+        clauses.append(f"fund_code IN ({ph})")
+        params.extend(fund_codes)
+    if actions:
+        ph = ",".join("?" for _ in actions)
+        clauses.append(f"action IN ({ph})")
+        params.extend(actions)
+    if dates:
+        ph = ",".join("?" for _ in dates)
+        clauses.append(f"date IN ({ph})")
+        params.extend(dates)
+
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = f"SELECT * FROM transactions{where} ORDER BY date ASC, id ASC"
+
     with get_connection() as conn:
-        if fund_code:
-            rows = conn.execute(
-                "SELECT * FROM transactions WHERE fund_code=? ORDER BY date ASC, id ASC",
-                (fund_code,),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM transactions ORDER BY date ASC, id ASC"
-            ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return [Transaction.from_row(r) for r in rows]
 
 
@@ -548,6 +574,28 @@ def get_latest_nav(fund_code: str) -> sqlite3.Row | None:
         ).fetchone()
 
 
+def get_latest_navs_batch(fund_codes: list[str]) -> dict[str, sqlite3.Row]:
+    """批量获取每只基金的最新净值（单次查询）。
+
+    Returns:
+        {fund_code: nav_row}
+    """
+    if not fund_codes:
+        return {}
+    with get_connection() as conn:
+        ph = ",".join("?" for _ in fund_codes)
+        rows = conn.execute(
+            f"SELECT nh.* FROM nav_history nh "
+            f"INNER JOIN ("
+            f"  SELECT fund_code, MAX(date) AS max_date "
+            f"  FROM nav_history WHERE fund_code IN ({ph}) "
+            f"  GROUP BY fund_code"
+            f") latest ON nh.fund_code = latest.fund_code AND nh.date = latest.max_date",
+            fund_codes,
+        ).fetchall()
+    return {r["fund_code"]: r for r in rows}
+
+
 def get_prev_nav(fund_code: str) -> sqlite3.Row | None:
     """返回倒数第二条 NAV 记录（用于计算今日收益）。"""
     with get_connection() as conn:
@@ -585,6 +633,37 @@ def get_nav_on_or_after(fund_code: str, date_str: str) -> sqlite3.Row | None:
             "ORDER BY date ASC LIMIT 1",
             (fund_code, date_str),
         ).fetchone()
+
+
+def get_navs_on_or_after_batch(
+    items: list[tuple[str, str]],
+) -> dict[tuple[str, str], sqlite3.Row]:
+    """批量获取每只基金指定日期当天或之后最近的一条净值（单连接+去重）。
+
+    Args:
+        items: [(fund_code, nav_date), ...]
+
+    Returns:
+        {(fund_code, nav_date): nav_row} — 仅包含有结果的对
+    """
+    if not items:
+        return {}
+    seen: set[tuple[str, str]] = set()
+    result: dict[tuple[str, str], sqlite3.Row] = {}
+    with get_connection() as conn:
+        for code, date_str in items:
+            key = (code, date_str)
+            if key in seen:
+                continue
+            seen.add(key)
+            row = conn.execute(
+                "SELECT * FROM nav_history WHERE fund_code=? AND date>=? "
+                "ORDER BY date ASC LIMIT 1",
+                (code, date_str),
+            ).fetchone()
+            if row:
+                result[key] = row
+    return result
 
 
 def get_nav_on_date(fund_code: str, date_str: str) -> sqlite3.Row | None:
@@ -1056,6 +1135,25 @@ def get_tp_sl_alert_state(fund_code: str, alert_type: str) -> dict | None:
             (fund_code, alert_type),
         ).fetchone()
     return dict(row) if row else None
+
+
+def get_tp_sl_alert_states_batch(
+    fund_codes: list[str],
+) -> dict[tuple[str, str], dict]:
+    """批量获取止盈止损状态（单次查询）。
+
+    Returns:
+        {(fund_code, alert_type): state_dict}
+    """
+    if not fund_codes:
+        return {}
+    with get_connection() as conn:
+        ph = ",".join("?" for _ in fund_codes)
+        rows = conn.execute(
+            f"SELECT * FROM tp_sl_alert_states WHERE fund_code IN ({ph})",
+            fund_codes,
+        ).fetchall()
+    return {(r["fund_code"], r["alert_type"]): dict(r) for r in rows}
 
 
 def upsert_tp_sl_alert_state(fund_code: str, alert_type: str, **fields) -> None:

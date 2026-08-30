@@ -526,7 +526,32 @@ def _mark_duplicates(items: list[dict]) -> None:
     - date 相同（parsed tx 的 date 非空）
     - amount 相近（abs < 0.01）或 shares 相近
     """
-    existing = db.get_transactions()
+    # 收集 items 中需要查询的 (fund_code, action, date) 三元组
+    query_triples: set[tuple[str, str, str]] = set()
+    for item in items:
+        code = str(item.get("fund_code") or "").strip()
+        date = item.get("date")
+        if not code or not date:
+            continue
+        action = item.get("action", "")
+        query_triples.add((code, action, date))
+
+    if not query_triples:
+        for item in items:
+            item["is_duplicate"] = False
+        return
+
+    # 按 fund_codes / actions / dates 分组，批量查库
+    fund_codes = list({triple[0] for triple in query_triples})
+    actions = list({triple[1] for triple in query_triples})
+    dates = list({triple[2] for triple in query_triples})
+    existing = db.get_transactions(fund_codes=fund_codes, actions=actions, dates=dates)
+
+    # 构建查找表：(fund_code, action, date) → [tx]
+    lookup: dict[tuple[str, str, str], list] = {}
+    for tx in existing:
+        lookup.setdefault((tx.fund_code, tx.action, tx.date), []).append(tx)
+
     for item in items:
         item["is_duplicate"] = False
         code = str(item.get("fund_code") or "").strip()
@@ -536,9 +561,7 @@ def _mark_duplicates(items: list[dict]) -> None:
         action = item.get("action", "")
         amount = item.get("amount")
         shares = item.get("shares")
-        for tx in existing:
-            if tx.fund_code != code or tx.action != action or tx.date != date:
-                continue
+        for tx in lookup.get((code, action, date), []):
             if amount is not None and tx.amount is not None and abs(tx.amount - amount) < 0.01:
                 item["is_duplicate"] = True
                 break
@@ -1392,20 +1415,18 @@ def nav_update_status() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 @app.get("/api/nav/latest")
 def get_latest_navs() -> list[dict[str, Any]]:
-    """返回所有基金的基础信息 + 最新净值（单次查询，前端无需合并）。"""
+    """返回所有基金的基础信息 + 最新净值（批量查询，避免 N+1）。"""
     funds = db.get_funds()
-    result = []
-    for f in funds:
-        latest = db.get_latest_nav(f.fund_code)
-        result.append({
-            "fund_code": f.fund_code,
-            "fund_name": f.fund_name,
-            "fund_type": f.fund_type,
-            "sector": f.sector,
-            "date": latest["date"] if latest else None,
-            "nav": float(latest["nav"]) if latest else None,
-        })
-    return result
+    codes = [f.fund_code for f in funds]
+    latest_map = db.get_latest_navs_batch(codes)
+    return [{
+        "fund_code": f.fund_code,
+        "fund_name": f.fund_name,
+        "fund_type": f.fund_type,
+        "sector": f.sector,
+        "date": latest_map[f.fund_code]["date"] if f.fund_code in latest_map else None,
+        "nav": float(latest_map[f.fund_code]["nav"]) if f.fund_code in latest_map else None,
+    } for f in funds]
 
 
 @app.get("/api/nav/{code}")

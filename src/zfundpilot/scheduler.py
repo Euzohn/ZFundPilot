@@ -247,14 +247,20 @@ def _run_tp_sl_check() -> None:
         today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
         new_count = 0
 
+        # 批量预加载所有持仓的止盈止损状态（单次查询，避免 N+1）
+        codes = [p.fund_code for p in positions]
+        states = db.get_tp_sl_alert_states_batch(codes)
+
         for pos in positions:
             rr = pos.return_rate
             if rr is None:
                 continue
 
+            tp_state = states.get((pos.fund_code, "take_profit"))
+            sl_state = states.get((pos.fund_code, "stop_loss"))
+
             if tp_enabled and rr >= tp_threshold:
-                state = db.get_tp_sl_alert_state(pos.fund_code, "take_profit")
-                armed = state is None or state.get("armed", 1) == 1
+                armed = tp_state is None or tp_state.get("armed", 1) == 1
                 if armed and not db.tp_sl_alert_exists(pos.fund_code, "take_profit", today):
                     alert_id = db.add_tp_sl_alert({
                         "fund_code": pos.fund_code,
@@ -269,11 +275,14 @@ def _run_tp_sl_check() -> None:
                         last_triggered_return=rr,
                         armed=0,
                     )
+                    states[(pos.fund_code, "take_profit")] = {
+                        "armed": 0, "last_alert_id": alert_id,
+                        "last_triggered_return": rr,
+                    }
                     new_count += 1
 
             if sl_enabled and rr <= sl_threshold:
-                state = db.get_tp_sl_alert_state(pos.fund_code, "stop_loss")
-                armed = state is None or state.get("armed", 1) == 1
+                armed = sl_state is None or sl_state.get("armed", 1) == 1
                 if armed and not db.tp_sl_alert_exists(pos.fund_code, "stop_loss", today):
                     alert_id = db.add_tp_sl_alert({
                         "fund_code": pos.fund_code,
@@ -288,19 +297,29 @@ def _run_tp_sl_check() -> None:
                         last_triggered_return=rr,
                         armed=0,
                     )
+                    states[(pos.fund_code, "stop_loss")] = {
+                        "armed": 0, "last_alert_id": alert_id,
+                        "last_triggered_return": rr,
+                    }
                     new_count += 1
 
             # 复位检查：收益率回落到复位线以下后重新 armed
             tp_reset = tp_threshold * reset_ratio
             sl_reset = sl_threshold * reset_ratio
             if tp_enabled:
-                tp_state = db.get_tp_sl_alert_state(pos.fund_code, "take_profit")
-                if tp_state and tp_state.get("armed", 1) == 0 and rr < tp_reset:
+                tp_st = states.get((pos.fund_code, "take_profit"))
+                if tp_st and tp_st.get("armed", 1) == 0 and rr < tp_reset:
                     db.upsert_tp_sl_alert_state(pos.fund_code, "take_profit", armed=1)
+                    states[(pos.fund_code, "take_profit")] = {
+                        **tp_st, "armed": 1,
+                    }
             if sl_enabled:
-                sl_state = db.get_tp_sl_alert_state(pos.fund_code, "stop_loss")
-                if sl_state and sl_state.get("armed", 1) == 0 and rr > sl_reset:
+                sl_st = states.get((pos.fund_code, "stop_loss"))
+                if sl_st and sl_st.get("armed", 1) == 0 and rr > sl_reset:
                     db.upsert_tp_sl_alert_state(pos.fund_code, "stop_loss", armed=1)
+                    states[(pos.fund_code, "stop_loss")] = {
+                        **sl_st, "armed": 1,
+                    }
 
         if new_count:
             db.log_audit("tp_sl_alert", ip=None,

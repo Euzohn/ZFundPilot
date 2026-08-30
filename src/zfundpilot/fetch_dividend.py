@@ -264,13 +264,19 @@ def check_dividends() -> list[DividendEvent]:
     if not all_events:
         return []
 
-    existing_txs = db.get_transactions()
+    # 批量过滤：只取相关基金的分红/再投资流水（避免全表扫描）
+    relevant_codes = list({ev.fund_code for ev in all_events})
+    existing_txs = db.get_transactions(
+        fund_codes=relevant_codes,
+        actions=[ACTION_DIVIDEND, ACTION_REINVEST],
+    )
+    # 按 fund_code 分组，O(D×K) 替代 O(D×N)
+    tx_by_code: dict[str, list] = {}
+    for tx in existing_txs:
+        tx_by_code.setdefault(tx.fund_code, []).append(tx)
+
     for ev in all_events:
-        for tx in existing_txs:
-            if tx.fund_code != ev.fund_code:
-                continue
-            if tx.action not in (ACTION_DIVIDEND, ACTION_REINVEST):
-                continue
+        for tx in tx_by_code.get(ev.fund_code, []):
             if _date_close(tx.date, ev.ex_date, tolerance=3):
                 ev.already_recorded = True
                 break

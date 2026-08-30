@@ -81,16 +81,11 @@ class TestBackfillT1:
             mock_db.get_transactions_without_nav.return_value = [t1_tx, normal_tx]
             mock_ff.calc_purchase_fee.side_effect = _zero_fee
 
-            # T+1 交易：返回次日净值 1.5
-            # 普通交易：返回当日净值 1.0
-            def mock_nav_on_or_after(code, date):
-                if date == "2025-01-16":  # T+1 查次日
-                    return {"nav": 1.5}
-                if date == "2025-01-15":  # 普通查当日
-                    return {"nav": 1.0}
-                return None
-            mock_db.get_nav_on_or_after.side_effect = mock_nav_on_or_after
-            mock_db.update_transaction = MagicMock()
+            # T+1 交易：返回次日净值 1.5；普通交易：返回当日净值 1.0
+            mock_db.get_navs_on_or_after_batch.return_value = {
+                ("001", "2025-01-16"): {"nav": 1.5},
+                ("002", "2025-01-15"): {"nav": 1.0},
+            }
 
             updated = backfill_transaction_navs()
 
@@ -112,16 +107,18 @@ class TestBackfillT1:
         with patch("zfundpilot.analysis.db") as mock_db, \
              patch("zfundpilot.analysis.fetch_fund") as mock_ff:
             mock_db.get_transactions_without_nav.return_value = [tx]
-            mock_db.get_nav_on_or_after.return_value = {"nav": 1.2}
-            mock_db.update_transaction = MagicMock()
+            mock_db.get_navs_on_or_after_batch.return_value = {
+                ("001", "2025-01-15"): {"nav": 1.2},
+            }
             mock_ff.calc_purchase_fee.side_effect = _zero_fee
 
             updated = backfill_transaction_navs()
 
             assert len(updated) == 1
             assert tx.nav == 1.2
-            # 确认查的是当日 2025-01-15
-            mock_db.get_nav_on_or_after.assert_called_with("001", "2025-01-15")
+            # 确认批量查询包含正确的 (fund_code, nav_date) 对
+            call_args = mock_db.get_navs_on_or_after_batch.call_args[0][0]
+            assert ("001", "2025-01-15") in call_args
 
     def test_buy_backfill_fetches_purchase_fee(self):
         """回填买入时应自动拉取申购手续费。"""
@@ -133,8 +130,9 @@ class TestBackfillT1:
         with patch("zfundpilot.analysis.db") as mock_db, \
              patch("zfundpilot.analysis.fetch_fund") as mock_ff:
             mock_db.get_transactions_without_nav.return_value = [tx]
-            mock_db.get_nav_on_or_after.return_value = {"nav": 1.5}
-            mock_db.update_transaction = MagicMock()
+            mock_db.get_navs_on_or_after_batch.return_value = {
+                ("001", "2025-01-15"): {"nav": 1.5},
+            }
             mock_ff.calc_purchase_fee.return_value = MagicMock(fee=5.0)
 
             updated = backfill_transaction_navs()
@@ -156,8 +154,9 @@ class TestBackfillT1:
         with patch("zfundpilot.analysis.db") as mock_db, \
              patch("zfundpilot.analysis.fetch_fund") as mock_ff:
             mock_db.get_transactions_without_nav.return_value = [tx]
-            mock_db.get_nav_on_or_after.return_value = {"nav": 1.5}
-            mock_db.update_transaction = MagicMock()
+            mock_db.get_navs_on_or_after_batch.return_value = {
+                ("001", "2025-01-15"): {"nav": 1.5},
+            }
             mock_ff.calc_redemption_fee.return_value = MagicMock(fee=3.0)
 
             updated = backfill_transaction_navs()
@@ -179,8 +178,9 @@ class TestBackfillT1:
         with patch("zfundpilot.analysis.db") as mock_db, \
              patch("zfundpilot.analysis.fetch_fund") as mock_ff:
             mock_db.get_transactions_without_nav.return_value = [tx]
-            mock_db.get_nav_on_or_after.return_value = {"nav": 1.5}
-            mock_db.update_transaction = MagicMock()
+            mock_db.get_navs_on_or_after_batch.return_value = {
+                ("001", "2025-01-15"): {"nav": 1.5},
+            }
 
             updated = backfill_transaction_navs()
 

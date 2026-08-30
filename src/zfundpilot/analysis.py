@@ -58,6 +58,16 @@ def _cache_set(key: str, val: Any) -> None:
     _cache[key] = (time.time(), val)
 
 
+def _get_transactions_cached() -> list[Transaction]:
+    """返回交易流水，带 60s TTL 缓存。normalize 幂等，共享安全。"""
+    cached = _cache_get("transactions")
+    if cached is not None:
+        return cached
+    txs = db.get_transactions()
+    _cache_set("transactions", txs)
+    return txs
+
+
 # ---------------------------------------------------------------------------
 # 流水 -> 持仓
 # ---------------------------------------------------------------------------
@@ -140,9 +150,15 @@ def _build_positions_from_transactions(
     return positions
 
 
-def _apply_market_value(pos: Position) -> None:
-    """填充最新净值、市值、浮动盈亏、收益率。"""
-    latest = db.get_latest_nav(pos.fund_code)
+def _apply_market_value(pos: Position, nav_map: dict[str, Any] | None = None) -> None:
+    """填充最新净值、市值、浮动盈亏、收益率。
+
+    nav_map: 批量预取的最新净值字典（可选，避免 N+1 查询）。
+    """
+    if nav_map is not None:
+        latest = nav_map.get(pos.fund_code)
+    else:
+        latest = db.get_latest_nav(pos.fund_code)
     if latest:
         pos.latest_nav = float(latest["nav"])
         pos.latest_date = latest["date"]
@@ -169,13 +185,17 @@ def calculate_positions(include_closed: bool = False) -> list[Position]:
     cached = _cache_get(ck)
     if cached is not None:
         return cached
-    transactions = db.get_transactions()
+    transactions = _get_transactions_cached()
     funds = {f.fund_code: f for f in db.get_funds()}
     pos_map = _build_positions_from_transactions(transactions, funds)
 
     positions = list(pos_map.values())
+
+    # 批量预取最新净值（单次查询，替代 N+1 逐只查询）
+    codes = [p.fund_code for p in positions]
+    nav_map = db.get_latest_navs_batch(codes)
     for pos in positions:
-        _apply_market_value(pos)
+        _apply_market_value(pos, nav_map)
 
     if not include_closed:
         positions = [p for p in positions if p.is_open]
@@ -209,7 +229,7 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
 
     # 累计买入/卖出/分红金额，直接从流水统计更准
     total_buy = total_sell = total_dividend = 0.0
-    for tx in db.get_transactions():
+    for tx in _get_transactions_cached():
         tx.normalize()
         if not tx.amount:
             continue
@@ -565,15 +585,30 @@ def backfill_transaction_navs() -> list[dict[str, Any]]:
     现金分红的 nav 是每份分红金额（非基金净值），不自动回填。
     回填时若手续费为空，自动拉取申购/赎回费率计算。
 
+    两阶段实现：批量读净值 → 算费率+normalize → 单连接批量写。
     返回被更新的交易详情列表，每条含 tx_id/fund_code/date/nav/shares/amount/fee。
     """
     txs = db.get_transactions_without_nav()
-    updated: list[dict[str, Any]] = []
+    if not txs:
+        return []
+
+    # ── 阶段一：收集需要查的净值，批量预取 ──
+    nav_queries: list[tuple[str, str]] = []
     for tx in txs:
         if tx.action == "dividend":
             continue
         nav_date = _t1_nav_date(tx) if _is_t1_transaction(tx) else tx.date
-        nav_point = db.get_nav_on_or_after(tx.fund_code, nav_date)
+        nav_queries.append((tx.fund_code, nav_date))
+    nav_map = db.get_navs_on_or_after_batch(nav_queries)
+
+    # ── 阶段二：计算 + 单连接批量写 ──
+    updated: list[dict[str, Any]] = []
+    updates: list[tuple] = []  # [(fund_code,action,date,amount,shares,nav,fee,channel,note,is_t1,id), ...]
+    for tx in txs:
+        if tx.action == "dividend":
+            continue
+        nav_date = _t1_nav_date(tx) if _is_t1_transaction(tx) else tx.date
+        nav_point = nav_map.get((tx.fund_code, nav_date))
         if not nav_point:
             continue
         tx.nav = float(nav_point["nav"])
@@ -583,7 +618,10 @@ def backfill_transaction_navs() -> list[dict[str, Any]]:
             elif tx.action == "sell" and tx.shares:
                 tx.fee = fetch_fund.calc_redemption_fee(tx.fund_code, tx.date, tx.shares).fee
         tx.normalize()
-        db.update_transaction(tx)
+        updates.append((
+            tx.fund_code.strip(), tx.action, tx.date, tx.amount, tx.shares,
+            tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1), tx.id,
+        ))
         updated.append({
             "tx_id": tx.id,
             "fund_code": tx.fund_code,
@@ -593,6 +631,15 @@ def backfill_transaction_navs() -> list[dict[str, Any]]:
             "amount": tx.amount,
             "fee": tx.fee,
         })
+
+    # 单连接批量写（一次 commit）
+    if updates:
+        with db.get_connection() as conn:
+            conn.executemany(
+                "UPDATE transactions SET fund_code=?, action=?, date=?, amount=?, "
+                "shares=?, nav=?, fee=?, channel=?, note=?, is_t1=? WHERE id=?",
+                updates,
+            )
     return updated
 
 

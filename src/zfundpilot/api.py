@@ -171,8 +171,8 @@ _REQ_MAX_SIZE = 10000
 
 _ENDPOINT_LIMITS: dict[str, tuple[int, int]] = {
     "/api/ai/chat":            (20, 60),
-    "/api/ai/screenshot/parse": (20, 60),
-    "/api/ai/compare":         (60, 60),
+    "/api/ai/parse-screenshot": (20, 60),
+    "/api/funds/compare":      (60, 60),
     "/api/backtest/dca":       (60, 60),
     "/api/csv/import":         (30, 60),
 }

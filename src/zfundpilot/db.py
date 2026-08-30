@@ -185,10 +185,10 @@ def init_db() -> None:
     _migrate_relax_transactions_schema()
     _migrate_legacy_holdings()
     _migrate_tp_sl()
-    _migrate_add_indexes()
     _migrate_dividend_alerts_unique()
     _migrate_auto_invest_plans_check()
     _migrate_nav_history_check()
+    _migrate_add_indexes()
 
 
 def _migrate_add_columns() -> None:
@@ -298,11 +298,12 @@ def _migrate_relax_transactions_schema() -> None:
 
         # Step 1: 清理脏数据（违反新 CHECK 约束的行）
         if has_old_check or not has_new_check:
-            # 移除无效 action 值
+            # 移除无效 action 值 + 负金额（否则重建时 CHECK 会失败）
             valid_actions = ("buy", "sell", "dividend", "reinvest")
             placeholders = ",".join("?" * len(valid_actions))
             conn.execute(
-                f"DELETE FROM transactions WHERE action NOT IN ({placeholders})",
+                f"DELETE FROM transactions WHERE action NOT IN ({placeholders}) "
+                "OR amount < 0",
                 valid_actions,
             )
 
@@ -326,7 +327,7 @@ def _migrate_relax_transactions_schema() -> None:
             INSERT INTO transactions_new
                 (id, fund_code, action, date, amount, shares, nav, fee, channel, note, is_t1, created_at)
             SELECT id, fund_code, action, date, amount, shares, nav, fee, channel, note,
-                   CASE WHEN note LIKE '%T+1确认%' THEN 1 ELSE 0 END, created_at
+                   is_t1, created_at
             FROM transactions;
             DROP TABLE transactions;
             ALTER TABLE transactions_new RENAME TO transactions;
@@ -425,11 +426,12 @@ def _migrate_dividend_alerts_unique() -> None:
         if not sql_text or "UNIQUE(fund_code, ex_date, alert_type)" in sql_text["sql"]:
             return
 
-        # 清理重复数据：保留每组 (fund_code, ex_date, alert_type) 最早的 id
+        # 清理重复数据：仅对 ex_date 非空的 dividend 行去重（保留每组最早 id）。
+        # tp_sl 行 ex_date 为 NULL，SQLite UNIQUE 视 NULL 互异，不受约束，不能去重。
         conn.execute(
-            """DELETE FROM dividend_alerts WHERE id NOT IN (
-                   SELECT MIN(id) FROM dividend_alerts
-                   GROUP BY fund_code, COALESCE(ex_date, ''), COALESCE(alert_type, 'dividend')
+            """DELETE FROM dividend_alerts WHERE ex_date IS NOT NULL AND id NOT IN (
+                   SELECT MIN(id) FROM dividend_alerts WHERE ex_date IS NOT NULL
+                   GROUP BY fund_code, ex_date, COALESCE(alert_type, 'dividend')
                )"""
         )
 

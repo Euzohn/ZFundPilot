@@ -451,6 +451,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - fix: 修复 `_migrate_relax_transactions_schema` 幂等判断 bug——旧逻辑 `"NOT NULL" not in sql_text` 对新 schema 恒 False，导致每次启动重建 transactions 表。改为精确检测旧特征 + 新 CHECK 完整性
 - fix: `update_auto_invest_plan` 加 key 白名单防 SQL 注入；`update_scheduler_cron`/`calc_fund_fee` 坏输入返回 400；`auth_login` 审计日志 try/except 不阻断 token 返回；`recalculate_t1` 启动 try/except 不阻止启动
 - feat: 端点速率限制——AI/截图(20/min)、对比/回测(60/min)、CSV导入(30/min)；dividend_alerts UNIQUE 约束 + INSERT OR IGNORE 防竞态；auto_invest_plans CHECK(amount>0) + nav_history CHECK(nav>0)；4 个新索引 + 3 个冗余索引删除
+- fix: 限流端点 key 与路由不匹配——`/api/ai/compare` 实际路由 `/api/funds/compare`（此前完全未限流），截图解析路由 `/api/ai/parse-screenshot`
+- fix: `_migrate_add_indexes` 在表重建迁移之前执行，索引被 DROP——移到迁移链最后
+- fix: `_migrate_dividend_alerts_unique` 去重误删 tp_sl 提醒——`COALESCE(ex_date,'')` 归并 NULL ex_date 行，仅对 ex_date 非空行去重
+- fix: `_migrate_relax_transactions_schema` 未清负金额致重建失败；重建用 CASE 重算 is_t1 覆盖用户修正值
 
 ### v0.20.0 - 2026-08-28
 

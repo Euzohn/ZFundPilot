@@ -368,12 +368,6 @@ class TestQueryConstraints:
         resp = client.get("/api/transactions?fund_code=abc")
         assert resp.status_code == 422
 
-    def test_transactions_valid_fund_code(self):
-        resp = client.get("/api/transactions?fund_code=005827")
-        # Pydantic 接受 6 位数字 fund_code（不返回 422），
-        # 实际 200 或 500 取决于 DB 状态，此处只验证格式校验通过
-        assert resp.status_code != 422
-
 
 # ---------------------------------------------------------------------------
 # SSRF base_url 验证

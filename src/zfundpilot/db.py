@@ -185,6 +185,10 @@ def init_db() -> None:
     _migrate_relax_transactions_schema()
     _migrate_legacy_holdings()
     _migrate_tp_sl()
+    _migrate_add_indexes()
+    _migrate_dividend_alerts_unique()
+    _migrate_auto_invest_plans_check()
+    _migrate_nav_history_check()
 
 
 def _migrate_add_columns() -> None:
@@ -264,11 +268,15 @@ def _migrate_tp_sl() -> None:
 
 
 def _migrate_relax_transactions_schema() -> None:
-    """放宽 transactions 表约束：移除 CHECK(action) 和 amount/shares 的 NOT NULL。
+    """统一管理 transactions 表的最终 schema 迁移。
 
-    旧表有 CHECK(action IN ('buy','sell')) 和 amount/shares NOT NULL，
-    阻止插入 dividend/reinvest 操作和待确认交易（NULL 字段）。
-    SQLite 无法直接 ALTER 约束，需重建表。
+    合并两步操作（避免两次重建）：
+    1. 移除旧约束：旧表有 CHECK(action IN ('buy','sell')) 和 amount/shares NOT NULL，
+       阻止插入 dividend/reinvest 操作和待确认交易（NULL 字段）。
+    2. 添加新约束：CHECK(action IN 4种action) + CHECK(amount >= 0 OR amount IS NULL)，
+       确保数据完整性。
+
+    SQLite 无法直接 ALTER 约束，需重建表。幂等：目标 CHECK 已存在时跳过。
     """
     with get_connection() as conn:
         row = conn.execute(
@@ -277,8 +285,26 @@ def _migrate_relax_transactions_schema() -> None:
         if not row:
             return
         sql_text = row["sql"]
-        if "CHECK" not in sql_text and "NOT NULL" not in sql_text:
-            return  # 已是新schema，无需迁移
+
+        # 幂等判断：检查旧 schema 特征（CHECK(action IN ('buy','sell'))）或
+        # 缺少新 CHECK 约束 → 需要迁移
+        has_old_check = "action IN ('buy', 'sell')" in sql_text
+        has_new_check = (
+            "action IN ('buy', 'sell', 'dividend', 'reinvest')" in sql_text
+            and "amount >= 0" in sql_text
+        )
+        if not has_old_check and has_new_check:
+            return  # 已是最终 schema，无需迁移
+
+        # Step 1: 清理脏数据（违反新 CHECK 约束的行）
+        if has_old_check or not has_new_check:
+            # 移除无效 action 值
+            valid_actions = ("buy", "sell", "dividend", "reinvest")
+            placeholders = ",".join("?" * len(valid_actions))
+            conn.execute(
+                f"DELETE FROM transactions WHERE action NOT IN ({placeholders})",
+                valid_actions,
+            )
 
         conn.executescript(
             """
@@ -287,14 +313,15 @@ def _migrate_relax_transactions_schema() -> None:
                 fund_code  TEXT NOT NULL,
                 action     TEXT NOT NULL,
                 date       TEXT NOT NULL,
-                amount     REAL,
+                amount     REAL CHECK(amount >= 0 OR amount IS NULL),
                 shares     REAL,
                 nav        REAL,
                 fee        REAL DEFAULT 0,
                 channel    TEXT DEFAULT '',
                 note       TEXT DEFAULT '',
                 is_t1      INTEGER DEFAULT 0,
-                created_at TEXT DEFAULT (datetime('now','localtime'))
+                created_at TEXT DEFAULT (datetime('now','localtime')),
+                CHECK(action IN ('buy', 'sell', 'dividend', 'reinvest'))
             );
             INSERT INTO transactions_new
                 (id, fund_code, action, date, amount, shares, nav, fee, channel, note, is_t1, created_at)
@@ -303,7 +330,6 @@ def _migrate_relax_transactions_schema() -> None:
             FROM transactions;
             DROP TABLE transactions;
             ALTER TABLE transactions_new RENAME TO transactions;
-            CREATE INDEX IF NOT EXISTS idx_tx_code ON transactions(fund_code);
             CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
             """
         )
@@ -347,6 +373,176 @@ def _migrate_legacy_holdings() -> None:
                  amount, shares, cost_nav, "自旧版持仓迁移"),
             )
         conn.execute("ALTER TABLE holdings RENAME TO holdings_legacy_backup")
+
+
+def _migrate_add_indexes() -> None:
+    """补充缺失索引、删除冗余索引。幂等。"""
+    with get_connection() as conn:
+        existing = {
+            r["name"]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            ).fetchall()
+        }
+
+        # 补缺失索引
+        if "idx_ai_usage_created" not in existing:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ai_usage_created "
+                "ON ai_usage(created_at)"
+            )
+        if "idx_tx_code_date" not in existing:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tx_code_date "
+                "ON transactions(fund_code, date)"
+            )
+        if "idx_auto_invest_enabled_next" not in existing:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_auto_invest_enabled_next "
+                "ON auto_invest_plans(enabled, next_run)"
+            )
+        if "idx_alert_type_status" not in existing:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_alert_type_status "
+                "ON dividend_alerts(alert_type, status)"
+            )
+
+        # 删冗余索引
+        for idx in ("idx_nav_code_date", "idx_index_code_date", "idx_tx_code"):
+            if idx in existing:
+                conn.execute(f"DROP INDEX IF EXISTS {idx}")
+
+
+def _migrate_dividend_alerts_unique() -> None:
+    """给 dividend_alerts 加 UNIQUE(fund_code, ex_date, alert_type) 约束。
+
+    幂等：目标 UNIQUE 已存在时跳过。重建前先清理重复数据（保留最早 id）。
+    """
+    with get_connection() as conn:
+        sql_text = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='dividend_alerts'"
+        ).fetchone()
+        if not sql_text or "UNIQUE(fund_code, ex_date, alert_type)" in sql_text["sql"]:
+            return
+
+        # 清理重复数据：保留每组 (fund_code, ex_date, alert_type) 最早的 id
+        conn.execute(
+            """DELETE FROM dividend_alerts WHERE id NOT IN (
+                   SELECT MIN(id) FROM dividend_alerts
+                   GROUP BY fund_code, COALESCE(ex_date, ''), COALESCE(alert_type, 'dividend')
+               )"""
+        )
+
+        conn.executescript(
+            """
+            CREATE TABLE dividend_alerts_new (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                fund_code        TEXT NOT NULL,
+                fund_name        TEXT DEFAULT '',
+                record_date      TEXT,
+                ex_date          TEXT,
+                per_share        REAL,
+                pay_date         TEXT,
+                held_shares      REAL,
+                estimated_amount REAL,
+                dividend_method  TEXT DEFAULT 'cash',
+                status           TEXT DEFAULT 'pending',
+                created_at       TEXT DEFAULT (datetime('now','localtime')),
+                resolved_at      TEXT,
+                tx_id            INTEGER,
+                alert_type       TEXT DEFAULT 'dividend',
+                triggered_return REAL,
+                threshold        REAL,
+                UNIQUE(fund_code, ex_date, alert_type)
+            );
+            INSERT INTO dividend_alerts_new
+                (id, fund_code, fund_name, record_date, ex_date, per_share,
+                 pay_date, held_shares, estimated_amount, dividend_method,
+                 status, created_at, resolved_at, tx_id,
+                 alert_type, triggered_return, threshold)
+            SELECT id, fund_code, fund_name, record_date, ex_date, per_share,
+                   pay_date, held_shares, estimated_amount, dividend_method,
+                   status, created_at, resolved_at, tx_id,
+                   COALESCE(alert_type, 'dividend'), triggered_return, threshold
+            FROM dividend_alerts;
+            DROP TABLE dividend_alerts;
+            ALTER TABLE dividend_alerts_new RENAME TO dividend_alerts;
+            CREATE INDEX IF NOT EXISTS idx_alert_status ON dividend_alerts(status);
+            CREATE INDEX IF NOT EXISTS idx_alert_code_ex ON dividend_alerts(fund_code, ex_date);
+            CREATE INDEX IF NOT EXISTS idx_alert_type_status ON dividend_alerts(alert_type, status);
+            """
+        )
+
+
+def _migrate_auto_invest_plans_check() -> None:
+    """给 auto_invest_plans 加 CHECK(amount > 0) 约束。幂等。"""
+    with get_connection() as conn:
+        sql_text = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='auto_invest_plans'"
+        ).fetchone()
+        if not sql_text or "amount > 0" in sql_text["sql"]:
+            return
+
+        # 清理无效数据
+        conn.execute("DELETE FROM auto_invest_plans WHERE amount <= 0")
+
+        conn.executescript(
+            """
+            CREATE TABLE auto_invest_plans_new (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                fund_code    TEXT NOT NULL,
+                amount       REAL NOT NULL CHECK(amount > 0),
+                cadence      TEXT NOT NULL,
+                day_of_week  INTEGER,
+                day_of_month INTEGER,
+                channel      TEXT DEFAULT '',
+                note         TEXT DEFAULT '定投',
+                enabled      INTEGER DEFAULT 1,
+                next_run     TEXT,
+                last_run     TEXT,
+                last_tx_id   INTEGER,
+                created_at   TEXT DEFAULT (datetime('now','localtime')),
+                updated_at   TEXT DEFAULT (datetime('now','localtime'))
+            );
+            INSERT INTO auto_invest_plans_new
+                SELECT * FROM auto_invest_plans;
+            DROP TABLE auto_invest_plans;
+            ALTER TABLE auto_invest_plans_new RENAME TO auto_invest_plans;
+            """
+        )
+
+
+def _migrate_nav_history_check() -> None:
+    """给 nav_history 加 CHECK(nav > 0) 约束。幂等。"""
+    with get_connection() as conn:
+        sql_text = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='nav_history'"
+        ).fetchone()
+        if not sql_text or "nav > 0" in sql_text["sql"]:
+            return
+
+        # 清理无效数据
+        conn.execute("DELETE FROM nav_history WHERE nav <= 0")
+
+        conn.executescript(
+            """
+            CREATE TABLE nav_history_new (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                fund_code       TEXT NOT NULL,
+                date            TEXT NOT NULL,
+                nav             REAL NOT NULL CHECK(nav > 0),
+                accumulated_nav REAL,
+                source          TEXT DEFAULT 'akshare',
+                created_at      TEXT DEFAULT (datetime('now','localtime')),
+                UNIQUE(fund_code, date)
+            );
+            INSERT INTO nav_history_new
+                SELECT id, fund_code, date, nav, accumulated_nav, source, created_at
+                FROM nav_history;
+            DROP TABLE nav_history;
+            ALTER TABLE nav_history_new RENAME TO nav_history;
+            """
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -897,6 +1093,7 @@ def add_auto_invest_plan(fund_code: str, amount: float, cadence: str,
 
 
 def update_auto_invest_plan(plan_id: int, **kwargs) -> None:
+    """更新定投计划字段。仅允许白名单内的 key，防止 SQL 注入。"""
     if not kwargs:
         with get_connection() as conn:
             conn.execute(
@@ -905,8 +1102,21 @@ def update_auto_invest_plan(plan_id: int, **kwargs) -> None:
                 (plan_id,),
             )
         return
-    fields = ", ".join(f"{k}=?" for k in kwargs)
-    vals = list(kwargs.values()) + [plan_id]
+    allowed = {
+        "fund_code", "amount", "cadence", "day_of_week", "day_of_month",
+        "channel", "note", "enabled", "next_run", "last_run", "last_tx_id",
+    }
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE auto_invest_plans SET updated_at=datetime('now','localtime') "
+                "WHERE id=?",
+                (plan_id,),
+            )
+        return
+    fields = ", ".join(f"{k}=?" for k in updates)
+    vals = list(updates.values()) + [plan_id]
     with get_connection() as conn:
         conn.execute(
             f"UPDATE auto_invest_plans SET {fields}, "
@@ -987,10 +1197,10 @@ def get_watchlist() -> list[dict]:
 # 分红提醒 (dividend_alerts) CRUD
 # ---------------------------------------------------------------------------
 def add_dividend_alert(alert: dict) -> int:
-    """新增一条分红提醒，返回 id。"""
+    """新增一条分红提醒（INSERT OR IGNORE 防 UNIQUE 竞态），返回 id。"""
     with get_connection() as conn:
         cur = conn.execute(
-            """INSERT INTO dividend_alerts
+            """INSERT OR IGNORE INTO dividend_alerts
                (fund_code, fund_name, record_date, ex_date, per_share,
                 pay_date, held_shares, estimated_amount, dividend_method)
                VALUES(?,?,?,?,?,?,?,?,?)""",
@@ -1187,13 +1397,14 @@ def get_pending_tp_sl_alert_count() -> int:
 
 
 def dividend_alert_exists(fund_code: str, ex_date: str) -> bool:
-    """检查某基金某除息日的提醒是否已存在（任意状态）。
+    """检查某基金某除息日的分红提醒是否已存在（仅 dividend 类型）。
 
     查所有状态：ignored 后不再重复提醒；用户改主意可手动调 GET /check（不查本表）。
     """
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT 1 FROM dividend_alerts WHERE fund_code=? AND ex_date=? LIMIT 1",
+            "SELECT 1 FROM dividend_alerts WHERE fund_code=? AND ex_date=? "
+            "AND COALESCE(alert_type, 'dividend')='dividend' LIMIT 1",
             (fund_code, ex_date),
         ).fetchone()
     return row is not None

@@ -448,6 +448,9 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ### Unreleased
 
 - perf: 消除 5 处 N+1 查询——(1) `api.py get_latest_navs` 逐只 `get_latest_nav` → `get_latest_navs_batch`；(2) `analysis.py calculate_positions` 逐持仓取净值 → 批量预取 `nav_map`；(3) `analysis.py backfill_transaction_navs` 逐笔查净值+逐条写库 → 批量预取净值 + `executemany` 单连接批量写（两阶段：批量读 → 算费率+normalize → 批量写）；(4) `scheduler.py _run_tp_sl_check` 逐持仓查状态 → `get_tp_sl_alert_states_batch` 批量预载 + 本地 dict 映射同步更新；(5) `api.py _mark_duplicates` / `fetch_dividend.py` 全表 `get_transactions` → SQL IN 过滤 + 内存查找表；(6) `analysis.py calculate_summary` 冗余查询 → `_get_transactions_cached` 共用 60s TTL 缓存。新增 `db.py` 三个批量函数 + `get_transactions` 扩展 `fund_codes/actions/dates` 可选参数
+- fix: 修复 `_migrate_relax_transactions_schema` 幂等判断 bug——旧逻辑 `"NOT NULL" not in sql_text` 对新 schema 恒 False，导致每次启动重建 transactions 表。改为精确检测旧特征 + 新 CHECK 完整性
+- fix: `update_auto_invest_plan` 加 key 白名单防 SQL 注入；`update_scheduler_cron`/`calc_fund_fee` 坏输入返回 400；`auth_login` 审计日志 try/except 不阻断 token 返回；`recalculate_t1` 启动 try/except 不阻止启动
+- feat: 端点速率限制——AI/截图(20/min)、对比/回测(60/min)、CSV导入(30/min)；dividend_alerts UNIQUE 约束 + INSERT OR IGNORE 防竞态；auto_invest_plans CHECK(amount>0) + nav_history CHECK(nav>0)；4 个新索引 + 3 个冗余索引删除
 
 ### v0.20.0 - 2026-08-28
 

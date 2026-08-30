@@ -59,7 +59,11 @@ async def _lifespan(app: FastAPI):
     db.init_db()
     # 一次性修复历史 T+1 交易的错误净值回填
     if db.get_preference("t1_nav_fix_done") is None:
-        fixed = analysis.recalculate_t1_transactions()
+        try:
+            fixed = analysis.recalculate_t1_transactions()
+        except Exception:
+            logger.exception("T+1 净值回填修复异常，跳过")
+            fixed = None
         if fixed:
             print(f"[T+1 NAV FIX] 修复 {len(fixed)} 笔交易:")
             for f in fixed:
@@ -156,6 +160,80 @@ def _sweep_login_attempts() -> None:
         ]
         if not _LOGIN_ATTEMPTS[ip]:
             _LOGIN_ATTEMPTS.pop(ip, None)
+
+# ---------------------------------------------------------------------------
+# 端点速率限制（in-memory，单 uvicorn worker）
+# ---------------------------------------------------------------------------
+_REQ_LOGS: dict[str, list[float]] = {}
+_REQ_SWEEP_COUNTER = 0
+_REQ_SWEEP_EVERY = 100
+_REQ_MAX_SIZE = 10000
+
+_ENDPOINT_LIMITS: dict[str, tuple[int, int]] = {
+    "/api/ai/chat":            (20, 60),
+    "/api/ai/screenshot/parse": (20, 60),
+    "/api/ai/compare":         (60, 60),
+    "/api/backtest/dca":       (60, 60),
+    "/api/csv/import":         (30, 60),
+}
+
+_DOMAIN_LIMITS: dict[str, tuple[int, int]] = {
+    "ai":  (20, 60),
+    "csv": (30, 60),
+}
+
+
+def _sweep_req_logs() -> None:
+    now = time.time()
+    expired = [k for k, ts in _REQ_LOGS.items()
+               if not ts or now - ts[-1] > 600]
+    for k in expired:
+        _REQ_LOGS.pop(k, None)
+
+
+def _check_endpoint_rate_limit(request: Request, path: str) -> tuple[bool, int]:
+    global _REQ_SWEEP_COUNTER
+    _REQ_SWEEP_COUNTER += 1
+    if _REQ_SWEEP_COUNTER >= _REQ_SWEEP_EVERY or len(_REQ_LOGS) > _REQ_MAX_SIZE:
+        _REQ_SWEEP_COUNTER = 0
+        _sweep_req_logs()
+
+    limits = _ENDPOINT_LIMITS.get(path)
+    if not limits:
+        for prefix, lim in _DOMAIN_LIMITS.items():
+            if path.startswith(f"/api/{prefix}/"):
+                limits = lim
+                break
+    if not limits:
+        return True, 0
+
+    ip = _get_client_ip(request)
+    now = time.time()
+    key = f"{ip}:{path}"
+    timestamps = _REQ_LOGS.setdefault(key, [])
+    window = limits[1]
+    timestamps[:] = [t for t in timestamps if now - t < window]
+    if len(timestamps) >= limits[0]:
+        retry_after = int(timestamps[0] + window - now) + 1
+        return False, retry_after
+    timestamps.append(now)
+    return True, 0
+
+
+@app.middleware("http")
+async def endpoint_rate_limit_middleware(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api") or path in ("/api/auth/login", "/api/auth/status"):
+        return await call_next(request)
+    allowed, retry_after = _check_endpoint_rate_limit(request, path)
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": f"请求过于频繁，请 {retry_after} 秒后再试",
+                     "retry_after": retry_after},
+            headers={"Retry-After": str(retry_after)},
+        )
+    return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,
@@ -271,7 +349,10 @@ def auth_login(request: Request, body: LoginRequest) -> dict[str, Any]:
         raise HTTPException(401, "用户名或密码错误")
 
     _clear_login_attempts(ip)
-    db.log_audit("login_success", ip=ip, username=body.username)
+    try:
+        db.log_audit("login_success", ip=ip, username=body.username)
+    except Exception:
+        logger.exception("记录登录成功审计日志失败")
 
     # 检测旧 SHA-256 hash，无感升级为 bcrypt
     if not config.AUTH_PASSWORD_HASH.startswith("$2b$"):
@@ -1344,7 +1425,10 @@ def calc_fund_fee(code: str, action: str = "buy",
         if not date:
             return {"fee": 0, "rate": 0, "label": "日期为空",
                     "code": "date_empty", "amount": 0, "nav": None, "lots": None}
-        result = fetch_fund.calc_redemption_fee(code, date, sh)
+        try:
+            result = fetch_fund.calc_redemption_fee(code, date, sh)
+        except (ValueError, IndexError) as e:
+            raise HTTPException(400, f"日期格式错误: {e}")
     else:
         return {"fee": 0, "rate": 0, "label": "不支持的操作",
                 "code": "unsupported_action", "amount": 0, "nav": None, "lots": None}
@@ -1957,7 +2041,10 @@ class SchedulerCronBody(BaseModel):
 @app.put("/api/scheduler/cron")
 def update_scheduler_cron(request: Request, body: SchedulerCronBody) -> dict[str, Any]:
     """更新定时净值更新的 cron 表达式。"""
-    scheduler.set_cron(body.cron)
+    try:
+        scheduler.set_cron(body.cron)
+    except ValueError as e:
+        raise HTTPException(400, f"无效 cron 表达式: {e}")
     db.log_audit("scheduler_cron_change", ip=_get_client_ip(request),
                   username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
                   detail={"cron": body.cron})

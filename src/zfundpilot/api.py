@@ -15,16 +15,17 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import threading
 import time
 from dataclasses import replace
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any, Literal
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from . import __version__ as APP_VERSION
 from . import (
@@ -43,7 +44,7 @@ from . import (
     risk,
     scheduler,
 )
-from .models import Fund, Transaction
+from .models import ACTIONS, Fund, Transaction
 from .nav_update_state import nav_update_lock as _nav_update_lock
 from .nav_update_state import nav_update_state as _nav_update_state
 
@@ -305,9 +306,25 @@ class VisionConfigUpdate(BaseModel):
 
 
 class ReconcileItem(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     fund_code: str
     shares: float | None = None
     market_value: float | None = None
+
+    @field_validator("fund_code")
+    @classmethod
+    def validate_fund_code(cls, v: str) -> str:
+        if not re.fullmatch(r"\d{6}", v):
+            raise ValueError("fund_code 必须为 6 位数字")
+        return v
+
+    @field_validator("shares", "market_value")
+    @classmethod
+    def validate_non_negative(cls, v: float | None) -> float | None:
+        if v is not None and v < 0:
+            raise ValueError("不能为负数")
+        return v
 
 
 class ReconcileRequest(BaseModel):
@@ -315,8 +332,34 @@ class ReconcileRequest(BaseModel):
     channel: str = ""
 
 
+class ChatMessage(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        if len(v) > 20000:
+            raise ValueError("单条消息内容不能超过 20000 字符")
+        return v
+
+
 class ChatRequest(BaseModel):
-    messages: list[dict[str, str]]
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    messages: list[ChatMessage]
+
+    @field_validator("messages")
+    @classmethod
+    def validate_messages(cls, v: list[ChatMessage]) -> list[ChatMessage]:
+        if len(v) > 50:
+            raise ValueError("消息数量不能超过 50 条")
+        total = sum(len(m.content) for m in v)
+        if total > 100000:
+            raise ValueError("消息总长度不能超过 100000 字符")
+        return v
 
 
 @app.get("/api/settings/ai")
@@ -443,7 +486,7 @@ def reconcile(body: ReconcileRequest) -> dict[str, Any]:
 
 
 @app.get("/api/ai/usage/daily")
-def get_ai_usage_daily(days: int = 7) -> list[dict[str, Any]]:
+def get_ai_usage_daily(days: Annotated[int, Query(ge=1, le=365)] = 7) -> list[dict[str, Any]]:
     """返回最近 N 天每日 token 用量。"""
     return db.get_ai_usage_daily(days)
 
@@ -451,12 +494,13 @@ def get_ai_usage_daily(days: int = 7) -> list[dict[str, Any]]:
 @app.post("/api/ai/chat")
 async def ai_chat(body: ChatRequest):
     """AI 投顾对话（SSE 流式）。前端已携带 system 消息时跳过重建持仓上下文。"""
-    has_system = any(m.get("role") == "system" for m in body.messages)
+    has_system = any(m.role == "system" for m in body.messages)
     context = ai.build_portfolio_context() if not has_system else ""
+    messages_dicts = [{"role": m.role, "content": m.content} for m in body.messages]
 
     async def generate():
         try:
-            async for chunk in ai.chat_stream(body.messages, context):
+            async for chunk in ai.chat_stream(messages_dicts, context):
                 yield f"data: {chunk}\n\n"
         except Exception:
             logger.exception("AI 流式对话异常")
@@ -470,6 +514,8 @@ async def ai_chat(body: ChatRequest):
 # 请求模型
 # ---------------------------------------------------------------------------
 class TransactionCreate(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     fund_code: str
     action: str
     date: str
@@ -480,6 +526,36 @@ class TransactionCreate(BaseModel):
     channel: str = ""
     note: str = ""
     is_t1: bool = False
+
+    @field_validator("fund_code")
+    @classmethod
+    def validate_fund_code(cls, v: str) -> str:
+        if not re.fullmatch(r"\d{6}", v):
+            raise ValueError("fund_code 必须为 6 位数字")
+        return v
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, v: str) -> str:
+        if v not in ACTIONS:
+            raise ValueError(f"action 仅支持 {' / '.join(ACTIONS)}")
+        return v
+
+    @field_validator("date")
+    @classmethod
+    def validate_date(cls, v: str) -> str:
+        try:
+            datetime.strptime(v, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("date 格式必须为 YYYY-MM-DD")
+        return v
+
+    @field_validator("amount", "shares", "nav", "fee")
+    @classmethod
+    def validate_non_negative(cls, v: float | None) -> float | None:
+        if v is not None and v < 0:
+            raise ValueError("不能为负数")
+        return v
 
 
 class SectorUpdate(BaseModel):
@@ -500,12 +576,21 @@ class DividendAutoCheckBody(BaseModel):
 
 
 class TpSlConfigUpdate(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     enabled: bool | None = None
     take_profit_enabled: bool | None = None
     stop_loss_enabled: bool | None = None
     take_profit: float | None = None
     stop_loss: float | None = None
     reset_ratio: float | None = None
+
+    @field_validator("take_profit", "stop_loss", "reset_ratio")
+    @classmethod
+    def validate_non_negative(cls, v: float | None) -> float | None:
+        if v is not None and v < 0:
+            raise ValueError("不能为负数")
+        return v
 
 
 class AlertUpdateBody(BaseModel):
@@ -548,7 +633,9 @@ def get_positions(include_closed: bool = False) -> list[dict[str, Any]]:
 # 交易流水
 # ---------------------------------------------------------------------------
 @app.get("/api/transactions")
-def get_transactions(fund_code: str | None = None) -> list[dict[str, Any]]:
+def get_transactions(
+    fund_code: Annotated[str | None, Query(pattern=r"^\d{6}$")] = None,
+) -> list[dict[str, Any]]:
     if fund_code:
         return [t.to_dict() for t in db.get_transactions(fund_code)]
     return [t.to_dict() for t in db.get_transactions_desc()]
@@ -650,8 +737,8 @@ class FilterRequest(BaseModel):
     types: list[str] = []
     sectors: list[str] = []
     keyword: str = ""
-    limit: int = 50
-    offset: int = 0
+    limit: int = Field(50, ge=1, le=500)
+    offset: int = Field(0, ge=0)
     with_metrics: bool = False
 
 
@@ -1382,6 +1469,8 @@ def get_rebalance_advice() -> list[dict[str, Any]]:
 # 定投回测
 # ---------------------------------------------------------------------------
 class DcaBacktestRequest(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     fund_codes: list[str]
     start_date: str          # YYYY-MM-DD
     end_date: str            # YYYY-MM-DD
@@ -1389,18 +1478,50 @@ class DcaBacktestRequest(BaseModel):
     cadence: str = "month"   # month / biweek / week
     include_lumpsum: bool = True
 
+    @field_validator("fund_codes")
+    @classmethod
+    def validate_fund_codes(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("请至少选择一只基金")
+        if len(v) > 20:
+            raise ValueError("最多选择 20 只基金")
+        for code in v:
+            if not re.fullmatch(r"\d{6}", code):
+                raise ValueError(f"fund_code 必须为 6 位数字: {code}")
+        return v
+
+    @field_validator("amount_per_period")
+    @classmethod
+    def validate_amount(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("每期金额必须大于 0")
+        return v
+
+    @field_validator("cadence")
+    @classmethod
+    def validate_cadence(cls, v: str) -> str:
+        if v not in ("month", "biweek", "week"):
+            raise ValueError("频率仅支持 month / biweek / week")
+        return v
+
+    @field_validator("start_date", "end_date")
+    @classmethod
+    def validate_date(cls, v: str) -> str:
+        try:
+            datetime.strptime(v, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("日期格式必须为 YYYY-MM-DD")
+        return v
+
+    @model_validator(mode="after")
+    def validate_date_order(self) -> DcaBacktestRequest:
+        if self.start_date >= self.end_date:
+            raise ValueError("起始日期必须早于结束日期")
+        return self
+
 
 @app.post("/api/backtest/dca")
 def run_dca_backtest(req: DcaBacktestRequest) -> dict[str, Any]:
-    if not req.fund_codes:
-        raise HTTPException(400, "请至少选择一只基金")
-    if req.amount_per_period <= 0:
-        raise HTTPException(400, "每期金额必须大于 0")
-    if req.start_date >= req.end_date:
-        raise HTTPException(400, "起始日期必须早于结束日期")
-    if req.cadence not in ("month", "biweek", "week"):
-        raise HTTPException(400, "频率仅支持 month / biweek / week")
-
     results = backtest.run_dca_backtest(
         fund_codes=req.fund_codes,
         start_date=req.start_date,
@@ -1561,6 +1682,8 @@ def save_preferences(body: PreferencesBody) -> dict[str, bool]:
 # 定投计划
 # ---------------------------------------------------------------------------
 class AutoInvestPlanCreate(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     fund_code: str
     amount: float
     cadence: str
@@ -1568,6 +1691,20 @@ class AutoInvestPlanCreate(BaseModel):
     day_of_month: int | None = None
     channel: str = ""
     note: str = "定投"
+
+    @field_validator("fund_code")
+    @classmethod
+    def validate_fund_code(cls, v: str) -> str:
+        if not re.fullmatch(r"\d{6}", v):
+            raise ValueError("fund_code 必须为 6 位数字")
+        return v
+
+    @field_validator("amount")
+    @classmethod
+    def validate_amount(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("定投金额必须大于 0")
+        return v
 
     @field_validator("cadence")
     @classmethod
@@ -1687,7 +1824,7 @@ def execute_auto_invest_plan(request: Request, plan_id: int) -> dict[str, Any]:
 # 审计日志
 # ---------------------------------------------------------------------------
 @app.get("/api/audit")
-def get_audit_logs(limit: int = 100) -> list[dict]:
+def get_audit_logs(limit: Annotated[int, Query(ge=1, le=1000)] = 100) -> list[dict]:
     """返回最近 N 条审计日志（需认证）。"""
     return db.fetch_audit_logs(limit)
 

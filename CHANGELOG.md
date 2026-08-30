@@ -13,6 +13,7 @@
 - SQLite 并发健壮性：`get_connection()` 加 `PRAGMA busy_timeout = 5000`，`init_db()` 加 `PRAGMA journal_mode = WAL`（原 rollback journal 下读写互相阻塞，易 `database is locked`）。WAL 允许读写并发且崩溃更安全（新增 2 个测试，239→241）
 - AI 用量时区：存储（`add_ai_usage` 原 `datetime('now')` UTC）与读取（`get_ai_usage_stats` today 过滤、`get_ai_usage_daily` 日期轴与过滤）四处在写读两侧统一为本地时间（`datetime('now','localtime')` / `date('now','localtime')` / `datetime.now(config.TIMEZONE)`），修复上海时区早 8 点前当日 token 归到前一天的问题（新增 3 个测试，238→241）
 - 朴素 datetime 收敛约定：`ai.py` 的 `_fetch_market_index` 与 `fetch_dividend.py` 的 `check_dividends` 改用 `datetime.now(config.TIMEZONE)` 替代裸 `datetime.now()`，与全仓时区约定一致（现有 `config.TIMEZONE` 已覆盖，行为不变）
+- API 输入验证补全：所有 Pydantic 请求模型加 `ConfigDict(allow_inf_nan=False)` 禁用 NaN/inf；`TransactionCreate` 加 fund_code 6 位数字、date YYYY-MM-DD、action 枚举、amount/shares/nav/fee 非负 4 个 field_validator；`AutoInvestPlanCreate` 加 amount > 0、fund_code；`ReconcileItem` 加 fund_code、shares/market_value 非负；`TpSlConfigUpdate` 加三浮点非负；`DcaBacktestRequest` 加 fund_codes 数量/格式、amount > 0、cadence 枚举、日期格式与先后顺序；`ChatRequest` 改为 `list[ChatMessage]`（role 枚举 + content 20k 单条 + 50 条 + 100k 总长度）；`FilterRequest.limit/offset` 加 `Field(ge)` 边界；`get_ai_usage_daily` / `get_audit_logs` / `get_transactions` 查询参数用 `Query(ge/le/pattern)` 约束。移除 `run_dca_backtest` handler 内冗余 400 检查。新增 61 个测试（241→302）
 
 ## [0.20.0] - 2026-08-28
 

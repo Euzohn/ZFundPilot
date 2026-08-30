@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import hmac
 import ipaddress
@@ -18,6 +19,7 @@ import os
 import re
 import threading
 import time
+import urllib.parse
 from dataclasses import replace
 from datetime import datetime
 from typing import Annotated, Any, Literal
@@ -50,7 +52,29 @@ from .nav_update_state import nav_update_state as _nav_update_state
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="ZFundPilot API", version="0.20.0")
+
+@contextlib.asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """应用生命周期：startup 初始化 DB + 调度器，shutdown 清理。"""
+    db.init_db()
+    # 一次性修复历史 T+1 交易的错误净值回填
+    if db.get_preference("t1_nav_fix_done") is None:
+        fixed = analysis.recalculate_t1_transactions()
+        if fixed:
+            print(f"[T+1 NAV FIX] 修复 {len(fixed)} 笔交易:")
+            for f in fixed:
+                print(f"  tx#{f['tx_id']} {f['fund_code']} {f['date']}  "
+                      f"nav {f['old_nav']:.4f}→{f['new_nav']:.4f}  "
+                      f"shares {f['old_shares']:.2f}→{f['new_shares']:.2f}")
+            db.log_audit("t1_nav_fix", detail={"fixed": fixed, "count": len(fixed)})
+            logger.info("修复了 %d 笔 T+1 交易的净值回填", len(fixed))
+        db.upsert_preference("t1_nav_fix_done", "1")
+    scheduler.init_scheduler()
+    yield
+    scheduler.shutdown_scheduler()
+
+
+app = FastAPI(title="ZFundPilot API", version="0.20.0", lifespan=_lifespan)
 
 # ---------------------------------------------------------------------------
 # 登录速率限制（in-memory，单 uvicorn worker）
@@ -60,6 +84,7 @@ _LOGIN_LOCKED_UNTIL: dict[str, float] = {}
 _LOGIN_WINDOW = 300       # 5 分钟滚动窗口（此窗口内失败次数触发锁定）
 _LOGIN_MAX_FAILURES = 5   # 窗口内最多失败次数
 _LOGIN_LOCKOUT = 900      # 锁定时间（15 分钟）
+_LOGIN_SWEEP_COUNTER = 0  # 用于控制 sweep 频率
 
 
 def _get_client_ip(request: Request) -> str:
@@ -96,16 +121,41 @@ def _check_rate_limit(ip: str) -> tuple[bool, int]:
 
 
 def _record_failed_login(ip: str) -> None:
+    global _LOGIN_SWEEP_COUNTER
     now = time.time()
     _LOGIN_ATTEMPTS.setdefault(ip, []).append(now)
     _LOGIN_ATTEMPTS[ip] = [t for t in _LOGIN_ATTEMPTS[ip] if now - t < _LOGIN_WINDOW]
     if len(_LOGIN_ATTEMPTS[ip]) >= _LOGIN_MAX_FAILURES:
         _LOGIN_LOCKED_UNTIL[ip] = now + _LOGIN_LOCKOUT
+    # 定期 sweep 防止字典无界增长
+    _LOGIN_SWEEP_COUNTER += 1
+    if _LOGIN_SWEEP_COUNTER >= 100 or len(_LOGIN_ATTEMPTS) > 10000:
+        _LOGIN_SWEEP_COUNTER = 0
+        _sweep_login_attempts()
 
 
 def _clear_login_attempts(ip: str) -> None:
     _LOGIN_ATTEMPTS.pop(ip, None)
     _LOGIN_LOCKED_UNTIL.pop(ip, None)
+
+
+def _sweep_login_attempts() -> None:
+    """清理过期的登录记录，防止字典无界增长。"""
+    now = time.time()
+    expired_ips = [
+        ip for ip, lock in list(_LOGIN_LOCKED_UNTIL.items())
+        if now >= lock
+    ]
+    for ip in expired_ips:
+        _LOGIN_LOCKED_UNTIL.pop(ip, None)
+        _LOGIN_ATTEMPTS.pop(ip, None)
+    # 同时清理已过期的尝试记录（即使未被锁定过，窗口过期也清理）
+    for ip in list(_LOGIN_ATTEMPTS):
+        _LOGIN_ATTEMPTS[ip] = [
+            t for t in _LOGIN_ATTEMPTS[ip] if now - t < _LOGIN_WINDOW
+        ]
+        if not _LOGIN_ATTEMPTS[ip]:
+            _LOGIN_ATTEMPTS.pop(ip, None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -174,31 +224,6 @@ async def auth_middleware(request: Request, call_next):
             return await call_next(request)
 
     return JSONResponse(status_code=401, content={"detail": "未登录或 token 已过期"})
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    db.init_db()
-    # 一次性修复历史 T+1 交易的错误净值回填
-    if db.get_preference("t1_nav_fix_done") is None:
-        fixed = analysis.recalculate_t1_transactions()
-        if fixed:
-            # stdout 打印（Docker logs 可见）
-            print(f"[T+1 NAV FIX] 修复 {len(fixed)} 笔交易:")
-            for f in fixed:
-                print(f"  tx#{f['tx_id']} {f['fund_code']} {f['date']}  "
-                      f"nav {f['old_nav']:.4f}→{f['new_nav']:.4f}  "
-                      f"shares {f['old_shares']:.2f}→{f['new_shares']:.2f}")
-            # 写审计日志（Settings 页可见）
-            db.log_audit("t1_nav_fix", detail={"fixed": fixed, "count": len(fixed)})
-            logger.info("修复了 %d 笔 T+1 交易的净值回填", len(fixed))
-        db.upsert_preference("t1_nav_fix_done", "1")
-    scheduler.init_scheduler()
-
-
-@app.on_event("shutdown")
-def _shutdown() -> None:
-    scheduler.shutdown_scheduler()
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +316,32 @@ def change_username(request: Request, body: ChangeUsernameRequest) -> dict[str, 
 # ---------------------------------------------------------------------------
 # AI 投顾配置 & 对话
 # ---------------------------------------------------------------------------
+_BLOCKED_TLDS = {".internal", ".localhost"}
+
+
+def _validate_base_url(v: str) -> str:
+    """校验 AI base_url：要求 http/https 协议，拒绝 link-local 地址和危险 TLD。"""
+    parsed = urllib.parse.urlparse(v)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("base_url 必须使用 http 或 https 协议")
+    hostname = parsed.hostname or ""
+    # 拒绝 link-local 地址（云元数据端点 169.254.x.x / fe80::/10）
+    try:
+        addr = ipaddress.ip_address(hostname)
+    except ValueError:
+        pass  # hostname 不是 IP，走 TLD 检查
+    else:
+        if isinstance(addr, ipaddress.IPv4Address) and addr.is_link_local:
+            raise ValueError("不允许使用 link-local 地址（169.254.x.x）")
+        if isinstance(addr, ipaddress.IPv6Address) and addr.is_link_local:
+            raise ValueError("不允许使用 link-local 地址（fe80::/10）")
+    # 拒绝危险 TLD
+    for tld in _BLOCKED_TLDS:
+        if hostname.endswith(tld):
+            raise ValueError(f"不允许使用 {tld} 域名")
+    return v
+
+
 class AIConfigUpdate(BaseModel):
     base_url: str
     api_key: str = ""
@@ -298,11 +349,21 @@ class AIConfigUpdate(BaseModel):
     web_search: bool = True
     custom_prompt: str = ""
 
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, v: str) -> str:
+        return _validate_base_url(v)
+
 
 class VisionConfigUpdate(BaseModel):
     base_url: str
     api_key: str = ""
     model: str
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, v: str) -> str:
+        return _validate_base_url(v)
 
 
 class ReconcileItem(BaseModel):
@@ -431,6 +492,9 @@ def test_vision_connection() -> dict[str, Any]:
     return ai.test_vision_connection()
 
 
+_MAX_SCREENSHOT_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
 @app.post("/api/ai/parse-screenshot")
 async def parse_screenshot(file: UploadFile = File(...), mode: str = "transactions", channel_hint: str = "", user_hint: str = "") -> dict[str, Any]:
     """上传截图，视觉模型解析为结构化数据（不落库）。
@@ -439,7 +503,12 @@ async def parse_screenshot(file: UploadFile = File(...), mode: str = "transactio
     user_hint: 用户补充说明，追加到视觉模型提示词
     交易模式自动标记已存在的重复交易（is_duplicate=True）。
     """
+    size = file.size
+    if size is not None and size > _MAX_SCREENSHOT_SIZE:
+        raise HTTPException(413, "图片大小不能超过 10MB")
     image = await file.read()
+    if len(image) > _MAX_SCREENSHOT_SIZE:
+        raise HTTPException(413, "图片大小不能超过 10MB")
     if not image:
         return {"ok": False, "items": [], "error": "图片为空"}
     result = ai.parse_screenshot(image, mode, channel_hint, file.content_type or "", user_hint)
@@ -1568,9 +1637,17 @@ def export_backup(request: Request) -> Response:
     )
 
 
+_MAX_CSV_SIZE = 5 * 1024 * 1024  # 5 MB
+
+
 @app.post("/api/csv/parse")
 async def parse_csv(file: UploadFile = File(...)) -> dict[str, Any]:
+    size = file.size
+    if size is not None and size > _MAX_CSV_SIZE:
+        raise HTTPException(413, "CSV 文件大小不能超过 5MB")
     content = await file.read()
+    if len(content) > _MAX_CSV_SIZE:
+        raise HTTPException(413, "CSV 文件大小不能超过 5MB")
     txs, errors = data_io.parse_transactions_csv(content)
     return {
         "transactions": [t.to_dict() for t in txs],

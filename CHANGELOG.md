@@ -14,6 +14,13 @@
 - AI 用量时区：存储（`add_ai_usage` 原 `datetime('now')` UTC）与读取（`get_ai_usage_stats` today 过滤、`get_ai_usage_daily` 日期轴与过滤）四处在写读两侧统一为本地时间（`datetime('now','localtime')` / `date('now','localtime')` / `datetime.now(config.TIMEZONE)`），修复上海时区早 8 点前当日 token 归到前一天的问题（新增 3 个测试，238→241）
 - 朴素 datetime 收敛约定：`ai.py` 的 `_fetch_market_index` 与 `fetch_dividend.py` 的 `check_dividends` 改用 `datetime.now(config.TIMEZONE)` 替代裸 `datetime.now()`，与全仓时区约定一致（现有 `config.TIMEZONE` 已覆盖，行为不变）
 - API 输入验证补全：所有 Pydantic 请求模型加 `ConfigDict(allow_inf_nan=False)` 禁用 NaN/inf；`TransactionCreate` 加 fund_code 6 位数字、date YYYY-MM-DD、action 枚举、amount/shares/nav/fee 非负 4 个 field_validator；`AutoInvestPlanCreate` 加 amount > 0、fund_code；`ReconcileItem` 加 fund_code、shares/market_value 非负；`TpSlConfigUpdate` 加三浮点非负；`DcaBacktestRequest` 加 fund_codes 数量/格式、amount > 0、cadence 枚举、日期格式与先后顺序；`ChatRequest` 改为 `list[ChatMessage]`（role 枚举 + content 20k 单条 + 50 条 + 100k 总长度）；`FilterRequest.limit/offset` 加 `Field(ge)` 边界；`get_ai_usage_daily` / `get_audit_logs` / `get_transactions` 查询参数用 `Query(ge/le/pattern)` 约束。移除 `run_dca_backtest` handler 内冗余 400 检查。新增 61 个测试（241→302）
+- SSRF 防护：`AIConfigUpdate` / `VisionConfigUpdate` 的 `base_url` 加 `field_validator`，校验 http/https 协议、拒绝 link-local 地址（169.254.x.x / fe80::/10）和 `.internal` / `.localhost` 域名，允许 private/loopback 地址（本地 LLM 可用）
+- 上传大小限制：`parse_screenshot` 限制 10MB、`parse_csv` 限制 5MB，超出返回 HTTP 413
+- FastAPI 废弃 API 迁移：`@app.on_event("startup"/"shutdown")` 迁移至 `lifespan` 异步上下文管理器
+- 非原子配置写入：`config._save_auth_data` / `_save_ai_config` / `fetch_fund._save_sector_map` 改用 `_atomic_write`（写临时文件 → `os.replace`），崩溃时不再损坏目标文件
+- 阻塞式 bootstrap：`scheduler.init_scheduler` 中 `_bootstrap_check` / `_bootstrap_auto_invest` / `_bootstrap_dividend_check` 改为 `threading.Thread(daemon=True)` 异步执行，启动不再阻塞数分钟
+- 登录限流字典无界增长：新增 `_sweep_login_attempts()` 清理过期条目，在 `_record_failed_login` 中每 100 次调用或条目超 10000 时触发
+- CSV 清空重导确认：前端 CSV 导入选择「清空后重新导入」时弹出 `ConfirmDialog`（destructive tone），防止误删
 
 ## [0.20.0] - 2026-08-28
 

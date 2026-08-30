@@ -368,10 +368,10 @@ def _load_sector_map() -> dict[str, str]:
 
 
 def _save_sector_map(mapping: dict[str, str]) -> None:
-    """保存精确映射表到文件。"""
+    """原子保存精确映射表到文件。"""
     os.makedirs(os.path.dirname(_SECTOR_MAP_PATH), exist_ok=True)
-    with open(_SECTOR_MAP_PATH, "w", encoding="utf-8") as f:
-        json.dump(mapping, f, ensure_ascii=False, indent=2)
+    from .config import _atomic_write
+    _atomic_write(_SECTOR_MAP_PATH, json.dumps(mapping, ensure_ascii=False, indent=2).encode("utf-8"))
 
 
 def _load_custom_keywords(key: str) -> list[tuple[str, str]]:

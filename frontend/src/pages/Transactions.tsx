@@ -1011,6 +1011,7 @@ function CSVImportExport() {
   const [importing, setImporting] = useState(false)
   const [clearExisting, setClearExisting] = useState(false)
   const [fetchMeta, setFetchMeta] = useState(true)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
 
   const handleFile = async (file: File | undefined) => {
     if (!file) return
@@ -1026,9 +1027,25 @@ function CSVImportExport() {
 
   const handleImport = async () => {
     if (!parseResult?.transactions.length) return
+    if (clearExisting) {
+      setShowClearConfirm(true)
+      return
+    }
     setImporting(true)
     try {
       const res = await api.confirmImport(parseResult.transactions, clearExisting, fetchMeta)
+      toast.success(t.transactions.importSuccess.replace("{n}", String(res.imported)))
+      setParseResult(null)
+    } catch (e) { toast.error(`${t.transactions.importFailed}: ${e}`) }
+    finally { setImporting(false) }
+  }
+
+  const handleConfirmedImport = async () => {
+    if (!parseResult?.transactions.length) return
+    setShowClearConfirm(false)
+    setImporting(true)
+    try {
+      const res = await api.confirmImport(parseResult.transactions, true, fetchMeta)
       toast.success(t.transactions.importSuccess.replace("{n}", String(res.imported)))
       setParseResult(null)
     } catch (e) { toast.error(`${t.transactions.importFailed}: ${e}`) }
@@ -1123,6 +1140,16 @@ function CSVImportExport() {
           </Button>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={showClearConfirm}
+        onOpenChange={(open) => { if (!open) setShowClearConfirm(false) }}
+        title={t.transactions.clearAndReimport}
+        description={t.transactions.clearAllDesc}
+        confirmText={t.transactions.confirmClear ?? t.transactions.clearAndReimport}
+        tone="destructive"
+        onConfirm={handleConfirmedImport}
+      />
     </div>
   )
 }

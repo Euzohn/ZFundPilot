@@ -355,13 +355,13 @@ def init_scheduler() -> None:
     if not enabled:
         _scheduler.pause_job("nav_update")
     else:
-        _bootstrap_check(trigger)
-    _bootstrap_auto_invest()
+        threading.Thread(target=_bootstrap_check, args=(trigger,), daemon=True).start()
+    threading.Thread(target=_bootstrap_auto_invest, daemon=True).start()
 
     if not _get_dividend_enabled():
         _scheduler.pause_job("dividend_check")
     else:
-        _bootstrap_dividend_check()
+        threading.Thread(target=_bootstrap_dividend_check, daemon=True).start()
 
 
 def _bootstrap_auto_invest() -> None:

@@ -11,6 +11,7 @@ import ipaddress
 import json
 import os
 import secrets as _secrets
+import tempfile
 import time
 from zoneinfo import ZoneInfo
 
@@ -33,6 +34,21 @@ DB_PATH = os.path.join(DATA_DIR, "fund.db")
 
 # 确保数据目录存在
 os.makedirs(DATA_DIR, exist_ok=True)
+
+
+def _atomic_write(path: str, data: bytes) -> None:
+    """原子写入文件：写临时文件 → os.replace，防止崩溃时目标文件损坏。"""
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -160,9 +176,8 @@ def _load_auth_data() -> dict | None:
 
 
 def _save_auth_data(data: dict) -> None:
-    """写入 auth.json。"""
-    with open(AUTH_DATA_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    """原子写入 auth.json。"""
+    _atomic_write(AUTH_DATA_PATH, json.dumps(data, indent=2).encode("utf-8"))
 
 
 def _persist_auth() -> None:
@@ -276,8 +291,7 @@ def _save_ai_config(data: dict) -> None:
         to_save["api_key"] = crypto.encrypt(to_save["api_key"])
     if to_save.get("vision_api_key"):
         to_save["vision_api_key"] = crypto.encrypt(to_save["vision_api_key"])
-    with open(AI_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(to_save, f, indent=2)
+    _atomic_write(AI_CONFIG_PATH, json.dumps(to_save, indent=2).encode("utf-8"))
 
 
 def update_ai_config(base_url: str, api_key: str, model: str, web_search: bool, custom_prompt: str = "") -> None:

@@ -21,17 +21,20 @@
 - 阻塞式 bootstrap：`scheduler.init_scheduler` 中 `_bootstrap_check` / `_bootstrap_auto_invest` / `_bootstrap_dividend_check` 改为 `threading.Thread(daemon=True)` 异步执行，启动不再阻塞数分钟
 - 登录限流字典无界增长：新增 `_sweep_login_attempts()` 清理过期条目，在 `_record_failed_login` 中每 100 次调用或条目超 10000 时触发
 - CSV 清空重导确认：前端 CSV 导入选择「清空后重新导入」时弹出 `ConfirmDialog`（destructive tone），防止误删
-
-### Performance
-- 消除 5 处 N+1 查询：(1) `api.py get_latest_navs` 逐只 `get_latest_nav` → `get_latest_navs_batch` 单次查询；(2) `analysis.py calculate_positions` 逐持仓 `get_latest_nav` → 批量预取 `nav_map`；(3) `analysis.py backfill_transaction_navs` 逐笔 `get_nav_on_or_after` → `get_navs_on_or_after_batch` 批量预取，逐条 `update_transaction` → `executemany` 单连接批量写；(4) `scheduler.py _run_tp_sl_check` 逐持仓 `get_tp_sl_alert_state` → `get_tp_sl_alert_states_batch` 批量预载 + 本地映射同步更新；(5) `api.py _mark_duplicates` / `fetch_dividend.py` 全表 `get_transactions` → SQL IN 过滤 + 内存查找表；(6) `analysis.py calculate_summary` 冗余 `get_transactions` → `_get_transactions_cached` 共用缓存。新增 `db.py` 函数 `get_latest_navs_batch` / `get_navs_on_or_after_batch` / `get_tp_sl_alert_states_batch`，`get_transactions` 扩展 `fund_codes/actions/dates` 可选参数
-
-### Fixed
 - 修复 `_migrate_relax_transactions_schema` 幂等判断 bug：旧逻辑 `"NOT NULL" not in sql_text` 对新 schema 恒为 False，导致每次 `init_db()` 都重建 transactions 表。改为精确检测旧 schema 特征（`action IN ('buy', 'sell')`）+ 新 CHECK 约束完整性
 - `update_auto_invest_plan` SQL 注入防护：dict keys 直接拼入 SQL，加 key 白名单（仿 `update_dividend_alert`），未来调用方传入非法 key 不再能注入
 - `update_scheduler_cron` 坏 cron 表达式返回 500：`_parse_cron` 抛 `ValueError`，加 try/except → 400
 - `calc_fund_fee` 坏日期返回 500：`_parse_date` 的 `int()` 抛 `ValueError`/`IndexError`，加 try/except → 400
 - `auth_login` 审计日志写失败导致 500（用户拿不到 token）：`db.log_audit("login_success")` 加 try/except
 - `recalculate_t1_transactions` 启动时未 try/except，异常阻止应用启动：加 try/except + logger.exception
+- 限流端点 key 与路由不匹配：`/api/ai/compare` 实际路由为 `/api/funds/compare`（此前完全未限流），截图解析路由为 `/api/ai/parse-screenshot`
+- `_migrate_add_indexes` 在表重建迁移之前执行：auto_invest_plans / dividend_alerts 重建 `DROP TABLE` 会删掉刚建的索引，移到迁移链最后
+- `_migrate_dividend_alerts_unique` 去重误删 tp_sl 提醒：`GROUP BY COALESCE(ex_date,'')` 把所有 ex_date=NULL 的 tp_sl 行归并为一组，仅对 ex_date 非空行去重
+- `_migrate_relax_transactions_schema` 未清负金额：旧数据 `amount<0` 会在重建时触发 CHECK 失败，DELETE 增加 `OR amount < 0`
+- transactions 重建用 CASE 重算 is_t1 覆盖用户修正值：改为原样复制 is_t1
+
+### Performance
+- 消除 5 处 N+1 查询：(1) `api.py get_latest_navs` 逐只 `get_latest_nav` → `get_latest_navs_batch` 单次查询；(2) `analysis.py calculate_positions` 逐持仓 `get_latest_nav` → 批量预取 `nav_map`；(3) `analysis.py backfill_transaction_navs` 逐笔 `get_nav_on_or_after` → `get_navs_on_or_after_batch` 批量预取，逐条 `update_transaction` → `executemany` 单连接批量写；(4) `scheduler.py _run_tp_sl_check` 逐持仓 `get_tp_sl_alert_state` → `get_tp_sl_alert_states_batch` 批量预载 + 本地映射同步更新；(5) `api.py _mark_duplicates` / `fetch_dividend.py` 全表 `get_transactions` → SQL IN 过滤 + 内存查找表；(6) `analysis.py calculate_summary` 冗余 `get_transactions` → `_get_transactions_cached` 共用缓存。新增 `db.py` 函数 `get_latest_navs_batch` / `get_navs_on_or_after_batch` / `get_tp_sl_alert_states_batch`，`get_transactions` 扩展 `fund_codes/actions/dates` 可选参数
 
 ### Added
 - 端点速率限制（in-memory，单 worker）：AI 对话/截图解析（20/min）、基金对比/回测（60/min）、CSV 导入（30/min），超出返回 429 + Retry-After 头。复用 `_get_client_ip` + 滑动窗口，sweep 防字典无界增长

@@ -22,6 +22,9 @@
 - 登录限流字典无界增长：新增 `_sweep_login_attempts()` 清理过期条目，在 `_record_failed_login` 中每 100 次调用或条目超 10000 时触发
 - CSV 清空重导确认：前端 CSV 导入选择「清空后重新导入」时弹出 `ConfirmDialog`（destructive tone），防止误删
 
+### Performance
+- 消除 5 处 N+1 查询：(1) `api.py get_latest_navs` 逐只 `get_latest_nav` → `get_latest_navs_batch` 单次查询；(2) `analysis.py calculate_positions` 逐持仓 `get_latest_nav` → 批量预取 `nav_map`；(3) `analysis.py backfill_transaction_navs` 逐笔 `get_nav_on_or_after` → `get_navs_on_or_after_batch` 批量预取，逐条 `update_transaction` → `executemany` 单连接批量写；(4) `scheduler.py _run_tp_sl_check` 逐持仓 `get_tp_sl_alert_state` → `get_tp_sl_alert_states_batch` 批量预载 + 本地映射同步更新；(5) `api.py _mark_duplicates` / `fetch_dividend.py` 全表 `get_transactions` → SQL IN 过滤 + 内存查找表；(6) `analysis.py calculate_summary` 冗余 `get_transactions` → `_get_transactions_cached` 共用缓存。新增 `db.py` 函数 `get_latest_navs_batch` / `get_navs_on_or_after_batch` / `get_tp_sl_alert_states_batch`，`get_transactions` 扩展 `fund_codes/actions/dates` 可选参数
+
 ## [0.20.0] - 2026-08-28
 
 ### Added

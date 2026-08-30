@@ -445,6 +445,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ## 十二、当前工作状态
 
+### Unreleased
+
+- perf: 消除 5 处 N+1 查询——(1) `api.py get_latest_navs` 逐只 `get_latest_nav` → `get_latest_navs_batch`；(2) `analysis.py calculate_positions` 逐持仓取净值 → 批量预取 `nav_map`；(3) `analysis.py backfill_transaction_navs` 逐笔查净值+逐条写库 → 批量预取净值 + `executemany` 单连接批量写（两阶段：批量读 → 算费率+normalize → 批量写）；(4) `scheduler.py _run_tp_sl_check` 逐持仓查状态 → `get_tp_sl_alert_states_batch` 批量预载 + 本地 dict 映射同步更新；(5) `api.py _mark_duplicates` / `fetch_dividend.py` 全表 `get_transactions` → SQL IN 过滤 + 内存查找表；(6) `analysis.py calculate_summary` 冗余查询 → `_get_transactions_cached` 共用 60s TTL 缓存。新增 `db.py` 三个批量函数 + `get_transactions` 扩展 `fund_codes/actions/dates` 可选参数
+
 ### v0.20.0 - 2026-08-28
 
 - feat: 截图导入交易/持仓对账——Transactions 页新增第 5 个 tab「截图导入」（inline 面板 `ScreenshotImportPanel`，切 tab 自动卸载重置，替代原 Dialog），上传购买记录或持仓截图，AI 视觉模型自动解析。两种模式：交易模式（解析交易行 → 预览编辑 → 批量保存，复用 `POST /api/csv/import`）；持仓对账模式（解析持仓 → 按渠道对比已记录份额 → 生成差额调整交易 → 勾选确认）。视觉模型独立配置（`ai_config.json` 新增 `vision_base_url`/`vision_api_key`/`vision_model`，Settings 新增视觉模型卡片，4 预设：智谱 GLM-4V 推荐/通义千问 VL/GPT-4o/Kimi 视觉）。后端 `ai.parse_screenshot` 非流式调用 `chat/completions`（content 含 image_url），`fund_filter.resolve_fund_code` 用 fund universe 名称→代码解析（精确/多候选前端下拉/无匹配手填），`verify_fund_code` 校验模型输出代码防编造。`analysis.reconcile_holdings` 按渠道对比份额，buy/new 用 latest_nav 估算成本标注「请核实」，maybe_sold 建议卖出全部。新增 `tests/test_vision.py`（29 用例）+ `tests/test_reconcile.py`（9 用例），总测试 178→216

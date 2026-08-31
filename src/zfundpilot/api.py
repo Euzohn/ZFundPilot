@@ -266,6 +266,7 @@ def _verify_token(token: str) -> bool:
         payload = json.loads(payload_bytes)
         return payload["exp"] > time.time()
     except Exception:
+        logger.debug("token 校验失败", exc_info=True)
         return False
 
 

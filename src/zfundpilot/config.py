@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import logging
 import os
 import secrets as _secrets
 import tempfile
@@ -16,6 +17,8 @@ import time
 from zoneinfo import ZoneInfo
 
 import bcrypt
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # 路径配置
@@ -160,6 +163,7 @@ def verify_password(password: str, password_hash: str) -> bool:
         try:
             return bcrypt.checkpw(password.encode(), password_hash.encode())
         except Exception:
+            logger.debug("bcrypt 校验异常", exc_info=True)
             return False
     return hmac.compare_digest(_hash_password_sha256(password), password_hash)
 

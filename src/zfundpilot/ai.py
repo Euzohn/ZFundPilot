@@ -115,9 +115,11 @@ def _fetch_market_index() -> str:
                     change = float(last["涨跌幅"]) / 100
                     results.append(f"- {name}: {close:,.2f} ({change:+.2%})")
             except Exception:
+                logger.debug("市场数据获取失败 %s", name, exc_info=True)
                 continue
         return "\n".join(results)
     except Exception:
+        logger.warning("市场上下文构建失败", exc_info=True)
         return ""
 
 

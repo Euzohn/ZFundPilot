@@ -236,6 +236,7 @@ def check_dividends() -> list[DividendEvent]:
             try:
                 rows = future.result()
             except Exception:
+                logger.debug("分红数据拉取失败 %s", code, exc_info=True)
                 continue
             fetched_funds.add(code)
             if not rows:

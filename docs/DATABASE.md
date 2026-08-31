@@ -13,7 +13,6 @@
 | `funds` | 基金基础信息 | `fund_code` |
 | `transactions` | 交易流水（买入/卖出/分红/再投资） | `id` (自增) |
 | `nav_history` | 基金净值历史 | `id` (自增)，`UNIQUE(fund_code, date)` |
-| `portfolio_snapshots` | 组合每日快照 | `id` (自增)，`UNIQUE(date)` |
 | `audit_log` | 审计日志（敏感操作记录） | `id` (自增) |
 | `auto_invest_plans` | 定投计划 | `id` (自增) |
 | `watchlist` | 自选关注列表 | `fund_code` |
@@ -119,23 +118,7 @@
 
 ---
 
-## 4. portfolio_snapshots — 组合每日快照
-
-组合层面的每日汇总数据。用于绘制历史收益曲线。
-
-| 字段 | 类型 | 约束 | 说明 |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | 自增主键 |
-| `date` | TEXT | NOT NULL UNIQUE | 快照日期（YYYY-MM-DD），唯一 |
-| `total_cost` | REAL | NOT NULL | 当日持仓总成本 |
-| `total_value` | REAL | NOT NULL | 当日持仓总市值 |
-| `total_profit` | REAL | NOT NULL | 当日总盈亏（市值 - 成本） |
-| `total_return` | REAL | NOT NULL | 当日总收益率 |
-| `created_at` | TEXT | DEFAULT datetime('now','localtime') | 创建时间 |
-
----
-
-## 5. audit_log — 审计日志
+## 4. audit_log — 审计日志
 
 敏感操作记录，用于安全审计和设置页面查看。
 
@@ -152,7 +135,7 @@
 
 ---
 
-## 6. auto_invest_plans — 定投计划
+## 5. auto_invest_plans — 定投计划
 
 定投计划的配置和执行状态。调度器每天 09:00 检查到期计划并执行。
 
@@ -175,7 +158,7 @@
 
 ---
 
-## 7. watchlist — 自选关注列表
+## 6. watchlist — 自选关注列表
 
 追踪未持有的基金。通过 `POST /api/watchlist` 添加时自动获取基金 meta 并 upsert 到 `funds` 表。
 
@@ -190,7 +173,7 @@
 
 ---
 
-## 8. ai_usage — AI token 用量记录
+## 7. ai_usage — AI token 用量记录
 
 每次 AI 对话的 token 消耗记录。用于用量统计和趋势展示。
 
@@ -208,7 +191,7 @@
 
 ---
 
-## 9. preferences — 偏好设置
+## 8. preferences — 偏好设置
 
 通用 key-value 存储，用于持久化用户偏好。各模块通过 `db.upsert_preference(key, value)` / `db.get_preference(key)` 读写。
 
@@ -238,7 +221,7 @@
 
 ---
 
-## 10. dividend_alerts — 提醒列表
+## 9. dividend_alerts — 提醒列表
 
 分红 + 止盈止损共用，通过 `alert_type` 区分。分红提醒由分红定时检测（每天 09:30）写入，止盈止损提醒由净值更新完成后的 `_run_tp_sl_check()` 写入。
 
@@ -278,7 +261,7 @@
 
 ---
 
-## 11. tp_sl_alert_states — 止盈止损状态机
+## 10. tp_sl_alert_states — 止盈止损状态机
 
 记录每只基金每个方向（止盈/止损）的 armed 状态，用于避免重复提醒。触发后 `armed=0`（disarmed），收益率回落到 `threshold × reset_ratio` 以下后恢复 `armed=1`。
 
@@ -296,7 +279,7 @@
 
 ---
 
-## 12. index_history — 指数历史收盘价
+## 11. index_history — 指数历史收盘价
 
 存储基准指数（沪深300/上证指数/创业板指）的历史日收盘价，作为 `fetch_index_history()` 的 L2 持久化缓存。在线拉取后自动写入，离线时从 DB 返回已有数据。
 

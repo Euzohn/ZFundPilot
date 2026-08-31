@@ -107,7 +107,6 @@ ZFundPilot/
 | `funds` | 基金基础信息（code/name/type/sector） |
 | `transactions` | 交易流水（buy/sell/dividend/reinvest） |
 | `nav_history` | 基金净值历史（fund_code + date + nav） |
-| `portfolio_snapshots` | 组合每日快照 |
 | `watchlist` | 自选关注列表（fund_code + note + added_at，关联 funds 表） |
 | `ai_usage` | AI token 用量记录 |
 | `preferences` | 偏好设置 key-value（channels/channel_colors/color_theme/nav_auto_update/dividend_auto_check/tp_sl_*） |

@@ -12,6 +12,7 @@ CSV 列（表头，第一行）：
 from __future__ import annotations
 
 import io
+import logging
 import zipfile
 
 import pandas as pd
@@ -24,6 +25,8 @@ from .models import (
     ACTION_SELL,
     Transaction,
 )
+
+logger = logging.getLogger(__name__)
 
 # 标准列顺序
 CSV_COLUMNS = [
@@ -133,6 +136,7 @@ def parse_transactions_csv(source: bytes | str | io.BytesIO) -> tuple[list[Trans
                 df = pd.read_csv(buf, dtype=str, encoding=enc)
                 break
             except Exception:  # noqa: BLE001
+                logger.debug("CSV 编码 %s 失败", enc, exc_info=True)
                 continue
         if df is None:
             return [], ["无法解析 CSV 文件编码，请另存为 UTF-8 或 GBK。"]
@@ -210,7 +214,7 @@ def _dicts_to_csv_bytes(data: list[dict], fallback_header: str) -> bytes:
 def export_backup_zip() -> bytes:
     """打包用户数据为 ZIP（5 个 CSV：交易/基金/自选/定投/偏好）。
 
-    不含 nav_history 和 portfolio_snapshots — 重新拉取净值即可重建。
+    不含 nav_history — 重新拉取净值即可重建。
     """
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:

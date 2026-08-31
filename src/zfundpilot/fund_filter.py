@@ -97,7 +97,7 @@ def load_fund_universe(force_refresh: bool = False) -> list[dict]:
                 with open(_UNIVERSE_PATH, encoding="utf-8") as f:
                     return json.load(f)
         except Exception:
-            pass
+            logger.debug("基金池缓存读取失败", exc_info=True)
 
     data = _fetch_universe_from_web()
     if data:

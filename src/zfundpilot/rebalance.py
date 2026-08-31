@@ -129,12 +129,6 @@ def generate_advice(
     return advice
 
 
-def format_advice_text(advice: list[Advice]) -> str:
-    """把建议列表格式化为纯文本段落，便于展示或导出。"""
-    lines = ["组合结构优化建议（非交易指令）：", ""]
-    for i, a in enumerate(advice, start=1):
-        lines.append(f"{i}. [{a.category}] {a.text}")
-    return "\n".join(lines)
 
 
 if __name__ == "__main__":

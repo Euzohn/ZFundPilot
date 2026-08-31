@@ -12,12 +12,15 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from bisect import bisect_left
 
 import pandas as pd
 
 from . import db, fetch_fund, risk
 from .models import BacktestResult
+
+logger = logging.getLogger(__name__)
 
 RISK_FREE_RATE = 0.03  # 无风险利率（国内1年期国债收益率近似）
 
@@ -389,7 +392,7 @@ def _ensure_nav_data(fund_code: str, start_date: str, end_date: str) -> None:
         try:
             fetch_fund.update_fund_nav(fund_code)
         except Exception:
-            pass
+            logger.warning("backtest: 拉取净值失败 %s", fund_code, exc_info=True)
     else:
         # 有数据但可能未覆盖请求区间两端，尝试补拉
         first_date = existing[0]["date"]
@@ -398,7 +401,7 @@ def _ensure_nav_data(fund_code: str, start_date: str, end_date: str) -> None:
             try:
                 fetch_fund.update_fund_nav(fund_code)
             except Exception:
-                pass
+                logger.warning("backtest: 补拉净值失败 %s", fund_code, exc_info=True)
 
 
 # ---------------------------------------------------------------------------

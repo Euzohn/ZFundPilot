@@ -129,6 +129,7 @@ def _get_fund_archive(fund_code: str) -> dict:
             manager = m.group(1).strip()
         return {"inception": inception, "scale": scale, "manager": manager}
     except Exception:
+        logger.debug("基金档案 HTML 解析失败", exc_info=True)
         return fallback
 
 
@@ -363,6 +364,4 @@ def _build_correlation_matrix(
     return matrix
 
 
-def clear_compare_cache() -> None:
-    _nav_cache.clear()
-    _meta_cache.clear()
+

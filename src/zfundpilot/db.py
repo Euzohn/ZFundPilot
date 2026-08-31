@@ -5,7 +5,6 @@
 - transactions        买入/卖出流水
 - nav_history         基金净值历史
 - index_history        指数历史收盘价（基准对比，持久化缓存）
-- portfolio_snapshots  组合每日快照
 
 设计：持仓不再单独存表，而是由 transactions 流水汇总计算（见 analysis.py）。
 兼容旧版：若检测到旧 holdings 表，自动迁移为一条买入流水。
@@ -718,33 +717,11 @@ def get_transactions_without_nav() -> list[Transaction]:
     return [Transaction.from_row(r) for r in rows]
 
 
-def get_distinct_fund_codes() -> list[str]:
-    """返回有流水记录的所有基金代码。"""
-    with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT DISTINCT fund_code FROM transactions WHERE fund_code != ''"
-        ).fetchall()
-    return [r["fund_code"] for r in rows]
 
 
 # ---------------------------------------------------------------------------
 # 净值写入 / 查询
 # ---------------------------------------------------------------------------
-def upsert_nav(point: NavPoint) -> None:
-    with get_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO nav_history(fund_code,date,nav,accumulated_nav,source)
-            VALUES(?,?,?,?,?)
-            ON CONFLICT(fund_code,date) DO UPDATE SET
-                nav=excluded.nav, accumulated_nav=excluded.accumulated_nav,
-                source=excluded.source
-            """,
-            (point.fund_code, point.date, point.nav, point.accumulated_nav,
-             point.source),
-        )
-
-
 def upsert_nav_batch(points: Iterable[NavPoint]) -> int:
     rows = [(p.fund_code, p.date, p.nav, p.accumulated_nav, p.source)
             for p in points]
@@ -873,10 +850,6 @@ def get_nav_on_date(fund_code: str, date_str: str) -> sqlite3.Row | None:
         ).fetchone()
 
 
-def get_nav_last_update() -> str | None:
-    with get_connection() as conn:
-        row = conn.execute("SELECT MAX(date) AS d FROM nav_history").fetchone()
-    return row["d"] if row and row["d"] else None
 
 
 # ---------------------------------------------------------------------------
@@ -941,29 +914,6 @@ def get_index_latest_date(code: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# 组合快照
-# ---------------------------------------------------------------------------
-def save_snapshot(date_str: str, total_cost: float, total_value: float,
-                  total_profit: float, total_return: float) -> None:
-    with get_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO portfolio_snapshots(date,total_cost,total_value,
-                total_profit,total_return)
-            VALUES(?,?,?,?,?)
-            ON CONFLICT(date) DO UPDATE SET
-                total_cost=excluded.total_cost, total_value=excluded.total_value,
-                total_profit=excluded.total_profit, total_return=excluded.total_return
-            """,
-            (date_str, total_cost, total_value, total_profit, total_return),
-        )
-
-
-def get_snapshots() -> list[sqlite3.Row]:
-    with get_connection() as conn:
-        return conn.execute(
-            "SELECT * FROM portfolio_snapshots ORDER BY date ASC"
-        ).fetchall()
 
 
 # ---------------------------------------------------------------------------

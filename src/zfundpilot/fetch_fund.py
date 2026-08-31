@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
@@ -33,6 +34,8 @@ from .models import (
     NavPoint,
     RankingPoint,
 )
+
+logger = logging.getLogger(__name__)
 
 # 天天基金类型 -> 系统标准资产类型（config.FUND_TYPES）的映射
 # 注意：按顺序匹配，越具体越靠前
@@ -363,7 +366,7 @@ def _load_sector_map() -> dict[str, str]:
             with open(_SECTOR_MAP_PATH, encoding="utf-8") as f:
                 return json.load(f)
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("板块映射文件读取失败", exc_info=True)
     return {}
 
 
@@ -383,6 +386,7 @@ def _load_custom_keywords(key: str) -> list[tuple[str, str]]:
         arr = json.loads(raw)
         return [(item["keyword"], item["mapped"]) for item in arr if "keyword" in item and "mapped" in item]
     except Exception:  # noqa: BLE001
+        logger.debug("自定义关键词解析失败", exc_info=True)
         return []
 
 
@@ -1176,14 +1180,6 @@ def _parse_date(date_str: str):
     return dt.date(int(parts[0]), int(parts[1]), int(parts[2]))
 
 
-def clear_fee_cache() -> None:
-    """清空费率缓存（调试/测试用）。"""
-    _fee_cache.clear()
-
-
-def get_fee_cache_info() -> int:
-    """返回缓存中的基金数量。"""
-    return len(_fee_cache)
 
 
 # ---------------------------------------------------------------------------
@@ -1310,9 +1306,6 @@ def _safe_float_num(val) -> float:
         return 0.0
 
 
-def clear_holdings_cache() -> None:
-    """清空持仓缓存。"""
-    _holdings_cache.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -1469,7 +1462,7 @@ def fetch_fund_profile(fund_code: str) -> FundProfile:
         if m:
             profile.risk_level = m.group(1)
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("风险等级抓取失败 %s", fund_code, exc_info=True)
 
     # 费率（失败不影响档案主体）
     try:
@@ -1479,7 +1472,7 @@ def fetch_fund_profile(fund_code: str) -> FundProfile:
             profile.custodian_fee = rates.custodian_fee
             profile.sales_fee = rates.sales_fee
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("费率抓取失败 %s", fund_code, exc_info=True)
 
     if not profile.manager and profile.scale is None and profile.management_fee is None:
         profile.ok = False

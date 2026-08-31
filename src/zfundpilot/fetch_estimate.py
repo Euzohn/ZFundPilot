@@ -153,6 +153,7 @@ def _get_all_estimates() -> list[FundEstimate]:
         _batch_cache[_BATCH_KEY] = (time.time(), all_ests)
         return all_ests
     except Exception:  # noqa: BLE001
+        logger.warning("全市场估值接口失败", exc_info=True)
         if cached:
             return cached[1]
         _batch_cache[_BATCH_KEY] = (time.time(), [])
@@ -214,6 +215,7 @@ def _fetch_fundgz(fund_code: str) -> FundEstimate | None:
         _fundgz_cache[fund_code] = (time.time(), est)
         return est
     except Exception:  # noqa: BLE001
+        logger.debug("fundgz 单只估值失败 %s", fund_code, exc_info=True)
         _fundgz_cache[fund_code] = (time.time(), None)
         return None
 
@@ -231,7 +233,7 @@ def _fetch_fundgz_batch(fund_codes: list[str]) -> dict[str, FundEstimate]:
             if est and est.ok:
                 results[code] = est
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("fundgz 批量子任务失败 %s", code, exc_info=True)
     return results
 
 
@@ -274,9 +276,6 @@ def fetch_estimates(fund_codes: list[str]) -> list[FundEstimate]:
     ]
 
 
-def clear_estimate_cache() -> None:
-    _batch_cache.clear()
-    _fundgz_cache.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +298,7 @@ def _fetch_index_spot() -> dict[str, float]:
             if name and pct:
                 result[name] = pct
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("新浪指数行情失败", exc_info=True)
     try:
         df = ak.index_global_spot_em()
         for _, row in df.iterrows():
@@ -308,7 +307,7 @@ def _fetch_index_spot() -> dict[str, float]:
             if name and pct:
                 result[name] = pct
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("全球指数行情失败", exc_info=True)
     try:
         df = ak.stock_hk_index_spot_em()
         for _, row in df.iterrows():
@@ -317,7 +316,7 @@ def _fetch_index_spot() -> dict[str, float]:
             if name and pct:
                 result[name] = pct
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("港股指数行情失败", exc_info=True)
     return result
 
 
@@ -332,7 +331,7 @@ def _fetch_etf_spot() -> dict[str, float]:
             if name and pct:
                 result[name] = pct
     except Exception:  # noqa: BLE001
-        pass
+        logger.debug("ETF 行情失败", exc_info=True)
     return result
 
 
@@ -433,11 +432,6 @@ def estimate_from_index(
     )
 
 
-def clear_index_cache() -> None:
-    """清空指数/ETF 行情缓存。"""
-    global _index_spot_cache, _etf_spot_cache
-    _index_spot_cache = (0.0, {})
-    _etf_spot_cache = (0.0, {})
 
 
 # ---------------------------------------------------------------------------

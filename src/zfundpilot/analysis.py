@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -36,6 +37,8 @@ from .models import (
     Position,
     Transaction,
 )
+
+logger = logging.getLogger(__name__)
 
 _cache: dict[str, tuple[float, Any]] = {}
 _CACHE_TTL = 60  # 秒
@@ -306,7 +309,7 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
                 summary.daily_pnl = round(pnl, 2)
                 summary.daily_return = pnl / values[-2] if values[-2] > 0 else 0.0
     except Exception:  # noqa: BLE001
-        pass
+        logger.warning("calculate_summary P&L 计算异常", exc_info=True)
 
     if not positions_provided:
         _cache_set("summary", summary)
@@ -330,12 +333,6 @@ def distribution_by(positions: list[Position], field: str) -> pd.DataFrame:
     total = grouped["market_value"].sum()
     grouped["weight"] = grouped["market_value"] / total if total > 0 else 0.0
     return grouped.reset_index(drop=True)
-
-
-def positions_to_dataframe(positions: list[Position]) -> pd.DataFrame:
-    if not positions:
-        return pd.DataFrame()
-    return pd.DataFrame([p.to_dict() for p in positions])
 
 
 # ---------------------------------------------------------------------------

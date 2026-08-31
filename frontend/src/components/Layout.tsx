@@ -157,6 +157,13 @@ export default function Layout() {
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
 
   useEffect(() => {
+    if (!mobileOpen) return
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setMobileOpen(false) }
+    document.addEventListener("keydown", handler)
+    return () => document.removeEventListener("keydown", handler)
+  }, [mobileOpen])
+
+  useEffect(() => {
     applyColorTheme(getColorTheme())
     getColorThemeAsync().then(applyColorTheme).catch(() => {})
   }, [])
@@ -272,6 +279,9 @@ export default function Layout() {
 
       {/* Mobile drawer sidebar */}
       <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label={t.nav.menu}
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-gradient-to-b from-zinc-900 to-zinc-950 text-zinc-300 transition-transform duration-300 md:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full",

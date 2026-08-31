@@ -684,7 +684,9 @@ const handleDelete = async (txId: number) => {
               </TableHeader>
               <TableBody>
                 {txs.map((tx) => (
-                  <TableRow key={tx.id} onClick={() => setViewingTx(tx)} className="cursor-pointer">
+                  <TableRow key={tx.id} onClick={() => setViewingTx(tx)} className="cursor-pointer"
+                    tabIndex={0} role="button"
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setViewingTx(tx) } }}>
                     <TableCell>{tx.date}</TableCell>
                     <TableCell>
                       <Badge

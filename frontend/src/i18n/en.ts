@@ -98,6 +98,7 @@ const en: typeof zh = {
     expandSidebar: "Expand sidebar",
     openMenu: "Open menu",
     closeMenu: "Close menu",
+    menu: "Navigation menu",
     theme: "Theme",
     language: "Language",
     switchLang: "Switch language",

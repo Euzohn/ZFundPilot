@@ -203,6 +203,9 @@ export default function Positions() {
                       key={code}
                       className="cursor-pointer"
                       onClick={() => navigate(`/fund/${code}`)}
+                      tabIndex={0}
+                      role="button"
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/fund/${code}`) } }}
                     >
                       <TableCell>
                         <div className="flex flex-col">

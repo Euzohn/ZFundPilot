@@ -211,6 +211,7 @@ export default function Screener() {
                 {availTypes.map((tp) => (
                   <label key={tp} className={cn(
                     "inline-flex cursor-pointer items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                     types.includes(tp) ? "border-primary/40 bg-primary/10 text-primary" : "border-border hover:bg-muted/50",
                   )}>
                     <input type="checkbox" checked={types.includes(tp)} onChange={() => toggleType(tp)} className="sr-only" />
@@ -227,6 +228,7 @@ export default function Screener() {
                 {availSectors.map((s) => (
                   <label key={s} className={cn(
                     "inline-flex cursor-pointer items-center gap-1 rounded-md border px-2.5 py-1 text-xs transition-colors shrink-0",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                     sectors.includes(s) ? "border-primary/40 bg-primary/10 text-primary" : "border-border hover:bg-muted/50",
                   )}>
                     <input type="checkbox" checked={sectors.includes(s)} onChange={() => toggleSector(s)} className="sr-only" />
@@ -315,7 +317,7 @@ export default function Screener() {
                 {sorted.map((f) => (
                   <TableRow key={f.code} className="border-t border-border/50">
                     <TableCell className="px-2 py-1.5">
-                      <input type="checkbox" checked={selected.has(f.code)} onChange={() => toggleSelect(f.code)} className="h-4 w-4 accent-blue-600" />
+                      <input type="checkbox" checked={selected.has(f.code)} onChange={() => toggleSelect(f.code)} className="h-4 w-4 accent-blue-600" aria-label={`${f.code} ${f.name}`} />
                     </TableCell>
                     <TableCell className="px-2 py-1.5 font-mono text-xs">{f.code}</TableCell>
                     <TableCell className="max-w-[200px] truncate px-2 py-1.5 text-xs" title={f.name}>{f.name}</TableCell>

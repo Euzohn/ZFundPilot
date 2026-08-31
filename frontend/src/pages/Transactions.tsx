@@ -930,7 +930,9 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
                 {visibleTxs?.map((tx) => {
                 const fund = funds[tx.fund_code]
                 return (
-                  <TableRow key={tx.id} onClick={() => setViewingTx(tx)} className="cursor-pointer">
+                  <TableRow key={tx.id} onClick={() => setViewingTx(tx)} className="cursor-pointer"
+                    tabIndex={0} role="button"
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setViewingTx(tx) } }}>
                     <TableCell className="text-xs text-muted-foreground">{tx.id}</TableCell>
                     <TableCell>{tx.date}</TableCell>
                     <TableCell>

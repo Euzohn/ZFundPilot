@@ -96,6 +96,7 @@ const zh = {
     expandSidebar: "展开侧边栏",
     openMenu: "打开菜单",
     closeMenu: "关闭菜单",
+    menu: "导航菜单",
     theme: "主题",
     language: "语言",
     switchLang: "切换语言",

@@ -9,63 +9,42 @@
 ## [0.20.1] - 2026-09-01
 
 ### Fixed
-- 表单验证统一（Login/Transactions/Settings）：创建 `FieldError` 内联错误组件，替代 toast 弹窗。三个页面的表单输入统一使用 `aria-invalid` + `aria-describedby` + 内联错误文本，密码输入补充 `autoComplete` 属性
-- 无障碍改进：Screener 筛选 chip 加 `focus-visible` ring、行选择 checkbox 加 `aria-label`、移动端抽屉加 Escape 关闭 + `role="dialog"` + `aria-modal`、Positions/Transactions/FundDetail 可点击行加 `tabIndex=0` + `role="button"` + Enter/Space 键盘支持
-- 硬编码值提取到 `config.py`：`T1_CUTOFF_HOUR`、登录限流 3 常量、AI httpx 超时 4 常量、CORS origins 支持环境变量 `ZFUNDPILOT_CORS_ORIGINS`
+- 表单验证统一（Login/Transactions/Settings）：创建 `FieldError` 内联错误组件，替代 toast 弹窗，三个页面的表单输入统一使用 `aria-invalid` + `aria-describedby` + 内联错误文本，密码输入补充 `autoComplete` 属性
+- 无障碍改进：Screener 筛选 chip 加 `focus-visible` ring、行选择 checkbox 加 `aria-label`、移动端抽屉加 Escape 关闭 + `role="dialog"` + `aria-modal`、可点击行加 `tabIndex=0` + `role="button"` + Enter/Space 键盘支持
+- 硬编码值提取到 `config.py`：`T1_CUTOFF_HOUR`、登录限流常量、AI httpx 超时常量、CORS origins 支持环境变量 `ZFUNDPILOT_CORS_ORIGINS`
 - 前端重复轮询：Transactions 页与 Layout 重复 60s 轮询 `getPendingDividendAlertCount`，Transactions 改为仅挂载时取一次
-- 图标按钮无 tooltip：约 26 处纯图标按钮补 `title`，新增 i18n key
+- 图标按钮 tooltip：约 26 处纯图标按钮补 `title`，新增 i18n key
 - 静默 except 吞错误：22 处 `except: pass` 加 `logger.warning`/`logger.debug`
 - 死代码清理：删除 13 个无调用方 Python 函数
-- 重复 import：`api.py` 中 `from . import config` 重复声明（F811）
-- `CHANGELOG.md` 修复：将已实现的改进从 `[Unreleased]` 移入对应版本条目
-
-### Added
-- 测试覆盖：新增 62 个测试覆盖 backtest（20）、compare（22）、rebalance（8）三个零覆盖模块的纯函数逻辑，测试总数 315→377
-
-### Fixed
-- 净值缓存污染：`_index_fallback` 与 `get_estimates` 的 DB-override 分支原地改写 `FundEstimate` 字段（`dwjz`/`gsz`/`gszzl`/`ok`），这些对象是 30s 批量缓存（`_batch_cache`/`_fundgz_cache`）中的共享引用 → 缓存窗口内其他请求看到被篡改的估值。修复：两处均改用 `dataclasses.replace` 生成新对象并写回 list，不再触碰缓存对象。新增 2 个回归测试（`test_no_cache_mutation` + `TestGetEstimatesCacheMutation`，234→236）
-- 定投计划重复执行：`execute_plan` 加 `_execute_lock` + `get_auto_invest_plan` 重新拉取，`last_run == today` 则跳过（幂等）。定时 + 手动或双击不再产生重复买入交易。`run_all_due` 处理 skipped 状态，手动执行遇重复返回 HTTP 409，前端捕获显示「今日已执行」warning
-- 净值更新 TOCTOU 竞态（scheduler 侧）：`_run_nav_update` 与 api 手动触发共用 `nav_update_state.py` 的共享锁/状态，两路更新互斥，`running=True` 在锁内同步设置、`finally` 复位加锁
-- SQLite 并发健壮性：`get_connection()` 加 `PRAGMA busy_timeout = 5000`，`init_db()` 加 `PRAGMA journal_mode = WAL`（原 rollback journal 下读写互相阻塞，易 `database is locked`）。WAL 允许读写并发且崩溃更安全（新增 2 个测试，239→241）
-- AI 用量时区：存储（`add_ai_usage` 原 `datetime('now')` UTC）与读取（`get_ai_usage_stats` today 过滤、`get_ai_usage_daily` 日期轴与过滤）四处在写读两侧统一为本地时间（`datetime('now','localtime')` / `date('now','localtime')` / `datetime.now(config.TIMEZONE)`），修复上海时区早 8 点前当日 token 归到前一天的问题（新增 3 个测试，238→241）
-- 朴素 datetime 收敛约定：`ai.py` 的 `_fetch_market_index` 与 `fetch_dividend.py` 的 `check_dividends` 改用 `datetime.now(config.TIMEZONE)` 替代裸 `datetime.now()`，与全仓时区约定一致（现有 `config.TIMEZONE` 已覆盖，行为不变）
-- API 输入验证补全：所有 Pydantic 请求模型加 `ConfigDict(allow_inf_nan=False)` 禁用 NaN/inf；`TransactionCreate` 加 fund_code 6 位数字、date YYYY-MM-DD、action 枚举、amount/shares/nav/fee 非负 4 个 field_validator；`AutoInvestPlanCreate` 加 amount > 0、fund_code；`ReconcileItem` 加 fund_code、shares/market_value 非负；`TpSlConfigUpdate` 加三浮点非负；`DcaBacktestRequest` 加 fund_codes 数量/格式、amount > 0、cadence 枚举、日期格式与先后顺序；`ChatRequest` 改为 `list[ChatMessage]`（role 枚举 + content 20k 单条 + 50 条 + 100k 总长度）；`FilterRequest.limit/offset` 加 `Field(ge)` 边界；`get_ai_usage_daily` / `get_audit_logs` / `get_transactions` 查询参数用 `Query(ge/le/pattern)` 约束。移除 `run_dca_backtest` handler 内冗余 400 检查。新增 61 个测试（241→302）
-- SSRF 防护：`AIConfigUpdate` / `VisionConfigUpdate` 的 `base_url` 加 `field_validator`，校验 http/https 协议、拒绝 link-local 地址（169.254.x.x / fe80::/10）和 `.internal` / `.localhost` 域名，允许 private/loopback 地址（本地 LLM 可用）
-- 上传大小限制：`parse_screenshot` 限制 10MB、`parse_csv` 限制 5MB，超出返回 HTTP 413
-- FastAPI 废弃 API 迁移：`@app.on_event("startup"/"shutdown")` 迁移至 `lifespan` 异步上下文管理器
-- 非原子配置写入：`config._save_auth_data` / `_save_ai_config` / `fetch_fund._save_sector_map` 改用 `_atomic_write`（写临时文件 → `os.replace`），崩溃时不再损坏目标文件
-- 阻塞式 bootstrap：`scheduler.init_scheduler` 中 `_bootstrap_check` / `_bootstrap_auto_invest` / `_bootstrap_dividend_check` 改为 `threading.Thread(daemon=True)` 异步执行，启动不再阻塞数分钟
-- 登录限流字典无界增长：新增 `_sweep_login_attempts()` 清理过期条目，在 `_record_failed_login` 中每 100 次调用或条目超 10000 时触发
-- CSV 清空重导确认：前端 CSV 导入选择「清空后重新导入」时弹出 `ConfirmDialog`（destructive tone），防止误删
-- 修复 `_migrate_relax_transactions_schema` 幂等判断 bug：旧逻辑 `"NOT NULL" not in sql_text` 对新 schema 恒为 False，导致每次 `init_db()` 都重建 transactions 表。改为精确检测旧 schema 特征（`action IN ('buy', 'sell')`）+ 新 CHECK 约束完整性
-- `update_auto_invest_plan` SQL 注入防护：dict keys 直接拼入 SQL，加 key 白名单（仿 `update_dividend_alert`），未来调用方传入非法 key 不再能注入
-- `update_scheduler_cron` 坏 cron 表达式返回 500：`_parse_cron` 抛 `ValueError`，加 try/except → 400
-- `calc_fund_fee` 坏日期返回 500：`_parse_date` 的 `int()` 抛 `ValueError`/`IndexError`，加 try/except → 400
-- `auth_login` 审计日志写失败导致 500（用户拿不到 token）：`db.log_audit("login_success")` 加 try/except
-- `recalculate_t1_transactions` 启动时未 try/except，异常阻止应用启动：加 try/except + logger.exception
-- 限流端点 key 与路由不匹配：`/api/ai/compare` 实际路由为 `/api/funds/compare`（此前完全未限流），截图解析路由为 `/api/ai/parse-screenshot`
-- `_migrate_add_indexes` 在表重建迁移之前执行：auto_invest_plans / dividend_alerts 重建 `DROP TABLE` 会删掉刚建的索引，移到迁移链最后
-- `_migrate_dividend_alerts_unique` 去重误删 tp_sl 提醒：`GROUP BY COALESCE(ex_date,'')` 把所有 ex_date=NULL 的 tp_sl 行归并为一组，仅对 ex_date 非空行去重
-- `_migrate_relax_transactions_schema` 未清负金额：旧数据 `amount<0` 会在重建时触发 CHECK 失败，DELETE 增加 `OR amount < 0`
-- transactions 重建用 CASE 重算 is_t1 覆盖用户修正值：改为原样复制 is_t1
-- SortHeader 键盘不可达：`<th onClick>` 无 `tabIndex`/`role`/`aria-sort`/`onKeyDown`，所有可排序表对键盘用户不可操作。加 `tabIndex={0}` + `role="button"` + `aria-sort` + `onKeyDown`（Enter/Space）
-- IME 输入 bug：除 AIChat 外所有 Enter 提交不检查 `e.nativeEvent.isComposing`，中文输入法按 Enter 确认拼音时提前提交。Watchlist/Screener/FundCompare/Backtest/Settings/Transactions 共 13 处加 `!e.nativeEvent.isComposing` 守卫
-- 加载态闪烁：Overview 分布图、FundDetail 交易列表/净值图、Returns 曲线/P&L/持仓共 8 处 `useApi` 未解构 `loading`，`data===null` 被当空状态渲染。解构 `loading` 并在空状态判断前加 `loading ? <LoadingState/>` 分支
-- 破坏性操作无确认：Watchlist 移除自选、Settings 删渠道/恢复默认渠道/重置关键词/重置板块映射、DividendCheckDialog 删提醒、AIChat 删归档对话共 8 处加 `ConfirmDialog`（tone=destructive）
-- AIChat 配置加载闪烁：`useApi` 加载中 `data=null` → `configured=false` → 每次进页面闪"未配置"。解构 `loading` 并加 `configLoading` guard
-- TpSlAlertsPanel error 用错组件：error 路径用 `EmptyState` 无重试按钮。`ErrorState` 新增 `size` prop，改为 `ErrorState size="sm" onRetry={reload}`
-- Transactions 渲染阶段副作用：`useApi().data.forEach` 中调 `setFunds` 改为 `useEffect`
-- FundDetail 表头标注错误：交易列表两列都标"操作"，第一列实际是交易类型（buy/sell），改为 `t.common.type`
-- ErrorState AlertTriangle 丢失 `text-loss-500` 颜色——图标不再为红色
-- 未使用 import 清理——删除 7 页 LogoSpinner + Returns/Dialog/dropdown/backendLabels 共 ~20 处
-- TypeScript `any` 收窄——Overview ChartTooltip/FundDetail dot/Returns toggleLegend/Transactions 4 catch 块，共 7 处
-- Backtest 图表硬编码颜色——`#3b82f6`/`#10b981` 改为 `hsl(var(--chart-1/2))`，随主题切换
-- 文件名误导——`ScreenshotImportDialog.tsx` 重命名为 `ScreenshotImportPanel.tsx`（组件导出名一致）
-- 静默 except 吞错误——analysis P&L 计算、backtest 净值拉取、fetch_fund 板块/风险/费率、fetch_estimate 估值/指数/ETF、ai 市场上下文、compare 档案解析、fund_filter 缓存、config bcrypt、data_io CSV 编码、api token 校验共 22 处 `except: pass` 加 `logger.warning`/`logger.debug`，异常不再无声消失
-- 死代码清理——删除 13 个无调用方函数（`positions_to_dataframe`/`clear_compare_cache`/`get_distinct_fund_codes`/`upsert_nav`/`get_nav_last_update`/`save_snapshot`/`get_snapshots`/`clear_estimate_cache`/`clear_index_cache`/`clear_fee_cache`/`get_fee_cache_info`/`clear_holdings_cache`/`format_advice_text`），保留 `portfolio_snapshots` CREATE TABLE（幂等），同步清理 docstring/CONTEXT/DATABASE 引用
-- 硬编码值提取到 `config.py`——`T1_CUTOFF_HOUR`、登录限流 3 常量、AI httpx 超时 4 常量、CORS origins 支持环境变量 `ZFUNDPILOT_CORS_ORIGINS`
-- 前端重复轮询——`Layout.tsx` 与 `Transactions.tsx` 都 60s 轮询 `getPendingDividendAlertCount`，Transactions 改为仅挂载时取一次（侧边栏红点仍实时）
-- 图标按钮无 tooltip——约 26 处纯图标按钮补 `title`（Positions 买/卖、Returns 柱状图/日历切换、PnLCalendar 前后月/年、TpSlAlertsPanel 确认/忽略、DividendCheckDialog 删除、Settings 渠道/关键词操作与颜色 swatch、FundDetail 返回/编辑/删除/渠道卖出、Transactions 编辑/删除/查询基金、AIChat 发送、FundCompare/Backtest chip 移除、ScreenshotImportPanel 移除图片），新增 i18n key（`components.prevMonth/nextMonth/prevYear/nextYear`、`settings.moveUp/moveDown/channelColor`、`returns.barChartView/calendarView/confirmAlert/ignoreAlert`）
+- 重复 import 修复（`api.py` F811）
+- 净值缓存污染：`_index_fallback` 与 `get_estimates` 原地改写 `FundEstimate` 共享引用 → 改用 `dataclasses.replace` 生成新对象
+- 定投计划重复执行：`execute_plan` 加 `_execute_lock` + 幂等检查，手动执行遇重复返回 HTTP 409
+- 净值更新 TOCTOU 竞态：`_run_nav_update` 与 api 手动触发共用 `nav_update_state.py` 共享锁，两路更新互斥
+- SQLite 并发健壮性：`get_connection()` 加 `PRAGMA busy_timeout = 5000`，`init_db()` 加 `PRAGMA journal_mode = WAL`
+- AI 用量时区：存储与读取统一为本地时间，修复上海时区早 8 点前当日 token 归到前一天的问题
+- 朴素 datetime 收敛约定：`ai.py` 与 `fetch_dividend.py` 改用 `datetime.now(config.TIMEZONE)`
+- API 输入验证补全：所有 Pydantic 请求模型加 `allow_inf_nan=False`，各模型加 field_validator
+- SSRF 防护：AI `base_url` 加协议/内网地址校验
+- 上传大小限制：截图 10MB、CSV 5MB
+- FastAPI 生命周期迁移：`@app.on_event` → `lifespan` async context manager
+- 非原子配置写入：`_save_auth_data` / `_save_ai_config` / `_save_sector_map` 改用 `_atomic_write`
+- 阻塞式 bootstrap：改为 `threading.Thread(daemon=True)` 异步执行
+- 登录限流字典无界增长：新增 `_sweep_login_attempts()` 清理过期条目
+- CSV 清空重导确认：加 `ConfirmDialog` 防误删
+- SortHeader 键盘不可达：加 `tabIndex` + `role="button"` + `aria-sort` + `onKeyDown`
+- IME 输入 bug：13 处 Enter 提交加 `!e.nativeEvent.isComposing` 守卫
+- 加载态闪烁：8 处 `useApi` 解构 `loading` 加 guard
+- 破坏性操作无确认：8 处加 `ConfirmDialog`
+- AIChat 配置加载闪烁：`useApi` 加载中 `data=null` → `configured=false`，每次进页面闪"未配置"，解构 `loading` 加 guard
+- TpSlAlertsPanel error 用错组件：error 路径用 `EmptyState` 无重试按钮，改 `ErrorState size="sm" onRetry={reload}`
+- Transactions 渲染阶段副作用：`useApi().data.forEach` 中调 `setFunds` 改 `useEffect`
+- FundDetail 表头标注错误：交易列表两列都标"操作"，第一列改 `t.common.type`
+- ErrorState AlertTriangle 丢失 `text-loss-500` 颜色
+- 路由遮蔽 `/api/nav/latest`、`_migrate_add_indexes` 顺序、`_migrate_dividend_alerts_unique` 去重、`_migrate_relax_transactions_schema` 负金额与 is_t1、`update_auto_invest_plan` SQL 注入防护、`update_scheduler_cron` 坏 cron、`calc_fund_fee` 坏日期、`auth_login` 审计日志、`recalculate_t1_transactions` 启动异常、限流端点 key 不匹配
+- 图表硬编码颜色改为 `hsl(var(--chart-1/2))`
+- 文件名误导：`ScreenshotImportDialog.tsx` → `ScreenshotImportPanel.tsx`
+- TypeScript `any` 收窄：7 处
+- 未使用 import 清理：~20 处
 
 ### Performance
 - 消除 5 处 N+1 查询：(1) `api.py get_latest_navs` 逐只 `get_latest_nav` → `get_latest_navs_batch` 单次查询；(2) `analysis.py calculate_positions` 逐持仓 `get_latest_nav` → 批量预取 `nav_map`；(3) `analysis.py backfill_transaction_navs` 逐笔 `get_nav_on_or_after` → `get_navs_on_or_after_batch` 批量预取，逐条 `update_transaction` → `executemany` 单连接批量写；(4) `scheduler.py _run_tp_sl_check` 逐持仓 `get_tp_sl_alert_state` → `get_tp_sl_alert_states_batch` 批量预载 + 本地映射同步更新；(5) `api.py _mark_duplicates` / `fetch_dividend.py` 全表 `get_transactions` → SQL IN 过滤 + 内存查找表；(6) `analysis.py calculate_summary` 冗余 `get_transactions` → `_get_transactions_cached` 共用缓存。新增 `db.py` 函数 `get_latest_navs_batch` / `get_navs_on_or_after_batch` / `get_tp_sl_alert_states_batch`，`get_transactions` 扩展 `fund_codes/actions/dates` 可选参数
@@ -76,6 +55,7 @@
 - `auto_invest_plans` 数据约束：`CHECK(amount > 0)`，表重建时清理无效数据
 - `nav_history` 数据约束：`CHECK(nav > 0)`，表重建时清理无效数据
 - 数据库索引优化：补充 `ai_usage(created_at)`、`transactions(fund_code, date)` 复合索引、`auto_invest_plans(enabled, next_run)`、`dividend_alerts(alert_type, status)`；删除冗余 `idx_nav_code_date`、`idx_index_code_date`、`idx_tx_code`
+- 测试覆盖：新增 62 个测试覆盖 backtest（20）、compare（22）、rebalance（8）纯函数，测试总数 315→377
 
 ## [0.20.0] - 2026-08-28
 

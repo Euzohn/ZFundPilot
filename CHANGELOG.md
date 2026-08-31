@@ -32,6 +32,10 @@
 - `_migrate_dividend_alerts_unique` 去重误删 tp_sl 提醒：`GROUP BY COALESCE(ex_date,'')` 把所有 ex_date=NULL 的 tp_sl 行归并为一组，仅对 ex_date 非空行去重
 - `_migrate_relax_transactions_schema` 未清负金额：旧数据 `amount<0` 会在重建时触发 CHECK 失败，DELETE 增加 `OR amount < 0`
 - transactions 重建用 CASE 重算 is_t1 覆盖用户修正值：改为原样复制 is_t1
+- SortHeader 键盘不可达：`<th onClick>` 无 `tabIndex`/`role`/`aria-sort`/`onKeyDown`，所有可排序表对键盘用户不可操作。加 `tabIndex={0}` + `role="button"` + `aria-sort` + `onKeyDown`（Enter/Space）
+- IME 输入 bug：除 AIChat 外所有 Enter 提交不检查 `e.nativeEvent.isComposing`，中文输入法按 Enter 确认拼音时提前提交。Watchlist/Screener/FundCompare/Backtest/Settings/Transactions 共 13 处加 `!e.nativeEvent.isComposing` 守卫
+- 加载态闪烁：Overview 分布图、FundDetail 交易列表/净值图、Returns 曲线/P&L/持仓共 8 处 `useApi` 未解构 `loading`，`data===null` 被当空状态渲染。解构 `loading` 并在空状态判断前加 `loading ? <LoadingState/>` 分支
+- 破坏性操作无确认：Watchlist 移除自选、Settings 删渠道/恢复默认渠道/重置关键词/重置板块映射、DividendCheckDialog 删提醒、AIChat 删归档对话共 8 处加 `ConfirmDialog`（tone=destructive）
 
 ### Performance
 - 消除 5 处 N+1 查询：(1) `api.py get_latest_navs` 逐只 `get_latest_nav` → `get_latest_navs_batch` 单次查询；(2) `analysis.py calculate_positions` 逐持仓 `get_latest_nav` → 批量预取 `nav_map`；(3) `analysis.py backfill_transaction_navs` 逐笔 `get_nav_on_or_after` → `get_navs_on_or_after_batch` 批量预取，逐条 `update_transaction` → `executemany` 单连接批量写；(4) `scheduler.py _run_tp_sl_check` 逐持仓 `get_tp_sl_alert_state` → `get_tp_sl_alert_states_batch` 批量预载 + 本地映射同步更新；(5) `api.py _mark_duplicates` / `fetch_dividend.py` 全表 `get_transactions` → SQL IN 过滤 + 内存查找表；(6) `analysis.py calculate_summary` 冗余 `get_transactions` → `_get_transactions_cached` 共用缓存。新增 `db.py` 函数 `get_latest_navs_batch` / `get_navs_on_or_after_batch` / `get_tp_sl_alert_states_batch`，`get_transactions` 扩展 `fund_codes/actions/dates` 可选参数

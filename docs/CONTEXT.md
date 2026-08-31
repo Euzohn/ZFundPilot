@@ -455,6 +455,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - fix: `_migrate_add_indexes` 在表重建迁移之前执行，索引被 DROP——移到迁移链最后
 - fix: `_migrate_dividend_alerts_unique` 去重误删 tp_sl 提醒——`COALESCE(ex_date,'')` 归并 NULL ex_date 行，仅对 ex_date 非空行去重
 - fix: `_migrate_relax_transactions_schema` 未清负金额致重建失败；重建用 CASE 重算 is_t1 覆盖用户修正值
+- fix: SortHeader 键盘不可达——加 tabIndex/role=button/aria-sort/onKeyDown(Enter/Space)，全站可排序表受益
+- fix: IME 输入 bug——13 处 onKeyDown Enter 加 `!e.nativeEvent.isComposing` 防中文输入法提前提交
+- fix: 加载态闪烁——Overview/FundDetail/Returns 共 8 处 useApi 解构 loading，空状态前加 loading guard
+- fix: 破坏性操作无确认——8 处服务端/本地破坏性操作加 ConfirmDialog（tone=destructive）
 
 ### v0.20.0 - 2026-08-28
 

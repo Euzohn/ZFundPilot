@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-09-01
+
+### Fixed
+- 表单验证统一（Login/Transactions/Settings）：创建 `FieldError` 内联错误组件，替代 toast 弹窗。三个页面的表单输入统一使用 `aria-invalid` + `aria-describedby` + 内联错误文本，密码输入补充 `autoComplete` 属性
+- 无障碍改进：Screener 筛选 chip 加 `focus-visible` ring、行选择 checkbox 加 `aria-label`、移动端抽屉加 Escape 关闭 + `role="dialog"` + `aria-modal`、Positions/Transactions/FundDetail 可点击行加 `tabIndex=0` + `role="button"` + Enter/Space 键盘支持
+- 硬编码值提取到 `config.py`：`T1_CUTOFF_HOUR`、登录限流 3 常量、AI httpx 超时 4 常量、CORS origins 支持环境变量 `ZFUNDPILOT_CORS_ORIGINS`
+- 前端重复轮询：Transactions 页与 Layout 重复 60s 轮询 `getPendingDividendAlertCount`，Transactions 改为仅挂载时取一次
+- 图标按钮无 tooltip：约 26 处纯图标按钮补 `title`，新增 i18n key
+- 静默 except 吞错误：22 处 `except: pass` 加 `logger.warning`/`logger.debug`
+- 死代码清理：删除 13 个无调用方 Python 函数
+- 重复 import：`api.py` 中 `from . import config` 重复声明（F811）
+- `CHANGELOG.md` 修复：将已实现的改进从 `[Unreleased]` 移入对应版本条目
+
+### Added
+- 测试覆盖：新增 62 个测试覆盖 backtest（20）、compare（22）、rebalance（8）三个零覆盖模块的纯函数逻辑，测试总数 315→377
+
 ### Fixed
 - 净值缓存污染：`_index_fallback` 与 `get_estimates` 的 DB-override 分支原地改写 `FundEstimate` 字段（`dwjz`/`gsz`/`gszzl`/`ok`），这些对象是 30s 批量缓存（`_batch_cache`/`_fundgz_cache`）中的共享引用 → 缓存窗口内其他请求看到被篡改的估值。修复：两处均改用 `dataclasses.replace` 生成新对象并写回 list，不再触碰缓存对象。新增 2 个回归测试（`test_no_cache_mutation` + `TestGetEstimatesCacheMutation`，234→236）
 - 定投计划重复执行：`execute_plan` 加 `_execute_lock` + `get_auto_invest_plan` 重新拉取，`last_run == today` 则跳过（幂等）。定时 + 手动或双击不再产生重复买入交易。`run_all_due` 处理 skipped 状态，手动执行遇重复返回 HTTP 409，前端捕获显示「今日已执行」warning

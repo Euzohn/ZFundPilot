@@ -78,7 +78,7 @@ async def _lifespan(app: FastAPI):
     scheduler.shutdown_scheduler()
 
 
-app = FastAPI(title="ZFundPilot API", version="0.20.0", lifespan=_lifespan)
+app = FastAPI(title="ZFundPilot API", version="0.20.1", lifespan=_lifespan)
 
 # ---------------------------------------------------------------------------
 # 登录速率限制（in-memory，单 uvicorn worker）

@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Euzohn"}]
 requires-python = ">=3.10"
-keywords = ["fund", "portfolio", "investment", "risk-analysis", "streamlit"]
+keywords = ["fund", "portfolio", "investment", "risk-analysis"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",

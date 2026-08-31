@@ -672,7 +672,7 @@ const handleDelete = async (txId: number) => {
               <TableHeader>
                 <TableRow>
                   <TableHead>{t.common.date}</TableHead>
-                  <TableHead>{t.common.actions}</TableHead>
+                  <TableHead>{t.common.type}</TableHead>
                   <TableHead>{t.common.channel}</TableHead>
                   <TableHead className="text-right">{t.common.amount}</TableHead>
                   <TableHead className="text-right">{t.common.shares}</TableHead>

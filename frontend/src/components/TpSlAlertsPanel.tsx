@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
+import ErrorState from "@/components/ErrorState"
 import { useLang } from "@/i18n/LanguageContext"
 import { pct } from "@/lib/format"
 import { Bell, CheckCircle2, XCircle, RotateCcw, ChevronDown, ChevronRight } from "lucide-react"
@@ -17,7 +18,7 @@ import { toast } from "sonner"
 export default function TpSlAlertsPanel() {
   const { t } = useLang()
   const navigate = useNavigate()
-  const { data: alerts, loading, error, setData } = useApi<DividendAlert[]>(() => api.getTpSlAlerts(), [])
+  const { data: alerts, loading, error, reload, setData } = useApi<DividendAlert[]>(() => api.getTpSlAlerts(), [])
   const [updating, setUpdating] = useState<number | null>(null)
   const [showProcessed, setShowProcessed] = useState(false)
 
@@ -56,7 +57,7 @@ export default function TpSlAlertsPanel() {
   }
 
   if (loading && !alerts) return <LoadingState size="sm" />
-  if (error) return <EmptyState title={t.common.loadFailed} size="sm" />
+  if (error) return <ErrorState message={error} onRetry={reload} size="sm" />
 
   const pendingAlerts = alerts?.filter(a => a.status === "pending") ?? []
   const processedAlerts = alerts?.filter(a => a.status !== "pending") ?? []

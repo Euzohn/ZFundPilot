@@ -215,7 +215,7 @@ ZFundPilot/
 
 ### fetch_estimate.py — 实时估值
 
-- 主数据源：AkShare `fund_value_estimation_em()`（覆盖全市场基金），天天基金 fundgz API 已废弃
+- 主数据源：AkShare `fund_value_estimation_em()`（覆盖全市场基金），天天基金 fundgz API 作为 AkShare 不可用时的替补源
 - 指数估值兜底：东财估值不可用时，对指数型基金用跟踪指数/ETF 实时涨跌估算
   - `fetch_index_quotes(keywords)`: 批量获取指数/ETF 实时涨跌幅，两级匹配（指数实时 → ETF 实时，仅按需）
   - `estimate_from_index(fund_code, tracking_index, prev_nav, prev_date)`: 用指数涨跌构建 FundEstimate

@@ -719,9 +719,13 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
   useEffect(() => { setVisibleCount(50) }, [searchQuery, actionFilter, dateRange, customStart, customEnd])
 
   // Load fund names
-  useApi(() => api.getFunds(), []).data?.forEach((f: Fund) => {
-    if (!funds[f.fund_code]) setFunds((prev) => ({ ...prev, [f.fund_code]: f }))
-  })
+  const { data: fundsData } = useApi(() => api.getFunds(), [])
+  useEffect(() => {
+    if (!fundsData) return
+    fundsData.forEach((f: Fund) => {
+      if (!funds[f.fund_code]) setFunds((prev) => ({ ...prev, [f.fund_code]: f }))
+    })
+  }, [fundsData])
 
   const toggleSort = (field: string) => {
     if (sortField === field) {

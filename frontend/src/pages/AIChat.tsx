@@ -13,6 +13,7 @@ import remarkGfm from "remark-gfm"
 import { formatRelativeTime, formatTokens, money } from "@/lib/format"
 import LogoTyping from "@/components/LogoTyping"
 import EmptyState from "@/components/EmptyState"
+import LoadingState from "@/components/LoadingState"
 import ConfirmDialog from "@/components/ConfirmDialog"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
@@ -29,7 +30,7 @@ export default function AIChat() {
     handleSend, handleNewChat, handleSwitchChat, handleDeleteArchived, handleRenameArchived,
     handleConfirmTx, handleDiscardTx, setIncludeContext, setCurrentTitle,
   } = useChat()
-  const { data: aiConfig } = useApi(() => api.getAIConfig(), [])
+  const { data: aiConfig, loading: configLoading } = useApi(() => api.getAIConfig(), [])
   const configured = aiConfig?.base_url && aiConfig?.model
 
   const [input, setInput] = useState("")
@@ -233,7 +234,7 @@ export default function AIChat() {
       </div>
 
       {/* Chat body */}
-      {configured ? (
+      {configLoading ? <LoadingState size="sm" /> : configured ? (
         <div className="flex flex-col flex-1 min-h-0 gap-2 md:gap-3 pt-2 md:pt-3">
           {/* 系统提示词折叠面板 */}
           {systemPrompt && (

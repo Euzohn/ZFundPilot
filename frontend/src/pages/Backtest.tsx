@@ -215,6 +215,7 @@ export default function Backtest() {
                     {code}
                     <button
                       onClick={() => removeFundCode(code)}
+                      title={t.common.remove}
                       className="text-muted-foreground hover:text-foreground"
                     >
                       <X className="h-3 w-3" />

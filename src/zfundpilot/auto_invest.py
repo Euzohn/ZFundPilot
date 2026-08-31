@@ -139,7 +139,7 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
         amount = fresh["amount"]
         channel = fresh.get("channel", "")
         note = fresh.get("note", "定投")
-        is_after_three = now.hour >= 15
+        is_after_three = now.hour >= config.T1_CUTOFF_HOUR
 
         fee_result = fetch_fund.calc_purchase_fee(fund_code, amount)
         fee = fee_result.fee

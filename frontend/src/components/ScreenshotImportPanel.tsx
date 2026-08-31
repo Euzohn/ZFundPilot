@@ -290,6 +290,7 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
                   <img src={imagePreview} alt="preview" className="max-h-48 rounded-md object-contain" />
                   <button
                     onClick={() => { setImage(null); setImagePreview("") }}
+                    title={t.common.remove}
                     className="absolute -top-2 -right-2 rounded-full bg-destructive text-destructive-foreground p-1"
                   >
                     <X className="h-3 w-3" />

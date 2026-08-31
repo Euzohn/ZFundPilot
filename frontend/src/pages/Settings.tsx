@@ -953,17 +953,17 @@ export default function Settings() {
                       </span>
                       <span className="flex-1 text-sm font-semibold">{ch}</span>
                       {i === 0 && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{t.settings.defaultLabel}</span>}
-                      <button onClick={() => setDeletingChannelIndex(i)}
+                      <button onClick={() => setDeletingChannelIndex(i)} title={t.common.delete}
                         className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-6 sm:w-6">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <button onClick={() => moveUp(i)} disabled={i === 0}
+                      <button onClick={() => moveUp(i)} disabled={i === 0} title={t.settings.moveUp}
                         className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-5 sm:w-5">
                         <ChevronUp className="h-3.5 w-3.5" />
                       </button>
-                      <button onClick={() => moveDown(i)} disabled={i === channels.length - 1}
+                      <button onClick={() => moveDown(i)} disabled={i === channels.length - 1} title={t.settings.moveDown}
                         className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-5 sm:w-5">
                         <ChevronDown className="h-3.5 w-3.5" />
                       </button>
@@ -1326,11 +1326,11 @@ export default function Settings() {
                     {kwCustom.map((e, i) => (
                       <div key={i} className="flex flex-col gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-3 py-1.5 sm:flex-row sm:items-center sm:gap-2">
                         <div className="flex items-center gap-1.5">
-                          <button onClick={() => moveCustomKeyword(i, -1)} disabled={i === 0}
+                          <button onClick={() => moveCustomKeyword(i, -1)} disabled={i === 0} title={t.settings.moveUp}
                             className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:opacity-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-5 sm:w-5">
                             <ChevronUp className="h-3 w-3" />
                           </button>
-                          <button onClick={() => moveCustomKeyword(i, 1)} disabled={i === kwCustom.length - 1}
+                          <button onClick={() => moveCustomKeyword(i, 1)} disabled={i === kwCustom.length - 1} title={t.settings.moveDown}
                             className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent disabled:opacity-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-5 sm:w-5">
                             <ChevronDown className="h-3 w-3" />
                           </button>
@@ -1339,7 +1339,7 @@ export default function Settings() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground">→</span>
                           <span className="text-sm font-medium text-primary">{e.mapped}</span>
-                          <button onClick={() => deleteCustomKeyword(i)}
+                          <button onClick={() => deleteCustomKeyword(i)} title={t.common.delete}
                             className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground/70 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-5 sm:w-5">
                             <X className="h-3.5 w-3.5" />
                           </button>

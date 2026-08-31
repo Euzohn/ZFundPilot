@@ -38,6 +38,30 @@ DB_PATH = os.path.join(DATA_DIR, "fund.db")
 # 确保数据目录存在
 os.makedirs(DATA_DIR, exist_ok=True)
 
+# ---------------------------------------------------------------------------
+# 业务常量
+# ---------------------------------------------------------------------------
+T1_CUTOFF_HOUR = 15  # T+1 确认截止小时（15:00 前用当日净值，之后用次日）
+
+# 登录限流
+LOGIN_WINDOW = 300       # 5 分钟滚动窗口
+LOGIN_MAX_FAILURES = 5   # 窗口内最多失败次数
+LOGIN_LOCKOUT = 900      # 锁定时间（15 分钟）
+
+# AI httpx 超时（秒）
+AI_TIMEOUT_TEST = 15       # 测试连接
+AI_TIMEOUT_CHAT = 120      # 流式对话（最长，支持 tool call）
+AI_TIMEOUT_VISION = 60     # 视觉模型解析
+AI_TIMEOUT_VISION_TEST = 30  # 视觉模型测试连接
+
+# CORS 允许的源（逗号分隔环境变量 ZFUNDPILOT_CORS_ORIGINS）
+_CORS_RAW = os.environ.get("ZFUNDPILOT_CORS_ORIGINS", "")
+CORS_ORIGINS: list[str] = (
+    [o.strip() for o in _CORS_RAW.split(",") if o.strip()]
+    if _CORS_RAW
+    else ["http://localhost:5173", "http://127.0.0.1:5173"]
+)
+
 
 def _atomic_write(path: str, data: bytes) -> None:
     """原子写入文件：写临时文件 → os.replace，防止崩溃时目标文件损坏。"""

@@ -203,14 +203,14 @@ export default function PnLCalendar({ data, mode = "day" }: Props) {
       {/* 顶部导航 */}
       {mode === "day" ? (
         <div className="flex items-center justify-between">
-          <button onClick={prevMonth} className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent transition-colors">
+          <button onClick={prevMonth} title={t.components.prevMonth} className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent transition-colors">
             <ChevronLeft className="h-4 w-4 text-muted-foreground" />
           </button>
           <div className="text-center">
             <span className="text-sm font-medium">{dayMonthLabel}</span>
             {renderSummary(daySum, dayWin, dayPnls.length)}
           </div>
-          <button onClick={nextMonth} className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent transition-colors">
+          <button onClick={nextMonth} title={t.components.nextMonth} className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent transition-colors">
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
@@ -221,14 +221,14 @@ export default function PnLCalendar({ data, mode = "day" }: Props) {
         </div>
       ) : (
         <div className="flex items-center justify-between">
-          <button onClick={prevYear} className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent transition-colors">
+          <button onClick={prevYear} title={t.components.prevYear} className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent transition-colors">
             <ChevronLeft className="h-4 w-4 text-muted-foreground" />
           </button>
           <div className="text-center">
             <span className="text-sm font-medium">{t.components.yearLabel.replace("{y}", String(viewYear))}</span>
             {renderSummary(mode === "week" ? weekSum : monthSum, mode === "week" ? weekWin : monthWin, mode === "week" ? yearWeeks.length : yearMonths.length)}
           </div>
-          <button onClick={nextYear} className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent transition-colors">
+          <button onClick={nextYear} title={t.components.nextYear} className="flex h-7 w-7 items-center justify-center rounded hover:bg-accent transition-colors">
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>

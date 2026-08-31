@@ -333,6 +333,7 @@ export default function FundCompare() {
                   <span className="font-mono">{code}</span>
                   <button
                     onClick={() => removeCode(code)}
+                    title={t.compare.removeFund}
                     className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20 transition-colors"
                   >
                     <X className="h-3 w-3" />

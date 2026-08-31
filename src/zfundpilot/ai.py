@@ -278,7 +278,7 @@ def test_connection() -> dict:
             "max_tokens": 1,
             "stream": False,
         }
-        resp = httpx.post(url, headers=headers, json=body, timeout=15)
+        resp = httpx.post(url, headers=headers, json=body, timeout=config.AI_TIMEOUT_TEST)
         if resp.status_code == 200:
             provider = detect_provider(config.AI_BASE_URL)
             has_search = config.AI_WEB_SEARCH and provider in ("kimi", "zhipu", "qwen", "deepseek")
@@ -372,7 +372,7 @@ async def chat_stream(
     body.update(extra_params)
 
     try:
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=config.AI_TIMEOUT_CHAT) as client:
             # 第一轮流式请求
             tool_calls_deltas: list = []
             has_tool_calls = False
@@ -677,7 +677,7 @@ def parse_screenshot(image_bytes: bytes, mode: str, channel_hint: str = "", cont
     }
 
     try:
-        resp = httpx.post(url, headers=headers, json=body, timeout=60)
+        resp = httpx.post(url, headers=headers, json=body, timeout=config.AI_TIMEOUT_VISION)
         if resp.status_code != 200:
             return {"ok": False, "items": [], "error": f"API 返回 {resp.status_code}: {resp.text[:200]}"}
         data = resp.json()
@@ -735,7 +735,7 @@ def test_vision_connection() -> dict:
             "max_tokens": 10,
             "stream": False,
         }
-        resp = httpx.post(url, headers=headers, json=body, timeout=30)
+        resp = httpx.post(url, headers=headers, json=body, timeout=config.AI_TIMEOUT_VISION_TEST)
         if resp.status_code == 200:
             return {"ok": True, "model": config.AI_VISION_MODEL}
         logger.error("视觉模型测试返回 %s: %s", resp.status_code, resp.text[:300])

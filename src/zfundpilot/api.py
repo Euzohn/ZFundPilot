@@ -29,6 +29,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from . import config
+
 from . import __version__ as APP_VERSION
 from . import (
     ai,
@@ -85,9 +87,9 @@ app = FastAPI(title="ZFundPilot API", version="0.20.0", lifespan=_lifespan)
 # ---------------------------------------------------------------------------
 _LOGIN_ATTEMPTS: dict[str, list[float]] = {}
 _LOGIN_LOCKED_UNTIL: dict[str, float] = {}
-_LOGIN_WINDOW = 300       # 5 分钟滚动窗口（此窗口内失败次数触发锁定）
-_LOGIN_MAX_FAILURES = 5   # 窗口内最多失败次数
-_LOGIN_LOCKOUT = 900      # 锁定时间（15 分钟）
+_LOGIN_WINDOW = config.LOGIN_WINDOW
+_LOGIN_MAX_FAILURES = config.LOGIN_MAX_FAILURES
+_LOGIN_LOCKOUT = config.LOGIN_LOCKOUT
 _LOGIN_SWEEP_COUNTER = 0  # 用于控制 sweep 频率
 
 
@@ -237,7 +239,7 @@ async def endpoint_rate_limit_middleware(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=config.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

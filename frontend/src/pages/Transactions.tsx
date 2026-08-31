@@ -92,12 +92,8 @@ export default function Transactions() {
 
   useEffect(() => {
     let active = true
-    const fetchCount = () => {
-      api.getPendingDividendAlertCount().then(r => { if (active) setDividendAlertCount(r.count) }).catch(() => {})
-    }
-    fetchCount()
-    const timer = setInterval(fetchCount, 60000)
-    return () => { active = false; clearInterval(timer) }
+    api.getPendingDividendAlertCount().then(r => { if (active) setDividendAlertCount(r.count) }).catch(() => {})
+    return () => { active = false }
   }, [])
 
   const handleEdit = (tx: Transaction) => {
@@ -920,10 +916,10 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
                     <TableCell className="text-sm text-muted-foreground">{tx.note}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); onEdit(tx) }}>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); onEdit(tx) }} title={t.common.edit}>
                           <Pencil className="h-4 w-4 text-primary" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(tx.id!) }}>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(tx.id!) }} title={t.common.delete}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>

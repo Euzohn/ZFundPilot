@@ -307,6 +307,7 @@ ZFundPilot/
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式 |
 | `ZFUNDPILOT_TIMEZONE` | `Asia/Shanghai` | 系统时区（IANA 名称），影响定时任务、交易日期、日志时间戳 |
 | `ZFUNDPILOT_TRUSTED_PROXIES` | 空 | 信任代理网段（CIDR 逗号分隔），仅在反代后配置 |
+| `ZFUNDPILOT_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 允许的前端源（逗号分隔），部署到非默认域名时需配置 |
 | `CONTAINER_NAME` | `zfundpilot` | Docker 容器名称，多实例部署时需为每个实例设置不同名称 |
 
 ---

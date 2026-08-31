@@ -45,6 +45,11 @@
 - TypeScript `any` 收窄——Overview ChartTooltip/FundDetail dot/Returns toggleLegend/Transactions 4 catch 块，共 7 处
 - Backtest 图表硬编码颜色——`#3b82f6`/`#10b981` 改为 `hsl(var(--chart-1/2))`，随主题切换
 - 文件名误导——`ScreenshotImportDialog.tsx` 重命名为 `ScreenshotImportPanel.tsx`（组件导出名一致）
+- 静默 except 吞错误——analysis P&L 计算、backtest 净值拉取、fetch_fund 板块/风险/费率、fetch_estimate 估值/指数/ETF、ai 市场上下文、compare 档案解析、fund_filter 缓存、config bcrypt、data_io CSV 编码、api token 校验共 22 处 `except: pass` 加 `logger.warning`/`logger.debug`，异常不再无声消失
+- 死代码清理——删除 13 个无调用方函数（`positions_to_dataframe`/`clear_compare_cache`/`get_distinct_fund_codes`/`upsert_nav`/`get_nav_last_update`/`save_snapshot`/`get_snapshots`/`clear_estimate_cache`/`clear_index_cache`/`clear_fee_cache`/`get_fee_cache_info`/`clear_holdings_cache`/`format_advice_text`），保留 `portfolio_snapshots` CREATE TABLE（幂等），同步清理 docstring/CONTEXT/DATABASE 引用
+- 硬编码值提取到 `config.py`——`T1_CUTOFF_HOUR`、登录限流 3 常量、AI httpx 超时 4 常量、CORS origins 支持环境变量 `ZFUNDPILOT_CORS_ORIGINS`
+- 前端重复轮询——`Layout.tsx` 与 `Transactions.tsx` 都 60s 轮询 `getPendingDividendAlertCount`，Transactions 改为仅挂载时取一次（侧边栏红点仍实时）
+- 图标按钮无 tooltip——约 26 处纯图标按钮补 `title`（Positions 买/卖、Returns 柱状图/日历切换、PnLCalendar 前后月/年、TpSlAlertsPanel 确认/忽略、DividendCheckDialog 删除、Settings 渠道/关键词操作与颜色 swatch、FundDetail 返回/编辑/删除/渠道卖出、Transactions 编辑/删除/查询基金、AIChat 发送、FundCompare/Backtest chip 移除、ScreenshotImportPanel 移除图片），新增 i18n key（`components.prevMonth/nextMonth/prevYear/nextYear`、`settings.moveUp/moveDown/channelColor`、`returns.barChartView/calendarView/confirmAlert/ignoreAlert`）
 
 ### Performance
 - 消除 5 处 N+1 查询：(1) `api.py get_latest_navs` 逐只 `get_latest_nav` → `get_latest_navs_batch` 单次查询；(2) `analysis.py calculate_positions` 逐持仓 `get_latest_nav` → 批量预取 `nav_map`；(3) `analysis.py backfill_transaction_navs` 逐笔 `get_nav_on_or_after` → `get_navs_on_or_after_batch` 批量预取，逐条 `update_transaction` → `executemany` 单连接批量写；(4) `scheduler.py _run_tp_sl_check` 逐持仓 `get_tp_sl_alert_state` → `get_tp_sl_alert_states_batch` 批量预载 + 本地映射同步更新；(5) `api.py _mark_duplicates` / `fetch_dividend.py` 全表 `get_transactions` → SQL IN 过滤 + 内存查找表；(6) `analysis.py calculate_summary` 冗余 `get_transactions` → `_get_transactions_cached` 共用缓存。新增 `db.py` 函数 `get_latest_navs_batch` / `get_navs_on_or_after_batch` / `get_tp_sl_alert_states_batch`，`get_transactions` 扩展 `fund_codes/actions/dates` 可选参数

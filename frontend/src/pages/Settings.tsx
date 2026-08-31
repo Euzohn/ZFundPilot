@@ -21,6 +21,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Select } from "@/components/ui/select"
 import ErrorState from "@/components/ErrorState"
 import ThemeToggle from "@/components/ThemeToggle"
+import FieldError from "@/components/FieldError"
 import { toast } from "sonner"
 import { useLang, type Lang } from "@/i18n/LanguageContext"
 import { cn } from "@/lib/utils"
@@ -303,6 +304,8 @@ export default function Settings() {
   const [currentPwd, setCurrentPwd] = useState("")
   const [newPwd, setNewPwd] = useState("")
   const [confirmPwd, setConfirmPwd] = useState("")
+  const [pwdErrors, setPwdErrors] = useState<{ current?: string; newPwd?: string; confirm?: string }>({})
+  const [usernameErrors, setUsernameErrors] = useState<{ username?: string; password?: string }>({})
   const [changingPwd, setChangingPwd] = useState(false)
   const [newUsername, setNewUsername] = useState("")
   const [usernamePwd, setUsernamePwd] = useState("")
@@ -440,9 +443,12 @@ export default function Settings() {
 
   // --- Password ---
   const handleChangePassword = async () => {
-    if (!currentPwd) { toast.error(t.settings.currentPasswordRequired); return }
-    if (newPwd.length < 6) { toast.error(t.settings.passwordTooShort); return }
-    if (newPwd !== confirmPwd) { toast.error(t.settings.passwordMismatch); return }
+    const errs: typeof pwdErrors = {}
+    if (!currentPwd) errs.current = t.settings.currentPasswordRequired
+    if (newPwd.length < 6) errs.newPwd = t.settings.passwordTooShort
+    if (newPwd !== confirmPwd) errs.confirm = t.settings.passwordMismatch
+    if (Object.keys(errs).length) { setPwdErrors(errs); return }
+    setPwdErrors({})
     setChangingPwd(true)
     try {
       await api.changePassword(currentPwd, newPwd)
@@ -453,8 +459,11 @@ export default function Settings() {
   }
 
   const handleChangeUsername = async () => {
-    if (newUsername.trim().length < 2) { toast.error(t.settings.usernameTooShort); return }
-    if (!usernamePwd) { toast.error(t.settings.currentPasswordRequired); return }
+    const errs: typeof usernameErrors = {}
+    if (newUsername.trim().length < 2) errs.username = t.settings.usernameTooShort
+    if (!usernamePwd) errs.password = t.settings.currentPasswordRequired
+    if (Object.keys(errs).length) { setUsernameErrors(errs); return }
+    setUsernameErrors({})
     setChangingUsername(true)
     try {
       await api.changeUsername(usernamePwd, newUsername.trim())
@@ -640,11 +649,25 @@ export default function Settings() {
                 <div className="space-y-2">
                   <Label className="text-xs font-medium text-muted-foreground">{t.settings.changeUsername}</Label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Input value={newUsername} onChange={(e) => setNewUsername(e.target.value)}
-                      className="h-8 text-xs" placeholder={t.settings.newUsernamePlaceholder} />
-                    <Input type="password" value={usernamePwd} onChange={(e) => setUsernamePwd(e.target.value)}
-                      className="h-8 text-xs" placeholder={t.settings.currentPassword}
-                      onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); handleChangeUsername() } }} />
+                    <div>
+                      <Input value={newUsername}
+                        onChange={(e) => { setNewUsername(e.target.value); setUsernameErrors(prev => ({ ...prev, username: undefined })) }}
+                        className="h-8 text-xs" placeholder={t.settings.newUsernamePlaceholder}
+                        autoComplete="username"
+                        aria-invalid={!!usernameErrors.username}
+                        aria-describedby={usernameErrors.username ? "username-error" : undefined} />
+                      <FieldError id="username-error" error={usernameErrors.username} />
+                    </div>
+                    <div>
+                      <Input type="password" value={usernamePwd}
+                        onChange={(e) => { setUsernamePwd(e.target.value); setUsernameErrors(prev => ({ ...prev, password: undefined })) }}
+                        className="h-8 text-xs" placeholder={t.settings.currentPassword}
+                        autoComplete="current-password"
+                        onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); handleChangeUsername() } }}
+                        aria-invalid={!!usernameErrors.password}
+                        aria-describedby={usernameErrors.password ? "username-pwd-error" : undefined} />
+                      <FieldError id="username-pwd-error" error={usernameErrors.password} />
+                    </div>
                   </div>
                   <Button size="sm" onClick={handleChangeUsername} disabled={changingUsername} variant="outline">
                     <UserCircle className="mr-1.5 h-3.5 w-3.5" /> {changingUsername ? t.settings.changing : t.settings.changeUsername}
@@ -659,19 +682,34 @@ export default function Settings() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.currentPassword}</Label>
-                      <Input type="password" value={currentPwd} onChange={(e) => setCurrentPwd(e.target.value)}
-                        className="h-8 text-xs" placeholder={t.settings.currentPasswordPlaceholder} />
+                      <Input type="password" value={currentPwd}
+                        onChange={(e) => { setCurrentPwd(e.target.value); setPwdErrors(prev => ({ ...prev, current: undefined })) }}
+                        className="h-8 text-xs" placeholder={t.settings.currentPasswordPlaceholder}
+                        autoComplete="current-password"
+                        aria-invalid={!!pwdErrors.current}
+                        aria-describedby={pwdErrors.current ? "pwd-current-error" : undefined} />
+                      <FieldError id="pwd-current-error" error={pwdErrors.current} />
                     </div>
                     <div>
                       <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.newPassword}</Label>
-                      <Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)}
-                        className="h-8 text-xs" placeholder={t.settings.passwordMinHint} />
+                      <Input type="password" value={newPwd}
+                        onChange={(e) => { setNewPwd(e.target.value); setPwdErrors(prev => ({ ...prev, newPwd: undefined })) }}
+                        className="h-8 text-xs" placeholder={t.settings.passwordMinHint}
+                        autoComplete="new-password"
+                        aria-invalid={!!pwdErrors.newPwd}
+                        aria-describedby={pwdErrors.newPwd ? "pwd-new-error" : undefined} />
+                      <FieldError id="pwd-new-error" error={pwdErrors.newPwd} />
                     </div>
                     <div>
                       <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.confirmNewPassword}</Label>
-                      <Input type="password" value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)}
+                      <Input type="password" value={confirmPwd}
+                        onChange={(e) => { setConfirmPwd(e.target.value); setPwdErrors(prev => ({ ...prev, confirm: undefined })) }}
                         className="h-8 text-xs" placeholder={t.settings.confirmPasswordPlaceholder}
-                        onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); handleChangePassword() } }} />
+                        autoComplete="new-password"
+                        onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); handleChangePassword() } }}
+                        aria-invalid={!!pwdErrors.confirm}
+                        aria-describedby={pwdErrors.confirm ? "pwd-confirm-error" : undefined} />
+                      <FieldError id="pwd-confirm-error" error={pwdErrors.confirm} />
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">

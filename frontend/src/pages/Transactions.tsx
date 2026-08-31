@@ -23,6 +23,7 @@ import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, ChevronUp, Ch
 import { getChannels, getChannelsAsync, saveChannels } from "@/lib/channels"
 import { makeSortHeader } from "@/components/SortHeader"
 import { useLang } from "@/i18n/LanguageContext"
+import FieldError from "@/components/FieldError"
 import ConfirmDialog from "@/components/ConfirmDialog"
 import TransactionDetailDialog from "@/components/TransactionDetailDialog"
 import DividendCheckDialog from "@/components/DividendCheckDialog"
@@ -196,6 +197,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
   const feeCalcTimer = useRef<ReturnType<typeof setTimeout>>()
   const [pendingAlertId, setPendingAlertId] = useState<number | null>(null)
   const [pendingTpSlAlertId, setPendingTpSlAlertId] = useState<number | null>(null)
+  const [formErrors, setFormErrors] = useState<{ code?: string; date?: string; amount?: string; shares?: string }>({})
   const isEditing = !!editingTx
 
   // 持仓数据（用于卖出时校验 + 快捷填入）
@@ -399,12 +401,14 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
     setFeeCalcResult(null); feeManuallyEdited.current = false
     setPendingAlertId(null)
     setPendingTpSlAlertId(null)
+    setFormErrors({})
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!code.trim()) { toast.error(t.transactions.fundCodeRequired); return }
-    if (!date) { toast.error(t.transactions.dateRequired); return }
+    const errs: typeof formErrors = {}
+    if (!code.trim()) errs.code = t.transactions.fundCodeRequired
+    if (!date) errs.date = t.transactions.dateRequired
 
     // 买入：优先手动输入的份额，无则用自动计算值
     const manualShares = parseFloat(shares) || null
@@ -416,19 +420,19 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
 
     // 买入至少有金额，卖出/再投资至少有份额，分红至少有金额（净值可能尚未公布，留空则待确认）
     if ((action === "buy" || action === "dividend") && !finalAmount) {
-      toast.error(action === "buy" ? t.transactions.buyAmountRequired : t.transactions.dividendAmountRequired)
-      return
+      errs.amount = action === "buy" ? t.transactions.buyAmountRequired : t.transactions.dividendAmountRequired
     }
     if ((action === "sell" || action === "reinvest") && !finalShares) {
-      toast.error(action === "sell" ? t.transactions.sellSharesRequired : t.transactions.reinvestSharesRequired)
-      return
+      errs.shares = action === "sell" ? t.transactions.sellSharesRequired : t.transactions.reinvestSharesRequired
     }
 
     // 卖出不能超过持有份额
     if (action === "sell" && heldShares > 0 && finalShares && finalShares > heldShares) {
-      toast.error(t.transactions.sellExceedsHolding.replace("{n}", heldShares.toFixed(2)))
-      return
+      errs.shares = t.transactions.sellExceedsHolding.replace("{n}", heldShares.toFixed(2))
     }
+
+    if (Object.keys(errs).length) { setFormErrors(errs); return }
+    setFormErrors({})
 
     const payload = {
       fund_code: code.trim(), action, date,
@@ -501,9 +505,13 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
               <div className="flex-1 max-w-[200px]">
                 <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.fundCode}</Label>
                 <Input
-                  value={code} onChange={(e) => setCode(e.target.value)} onBlur={handleCodeBlur}
+                  value={code} onChange={(e) => { setCode(e.target.value); setFormErrors(prev => ({ ...prev, code: undefined })) }}
+                  onBlur={handleCodeBlur}
                   placeholder={t.transactions.fundCodePlaceholder} className="h-9"
+                  aria-invalid={!!formErrors.code}
+                  aria-describedby={formErrors.code ? "tx-code-error" : undefined}
                 />
+                <FieldError id="tx-code-error" error={formErrors.code} />
               </div>
               <div className="pt-5">
                 <Button type="button" variant="outline" size="sm" onClick={() => handleFetchMeta(false)} disabled={fetching} className="h-9" title={t.common.search}>
@@ -537,7 +545,12 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
             </div>
             <div className="sm:col-span-2">
               <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.tradeDate}</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9" />
+              <Input type="date" value={date} onChange={(e) => { setDate(e.target.value); setFormErrors(prev => ({ ...prev, date: undefined })) }}
+                className="h-9"
+                aria-invalid={!!formErrors.date}
+                aria-describedby={formErrors.date ? "tx-date-error" : undefined}
+              />
+              <FieldError id="tx-date-error" error={formErrors.date} />
               <div className="mt-1 flex items-center gap-3">
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
                   {t.transactions.tradeDateHint}
@@ -564,7 +577,13 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
               <>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.amountYuan}</Label>
-                  <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="h-9" autoFocus={!isEditing} />
+                  <Input type="number" step="0.01" min="0" value={amount}
+                    onChange={(e) => { setAmount(e.target.value); setFormErrors(prev => ({ ...prev, amount: undefined })) }}
+                    placeholder="0.00" className="h-9" autoFocus={!isEditing}
+                    aria-invalid={!!formErrors.amount}
+                    aria-describedby={formErrors.amount ? "tx-amount-error" : undefined}
+                  />
+                  <FieldError id="tx-amount-error" error={formErrors.amount} />
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
@@ -580,7 +599,13 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
                     {t.common.shares}{heldShares > 0 && <span className="text-muted-foreground/70 ml-1">{t.transactions.holding.replace("{n}", heldShares.toFixed(2))}</span>}
                   </Label>
-                  <Input type="number" step="0.01" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="0.00" className="h-9" autoFocus={!isEditing} />
+                  <Input type="number" step="0.01" min="0" value={shares}
+                    onChange={(e) => { setShares(e.target.value); setFormErrors(prev => ({ ...prev, shares: undefined })) }}
+                    placeholder="0.00" className="h-9" autoFocus={!isEditing}
+                    aria-invalid={!!formErrors.shares}
+                    aria-describedby={formErrors.shares ? "tx-shares-error" : undefined}
+                  />
+                  <FieldError id="tx-shares-error" error={formErrors.shares} />
                   {heldShares > 0 && (
                     <div className="mt-1.5 flex gap-1.5">
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.25).toFixed(2))}>1/4</Button>
@@ -602,7 +627,13 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
             {action === "dividend" && (
               <div className="sm:col-span-2">
                 <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.dividendAmountYuan}</Label>
-                <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={t.transactions.cashReceived} className="h-9" autoFocus={!isEditing} />
+                <Input type="number" step="0.01" min="0" value={amount}
+                  onChange={(e) => { setAmount(e.target.value); setFormErrors(prev => ({ ...prev, amount: undefined })) }}
+                  placeholder={t.transactions.cashReceived} className="h-9" autoFocus={!isEditing}
+                  aria-invalid={!!formErrors.amount}
+                  aria-describedby={formErrors.amount ? "tx-amount-error" : undefined}
+                />
+                <FieldError id="tx-amount-error" error={formErrors.amount} />
                 <p className="mt-1 text-[11px] text-muted-foreground">{t.transactions.dividendHint}</p>
               </div>
             )}
@@ -610,7 +641,13 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
               <>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.dividendShares}</Label>
-                  <Input type="number" step="0.01" min="0" value={shares} onChange={(e) => setShares(e.target.value)} placeholder={t.transactions.newSharesPlaceholder} className="h-9" autoFocus={!isEditing} />
+                  <Input type="number" step="0.01" min="0" value={shares}
+                    onChange={(e) => { setShares(e.target.value); setFormErrors(prev => ({ ...prev, shares: undefined })) }}
+                    placeholder={t.transactions.newSharesPlaceholder} className="h-9" autoFocus={!isEditing}
+                    aria-invalid={!!formErrors.shares}
+                    aria-describedby={formErrors.shares ? "tx-shares-error" : undefined}
+                  />
+                  <FieldError id="tx-shares-error" error={formErrors.shares} />
                 </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">

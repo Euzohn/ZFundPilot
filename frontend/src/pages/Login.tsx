@@ -8,17 +8,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Package, Lock, User } from "lucide-react"
 import { toast } from "sonner"
 import { useLang } from "@/i18n/LanguageContext"
+import FieldError from "@/components/FieldError"
 
 export default function Login({ onSuccess }: { onSuccess: () => void }) {
   const { t } = useLang()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
+  const [errors, setErrors] = useState<{ username?: string; password?: string }>({})
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!username) { toast.warning(t.login.usernameRequired); return }
-    if (!password) { toast.warning(t.login.passwordRequired); return }
+    const errs: typeof errors = {}
+    if (!username) errs.username = t.login.usernameRequired
+    if (!password) errs.password = t.login.passwordRequired
+    if (Object.keys(errs).length) { setErrors(errs); return }
+    setErrors({})
     setLoading(true)
     try {
       const res = await api.login(username, password)
@@ -43,31 +48,41 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <Label className="mb-1.5 block">{t.login.usernamePlaceholder}</Label>
+              <Label htmlFor="login-username" className="mb-1.5 block">{t.login.usernamePlaceholder}</Label>
               <div className="relative">
                 <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
+                  id="login-username"
                   type="text"
                   value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  onChange={(e) => { setUsername(e.target.value); setErrors(prev => ({ ...prev, username: undefined })) }}
                   placeholder={t.login.usernamePlaceholder}
                   className="pl-9"
+                  autoComplete="username"
                   autoFocus
+                  aria-invalid={!!errors.username}
+                  aria-describedby={errors.username ? "login-username-error" : undefined}
                 />
               </div>
+              <FieldError id="login-username-error" error={errors.username} />
             </div>
             <div>
-              <Label className="mb-1.5 block">{t.login.passwordPlaceholder}</Label>
+              <Label htmlFor="login-password" className="mb-1.5 block">{t.login.passwordPlaceholder}</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
+                  id="login-password"
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => { setPassword(e.target.value); setErrors(prev => ({ ...prev, password: undefined })) }}
                   placeholder={t.login.passwordPlaceholder}
                   className="pl-9"
+                  autoComplete="current-password"
+                  aria-invalid={!!errors.password}
+                  aria-describedby={errors.password ? "login-password-error" : undefined}
                 />
               </div>
+              <FieldError id="login-password-error" error={errors.password} />
             </div>
             <Button type="submit" disabled={loading} className="w-full">
               {loading ? t.login.loggingIn : t.login.submit}

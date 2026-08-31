@@ -43,6 +43,9 @@
 - 路由遮蔽 `/api/nav/latest`、`_migrate_add_indexes` 顺序、`_migrate_dividend_alerts_unique` 去重、`_migrate_relax_transactions_schema` 负金额与 is_t1、`update_auto_invest_plan` SQL 注入防护、`update_scheduler_cron` 坏 cron、`calc_fund_fee` 坏日期、`auth_login` 审计日志、`recalculate_t1_transactions` 启动异常、限流端点 key 不匹配
 - 图表硬编码颜色改为 `hsl(var(--chart-1/2))`
 - 文件名误导：`ScreenshotImportDialog.tsx` → `ScreenshotImportPanel.tsx`
+- 过时文件清理：删除 `frontend/vite.config.js` + `vite.config.d.ts`（tsc 编译产物）
+- `CONTEXT.md` 文档矛盾：fundgz 描述从"已废弃"更正为"估值替补源"
+- `pyproject.toml` 残留关键词：`keywords` 移除旧架构遗留的 `streamlit`
 - TypeScript `any` 收窄：7 处
 - 未使用 import 清理：~20 处
 

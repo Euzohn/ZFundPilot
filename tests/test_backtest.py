@@ -1,9 +1,7 @@
 """backtest 模块纯函数测试：日期生成、XIRR、费用计算、曲线构建。"""
 import datetime as dt
-from unittest.mock import patch
 
 import pandas as pd
-import pytest
 
 from zfundpilot.backtest import (
     _build_curve,

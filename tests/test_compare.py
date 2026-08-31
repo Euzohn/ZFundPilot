@@ -1,6 +1,5 @@
 """compare 模块纯函数测试：收益率、风险指标、相关性、归一化。"""
 import pandas as pd
-import pytest
 
 from zfundpilot.compare import (
     _calculate_calmar,

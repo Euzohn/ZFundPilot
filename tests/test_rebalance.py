@@ -1,9 +1,7 @@
 """rebalance 模块测试：结构优化建议生成。"""
-from unittest.mock import patch
-
 from zfundpilot.models import Position
-from zfundpilot.risk import RiskReport
 from zfundpilot.rebalance import Advice, generate_advice
+from zfundpilot.risk import RiskReport
 
 
 def _make_position(code="001", held_shares=100, market_value=1000, total_cost=1000, **kw):

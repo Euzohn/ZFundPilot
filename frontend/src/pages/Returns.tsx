@@ -55,9 +55,9 @@ function ChannelTooltip({ active, payload, label }: { active?: boolean; payload?
 
 export default function Returns() {
   const { data: summary, loading: sl, error: se, reload: reloadSummary } = useApi<PortfolioSummary>(() => api.getSummary())
-  const { data: curve } = useApi<CurvePoint[]>(() => api.getPortfolioCurve())
-  const { data: channelPnl } = useApi<ChannelPnLPoint[]>(() => api.getChannelPnl())
-  const { data: positions } = useApi<Position[]>(() => api.getPositions(true))
+  const { data: curve, loading: curveLoading } = useApi<CurvePoint[]>(() => api.getPortfolioCurve())
+  const { data: channelPnl, loading: channelPnlLoading } = useApi<ChannelPnLPoint[]>(() => api.getChannelPnl())
+  const { data: positions, loading: positionsLoading } = useApi<Position[]>(() => api.getPositions(true))
   const [sortField, setSortField] = useState("return_rate")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [pnlMode, setPnlMode] = useState<"day" | "week" | "month" | "year">("day")
@@ -297,7 +297,7 @@ export default function Returns() {
       <TpSlAlertsPanel />
 
       {/* P&L fluctuation chart — 日/周/月/年收益波动 */}
-      {pnlData.length > 0 && (
+      {channelPnlLoading ? <LoadingState size="sm" className="py-4" /> : pnlData.length > 0 && (
         <Card className="card-hover">
           <CardHeader className="pb-2 flex-row items-center justify-between flex-wrap gap-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{t.returns.pnlFluctuation}</CardTitle>
@@ -402,7 +402,7 @@ export default function Returns() {
           </div>
         </CardHeader>
         <CardContent>
-          {filteredCurve.length >= 2 ? (
+          {curveLoading ? <LoadingState size="sm" /> : filteredCurve.length >= 2 ? (
             <ResponsiveContainer width="100%" height={300}>
               <ComposedChart data={filteredCurve} margin={{ left: 10, right: 5, top: 5 }}>
                 <defs>
@@ -442,7 +442,7 @@ export default function Returns() {
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">{t.returns.perFundDetail}</CardTitle></CardHeader>
         <CardContent>
-          {allPositions.length === 0 ? (
+          {positionsLoading ? <LoadingState size="sm" /> : allPositions.length === 0 ? (
             <EmptyState title={t.returns.noPositions} />
           ) : (
             <Table>

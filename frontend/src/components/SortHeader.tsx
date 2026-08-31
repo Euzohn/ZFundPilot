@@ -29,10 +29,24 @@ interface SortHeaderProps {
 export function makeSortHeader({ sortField, sortDir, toggleSort }: SortHeaderConfig): ComponentType<SortHeaderProps> {
   return function SortHeader({ field, children, className }: SortHeaderProps) {
     const active = sortField === field
+    const ariaSort = active ? (sortDir === "asc" ? "ascending" : "descending") : ("none" as const)
     return (
       <TableHead
-        className={cn("cursor-pointer select-none", active && "text-foreground", className)}
+        tabIndex={0}
+        role="button"
+        aria-sort={ariaSort}
+        className={cn(
+          "cursor-pointer select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          active && "text-foreground",
+          className,
+        )}
         onClick={() => toggleSort(field)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            toggleSort(field)
+          }
+        }}
       >
         <span className="inline-flex items-center gap-1">
           {children}

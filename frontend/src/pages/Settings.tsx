@@ -7,6 +7,7 @@ import { formatRelativeTime, formatTokens } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
+import ConfirmDialog from "@/components/ConfirmDialog"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import { clearToken } from "@/lib/auth"
@@ -335,6 +336,11 @@ export default function Settings() {
   const { data: usageStats } = useApi<AIUsageStats>(() => api.getAIUsage(), [])
   const { data: usageDaily } = useApi<AIUsageDaily[]>(() => api.getAIUsageDaily(7), [])
 
+  const [deletingChannelIndex, setDeletingChannelIndex] = useState<number | null>(null)
+  const [showRestoreDefaults, setShowRestoreDefaults] = useState(false)
+  const [showResetKeywords, setShowResetKeywords] = useState(false)
+  const [showResetSectors, setShowResetSectors] = useState(false)
+
   useEffect(() => {
     if (aiConfig) {
       setAiBaseUrl(aiConfig.base_url)
@@ -639,7 +645,7 @@ export default function Settings() {
                       className="h-8 text-xs" placeholder={t.settings.newUsernamePlaceholder} />
                     <Input type="password" value={usernamePwd} onChange={(e) => setUsernamePwd(e.target.value)}
                       className="h-8 text-xs" placeholder={t.settings.currentPassword}
-                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleChangeUsername() } }} />
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); handleChangeUsername() } }} />
                   </div>
                   <Button size="sm" onClick={handleChangeUsername} disabled={changingUsername} variant="outline">
                     <UserCircle className="mr-1.5 h-3.5 w-3.5" /> {changingUsername ? t.settings.changing : t.settings.changeUsername}
@@ -666,7 +672,7 @@ export default function Settings() {
                       <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.confirmNewPassword}</Label>
                       <Input type="password" value={confirmPwd} onChange={(e) => setConfirmPwd(e.target.value)}
                         className="h-8 text-xs" placeholder={t.settings.confirmPasswordPlaceholder}
-                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleChangePassword() } }} />
+                        onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); handleChangePassword() } }} />
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -948,7 +954,7 @@ export default function Settings() {
                       </span>
                       <span className="flex-1 text-sm font-semibold">{ch}</span>
                       {i === 0 && <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{t.settings.defaultLabel}</span>}
-                      <button onClick={() => remove(i)}
+                      <button onClick={() => setDeletingChannelIndex(i)}
                         className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] sm:h-6 sm:w-6">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -984,14 +990,14 @@ export default function Settings() {
                     value={newChannel}
                     onChange={(e) => setNewChannel(e.target.value)}
                     placeholder={t.settings.newChannelPlaceholder}
-                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add() } }}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); add() } }}
                     className="h-8 text-xs max-w-[180px]"
                   />
                   <Button variant="outline" size="sm" onClick={add} className="h-8 shrink-0">
                     <Plus className="mr-1 h-3.5 w-3.5" /> {t.common.add}
                   </Button>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => { handleReset(); handleColorsReset() }} className="h-8 shrink-0">
+                <Button variant="outline" size="sm" onClick={() => setShowRestoreDefaults(true)} className="h-8 shrink-0">
                   <RotateCcw className="mr-1 h-3.5 w-3.5" /> {t.settings.restoreDefaults}
                 </Button>
               </div>
@@ -1296,7 +1302,7 @@ export default function Settings() {
                     <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.keyword}</Label>
                     <Input value={newKwKeyword} onChange={(e) => setNewKwKeyword(e.target.value)}
                       placeholder={t.settings.keywordPlaceholder} className="h-8 text-xs"
-                      onKeyDown={(e) => { if (e.key === "Enter") addCustomKeyword() }} />
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) addCustomKeyword() }} />
                   </div>
                   <div className="flex-1 min-w-0 sm:min-w-[120px]">
                     <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.mapTo}</Label>
@@ -1380,13 +1386,10 @@ export default function Settings() {
 
                 {/* 重置 */}
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={async () => {
-                    setKeywordMaps({ ...keywordMaps, type_custom: [], sector_custom: [] })
-                    try { await api.saveKeywordMaps("[]", "[]"); toast.success(t.settings.allCustomKwReset) } catch {}
-                  }}>
+                  <Button size="sm" variant="outline" onClick={() => setShowResetKeywords(true)}>
                     <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> {t.settings.resetCustom}
                   </Button>
-                  <Button size="sm" variant="outline" onClick={handleResetSectors} disabled={resettingSectors}>
+                  <Button size="sm" variant="outline" onClick={() => setShowResetSectors(true)} disabled={resettingSectors}>
                     <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", resettingSectors && "animate-spin")} />
                     {resettingSectors ? t.settings.resetting : t.settings.resetSectorMapping}
                   </Button>
@@ -1423,6 +1426,38 @@ export default function Settings() {
           </Card>
         </TabsContent>
       </Tabs>
+      <ConfirmDialog
+        open={deletingChannelIndex !== null}
+        onOpenChange={(open) => { if (!open) setDeletingChannelIndex(null) }}
+        title={t.common.delete}
+        tone="destructive"
+        onConfirm={() => { if (deletingChannelIndex !== null) { remove(deletingChannelIndex); setDeletingChannelIndex(null) } }}
+      />
+      <ConfirmDialog
+        open={showRestoreDefaults}
+        onOpenChange={setShowRestoreDefaults}
+        title={t.settings.restoreDefaults}
+        tone="destructive"
+        onConfirm={() => { handleReset(); handleColorsReset(); setShowRestoreDefaults(false) }}
+      />
+      <ConfirmDialog
+        open={showResetKeywords}
+        onOpenChange={setShowResetKeywords}
+        title={t.settings.resetCustom}
+        tone="destructive"
+        onConfirm={async () => {
+          if (keywordMaps) setKeywordMaps({ ...keywordMaps, type_custom: [], sector_custom: [] })
+          try { await api.saveKeywordMaps("[]", "[]"); toast.success(t.settings.allCustomKwReset) } catch {}
+          setShowResetKeywords(false)
+        }}
+      />
+      <ConfirmDialog
+        open={showResetSectors}
+        onOpenChange={setShowResetSectors}
+        title={t.settings.resetSectorMapping}
+        tone="destructive"
+        onConfirm={async () => { setShowResetSectors(false); await handleResetSectors() }}
+      />
     </div>
   )
 }

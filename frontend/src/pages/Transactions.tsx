@@ -984,7 +984,7 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
             value={clearConfirmText}
             onChange={(e) => setClearConfirmText(e.target.value)}
             placeholder={t.transactions.confirmClearPhrase}
-            onKeyDown={(e) => { if (e.key === "Enter" && clearConfirmText === t.transactions.confirmClearPhrase) { e.preventDefault(); handleClearAll() } }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing && clearConfirmText === t.transactions.confirmClearPhrase) { e.preventDefault(); handleClearAll() } }}
             autoFocus
           />
           <DialogFooter>

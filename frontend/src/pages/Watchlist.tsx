@@ -12,6 +12,7 @@ import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import ErrorState from "@/components/ErrorState"
+import ConfirmDialog from "@/components/ConfirmDialog"
 import { Star, Trash2, GitCompare, ArrowLeftRight, ExternalLink, Plus } from "lucide-react"
 import { useLang } from "@/i18n/LanguageContext"
 import { useCompare } from "@/contexts/CompareContext"
@@ -29,6 +30,7 @@ export default function Watchlist() {
   const [groupName, setGroupName] = useState("")
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState("")
+  const [removingCode, setRemovingCode] = useState<string | null>(null)
   const [activeGroup, setActiveGroup] = useState("")
 
   const fetcher = useCallback(() => api.getWatchlist(), [])
@@ -151,14 +153,14 @@ export default function Watchlist() {
             <Input
               value={code}
               onChange={(e) => { setCode(e.target.value); setAddError("") }}
-              onKeyDown={(e) => { if (e.key === "Enter") handleAdd() }}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) handleAdd() }}
               placeholder={t.watchlist.codePlaceholder}
               className="h-9 text-sm sm:w-40"
             />
             <Input
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleAdd() }}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) handleAdd() }}
               placeholder={t.watchlist.groupPlaceholder}
               className="h-9 text-sm sm:w-32"
               list="watchlist-groups"
@@ -169,7 +171,7 @@ export default function Watchlist() {
             <Input
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleAdd() }}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) handleAdd() }}
               placeholder={t.watchlist.notePlaceholder}
               className="h-9 text-sm flex-1"
             />
@@ -278,7 +280,7 @@ export default function Watchlist() {
                           const v = e.target.value.trim()
                           if (v !== item.group_name) handleGroupChange(item.fund_code, v)
                         }}
-                        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur() }}
+                        onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur() }}
                         placeholder={t.watchlist.groupPlaceholder}
                         className="h-7 w-24 text-xs"
                         list="watchlist-groups"
@@ -299,7 +301,7 @@ export default function Watchlist() {
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => buyFund(item.fund_code)} title={t.watchlist.buy}>
                           <ArrowLeftRight className="h-3.5 w-3.5" />
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-loss-600 hover:text-loss-700" onClick={() => handleRemove(item.fund_code)} title={t.common.delete}>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-loss-600 hover:text-loss-700" onClick={() => setRemovingCode(item.fund_code)} title={t.common.delete}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
@@ -311,6 +313,14 @@ export default function Watchlist() {
           </div>
         </>
       )}
+      <ConfirmDialog
+        open={removingCode !== null}
+        onOpenChange={(open) => { if (!open) setRemovingCode(null) }}
+        title={t.watchlist.removed}
+        description={t.watchlist.removeFailed}
+        tone="destructive"
+        onConfirm={() => { if (removingCode) { handleRemove(removingCode); setRemovingCode(null) } }}
+      />
     </div>
   )
 }

@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button"
 import LogoSpinner from "@/components/LogoSpinner"
 import EmptyState from "@/components/EmptyState"
+import ConfirmDialog from "@/components/ConfirmDialog"
 import { money } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
@@ -23,6 +24,7 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
   const [alerts, setAlerts] = useState<DividendAlert[]>([])
   const [loading, setLoading] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [deletingAlertId, setDeletingAlertId] = useState<number | null>(null)
 
   const loadAlerts = useCallback(async () => {
     setLoading(true)
@@ -129,12 +131,19 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
                 alert={alert}
                 onConfirm={handleConfirm}
                 onIgnore={handleIgnore}
-                onDelete={handleDelete}
+                onDelete={(id) => setDeletingAlertId(id)}
               />
             ))}
           </div>
         )}
       </DialogContent>
+      <ConfirmDialog
+        open={deletingAlertId !== null}
+        onOpenChange={(open) => { if (!open) setDeletingAlertId(null) }}
+        title={t.common.delete}
+        tone="destructive"
+        onConfirm={() => { if (deletingAlertId !== null) { handleDelete(deletingAlertId); setDeletingAlertId(null) } }}
+      />
     </Dialog>
   )
 }

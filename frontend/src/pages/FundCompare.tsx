@@ -51,7 +51,7 @@ function AddSection({ loading }: { loading: boolean }) {
         <Input
           value={raw}
           onChange={(e) => { setRaw(e.target.value); setError("") }}
-          onKeyDown={(e) => { if (e.key === "Enter") handleAdd() }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) handleAdd() }}
           placeholder={t.compare.inputPlaceholder}
           className="h-9 text-sm flex-1"
         />

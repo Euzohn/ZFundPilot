@@ -13,6 +13,7 @@ import remarkGfm from "remark-gfm"
 import { formatRelativeTime, formatTokens, money } from "@/lib/format"
 import LogoTyping from "@/components/LogoTyping"
 import EmptyState from "@/components/EmptyState"
+import ConfirmDialog from "@/components/ConfirmDialog"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useLang } from "@/i18n/LanguageContext"
@@ -38,6 +39,7 @@ export default function AIChat() {
   const [showUsage, setShowUsage] = useState(false)
   const [editingTitle, setEditingTitle] = useState(false)
   const [editingArchiveId, setEditingArchiveId] = useState<string | null>(null)
+  const [deletingArchiveId, setDeletingArchiveId] = useState<string | null>(null)
   const [titleInput, setTitleInput] = useState("")
 
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -179,7 +181,7 @@ export default function AIChat() {
                             </button>
                             <button
                               type="button"
-                              onClick={(e) => { e.stopPropagation(); handleDeleteArchived(s.id) }}
+                              onClick={(e) => { e.stopPropagation(); setDeletingArchiveId(s.id) }}
                               className="opacity-0 group-hover:opacity-100 shrink-0 rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
                               title={t.aiChat.deleteChat}
                             >
@@ -436,6 +438,13 @@ export default function AIChat() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={deletingArchiveId !== null}
+        onOpenChange={(open) => { if (!open) setDeletingArchiveId(null) }}
+        title={t.aiChat.deleteChat}
+        tone="destructive"
+        onConfirm={() => { if (deletingArchiveId) { handleDeleteArchived(deletingArchiveId); setDeletingArchiveId(null) } }}
+      />
     </div>
   )
 }

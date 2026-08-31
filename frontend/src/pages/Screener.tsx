@@ -241,7 +241,7 @@ export default function Screener() {
               <Input
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleSearch() }}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSearch() }}
                 placeholder={t.compare.nameOrCode}
                 className="h-9 text-sm flex-1"
               />

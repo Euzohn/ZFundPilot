@@ -80,9 +80,9 @@ export default function Overview() {
     const d = new Date(summary.as_of_date + "T00:00:00")
     return `${d.getMonth() + 1}/${d.getDate()}${t.overview.pnlSuffix}`
   }, [summary, t])
-  const { data: typeDist } = useApi<DistributionItem[]>(() => api.getDistribution("fund_type"))
-  const { data: channelDist } = useApi<DistributionItem[]>(() => api.getDistribution("channel"))
-  const { data: sectorDist } = useApi<DistributionItem[]>(() => api.getDistribution("sector"))
+  const { data: typeDist, loading: typeDistLoading } = useApi<DistributionItem[]>(() => api.getDistribution("fund_type"))
+  const { data: channelDist, loading: channelDistLoading } = useApi<DistributionItem[]>(() => api.getDistribution("channel"))
+  const { data: sectorDist, loading: sectorDistLoading } = useApi<DistributionItem[]>(() => api.getDistribution("sector"))
 
   const { data: estimate, reload: reloadEstimate } = useApi<EstimateSummary>(() => api.getEstimate())
 
@@ -161,7 +161,7 @@ export default function Overview() {
         <Card className="card-hover lg:col-span-2">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t.overview.sectorDist}</CardTitle></CardHeader>
           <CardContent>
-            {sectorDist && sectorDist.length > 0 ? (
+            {sectorDistLoading ? <LoadingState size="sm" /> : sectorDist && sectorDist.length > 0 ? (
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={sectorDist.slice(0, 12)} layout="vertical" margin={{ left: 10, right: 10 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
@@ -178,7 +178,7 @@ export default function Overview() {
         <Card className="card-hover">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t.overview.typeDist}</CardTitle></CardHeader>
           <CardContent>
-            {typeDist && typeDist.length > 0 ? (
+            {typeDistLoading ? <LoadingState size="sm" /> : typeDist && typeDist.length > 0 ? (
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
                   <Pie data={typeDist.map(d => ({ ...d, fund_type: translateFundType(String(d.fund_type)) }))} dataKey="market_value" nameKey="fund_type" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
@@ -194,7 +194,7 @@ export default function Overview() {
         <Card className="card-hover">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t.overview.channelDist}</CardTitle></CardHeader>
           <CardContent>
-            {channelDist && channelDist.length > 0 ? (
+            {channelDistLoading ? <LoadingState size="sm" /> : channelDist && channelDist.length > 0 ? (
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
                   <Pie data={channelDist.map(d => ({ ...d, channel: translateChannel(String(d.channel || t.common.unlabeled)) }))} dataKey="market_value" nameKey="channel" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>

@@ -44,11 +44,11 @@ export default function FundDetail() {
 
   const { data: fund, loading: fundLoading, error: fundError, reload: reloadFund } = useApi<Fund>(() => api.getFund(code!), [code])
   const { data: positions } = useApi<Position[]>(() => api.getPositions(true), [])
-  const { data: txs, reload: reloadTxs } = useApi<Transaction[]>(() =>
+  const { data: txs, loading: txsLoading, reload: reloadTxs } = useApi<Transaction[]>(() =>
     api.getTransactionsByFund(code!).then((rows) =>
       rows.sort((a, b) => b.date.localeCompare(a.date) || (b.id ?? 0) - (a.id ?? 0)),
     ), [code])
-  const { data: navHistory } = useApi<{ date: string; nav: number }[]>(
+  const { data: navHistory, loading: navLoading } = useApi<{ date: string; nav: number }[]>(
     () => api.getNavHistory(code!).then((rows) => rows.map((r) => ({ date: r.date, nav: r.nav }))),
     [code],
   )
@@ -474,7 +474,7 @@ const handleDelete = async (txId: number) => {
           )}
         </CardHeader>
         <CardContent>
-          {chartData.length >= 2 ? (
+          {navLoading ? <LoadingState size="sm" /> : chartData.length >= 2 ? (
             <ResponsiveContainer width="100%" height={280}>
               <ComposedChart data={chartData} margin={{ left: 10, right: 10, top: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -665,7 +665,7 @@ const handleDelete = async (txId: number) => {
       <Card className="card-hover">
         <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t.transactions.title}</CardTitle></CardHeader>
         <CardContent>
-          {!txs || txs.length === 0 ? (
+          {txsLoading ? <LoadingState size="sm" /> : !txs || txs.length === 0 ? (
             <EmptyState title={t.fundDetail.noTransactions} />
           ) : (
             <Table>

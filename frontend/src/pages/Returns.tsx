@@ -332,11 +332,11 @@ export default function Returns() {
               <>
                 <span className="text-muted-foreground mx-0.5">|</span>
                 <Button size="sm" variant={chartView === "bar" ? "default" : "outline"} className="h-6 px-2 text-[11px]"
-                  onClick={() => setChartView("bar")}>
+                  onClick={() => setChartView("bar")} title={t.returns.barChartView}>
                   <BarChart3 className="h-3 w-3" />
                 </Button>
                 <Button size="sm" variant={chartView === "calendar" ? "default" : "outline"} className="h-6 px-2 text-[11px]"
-                  onClick={() => setChartView("calendar")}>
+                  onClick={() => setChartView("calendar")} title={t.returns.calendarView}>
                   <CalendarDays className="h-3 w-3" />
                 </Button>
               </>

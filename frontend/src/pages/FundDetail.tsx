@@ -440,6 +440,7 @@ const handleDelete = async (txId: number) => {
                         variant="outline"
                         className="h-7 px-2 text-xs text-loss border-loss/30 hover:bg-loss/5"
                         onClick={() => navigate(`/transactions?code=${code}&action=sell&channel=${encodeURIComponent(p.channel)}`)}
+                        title={t.transactions.sell}
                       >
                         <TrendingDown className="h-3 w-3" />
                       </Button>

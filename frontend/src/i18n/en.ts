@@ -602,6 +602,7 @@ const en: typeof zh = {
     backupFailed: "Backup export failed",
     moveUp: "Move up",
     moveDown: "Move down",
+    channelColor: "Channel color",
   },
   overview: {
     title: "Portfolio Overview",
@@ -767,6 +768,10 @@ const en: typeof zh = {
     threshold: "Threshold",
     processedAlerts: "Processed ({n})",
     reopen: "Reopen",
+    barChartView: "Bar chart",
+    calendarView: "Calendar",
+    confirmAlert: "Confirm alert",
+    ignoreAlert: "Ignore alert",
   },
   risk: {
     title: "Risk & Advice",

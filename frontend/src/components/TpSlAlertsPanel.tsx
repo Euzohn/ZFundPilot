@@ -111,6 +111,7 @@ export default function TpSlAlertsPanel() {
                             className="h-7 w-7 p-0"
                             onClick={() => handleConfirm(alert)}
                             disabled={updating === alert.id}
+                            title={t.returns.confirmAlert}
                           >
                             <CheckCircle2 className="h-4 w-4 text-gain" />
                           </Button>
@@ -120,6 +121,7 @@ export default function TpSlAlertsPanel() {
                             className="h-7 w-7 p-0"
                             onClick={() => handleIgnore(alert.id)}
                             disabled={updating === alert.id}
+                            title={t.returns.ignoreAlert}
                           >
                             <XCircle className="h-4 w-4 text-loss" />
                           </Button>

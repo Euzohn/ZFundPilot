@@ -265,6 +265,7 @@ export default function Positions() {
                             variant="outline"
                             className="h-7 px-2 text-xs text-gain border-gain/30 hover:bg-gain/5"
                             onClick={() => navigate(`/transactions?code=${code}&action=buy${m.channel ? `&channel=${encodeURIComponent(m.channel)}` : ""}`)}
+                            title={t.transactions.buy}
                           >
                             <TrendingUp className="h-3 w-3" />
                           </Button>
@@ -273,6 +274,7 @@ export default function Positions() {
                             variant="outline"
                             className="h-7 px-2 text-xs text-loss border-loss/30 hover:bg-loss/5"
                             onClick={() => navigate(`/transactions?code=${code}&action=sell${m.channel ? `&channel=${encodeURIComponent(m.channel)}` : ""}`)}
+                            title={t.transactions.sell}
                           >
                             <TrendingDown className="h-3 w-3" />
                           </Button>

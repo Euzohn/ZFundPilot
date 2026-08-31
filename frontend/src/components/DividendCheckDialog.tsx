@@ -198,7 +198,7 @@ function DividendAlertRow({ alert, onConfirm, onIgnore, onDelete }: {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onClick={() => onDelete(alert.id)}>
+          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onClick={() => onDelete(alert.id)} title={t.common.delete}>
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
           <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" onClick={() => onIgnore(alert.id)}>

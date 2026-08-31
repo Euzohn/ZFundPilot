@@ -29,8 +29,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from . import config
-
 from . import __version__ as APP_VERSION
 from . import (
     ai,

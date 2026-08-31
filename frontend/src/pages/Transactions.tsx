@@ -506,7 +506,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
                 />
               </div>
               <div className="pt-5">
-                <Button type="button" variant="outline" size="sm" onClick={() => handleFetchMeta(false)} disabled={fetching} className="h-9">
+                <Button type="button" variant="outline" size="sm" onClick={() => handleFetchMeta(false)} disabled={fetching} className="h-9" title={t.common.search}>
                   {fetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
                 </Button>
               </div>

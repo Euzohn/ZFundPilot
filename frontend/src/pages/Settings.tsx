@@ -969,7 +969,7 @@ export default function Settings() {
                       </button>
                       <div className="flex flex-wrap items-center gap-1">
                         {palette.map(color => (
-                          <button key={color} onClick={() => handleColorChange(ch, color)}
+                          <button key={color} onClick={() => handleColorChange(ch, color)} title={`${t.settings.channelColor} ${color}`}
                             className={cn("h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
                               channelColors[ch] === color ? "border-border" : "border-transparent")}
                             style={{ background: color }} />

@@ -600,6 +600,7 @@ const zh = {
     backupFailed: "备份导出失败",
     moveUp: "上移",
     moveDown: "下移",
+    channelColor: "渠道颜色",
   },
   overview: {
     title: "组合总览",
@@ -765,6 +766,10 @@ const zh = {
     threshold: "阈值",
     processedAlerts: "已处理 {n} 条",
     reopen: "重新打开",
+    barChartView: "柱状图",
+    calendarView: "日历",
+    confirmAlert: "确认提醒",
+    ignoreAlert: "忽略提醒",
   },
   risk: {
     title: "风险与建议",

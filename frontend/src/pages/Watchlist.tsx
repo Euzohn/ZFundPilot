@@ -316,8 +316,8 @@ export default function Watchlist() {
       <ConfirmDialog
         open={removingCode !== null}
         onOpenChange={(open) => { if (!open) setRemovingCode(null) }}
-        title={t.watchlist.removed}
-        description={t.watchlist.removeFailed}
+        title={t.watchlist.removeFromWatchlist}
+        description={t.common.confirmDelete}
         tone="destructive"
         onConfirm={() => { if (removingCode) { handleRemove(removingCode); setRemovingCode(null) } }}
       />

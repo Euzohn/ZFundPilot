@@ -3,19 +3,18 @@ import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { PortfolioSummary, CurvePoint, BenchmarkPoint, ChannelPnLPoint, Position } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { cn } from "@/lib/utils"
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart, Cell, ReferenceLine } from "recharts"
+import { BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart, Cell, ReferenceLine } from "recharts"
 import PnLCalendar from "@/components/PnLCalendar"
 import TpSlAlertsPanel from "@/components/TpSlAlertsPanel"
-import { ChevronUp, ChevronDown, BarChart3, CalendarDays } from "lucide-react"
+import { BarChart3, CalendarDays } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { getChannelColors, getChannelColorsAsync, getPalette } from "@/lib/channelColors"
 import { RANGE_DAYS } from "@/lib/rangeLabels"
@@ -71,8 +70,8 @@ export default function Returns() {
   const [benchmarkData, setBenchmarkData] = useState<BenchmarkPoint[] | null>(null)
   const { t } = useLang()
 
-  const toggleLegend = (e: any) => {
-    const key = e.dataKey || e.value
+  const toggleLegend = (e: { dataKey?: unknown; value?: unknown }) => {
+    const key = String(e.dataKey || e.value)
     setHiddenKeys(prev => {
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)

@@ -1,4 +1,4 @@
-import { getCurrentLang, type Lang } from "@/i18n/LanguageContext"
+import { getCurrentLang } from "@/i18n/LanguageContext"
 
 type Bilingual = { zh: string; en: string }
 

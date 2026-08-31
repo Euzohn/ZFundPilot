@@ -463,6 +463,11 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - fix: TpSlAlertsPanel error 用错组件——ErrorState 加 size prop，EmptyState → ErrorState + onRetry
 - fix: Transactions 渲染阶段副作用——useApi().data.forEach 调 setFunds 移入 useEffect
 - fix: FundDetail 表头标注错误——交易列表两列都标 actions，第一列改为 type
+- fix: ErrorState AlertTriangle 丢失 `text-loss-500` 颜色——图标恢复红色
+- fix: 未使用 import 清理——删除 7 页 LogoSpinner + Returns/Dialog/dropdown/backendLabels 共 ~20 处
+- fix: TypeScript `any` 收窄——Overview ChartTooltip/FundDetail dot/Returns toggleLegend/Transactions 4 catch 块，共 7 处
+- fix: Backtest 图表硬编码颜色——`#3b82f6`/`#10b981` 改为 `hsl(var(--chart-1/2))`，随主题切换
+- fix: 文件名误导——`ScreenshotImportDialog.tsx` 重命名为 `ScreenshotImportPanel.tsx`（组件导出名一致）
 
 ### v0.20.0 - 2026-08-28
 

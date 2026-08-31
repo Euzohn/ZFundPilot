@@ -366,7 +366,7 @@ export default function Backtest() {
                               type="monotone"
                               dataKey="lump_value"
                               name={t.backtest.lumpsumValue}
-                              stroke="#3b82f6"
+                              stroke="hsl(var(--chart-1))"
                               strokeWidth={2}
                               dot={false}
                               connectNulls
@@ -376,7 +376,7 @@ export default function Backtest() {
                               type="monotone"
                               dataKey="lump_invested"
                               name={t.backtest.lumpSumStrategy}
-                              stroke="#3b82f6"
+                              stroke="hsl(var(--chart-1))"
                               strokeWidth={1}
                               strokeDasharray="4 2"
                               dot={false}
@@ -389,8 +389,8 @@ export default function Backtest() {
                           type="monotone"
                           dataKey="dca_value"
                           name={t.backtest.dcaValue}
-                          stroke="#10b981"
-                          fill="#10b981"
+                          stroke="hsl(var(--chart-2))"
+                          fill="hsl(var(--chart-2))"
                           fillOpacity={0.1}
                           strokeWidth={2}
                           dot={false}
@@ -401,7 +401,7 @@ export default function Backtest() {
                           type="monotone"
                           dataKey="dca_invested"
                           name={t.backtest.dcaInvested}
-                          stroke="#10b981"
+                          stroke="hsl(var(--chart-2))"
                           strokeWidth={1}
                           strokeDasharray="4 2"
                           dot={false}

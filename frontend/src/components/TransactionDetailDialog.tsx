@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { money, navStr } from "@/lib/format"
-import { Pencil, Receipt, Hash, Wallet, Banknote, PieChart, Percent, DollarSign, FileText, Clock, ArrowUpRight } from "lucide-react"
+import { Pencil, Receipt, Hash, Wallet, Banknote, PieChart, DollarSign, FileText, Clock, ArrowUpRight } from "lucide-react"
 import { useLang } from "@/i18n/LanguageContext"
 
 interface Props {

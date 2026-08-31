@@ -11,7 +11,6 @@ import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import FeeBreakdownCard from "@/components/FeeBreakdownCard"
 import { money, localDateStr } from "@/lib/format"
@@ -27,7 +26,7 @@ import { useLang } from "@/i18n/LanguageContext"
 import ConfirmDialog from "@/components/ConfirmDialog"
 import TransactionDetailDialog from "@/components/TransactionDetailDialog"
 import DividendCheckDialog from "@/components/DividendCheckDialog"
-import ScreenshotImportPanel from "@/components/ScreenshotImportDialog"
+import ScreenshotImportPanel from "@/components/ScreenshotImportPanel"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 
 function actionBadgeClass(action: string): string {
@@ -1162,6 +1161,16 @@ function CSVImportExport() {
 // 定投计划
 // ---------------------------------------------------------------------------
 
+function errMsg(e: unknown): string | undefined {
+  return e instanceof Error ? e.message : undefined
+}
+
+interface ApiError {
+  status?: number
+  body?: { detail?: string }
+  message?: string
+}
+
 function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }: { prefillCode?: string | null; prefillChannel?: string | undefined; onPrefillConsumed?: () => void }) {
   const { t } = useLang()
   const { data: plans, loading, error, reload } = useApi<AutoInvestPlan[]>(() => api.getAutoInvestPlans(), [])
@@ -1249,8 +1258,8 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
       }
       setDialogOpen(false)
       reload()
-    } catch (e: any) {
-      toast.error(e.message || t.common.saveFailed)
+    } catch (e: unknown) {
+      toast.error(errMsg(e) || t.common.saveFailed)
     } finally {
       setSaving(false)
     }
@@ -1261,8 +1270,8 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
       await api.toggleAutoInvestPlan(plan.id, !plan.enabled)
       toast.success(plan.enabled ? t.transactions.paused : t.transactions.enabled)
       reload()
-    } catch (e: any) {
-      toast.error(e.message || t.common.operationFailed)
+    } catch (e: unknown) {
+      toast.error(errMsg(e) || t.common.operationFailed)
     }
   }
 
@@ -1272,8 +1281,8 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
       toast.success(t.transactions.planDeleted)
       setDeleting(null)
       reload()
-    } catch (e: any) {
-      toast.error(e.message || t.common.deleteFailed)
+    } catch (e: unknown) {
+      toast.error(errMsg(e) || t.common.deleteFailed)
     }
   }
 
@@ -1283,9 +1292,10 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
       const res = await api.executeAutoInvestPlan(plan.id)
       toast.success(t.transactions.planExecuteSuccess.replace("{id}", String(res.tx_id)))
       reload()
-    } catch (e: any) {
-      const msg = e?.body?.detail || e?.message || ""
-      if (e?.status === 409 || msg.includes("已执行")) {
+    } catch (e: unknown) {
+      const err = (e ?? {}) as ApiError
+      const msg = err.body?.detail || err.message || ""
+      if (err.status === 409 || msg.includes("已执行")) {
         toast.warning(t.transactions.alreadyExecutedToday)
       } else {
         toast.error(msg || t.transactions.executeFailed)

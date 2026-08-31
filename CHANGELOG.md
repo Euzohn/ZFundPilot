@@ -40,6 +40,11 @@
 - TpSlAlertsPanel error 用错组件：error 路径用 `EmptyState` 无重试按钮。`ErrorState` 新增 `size` prop，改为 `ErrorState size="sm" onRetry={reload}`
 - Transactions 渲染阶段副作用：`useApi().data.forEach` 中调 `setFunds` 改为 `useEffect`
 - FundDetail 表头标注错误：交易列表两列都标"操作"，第一列实际是交易类型（buy/sell），改为 `t.common.type`
+- ErrorState AlertTriangle 丢失 `text-loss-500` 颜色——图标不再为红色
+- 未使用 import 清理——删除 7 页 LogoSpinner + Returns/Dialog/dropdown/backendLabels 共 ~20 处
+- TypeScript `any` 收窄——Overview ChartTooltip/FundDetail dot/Returns toggleLegend/Transactions 4 catch 块，共 7 处
+- Backtest 图表硬编码颜色——`#3b82f6`/`#10b981` 改为 `hsl(var(--chart-1/2))`，随主题切换
+- 文件名误导——`ScreenshotImportDialog.tsx` 重命名为 `ScreenshotImportPanel.tsx`（组件导出名一致）
 
 ### Performance
 - 消除 5 处 N+1 查询：(1) `api.py get_latest_navs` 逐只 `get_latest_nav` → `get_latest_navs_batch` 单次查询；(2) `analysis.py calculate_positions` 逐持仓 `get_latest_nav` → 批量预取 `nav_map`；(3) `analysis.py backfill_transaction_navs` 逐笔 `get_nav_on_or_after` → `get_navs_on_or_after_batch` 批量预取，逐条 `update_transaction` → `executemany` 单连接批量写；(4) `scheduler.py _run_tp_sl_check` 逐持仓 `get_tp_sl_alert_state` → `get_tp_sl_alert_states_batch` 批量预载 + 本地映射同步更新；(5) `api.py _mark_duplicates` / `fetch_dividend.py` 全表 `get_transactions` → SQL IN 过滤 + 内存查找表；(6) `analysis.py calculate_summary` 冗余 `get_transactions` → `_get_transactions_cached` 共用缓存。新增 `db.py` 函数 `get_latest_navs_batch` / `get_navs_on_or_after_batch` / `get_tp_sl_alert_states_batch`，`get_transactions` 扩展 `fund_codes/actions/dates` 可选参数

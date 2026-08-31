@@ -3,7 +3,6 @@ import { useMemo, useEffect } from "react"
 import { api } from "@/api/client"
 import type { PortfolioSummary, DistributionItem, EstimateSummary } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
 import { isMarketOpen } from "@/lib/market"
@@ -56,9 +55,15 @@ function HeroCard({ summary }: { summary: PortfolioSummary }) {
   )
 }
 
-function ChartTooltip({ active, payload, nameKey }: any) {
+interface ChartTooltipProps {
+  active?: boolean
+  payload?: Array<{ name?: string; value?: number; payload?: Record<string, unknown> }>
+  nameKey?: string
+}
+
+function ChartTooltip({ active, payload, nameKey }: ChartTooltipProps) {
   if (!active || !payload?.length) return null
-  const label = nameKey ? payload[0].payload?.[nameKey] : payload[0].name
+  const label = (nameKey ? payload[0].payload?.[nameKey] : payload[0].name) as string | undefined
   return (
     <div className="rounded-lg border bg-card px-3 py-2 shadow-lg">
       <p className="text-xs font-medium text-foreground">{label ?? payload[0].name}</p>

@@ -4,7 +4,6 @@ import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { Position, Transaction, Fund, FundEstimate, FundHoldings as FundHoldingsType, FundRanking, FundProfile } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -524,10 +523,10 @@ const handleDelete = async (txId: number) => {
                   dataKey="nav"
                   stroke="hsl(var(--primary))"
                   strokeWidth={2}
-                  dot={(props: any) => {
+                  dot={(props: { cx?: number; cy?: number; payload?: { date?: string; _tx?: Transaction[] | null | undefined } }) => {
                     const { cx, cy, payload } = props
                     if (!payload?.date || cx == null || cy == null) return <g />
-                    const txList: Transaction[] | null = payload._tx
+                    const txList = payload._tx ?? null
                     if (!txList || txList.length === 0) return <g />
                     const hasBuy = txList.some(t => t.action === 'buy')
                     const hasSell = txList.some(t => t.action === 'sell')

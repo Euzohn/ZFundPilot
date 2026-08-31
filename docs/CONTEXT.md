@@ -459,6 +459,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - fix: IME 输入 bug——13 处 onKeyDown Enter 加 `!e.nativeEvent.isComposing` 防中文输入法提前提交
 - fix: 加载态闪烁——Overview/FundDetail/Returns 共 8 处 useApi 解构 loading，空状态前加 loading guard
 - fix: 破坏性操作无确认——8 处服务端/本地破坏性操作加 ConfirmDialog（tone=destructive）
+- fix: AIChat 配置加载闪烁——useApi 加载中 data=null → configured=false → 闪"未配置"，加 configLoading guard
+- fix: TpSlAlertsPanel error 用错组件——ErrorState 加 size prop，EmptyState → ErrorState + onRetry
+- fix: Transactions 渲染阶段副作用——useApi().data.forEach 调 setFunds 移入 useEffect
+- fix: FundDetail 表头标注错误——交易列表两列都标 actions，第一列改为 type
 
 ### v0.20.0 - 2026-08-28
 

@@ -36,6 +36,10 @@
 - IME 输入 bug：除 AIChat 外所有 Enter 提交不检查 `e.nativeEvent.isComposing`，中文输入法按 Enter 确认拼音时提前提交。Watchlist/Screener/FundCompare/Backtest/Settings/Transactions 共 13 处加 `!e.nativeEvent.isComposing` 守卫
 - 加载态闪烁：Overview 分布图、FundDetail 交易列表/净值图、Returns 曲线/P&L/持仓共 8 处 `useApi` 未解构 `loading`，`data===null` 被当空状态渲染。解构 `loading` 并在空状态判断前加 `loading ? <LoadingState/>` 分支
 - 破坏性操作无确认：Watchlist 移除自选、Settings 删渠道/恢复默认渠道/重置关键词/重置板块映射、DividendCheckDialog 删提醒、AIChat 删归档对话共 8 处加 `ConfirmDialog`（tone=destructive）
+- AIChat 配置加载闪烁：`useApi` 加载中 `data=null` → `configured=false` → 每次进页面闪"未配置"。解构 `loading` 并加 `configLoading` guard
+- TpSlAlertsPanel error 用错组件：error 路径用 `EmptyState` 无重试按钮。`ErrorState` 新增 `size` prop，改为 `ErrorState size="sm" onRetry={reload}`
+- Transactions 渲染阶段副作用：`useApi().data.forEach` 中调 `setFunds` 改为 `useEffect`
+- FundDetail 表头标注错误：交易列表两列都标"操作"，第一列实际是交易类型（buy/sell），改为 `t.common.type`
 
 ### Performance
 - 消除 5 处 N+1 查询：(1) `api.py get_latest_navs` 逐只 `get_latest_nav` → `get_latest_navs_batch` 单次查询；(2) `analysis.py calculate_positions` 逐持仓 `get_latest_nav` → 批量预取 `nav_map`；(3) `analysis.py backfill_transaction_navs` 逐笔 `get_nav_on_or_after` → `get_navs_on_or_after_batch` 批量预取，逐条 `update_transaction` → `executemany` 单连接批量写；(4) `scheduler.py _run_tp_sl_check` 逐持仓 `get_tp_sl_alert_state` → `get_tp_sl_alert_states_batch` 批量预载 + 本地映射同步更新；(5) `api.py _mark_duplicates` / `fetch_dividend.py` 全表 `get_transactions` → SQL IN 过滤 + 内存查找表；(6) `analysis.py calculate_summary` 冗余 `get_transactions` → `_get_transactions_cached` 共用缓存。新增 `db.py` 函数 `get_latest_navs_batch` / `get_navs_on_or_after_batch` / `get_tp_sl_alert_states_batch`，`get_transactions` 扩展 `fund_codes/actions/dates` 可选参数

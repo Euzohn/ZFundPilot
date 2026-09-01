@@ -26,6 +26,13 @@
   <img src="assets/readme/screenshots_en/positions.webp" alt="Positions" width="90%">
   <p><b>Positions</b> — Cross-channel merged view per fund, with NAV freshness indicator</p>
   <br>
+  <details>
+<summary>More Screenshots (Click to expand)</summary>
+
+  <br>
+  <img src="assets/readme/screenshots_en/positions-grid.webp" alt="Positions (Grid View)" width="90%">
+  <p><b>Positions (Grid View)</b> — Bento large cards with allocation bars + cost/estimate/P&L + holding days/sector</p>
+  <br>
   <table>
     <tr>
       <td><img src="assets/readme/screenshots_en/transaction-1.webp" alt="Trade Entry" width="100%"></td>
@@ -61,6 +68,8 @@
   <br>
   <img src="assets/readme/screenshots_en/setting.webp" alt="Settings" width="90%">
   <p><b>Settings</b> — Account management, AI config, preferences, audit log</p>
+
+</details>
 </div>
 
 ## What is this
@@ -105,6 +114,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **Multi-Channel Support** — Alipay, WeChat, Tiantian Fund, etc. Same fund tracked separately across channels
 - **Auto Fee Lookup** — Fetches purchase/redemption fee rates from Tiantian Fund on entry. FIFO-based redemption fee calculation. Manual override supported
 - **Auto Portfolio Aggregation** — Moving weighted average cost by fund + channel. Realized P&L transferred on sell
+- **Position Views** — Toggle between list view (cross-channel detail + NAV freshness) and grid view (Bento cards with allocation bars, cost/estimate/P&L, holding days/sector)
 
 ### Analysis & Estimates
 

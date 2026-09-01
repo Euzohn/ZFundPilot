@@ -26,6 +26,13 @@
   <img src="assets/readme/screenshots_zh/positions.webp" alt="持仓明细" width="90%">
   <p><b>持仓明细</b> — 按基金合并的跨渠道持仓视图，净值日期标注新鲜度</p>
   <br>
+  <details>
+<summary>更多截图（点击展开）</summary>
+
+  <br>
+  <img src="assets/readme/screenshots_zh/positions-grid.webp" alt="持仓明细（网格视图）" width="90%">
+  <p><b>持仓明细（网格视图）</b> — Bento 大卡布局，占比条 + 成本/估值/盈亏 + 持仓天数/板块</p>
+  <br>
   <table>
     <tr>
       <td><img src="assets/readme/screenshots_zh/transaction-1.webp" alt="交易录入" width="100%"></td>
@@ -61,6 +68,8 @@
   <br>
   <img src="assets/readme/screenshots_zh/setting.webp" alt="设置" width="90%">
   <p><b>设置</b> — 账户管理、AI 配置、偏好设置、审计日志</p>
+
+</details>
 </div>
 
 ## 这是什么
@@ -105,6 +114,7 @@ cd frontend && npm install && npm run dev
 - **多渠道支持** — 支付宝、理财通、天天基金等，同一基金不同渠道分开计算成本
 - **手续费自动查询** — 录入交易时自动从天天基金拉取申购/赎回费率，按金额分档匹配，卖出按 FIFO 计算赎回费，支持手动覆盖
 - **持仓自动汇总** — 按「基金 + 渠道」用移动加权平均成本法汇总，卖出时结转已实现收益
+- **持仓明细视图** — 列表视图（跨渠道明细 + 净值新鲜度）与网格视图（Bento 大卡 + 占比条 + 成本/估值/盈亏/持仓天数/板块）自由切换
 
 ### 分析与估值
 

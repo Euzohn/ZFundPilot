@@ -292,7 +292,6 @@ export default function AIChat() {
             {messages.map((msg, i) => {
               const tx = msg.role === "assistant" ? extractToolCall(msg.content) : null
               const display = msg.role === "assistant" ? stripJsonBlock(msg.content) : msg.content
-              const status = txStatus[i]
               return (
                 <div key={i} className={msg.role === "user" ? "flex justify-end" : "flex justify-start gap-2.5"}>
                   {msg.role === "assistant" && (

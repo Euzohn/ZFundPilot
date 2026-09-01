@@ -19,13 +19,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select } from "@/components/ui/select"
-import ErrorState from "@/components/ErrorState"
 import ThemeToggle from "@/components/ThemeToggle"
 import FieldError from "@/components/FieldError"
 import { toast } from "sonner"
 import { useLang, type Lang } from "@/i18n/LanguageContext"
 import { cn } from "@/lib/utils"
-import type { AIUsageStats, AIUsageDaily, AuditLog, KeywordMaps, KeywordEntry, SchedulerStatus, TpSlConfig, VisionConfig } from "@/api/types"
+import type { AIUsageStats, AIUsageDaily, AuditLog, KeywordMaps, SchedulerStatus, TpSlConfig, VisionConfig } from "@/api/types"
 import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
@@ -544,7 +543,6 @@ export default function Settings() {
   const [kwShowDefaults, setKwShowDefaults] = useState(false)
   const [newKwKeyword, setNewKwKeyword] = useState("")
   const [newKwMapped, setNewKwMapped] = useState("")
-  const [kwSaving, setKwSaving] = useState(false)
 
   const { data: kwData } = useApi(() => api.getKeywordMaps(), [])
   useEffect(() => {
@@ -587,13 +585,6 @@ export default function Settings() {
     const sectorCustom = kwTab === "sector" ? next : keywordMaps!.sector_custom
     setKeywordMaps({ ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next })
     try { await api.saveKeywordMaps(JSON.stringify(typeCustom), JSON.stringify(sectorCustom)) } catch {}
-  }
-
-  const resetCustomKeywords = async () => {
-    const typeCustom = kwTab === "sector" ? keywordMaps!.type_custom : []
-    const sectorCustom = kwTab === "sector" ? [] : keywordMaps!.sector_custom
-    setKeywordMaps({ ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: [] })
-    try { await api.saveKeywordMaps(JSON.stringify(typeCustom), JSON.stringify(sectorCustom)); toast.success(t.settings.kwCustomReset) } catch {}
   }
 
   const authRequired = authStatus?.required

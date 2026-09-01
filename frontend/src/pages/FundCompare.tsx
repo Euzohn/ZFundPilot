@@ -212,7 +212,6 @@ function CorrelationMatrix({ funds, correlations }: { funds: FundCompareItem[]; 
   const { t } = useLang()
   if (!correlations || correlations.length < 2) return <EmptyState title={t.compare.correlationHint} size="lg" />
 
-  const n = correlations.length
   return (
     <div className="overflow-x-auto">
       <Table className="mx-auto text-sm">
@@ -273,7 +272,7 @@ function CorrelationMatrix({ funds, correlations }: { funds: FundCompareItem[]; 
 export default function FundCompare() {
   const { t } = useLang()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { codes, addCode, addCodes, removeCode, clear, count } = useCompare()
+  const { codes, addCodes, removeCode, clear, count } = useCompare()
 
   useEffect(() => {
     const q = searchParams.get("codes") || ""

@@ -92,7 +92,7 @@ ZFundPilot/
 │   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12 并行) → tsc → build
 ├── tests/                   # Pytest 测试套件
 │   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
-│   └── test_*.py            #   234 个测试用例
+│   └── test_*.py            #   390 个测试用例
 └── docs/CONTEXT.md              # 本文件（不追踪）
 ```
 
@@ -446,6 +446,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ## 十二、当前工作状态
 
 ### Unreleased
+
+### v0.20.1 - 2026-09-01
 
 - perf: 消除 5 处 N+1 查询——(1) `api.py get_latest_navs` 逐只 `get_latest_nav` → `get_latest_navs_batch`；(2) `analysis.py calculate_positions` 逐持仓取净值 → 批量预取 `nav_map`；(3) `analysis.py backfill_transaction_navs` 逐笔查净值+逐条写库 → 批量预取净值 + `executemany` 单连接批量写（两阶段：批量读 → 算费率+normalize → 批量写）；(4) `scheduler.py _run_tp_sl_check` 逐持仓查状态 → `get_tp_sl_alert_states_batch` 批量预载 + 本地 dict 映射同步更新；(5) `api.py _mark_duplicates` / `fetch_dividend.py` 全表 `get_transactions` → SQL IN 过滤 + 内存查找表；(6) `analysis.py calculate_summary` 冗余查询 → `_get_transactions_cached` 共用 60s TTL 缓存。新增 `db.py` 三个批量函数 + `get_transactions` 扩展 `fund_codes/actions/dates` 可选参数
 - fix: 修复 `_migrate_relax_transactions_schema` 幂等判断 bug——旧逻辑 `"NOT NULL" not in sql_text` 对新 schema 恒 False，导致每次启动重建 transactions 表。改为精确检测旧特征 + 新 CHECK 完整性

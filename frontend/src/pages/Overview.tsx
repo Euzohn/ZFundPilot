@@ -10,7 +10,7 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts"
-import { Wallet, TrendingUp, DollarSign, ArrowUpFromLine, Calendar, Activity } from "lucide-react"
+import { Wallet, Calendar } from "lucide-react"
 import { CHART_COLORS } from "@/lib/chartPalette"
 import MetricCard from "@/components/MetricCard"
 import PageHeader from "@/components/PageHeader"

@@ -58,7 +58,7 @@
 - `auto_invest_plans` 数据约束：`CHECK(amount > 0)`，表重建时清理无效数据
 - `nav_history` 数据约束：`CHECK(nav > 0)`，表重建时清理无效数据
 - 数据库索引优化：补充 `ai_usage(created_at)`、`transactions(fund_code, date)` 复合索引、`auto_invest_plans(enabled, next_run)`、`dividend_alerts(alert_type, status)`；删除冗余 `idx_nav_code_date`、`idx_index_code_date`、`idx_tx_code`
-- 测试覆盖：新增 62 个测试覆盖 backtest（20）、compare（22）、rebalance（8）纯函数，测试总数 315→377
+- 测试覆盖：新增 156 个测试覆盖 backtest（26）、compare（28）、rebalance（8）、API 输入验证回归（70）、原子写入（4）、db WAL/时区（5）、config 密码哈希（13），测试总数 234→390
 
 ## [0.20.0] - 2026-08-28
 

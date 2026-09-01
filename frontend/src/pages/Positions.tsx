@@ -138,8 +138,8 @@ export default function Positions() {
 
   const SortHeader = makeSortHeader({ sortField, sortDir, toggleSort })
 
-  const totalValue = sortedRows.reduce((s, [, m]) => s + m.value, 0)
-  const totalPnl = sortedRows.reduce((s, [, m]) => s + m.pnl, 0)
+  const totalValue = viewMode === "grid" ? sortedRows.reduce((s, [, m]) => s + m.value, 0) : 0
+  const totalPnl = viewMode === "grid" ? sortedRows.reduce((s, [, m]) => s + m.pnl, 0) : 0
 
   return (
     <div className="space-y-6">
@@ -170,7 +170,7 @@ export default function Positions() {
             {showClosed ? t.positions.hideClosed : t.positions.showClosed}
           </Button>
           {viewMode === "grid" && (
-            <Select value={sortField} onChange={(e) => { setSortField(e.target.value); setSortDir("desc") }} className="h-8 text-xs w-32">
+            <Select value={sortField} onChange={(e) => { setSortField(e.target.value); setSortDir("desc") }} className="h-8 text-xs w-32" aria-label={t.positions.sortBy}>
               <option value="value">{t.positions.sortValue}</option>
               <option value="pnl">{t.positions.sortPnl}</option>
               <option value="return">{t.positions.sortReturn}</option>

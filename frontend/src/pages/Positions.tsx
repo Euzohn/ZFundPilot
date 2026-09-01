@@ -17,7 +17,7 @@ import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import ErrorState from "@/components/ErrorState"
 import { cn } from "@/lib/utils"
-import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search } from "lucide-react"
+import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search, LayoutGrid, List } from "lucide-react"
 import { makeSortHeader } from "@/components/SortHeader"
 import { useLang } from "@/i18n/LanguageContext"
 
@@ -27,6 +27,7 @@ export default function Positions() {
   const [showClosed, setShowClosed] = useState(() => localStorage.getItem("zfundpilot_showClosed") === "true")
   const [channelFilter, setChannelFilter] = useState(() => localStorage.getItem("zfundpilot_channelFilter") ?? "")
   const [searchQuery, setSearchQuery] = useState("")
+  const [viewMode, setViewMode] = useState<"list" | "grid">(() => localStorage.getItem("zfundpilot_positionsView") === "grid" ? "grid" : "list")
   const [sortField, setSortField] = useState("value")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [closedSortField, setClosedSortField] = useState("realized")
@@ -63,6 +64,7 @@ export default function Positions() {
   // 持久化渠道筛选和显示已清仓选项
   useEffect(() => { localStorage.setItem("zfundpilot_showClosed", String(showClosed)) }, [showClosed])
   useEffect(() => { localStorage.setItem("zfundpilot_channelFilter", channelFilter) }, [channelFilter])
+  useEffect(() => { localStorage.setItem("zfundpilot_positionsView", viewMode) }, [viewMode])
 
   const today = localDateStr()
 
@@ -136,6 +138,9 @@ export default function Positions() {
 
   const SortHeader = makeSortHeader({ sortField, sortDir, toggleSort })
 
+  const totalValue = sortedRows.reduce((s, [, m]) => s + m.value, 0)
+  const totalPnl = sortedRows.reduce((s, [, m]) => s + m.pnl, 0)
+
   return (
     <div className="space-y-6">
       {loading ? (
@@ -164,10 +169,39 @@ export default function Positions() {
           <Button variant="outline" size="sm" onClick={() => setShowClosed(!showClosed)}>
             {showClosed ? t.positions.hideClosed : t.positions.showClosed}
           </Button>
+          {viewMode === "grid" && (
+            <Select value={sortField} onChange={(e) => { setSortField(e.target.value); setSortDir("desc") }} className="h-8 text-xs w-32">
+              <option value="value">{t.positions.sortValue}</option>
+              <option value="pnl">{t.positions.sortPnl}</option>
+              <option value="return">{t.positions.sortReturn}</option>
+              <option value="name">{t.positions.sortName}</option>
+            </Select>
+          )}
+          <div className="flex items-center rounded-md border border-border overflow-hidden">
+            <Button
+              variant={viewMode === "list" ? "default" : "ghost"}
+              size="sm"
+              className="h-8 px-2 rounded-none"
+              onClick={() => setViewMode("list")}
+              title={t.positions.viewList}
+            >
+              <List className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant={viewMode === "grid" ? "default" : "ghost"}
+              size="sm"
+              className="h-8 px-2 rounded-none"
+              onClick={() => setViewMode("grid")}
+              title={t.positions.viewGrid}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* 按基金合并视图（主视图，简洁） */}
+      {/* 按基金合并视图（主视图） */}
+      {viewMode === "list" ? (
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -319,6 +353,144 @@ export default function Positions() {
           <p className="mt-3 text-sm text-muted-foreground">{t.positions.fundCountHint.replace("{n}", String(sortedRows.length))}</p>
         </CardContent>
       </Card>
+      ) : (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between text-sm text-muted-foreground">
+          <span>{t.positions.listTitle}{maxDate && <span className="ml-2 text-xs">{t.positions.navAsOf} {maxDate}</span>}</span>
+        </div>
+        {sortedRows.length === 0 ? (
+          <EmptyState title={t.positions.noPositions} />
+        ) : (
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {sortedRows.map(([code, m]) => {
+                const ret = m.cost ? m.value / m.cost - 1 : null
+                const breakevenGain = m.avgCost && m.latestNav && m.latestNav < m.avgCost ? m.avgCost / m.latestNav - 1 : null
+                const est = estimateMap[code]
+                const scaledEstPnl = est?.shares ? (m.shares / est.shares) * est.pnl : est?.pnl
+                const weight = totalValue > 0 ? (m.value / totalValue) * 100 : 0
+                const weightColor = m.pnl >= 0 ? "bg-gain-500" : breakevenGain != null ? "bg-loss-500" : "bg-muted-foreground"
+                return (
+                  <div
+                    key={code}
+                    className="card-hover bg-card rounded-xl p-5 cursor-pointer"
+                    onClick={() => navigate(`/fund/${code}`)}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/fund/${code}`) } }}
+                  >
+                    {/* Header */}
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-sm truncate" title={m.name}>{m.name}</p>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground shrink-0">{translateFundType(m.type)}</span>
+                        </div>
+                        <p className="font-mono text-xs text-muted-foreground mt-0.5">
+                          {code}{m.sector ? ` · ${translateSector(m.sector)}` : ""}{m.trackingIndex ? ` · ${m.trackingIndex}` : ""}{` · ${m.channels} ${t.positions.channelCount}`}
+                        </p>
+                      </div>
+                      <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 w-7 p-0 text-gain border-gain/30 hover:bg-gain/5"
+                          onClick={() => navigate(`/transactions?code=${code}&action=buy${m.channel ? `&channel=${encodeURIComponent(m.channel)}` : ""}`)}
+                          title={t.transactions.buy}
+                        >
+                          <TrendingUp className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 w-7 p-0 text-loss border-loss/30 hover:bg-loss/5"
+                          onClick={() => navigate(`/transactions?code=${code}&action=sell${m.channel ? `&channel=${encodeURIComponent(m.channel)}` : ""}`)}
+                          title={t.transactions.sell}
+                        >
+                          <TrendingDown className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                    {/* Main: value + return */}
+                    <div className="flex items-end justify-between mb-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">{t.positions.marketValue}</p>
+                        <p className="text-xl font-bold tabular-nums">{money(m.value)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground mb-0.5">{t.positions.returnRate}</p>
+                        {ret != null ? (
+                          <p className={cn("text-xl font-bold tabular-nums", pnlColor(ret))}>{pct(ret)}</p>
+                        ) : (
+                          <p className="text-sm font-medium text-warning">T+1</p>
+                        )}
+                      </div>
+                    </div>
+                    {/* Weight bar */}
+                    <div className="mb-3">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                        <span>{t.positions.weight}</span>
+                        <span className="tabular-nums">{pct(weight / 100)}</span>
+                      </div>
+                      <div className="h-1 rounded-full bg-muted-foreground/15 overflow-hidden">
+                        <div className={cn("h-full rounded-full transition-all", weightColor)} style={{ width: `${Math.min(weight, 100)}%` }} />
+                      </div>
+                    </div>
+                    {/* Detail grid */}
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs tabular-nums pt-3 border-t border-border/50">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t.positions.pnl}</span>
+                        <span className={cn("font-medium", pnlColor(m.pnl))}>{money(m.pnl)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t.positions.dailyChange}</span>
+                        {est != null ? (
+                          <span className={cn(pnlColor(est.gszzl / 100), !est.ok && "opacity-70")}>
+                            {pct(est.gszzl / 100)}{est.ok && <span className="ml-0.5 text-[10px] opacity-50">{t.positions.estLabel}</span>}
+                          </span>
+                        ) : <span className="text-muted-foreground">—</span>}
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t.positions.costPerUnit}</span>
+                        <span>{m.avgCost != null ? `¥${m.avgCost.toFixed(4)}` : "—"}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t.positions.latestNav}</span>
+                        {m.latestNav != null ? (
+                          <span>{m.latestNav.toFixed(4)} <span className="text-muted-foreground text-[10px]">{m.latestDate}</span></span>
+                        ) : <span className="text-muted-foreground">—</span>}
+                      </div>
+                      {!est?.ok && scaledEstPnl != null && scaledEstPnl !== 0 && (
+                        <div className="flex justify-between col-span-2">
+                          <span className="text-muted-foreground">{t.positions.dailyChange}</span>
+                          <span className={cn(pnlColor(scaledEstPnl))}>{signedMoney(scaledEstPnl)}</span>
+                        </div>
+                      )}
+                      {breakevenGain != null && (
+                        <div className="flex justify-between col-span-2">
+                          <span className="text-warning">{t.positions.breakeven}</span>
+                          <span className="text-warning tabular-nums">{pct(breakevenGain)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            {/* Summary strip */}
+            <div className="rounded-xl border border-border/50 bg-card px-5 py-4">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">{t.positions.fundCountHintGrid.replace("{n}", String(sortedRows.length))}</span>
+                <div className="flex items-center gap-6 tabular-nums">
+                  <span className="text-muted-foreground">{t.positions.positionsTotal} <strong className="text-foreground">{money(totalValue)}</strong></span>
+                  <span className={cn(pnlColor(totalPnl))}>{t.positions.pnl} <strong>{money(totalPnl)}</strong></span>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      )}
 
       {/* 已清仓记录（仅在 showClosed 时显示） */}
       {showClosed && (

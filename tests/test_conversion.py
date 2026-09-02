@@ -350,3 +350,79 @@ def test_conversion_channel_shared():
 
             assert sell["channel"] == "理财通"
             assert buy["channel"] == "理财通"
+
+
+def test_conversion_api_t1_to_amount_optional():
+    """T+1 转换：to_amount 可为空，后端接受不校验转入腿完整性。"""
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            db.upsert_fund(db.Fund(fund_code="011612", fund_name="基金A", fund_type="偏股"))
+            db.upsert_fund(db.Fund(fund_code="005827", fund_name="基金B", fund_type="偏债"))
+            client = TestClient(api_module.app)
+            resp = client.post("/api/conversions", json={
+                "from_code": "011612",
+                "to_code": "005827",
+                "date": "2026-01-05",
+                "from_shares": 100,
+                "to_amount": None,
+                "is_t1": True,
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["from"]["fund_code"] == "011612"
+            assert data["from"]["action"] == "sell"
+            assert data["to"]["fund_code"] == "005827"
+            assert data["to"]["action"] == "buy"
+            assert data["to"]["amount"] is None  # T+1 不填转入金额
+
+
+def test_conversion_api_derives_to_amount():
+    """非 T+1 且未填 to_amount：后端从卖出腿自动推导（卖出净到账）。"""
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            db.upsert_fund(db.Fund(fund_code="011612", fund_name="基金A", fund_type="偏股"))
+            db.upsert_fund(db.Fund(fund_code="005827", fund_name="基金B", fund_type="偏债"))
+            client = TestClient(api_module.app)
+            # 转出：100 份 × 2.0 净值 − 1.5 赎回费 = 198.5 净到账
+            resp = client.post("/api/conversions", json={
+                "from_code": "011612",
+                "to_code": "005827",
+                "date": "2026-01-05",
+                "from_shares": 100,
+                "from_nav": 2.0,
+                "from_fee": 1.5,
+                "to_amount": None,
+                "to_nav": 1.5,
+                "to_fee": 2.0,
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            # 后端推导 to_amount = from_tx.amount = 100*2.0 - 1.5 = 198.5
+            assert data["to"]["amount"] == 198.5
+            # to_shares = (198.5 - 2.0) / 1.5 ≈ 131.00
+            assert abs(data["to"]["shares"] - 131.0) < 0.01
+
+
+def test_conversion_api_t1_but_to_amount_provided():
+    """T+1 但仍填写了 to_amount：后端直接使用，不推导。"""
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            db.upsert_fund(db.Fund(fund_code="011612", fund_name="基金A", fund_type="偏股"))
+            db.upsert_fund(db.Fund(fund_code="005827", fund_name="基金B", fund_type="偏债"))
+            client = TestClient(api_module.app)
+            resp = client.post("/api/conversions", json={
+                "from_code": "011612",
+                "to_code": "005827",
+                "date": "2026-01-05",
+                "from_shares": 100,
+                "to_amount": 500.0,
+                "to_nav": 1.5,
+                "to_fee": 2.0,
+                "is_t1": True,
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["to"]["amount"] == 500.0

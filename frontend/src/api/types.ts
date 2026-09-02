@@ -70,7 +70,7 @@ export interface ConversionCreate {
   from_shares: number
   from_nav?: number | null
   from_fee?: number
-  to_amount: number
+  to_amount?: number | null
   to_nav?: number | null
   to_fee?: number
   channel?: string

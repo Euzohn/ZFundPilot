@@ -404,6 +404,7 @@ const zh = {
     fromToSame: "转出基金和转入基金不能相同",
     fromSharesRequired: "请填写转出份额",
     toAmountRequired: "请填写转入金额",
+    toAmountPending: "T+1 待确认",
     conversionSaved: "转换 {from}→{to} 已保存",
     conversionFeeHint: "转换通常免/减转出赎回费，转入按申购费计",
   },

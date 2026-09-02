@@ -743,7 +743,7 @@ class ConversionCreate(BaseModel):
     from_shares: float            # 转出份额
     from_nav: float | None = None # 转出净值（可选，自动补全）
     from_fee: float = 0.0         # 转出赎回费
-    to_amount: float              # 转入金额
+    to_amount: float | None = None  # 转入金额（T+1 时可为空，从卖出腿自动推导）
     to_nav: float | None = None   # 转入净值（可选，自动补全）
     to_fee: float = 0.0           # 转入申购费
     channel: str = ""
@@ -972,10 +972,13 @@ def add_conversion(request: Request, body: ConversionCreate) -> dict[str, Any]:
         is_t1=body.is_t1,
     )
     from_tx.normalize()
+    # 非 T+1 且未填转入金额：从卖出腿推导（卖出净到账 = 转出份额×净值−赎回费）
+    if not body.is_t1 and body.to_amount is None and from_tx.amount is not None:
+        to_tx.amount = from_tx.amount
     to_tx.normalize()
     if not from_tx.is_valid():
         raise HTTPException(400, "转出信息不完整（需要份额）")
-    if not to_tx.is_valid():
+    if not body.is_t1 and not to_tx.is_valid():
         raise HTTPException(400, "转入信息不完整（需要金额或份额）")
     from_id, to_id = db.add_conversion(from_tx, to_tx)
     # 两个基金都可能缺净值，分别补拉

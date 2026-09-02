@@ -7,7 +7,7 @@
 ## [Unreleased]
 
 ### Added
-- 基金转换功能：交易表单操作类型新增「转换」，一次录入转出基金（卖出腿：份额+净值+赎回费）和转入基金（买入腿：金额+净值+申购费），后端 `POST /api/conversions` 原子创建两条关联交易，共享 `conversion_id`（UUID）。转出份额带持有量校验 + 快捷比例按钮（复用卖出逻辑），双基金代码独立识别，双净值自动加载，赎回费/申购费分别自动计算（防抖 500ms）。支持 T+1 标记、自定义渠道。交易列表对有 `conversion_id` 的流水显示「转换」badge。`transactions` 表新增 `conversion_id TEXT` 列（幂等迁移），`Transaction`/`TransactionCreate` 模型同步扩展，编辑转换腿保留关联不断链。新增 `tests/test_conversion.py`（12 用例：原子插入/normalize 补全/API 校验/持仓计算/费用独立/T+1/渠道共享），测试总数 390→402
+- 基金转换功能：交易表单操作类型新增「转换」，一次录入转出基金（卖出腿：份额+净值+赎回费）和转入基金（买入腿：金额+净值+申购费），后端 `POST /api/conversions` 原子创建两条关联交易，共享 `conversion_id`（UUID）。转出份额带持有量校验 + 快捷比例按钮（复用卖出逻辑），双基金代码独立识别，双净值自动加载，赎回费/申购费分别自动计算（防抖 500ms）。支持 T+1 标记，T+1 时转入金额可留空（待净值确认），非 T+1 时未填转入金额则从卖出腿自动推导。支持自定义渠道。交易列表对有 `conversion_id` 的流水显示「转换」badge。`transactions` 表新增 `conversion_id TEXT` 列（幂等迁移），`Transaction`/`TransactionCreate` 模型同步扩展，编辑转换腿保留关联不断链。新增 `tests/test_conversion.py`（15 用例），测试总数 390→405
 - 持仓明细页新增网格视图（Bento 大卡布局）：列表/网格视图切换，切换状态 `localStorage` 持久化（`zfundpilot_positionsView`）；网格模式下每只基金一张大卡，展示代码/名称 + 仓位占比条 + 成本/估值/盈亏额/盈亏率 + 持仓天数/板块/跟踪指数；按市值/盈亏额/收益率/名称排序（仅网格模式显示排序下拉）；底部汇总条展示持仓基金数 + 总估值 + 总盈亏额。已清仓持仓仍仅以表格显示（与现有筛选器一致）。新增 i18n 键 `viewList`/`viewGrid`/`sortValue`/`sortPnl`/`sortReturn`/`sortName`/`positionsTotal`/`fundCountHintGrid`
 
 ## [0.20.1] - 2026-09-01

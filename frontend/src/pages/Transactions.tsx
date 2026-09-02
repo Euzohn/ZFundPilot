@@ -383,7 +383,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
   useEffect(() => {
     if (toFeeCalcTimer.current) clearTimeout(toFeeCalcTimer.current)
     if (action !== "convert" || !toCode.trim()) return
-    const amt = parseFloat(toAmount) || 0
+    const amt = parseFloat(toAmount) || parseFloat(autoToAmount) || 0
     if (amt > 0) {
       setToFeeCalcLoading(true)
       toFeeCalcTimer.current = setTimeout(async () => {
@@ -425,6 +425,10 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
   // 卖出/再投资时自动算金额（卖出扣手续费，再投资无手续费）
   const autoAmount = ((action === "sell" && s > 0 && n > 0) || (action === "reinvest" && s > 0 && n > 0))
     ? (action === "sell" ? (s * n - f) : (s * n)).toFixed(2)
+    : ""
+  // 转换：转出金额（卖出净到账 = 份额×净值−赎回费），非 T+1 时自动填入转入金额
+  const autoToAmount = action === "convert" && !afterThree && s > 0 && n > 0 && s * n - f > 0
+    ? (s * n - f).toFixed(2)
     : ""
 
   const handleFetchMeta = async (silent = false) => {
@@ -491,8 +495,8 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
       if (!date) errs.date = t.transactions.dateRequired
       const fromShares = parseFloat(shares) || null
       if (!fromShares) errs.shares = t.transactions.fromSharesRequired
-      const toAmt = parseFloat(toAmount) || null
-      if (!toAmt) errs.toAmount = t.transactions.toAmountRequired
+       const toAmt = afterThree ? null : (parseFloat(toAmount) || parseFloat(autoToAmount) || null)
+       if (!afterThree && !toAmt) errs.toAmount = t.transactions.toAmountRequired
       if (heldShares > 0 && fromShares && fromShares > heldShares) {
         errs.shares = t.transactions.convertExceedsHolding.replace("{n}", heldShares.toFixed(2))
       }
@@ -509,7 +513,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
           from_shares: fromShares!,
           from_nav: parseFloat(nav) || null,
           from_fee: parseFloat(fee) || 0,
-          to_amount: toAmt!,
+          to_amount: toAmt,
           to_nav: parseFloat(toNav) || null,
           to_fee: parseFloat(toFee) || 0,
           channel: finalChannel,
@@ -842,13 +846,23 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
                   )}
                 </div>
                 <div>
-                  <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.toAmountYuan}</Label>
-                  <Input type="number" step="0.01" min="0" value={toAmount}
-                    onChange={(e) => { setToAmount(e.target.value); setFormErrors(prev => ({ ...prev, toAmount: undefined })) }}
-                    placeholder="0.00"
-                    aria-invalid={!!formErrors.toAmount}
-                    aria-describedby={formErrors.toAmount ? "tx-toamount-error" : undefined}
-                  />
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">
+                    {t.transactions.toAmountYuan}
+                    {!afterThree && <span className="text-primary ml-1">{t.transactions.automatic}</span>}
+                  </Label>
+                  {afterThree ? (
+                    <div className="h-9 flex items-center rounded-md border border-border bg-muted/50 px-3 text-sm text-muted-foreground cursor-not-allowed"
+                      title={t.transactions.conversionFeeHint}>
+                      {t.transactions.toAmountPending}
+                    </div>
+                  ) : (
+                    <Input type="number" step="0.01" min="0" value={toAmount || autoToAmount}
+                      onChange={(e) => { setToAmount(e.target.value); setFormErrors(prev => ({ ...prev, toAmount: undefined })) }}
+                      placeholder="0.00"
+                      aria-invalid={!!formErrors.toAmount}
+                      aria-describedby={formErrors.toAmount ? "tx-toamount-error" : undefined}
+                    />
+                  )}
                   <FieldError id="tx-toamount-error" error={formErrors.toAmount} />
                 </div>
               </>

@@ -406,6 +406,7 @@ const en: typeof zh = {
     fromToSame: "From fund and to fund cannot be the same",
     fromSharesRequired: "Please enter shares to convert out",
     toAmountRequired: "Please enter buy amount",
+    toAmountPending: "T+1 pending",
     conversionSaved: "Converted {from}→{to}",
     conversionFeeHint: "Conversion usually waives/reduces redemption fee; buy leg charged subscription fee",
   },

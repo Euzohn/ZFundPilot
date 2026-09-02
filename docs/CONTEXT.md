@@ -445,11 +445,9 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ## 十二、当前工作状态
 
-### Unreleased
-
 ### v0.21.0 - Unreleased
 
-- feat: 持仓明细页新增网格视图（Bento 大卡）——列表/网格切换，`localStorage` 持久化（`zfundpilot_positionsView`）；网格大卡展示代码/名称 + 占比条 + 成本/估值/盈亏额/盈亏率 + 持仓天数/板块/跟踪指数；按估值/盈亏额/收益率/名称排序（仅网格显示排序下拉）；底部汇总条（总估值/盈亏额/盈亏率/持仓基金数）；卡片 stagger 入场动画。已清仓持仓仍仅表格显示。新增 i18n 键 `viewList`/`viewGrid`/`sortValue`/`sortPnl`/`sortReturn`/`sortName`/`positionsTotal`/`fundCountHintGrid`
+- feat: 持仓明细页新增网格视图（Bento 大卡）——列表/网格切换，`localStorage` 持久化（`zfundpilot_positionsView`）；网格大卡展示代码/名称 + 仓位占比条 + 成本/估值/盈亏额/盈亏率 + 持仓天数/板块/跟踪指数；按市值/盈亏额/收益率/名称排序（仅网格显示排序下拉）；底部汇总条展示持仓基金数 + 总估值 + 总盈亏额。已清仓持仓仍仅表格显示。新增 i18n 键 `viewList`/`viewGrid`/`sortValue`/`sortPnl`/`sortReturn`/`sortName`/`positionsTotal`/`fundCountHintGrid`
 
 ### v0.20.1 - 2026-09-01
 

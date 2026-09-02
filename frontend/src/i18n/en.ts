@@ -409,6 +409,8 @@ const en: typeof zh = {
     toAmountPending: "T+1 pending",
     conversionSaved: "Converted {from}→{to}",
     conversionFeeHint: "Conversion usually waives/reduces redemption fee; buy leg charged subscription fee",
+    pairedTransaction: "Paired Transaction",
+    viewPairedTransaction: "View paired transaction",
   },
   settings: {
     title: "Settings",

@@ -407,6 +407,8 @@ const zh = {
     toAmountPending: "T+1 待确认",
     conversionSaved: "转换 {from}→{to} 已保存",
     conversionFeeHint: "转换通常免/减转出赎回费，转入按申购费计",
+    pairedTransaction: "配对交易",
+    viewPairedTransaction: "查看配对交易",
   },
   settings: {
     title: "设置",

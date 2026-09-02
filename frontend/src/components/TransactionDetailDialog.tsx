@@ -3,16 +3,18 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { money, navStr } from "@/lib/format"
-import { Pencil, Receipt, Hash, Wallet, Banknote, PieChart, DollarSign, FileText, Clock, ArrowUpRight } from "lucide-react"
+import { Pencil, Receipt, Hash, Wallet, Banknote, PieChart, DollarSign, FileText, Clock, ArrowUpRight, Link } from "lucide-react"
 import { useLang } from "@/i18n/LanguageContext"
 
 interface Props {
   tx: Transaction | null
   fundName?: string
+  pairedTx?: Transaction | null
   open: boolean
   onOpenChange: (open: boolean) => void
   onEdit?: (tx: Transaction) => void
   onViewFund?: (fundCode: string) => void
+  onViewPaired?: (tx: Transaction) => void
 }
 
 function actionBadge(tx: Transaction, actionLabels: Record<string, string>) {
@@ -37,7 +39,7 @@ function Row({ icon: Icon, label, value, mono }: { icon: React.ComponentType<{ c
   )
 }
 
-export default function TransactionDetailDialog({ tx, fundName, open, onOpenChange, onEdit, onViewFund }: Props) {
+export default function TransactionDetailDialog({ tx, fundName, pairedTx, open, onOpenChange, onEdit, onViewFund, onViewPaired }: Props) {
   const { t } = useLang()
   if (!tx) return null
 
@@ -84,6 +86,29 @@ export default function TransactionDetailDialog({ tx, fundName, open, onOpenChan
           <Row icon={Wallet} label={t.transactions.channelLabel} value={tx.channel || <span className="text-muted-foreground/60">{t.common.unlabeled}</span>} />
           <Row icon={Clock} label={t.transactions.t1Label} value={tx.is_t1 ? t.aiChat.afterClose : t.aiChat.beforeClose} />
         </div>
+
+        {tx.conversion_id && pairedTx && (
+          <div className="flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5">
+            <Link className="h-4 w-4 shrink-0 text-primary/70 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] leading-none text-muted-foreground/70 mb-1">{t.transactions.pairedTransaction}</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                {actionBadge(pairedTx, t.actionLabels)}
+                <span className="font-mono text-sm tabular-nums">{pairedTx.fund_code}</span>
+                <span className="text-xs text-muted-foreground/60">· {pairedTx.date}</span>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="shrink-0"
+              onClick={() => onViewPaired && onViewPaired(pairedTx)}
+              title={t.transactions.viewPairedTransaction}
+            >
+              <ArrowUpRight className="h-4 w-4 mr-1" /> {t.transactions.viewPairedTransaction}
+            </Button>
+          </div>
+        )}
 
         {tx.note && (
           <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">

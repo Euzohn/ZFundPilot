@@ -1070,6 +1070,9 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
     return sortedTxs.slice(0, visibleCount)
   }, [sortedTxs, visibleCount])
 
+  const pairedOf = (tx: Transaction): Transaction | undefined =>
+    tx.conversion_id ? txs?.find((t) => t.conversion_id === tx.conversion_id && t.id !== tx.id) : undefined
+
   const SortHeader = makeSortHeader({ sortField, sortDir, toggleSort })
 
   if (error) return <ErrorState message={error} onRetry={reload} />
@@ -1176,17 +1179,38 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
                     <TableCell className="text-xs text-muted-foreground">{tx.id}</TableCell>
                     <TableCell>{tx.date}</TableCell>
                     <TableCell>
-                      <Badge
-                        variant={tx.action === "buy" ? "success" : tx.action === "sell" ? "destructive" : "outline"}
-                        className={actionBadgeClass(tx.action)}
-                      >
-                        {t.actionLabels[tx.action as keyof typeof t.actionLabels] ?? tx.action}
-                      </Badge>
-                      {tx.conversion_id && (
-                        <Badge variant="secondary" className="ml-1" title={t.transactions.conversionTitle}>
-                          {t.transactions.convert}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Badge
+                          variant={tx.action === "buy" ? "success" : tx.action === "sell" ? "destructive" : "outline"}
+                          className={actionBadgeClass(tx.action)}
+                        >
+                          {t.actionLabels[tx.action as keyof typeof t.actionLabels] ?? tx.action}
                         </Badge>
-                      )}
+                        {tx.conversion_id && (
+                          <Badge
+                            variant="secondary"
+                            className="cursor-pointer hover:bg-secondary/70"
+                            title={t.transactions.conversionTitle}
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const paired = pairedOf(tx)
+                              if (paired) setViewingTx(paired)
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                const paired = pairedOf(tx)
+                                if (paired) setViewingTx(paired)
+                              }
+                            }}
+                          >
+                            {t.transactions.convert}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="font-mono text-xs">{tx.fund_code}</TableCell>
                     <TableCell>{fund?.fund_name ?? tx.fund_code}</TableCell>
@@ -1232,6 +1256,8 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
       <TransactionDetailDialog
         tx={viewingTx}
         fundName={viewingTx ? funds[viewingTx.fund_code]?.fund_name : undefined}
+        pairedTx={viewingTx ? pairedOf(viewingTx) : undefined}
+        onViewPaired={(ptx) => setViewingTx(ptx)}
         open={viewingTx != null}
         onOpenChange={(open) => { if (!open) setViewingTx(null) }}
         onEdit={(tx) => { setViewingTx(null); onEdit(tx) }}

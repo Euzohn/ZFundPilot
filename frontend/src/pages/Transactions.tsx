@@ -197,15 +197,28 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
   const feeCalcTimer = useRef<ReturnType<typeof setTimeout>>()
   const [pendingAlertId, setPendingAlertId] = useState<number | null>(null)
   const [pendingTpSlAlertId, setPendingTpSlAlertId] = useState<number | null>(null)
-  const [formErrors, setFormErrors] = useState<{ code?: string; date?: string; amount?: string; shares?: string }>({})
+  const [formErrors, setFormErrors] = useState<{ code?: string; date?: string; amount?: string; shares?: string; toCode?: string; toAmount?: string }>({})
   const isEditing = !!editingTx
+
+  // ── 基金转换：转入腿状态 ──
+  const [toCode, setToCode] = useState("")
+  const [toMeta, setToMeta] = useState<FundMeta | null>(null)
+  const [toFetching, setToFetching] = useState(false)
+  const [toAmount, setToAmount] = useState("")
+  const [toNav, setToNav] = useState("")
+  const [toFee, setToFee] = useState("0")
+  const [toNavLoading, setToNavLoading] = useState(false)
+  const [toNavNotFound, setToNavNotFound] = useState(false)
+  const [toFeeCalcLoading, setToFeeCalcLoading] = useState(false)
+  const toFeeManuallyEdited = useRef(false)
+  const toFeeCalcTimer = useRef<ReturnType<typeof setTimeout>>()
 
   // 持仓数据（用于卖出时校验 + 快捷填入）
   const { data: positions } = useApi<Position[]>(() => api.getPositions(false), [])
 
   // 当前基金+渠道的持有份额（编辑卖出时加回原份额）
   const heldShares = useMemo(() => {
-    if (!positions || !code.trim() || action !== "sell") return 0
+    if (!positions || !code.trim() || (action !== "sell" && action !== "convert")) return 0
     const effectiveChannel = customChannel.trim() || channel
     const matching = positions.filter(p =>
       p.fund_code === code.trim() &&
@@ -329,7 +342,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
         } catch { /* ignore */ }
         finally { setFeeCalcLoading(false) }
       }, 500)
-    } else if (action === "sell" && sh > 0 && effectiveNavDate) {
+    } else if ((action === "sell" || action === "convert") && sh > 0 && effectiveNavDate) {
       setFeeCalcLoading(true)
       feeCalcTimer.current = setTimeout(async () => {
         try {
@@ -347,6 +360,44 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
 
     return () => { if (feeCalcTimer.current) clearTimeout(feeCalcTimer.current) }
   }, [code, action, amount, shares, effectiveNavDate])
+
+  // ── 转入腿：自动查询净值 ──
+  useEffect(() => {
+    if (!toCode.trim() || !effectiveNavDate) return
+    setToNavLoading(true)
+    setToNavNotFound(false)
+    api.getNavForDate(toCode.trim(), effectiveNavDate)
+      .then((rows) => {
+        if (rows.length > 0) {
+          setToNav(rows[0].nav.toFixed(4))
+        } else {
+          setToNav("")
+          setToNavNotFound(true)
+        }
+      })
+      .catch(() => { setToNav(""); setToNavNotFound(true) })
+      .finally(() => setToNavLoading(false))
+  }, [toCode, effectiveNavDate])
+
+  // ── 转入腿：自动计算申购费（防抖 500ms）──
+  useEffect(() => {
+    if (toFeeCalcTimer.current) clearTimeout(toFeeCalcTimer.current)
+    if (action !== "convert" || !toCode.trim()) return
+    const amt = parseFloat(toAmount) || 0
+    if (amt > 0) {
+      setToFeeCalcLoading(true)
+      toFeeCalcTimer.current = setTimeout(async () => {
+        try {
+          const res = await api.calcFundFee(toCode.trim(), { action: "buy", amount: amt })
+          if (!toFeeManuallyEdited.current) {
+            setToFee(res.fee.toFixed(2))
+          }
+        } catch { /* ignore */ }
+        finally { setToFeeCalcLoading(false) }
+      }, 500)
+    }
+    return () => { if (toFeeCalcTimer.current) clearTimeout(toFeeCalcTimer.current) }
+  }, [action, toCode, toAmount])
 
   // 从服务端加载渠道列表（多设备同步）
   useEffect(() => {
@@ -394,6 +445,28 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
     }
   }
 
+  // ── 转入腿：基金代码查询 ──
+  const handleToCodeBlur = () => {
+    const c = toCode.trim()
+    if (c.length === 6 && /^\d{6}$/.test(c) && !toMeta) {
+      setToFetching(true)
+      api.fetchFundMeta(c).then((m) => setToMeta(m)).catch(() => {}).finally(() => setToFetching(false))
+    }
+  }
+  const handleToFetchMeta = async () => {
+    if (!toCode.trim()) return
+    setToFetching(true)
+    try {
+      const m = await api.fetchFundMeta(toCode.trim())
+      setToMeta(m)
+    } catch { /* ignore */ }
+    finally { setToFetching(false) }
+  }
+  const handleToFeeChange = (v: string) => {
+    toFeeManuallyEdited.current = true
+    setToFee(v)
+  }
+
   const resetForm = () => {
     setCode(""); setMeta(null); setAction("buy"); setDate(localDateStr())
     setAmount(""); setShares(""); setNav(""); setFee("0")
@@ -402,10 +475,60 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
     setPendingAlertId(null)
     setPendingTpSlAlertId(null)
     setFormErrors({})
+    // 转换腿重置
+    setToCode(""); setToMeta(null); setToAmount(""); setToNav(""); setToFee("0")
+    toFeeManuallyEdited.current = false
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // ── 基金转换：独立提交逻辑 ──
+    if (action === "convert") {
+      const errs: typeof formErrors = {}
+      if (!code.trim()) errs.code = t.transactions.fundCodeRequired
+      if (!toCode.trim()) errs.toCode = t.transactions.fundCodeRequired
+      if (!date) errs.date = t.transactions.dateRequired
+      const fromShares = parseFloat(shares) || null
+      if (!fromShares) errs.shares = t.transactions.fromSharesRequired
+      const toAmt = parseFloat(toAmount) || null
+      if (!toAmt) errs.toAmount = t.transactions.toAmountRequired
+      if (heldShares > 0 && fromShares && fromShares > heldShares) {
+        errs.shares = t.transactions.convertExceedsHolding.replace("{n}", heldShares.toFixed(2))
+      }
+      if (code.trim() && toCode.trim() && code.trim() === toCode.trim()) errs.toCode = t.transactions.fromToSame
+      if (Object.keys(errs).length) { setFormErrors(errs); return }
+      setFormErrors({})
+      const finalChannel = customChannel.trim() || channel
+      setSaving(true)
+      try {
+        await api.addConversion({
+          from_code: code.trim(),
+          to_code: toCode.trim(),
+          date,
+          from_shares: fromShares!,
+          from_nav: parseFloat(nav) || null,
+          from_fee: parseFloat(fee) || 0,
+          to_amount: toAmt!,
+          to_nav: parseFloat(toNav) || null,
+          to_fee: parseFloat(toFee) || 0,
+          channel: finalChannel,
+          note: note.trim(),
+          is_t1: afterThree,
+        })
+        toast.success(t.transactions.conversionSaved.replace("{from}", code.trim()).replace("{to}", toCode.trim()))
+        if (finalChannel && !channels.includes(finalChannel)) {
+          const next = [...channels, finalChannel]
+          setChannels(next)
+          saveChannels(next).catch(() => {})
+        }
+        resetForm()
+        onDone(code.trim())
+      } catch (e) { toast.error(`${t.common.saveFailed}: ${e}`) }
+      finally { setSaving(false) }
+      return
+    }
+
     const errs: typeof formErrors = {}
     if (!code.trim()) errs.code = t.transactions.fundCodeRequired
     if (!date) errs.date = t.transactions.dateRequired
@@ -443,6 +566,8 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
       channel: customChannel.trim() || channel,
       note: note.trim(),
       is_t1: afterThree,
+      // 编辑时保留原转换关联，避免断链
+      conversion_id: editingTx?.conversion_id ?? "",
     }
 
     setSaving(true)
@@ -503,7 +628,9 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
           <div>
             <div className="flex gap-2">
               <div className="flex-1 max-w-[200px]">
-                <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.fundCode}</Label>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">
+                  {action === "convert" ? t.transactions.convertFrom : t.transactions.fundCode}
+                </Label>
                 <Input
                   value={code} onChange={(e) => { setCode(e.target.value); setFormErrors(prev => ({ ...prev, code: undefined })) }}
                   onBlur={handleCodeBlur}
@@ -530,6 +657,39 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
             </div>
           </div>
 
+          {/* ── 转入基金代码（仅转换模式） ── */}
+          {action === "convert" && (
+            <div>
+              <div className="flex gap-2">
+                <div className="flex-1 max-w-[200px]">
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.convertTo}</Label>
+                  <Input
+                    value={toCode} onChange={(e) => { setToCode(e.target.value); setToMeta(null); setFormErrors(prev => ({ ...prev, toCode: undefined })) }}
+                    onBlur={handleToCodeBlur}
+                    placeholder={t.transactions.toCodePlaceholder} className="h-9"
+                    aria-invalid={!!formErrors.toCode}
+                    aria-describedby={formErrors.toCode ? "tx-tocode-error" : undefined}
+                  />
+                  <FieldError id="tx-tocode-error" error={formErrors.toCode} />
+                </div>
+                <div className="pt-5">
+                  <Button type="button" variant="outline" size="sm" onClick={handleToFetchMeta} disabled={toFetching} className="h-9" title={t.common.search}>
+                    {toFetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                  </Button>
+                </div>
+                {toMeta?.ok && (
+                  <div className="pt-5 flex-1 min-w-0">
+                    <p className="text-sm truncate">
+                      <span className="font-medium">{toMeta.fund_name}</span>
+                      <span className="text-muted-foreground mx-1.5">·</span>
+                      <span className="text-xs text-muted-foreground">{toMeta.fund_type}{toMeta.sector ? ` · ${toMeta.sector}` : ""}</span>
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="border-t border-border/60" />
 
           {/* ── 操作 / 日期 / 渠道 ── */}
@@ -541,6 +701,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
                 <option value="sell">{t.transactions.sell}</option>
                 <option value="dividend">{t.transactions.dividend}</option>
                 <option value="reinvest">{t.transactions.reinvest}</option>
+                <option value="convert">{t.transactions.convert}</option>
               </Select>
             </div>
             <div className="sm:col-span-2">
@@ -657,10 +818,47 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
                 </div>
               </>
             )}
+            {action === "convert" && (
+              <>
+                <div>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">
+                    {t.transactions.fromShares}{heldShares > 0 && <span className="text-muted-foreground/70 ml-1">{t.transactions.holding.replace("{n}", heldShares.toFixed(2))}</span>}
+                  </Label>
+                  <Input type="number" step="0.01" min="0" value={shares}
+                    onChange={(e) => { setShares(e.target.value); setFormErrors(prev => ({ ...prev, shares: undefined })) }}
+                    placeholder="0.00" className="h-9" autoFocus={!isEditing}
+                    aria-invalid={!!formErrors.shares}
+                    aria-describedby={formErrors.shares ? "tx-shares-error" : undefined}
+                  />
+                  <FieldError id="tx-shares-error" error={formErrors.shares} />
+                  {heldShares > 0 && (
+                    <div className="mt-1.5 flex gap-1.5">
+                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.25).toFixed(2))}>1/4</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 1 / 3).toFixed(2))}>1/3</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.5).toFixed(2))}>1/2</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.75).toFixed(2))}>3/4</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares(heldShares.toFixed(2))}>{t.common.all}</Button>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.toAmountYuan}</Label>
+                  <Input type="number" step="0.01" min="0" value={toAmount}
+                    onChange={(e) => { setToAmount(e.target.value); setFormErrors(prev => ({ ...prev, toAmount: undefined })) }}
+                    placeholder="0.00"
+                    aria-invalid={!!formErrors.toAmount}
+                    aria-describedby={formErrors.toAmount ? "tx-toamount-error" : undefined}
+                  />
+                  <FieldError id="tx-toamount-error" error={formErrors.toAmount} />
+                </div>
+              </>
+            )}
             {/* 净值：买入/卖出/再投资需要，分红不需要 */}
             {action !== "dividend" && (
               <div>
-                <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.tradeNav}</Label>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">
+                  {action === "convert" ? t.transactions.fromNav : t.transactions.tradeNav}
+                </Label>
                 <div className="relative">
                   <Input
                     type="number" step="0.0001" min="0" value={nav}
@@ -681,14 +879,42 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
             {action !== "dividend" && action !== "reinvest" && (
               <div>
                 <Label className="mb-1.5 block text-xs text-muted-foreground">
-                  {t.transactions.feeYuan}
+                  {action === "convert" ? t.transactions.fromFeeYuan : t.transactions.feeYuan}
                   {feeCalcLoading && <Loader2 className="inline ml-1 h-3 w-3 animate-spin" />}
                 </Label>
                 <Input type="number" step="0.01" min="0" value={fee} onChange={(e) => handleFeeChange(e.target.value)} className="h-9" />
                 {feeCalcResult && (
-                  <FeeBreakdownCard result={feeCalcResult} action={action === "sell" ? "sell" : "buy"} />
+                  <FeeBreakdownCard result={feeCalcResult} action={(action === "sell" || action === "convert") ? "sell" : "buy"} />
                 )}
               </div>
+            )}
+            {action === "convert" && (
+              <>
+                <div>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.toNav}</Label>
+                  <div className="relative">
+                    <Input
+                      type="number" step="0.0001" min="0" value={toNav}
+                      onChange={(e) => { setToNav(e.target.value); setToNavNotFound(false) }}
+                      placeholder={toNavLoading ? t.transactions.querying : "0.0000"}
+                      className={cn("h-9", toNavLoading && "pr-8", toNavNotFound && "border-warning/50")}
+                    />
+                    {toNavLoading && (
+                      <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
+                  <p className={cn("mt-1 text-[11px]", toNavNotFound ? "text-warning" : "text-muted-foreground")}>
+                    {toNavLoading ? t.transactions.queryingNav : toNavNotFound ? t.transactions.navNotFoundHint : t.transactions.navAutoHint}
+                  </p>
+                </div>
+                <div>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">
+                    {t.transactions.toFeeYuan}
+                    {toFeeCalcLoading && <Loader2 className="inline ml-1 h-3 w-3 animate-spin" />}
+                  </Label>
+                  <Input type="number" step="0.01" min="0" value={toFee} onChange={(e) => handleToFeeChange(e.target.value)} className="h-9" />
+                </div>
+              </>
             )}
           </div>
 
@@ -709,7 +935,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
           <div className="flex gap-2 pt-1">
             <Button type="submit" disabled={saving} className="flex-1 h-9">
               {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : (isEditing ? <Pencil className="mr-1.5 h-4 w-4" /> : <Plus className="mr-1.5 h-4 w-4" />)}
-              {saving ? t.transactions.saving : isEditing ? t.transactions.updateTransaction : t.transactions.saveTransaction}
+              {saving ? t.transactions.saving : action === "convert" ? t.transactions.conversionTitle : (isEditing ? t.transactions.updateTransaction : t.transactions.saveTransaction)}
             </Button>
             {isEditing && (
               <Button type="button" variant="outline" onClick={() => { resetForm(); onDone() }} className="h-9">
@@ -942,6 +1168,11 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
                       >
                         {t.actionLabels[tx.action as keyof typeof t.actionLabels] ?? tx.action}
                       </Badge>
+                      {tx.conversion_id && (
+                        <Badge variant="secondary" className="ml-1" title={t.transactions.conversionTitle}>
+                          {t.transactions.convert}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="font-mono text-xs">{tx.fund_code}</TableCell>
                     <TableCell>{fund?.fund_name ?? tx.fund_code}</TableCell>

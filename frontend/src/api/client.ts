@@ -20,6 +20,7 @@ import type {
   Position,
   RiskReport,
   Transaction,
+  ConversionCreate,
   CSVParseResult,
   WatchlistItem,
   AIUsageStats,
@@ -210,6 +211,11 @@ export const api = {
     }),
   deleteAllTransactions: () =>
     request<{ ok: boolean }>("/transactions", { method: "DELETE" }),
+  addConversion: (body: ConversionCreate) =>
+    request<{ from_id: number; to_id: number }>(
+      "/conversions",
+      { method: "POST", body: JSON.stringify(body) },
+    ),
 
   // Funds
   getFunds: () => request<FundMeta[]>("/funds"),

@@ -700,6 +700,7 @@ class TransactionCreate(BaseModel):
     channel: str = ""
     note: str = ""
     is_t1: bool = False
+    conversion_id: str = ""
 
     @field_validator("fund_code")
     @classmethod
@@ -725,6 +726,47 @@ class TransactionCreate(BaseModel):
         return v
 
     @field_validator("amount", "shares", "nav", "fee")
+    @classmethod
+    def validate_non_negative(cls, v: float | None) -> float | None:
+        if v is not None and v < 0:
+            raise ValueError("不能为负数")
+        return v
+
+
+class ConversionCreate(BaseModel):
+    """基金转换请求（卖出转出基金 + 买入转入基金）。"""
+    model_config = ConfigDict(allow_inf_nan=False)
+
+    from_code: str
+    to_code: str
+    date: str
+    from_shares: float            # 转出份额
+    from_nav: float | None = None # 转出净值（可选，自动补全）
+    from_fee: float = 0.0         # 转出赎回费
+    to_amount: float              # 转入金额
+    to_nav: float | None = None   # 转入净值（可选，自动补全）
+    to_fee: float = 0.0           # 转入申购费
+    channel: str = ""
+    note: str = ""
+    is_t1: bool = False
+
+    @field_validator("from_code", "to_code")
+    @classmethod
+    def validate_fund_code(cls, v: str) -> str:
+        if not re.fullmatch(r"\d{6}", v):
+            raise ValueError("fund_code 必须为 6 位数字")
+        return v
+
+    @field_validator("date")
+    @classmethod
+    def validate_date(cls, v: str) -> str:
+        try:
+            datetime.strptime(v, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("date 格式必须为 YYYY-MM-DD")
+        return v
+
+    @field_validator("from_shares", "from_nav", "from_fee", "to_amount", "to_nav", "to_fee")
     @classmethod
     def validate_non_negative(cls, v: float | None) -> float | None:
         if v is not None and v < 0:
@@ -829,6 +871,7 @@ def add_transaction(request: Request, body: TransactionCreate) -> dict[str, Any]
         channel=body.channel,
         note=body.note,
         is_t1=body.is_t1,
+        conversion_id=body.conversion_id,
     )
     tx.normalize()
     if not tx.is_valid():
@@ -860,6 +903,7 @@ def update_transaction(request: Request, tx_id: int, body: TransactionCreate) ->
         channel=body.channel,
         note=body.note,
         is_t1=body.is_t1,
+        conversion_id=body.conversion_id,
     )
     tx.normalize()
     if not tx.is_valid():
@@ -893,6 +937,60 @@ def delete_all_transactions(request: Request) -> dict[str, bool]:
     db.log_audit("delete_all_transactions", ip=_get_client_ip(request),
                   username=config.AUTH_USERNAME if config.AUTH_ENABLED else None)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# 基金转换
+# ---------------------------------------------------------------------------
+@app.post("/api/conversions")
+def add_conversion(request: Request, body: ConversionCreate) -> dict[str, Any]:
+    """基金转换：原子创建卖出（转出基金）+ 买入（转入基金）两条关联交易。"""
+    if body.from_code == body.to_code:
+        raise HTTPException(400, "转出基金和转入基金不能相同")
+    _ensure_fund_exists(body.from_code)
+    _ensure_fund_exists(body.to_code)
+    from_tx = Transaction(
+        fund_code=body.from_code,
+        action="sell",
+        date=body.date,
+        shares=body.from_shares,
+        nav=body.from_nav,
+        fee=body.from_fee,
+        channel=body.channel,
+        note=body.note,
+        is_t1=body.is_t1,
+    )
+    to_tx = Transaction(
+        fund_code=body.to_code,
+        action="buy",
+        date=body.date,
+        amount=body.to_amount,
+        nav=body.to_nav,
+        fee=body.to_fee,
+        channel=body.channel,
+        note=body.note,
+        is_t1=body.is_t1,
+    )
+    from_tx.normalize()
+    to_tx.normalize()
+    if not from_tx.is_valid():
+        raise HTTPException(400, "转出信息不完整（需要份额）")
+    if not to_tx.is_valid():
+        raise HTTPException(400, "转入信息不完整（需要金额或份额）")
+    from_id, to_id = db.add_conversion(from_tx, to_tx)
+    # 两个基金都可能缺净值，分别补拉
+    for code in (body.from_code, body.to_code):
+        if not db.get_latest_nav(code):
+            fetch_fund.update_fund_nav(code)
+    analysis.clear_analysis_cache()
+    db.log_audit("add_conversion", ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                  detail={"from_id": from_id, "to_id": to_id,
+                          "from_code": body.from_code, "to_code": body.to_code,
+                          "date": body.date})
+    return {"from_id": from_id, "to_id": to_id,
+            "from": {"id": from_id, **from_tx.to_dict()},
+            "to": {"id": to_id, **to_tx.to_dict()}}
 
 
 # ---------------------------------------------------------------------------

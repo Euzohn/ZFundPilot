@@ -447,6 +447,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### v0.21.0 - Unreleased
 
+- feat: 基金转换功能——交易表单操作类型新增「转换」，录入转出基金（卖出腿：份额+净值+赎回费）和转入基金（买入腿：金额+净值+申购费），`POST /api/conversions` 原子创建两条关联交易，共享 `conversion_id`（UUID）。`transactions` 表加 `conversion_id TEXT` 列（幂等迁移 `_migrate_add_conversion_id`），`Transaction`/`TransactionCreate` 同步扩展，`db.add_conversion()` 单连接原子插入。转出份额复用卖出持有量校验 + 快捷比例按钮，双基金代码独立识别，双净值自动加载，赎回费/申购费分别自动计算（防抖 500ms），T+1/自定义渠道支持。交易列表对有 `conversion_id` 的流水显示「转换」badge。编辑转换腿时 payload 保留 `conversion_id` 防断链。持仓计算零改动（sell+buy 逻辑天然兼容）。新增 `tests/test_conversion.py`（12 用例），总测试 390→402
 - feat: 持仓明细页新增网格视图（Bento 大卡）——列表/网格切换，`localStorage` 持久化（`zfundpilot_positionsView`）；网格大卡展示代码/名称 + 仓位占比条 + 成本/估值/盈亏额/盈亏率 + 持仓天数/板块/跟踪指数；按市值/盈亏额/收益率/名称排序（仅网格显示排序下拉）；底部汇总条展示持仓基金数 + 总估值 + 总盈亏额。已清仓持仓仍仅表格显示。新增 i18n 键 `viewList`/`viewGrid`/`sortValue`/`sortPnl`/`sortReturn`/`sortName`/`positionsTotal`/`fundCountHintGrid`
 
 ### v0.20.1 - 2026-09-01

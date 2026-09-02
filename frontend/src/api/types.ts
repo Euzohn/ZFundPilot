@@ -60,6 +60,22 @@ export interface Transaction {
   channel: string
   note: string
   is_t1?: boolean
+  conversion_id?: string
+}
+
+export interface ConversionCreate {
+  from_code: string
+  to_code: string
+  date: string
+  from_shares: number
+  from_nav?: number | null
+  from_fee?: number
+  to_amount: number
+  to_nav?: number | null
+  to_fee?: number
+  channel?: string
+  note?: string
+  is_t1?: boolean
 }
 
 export interface Position {

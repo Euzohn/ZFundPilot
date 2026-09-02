@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -188,6 +189,7 @@ def init_db() -> None:
     _migrate_auto_invest_plans_check()
     _migrate_nav_history_check()
     _migrate_add_indexes()
+    _migrate_add_conversion_id()
 
 
 def _migrate_add_columns() -> None:
@@ -413,6 +415,17 @@ def _migrate_add_indexes() -> None:
                 conn.execute(f"DROP INDEX IF EXISTS {idx}")
 
 
+def _migrate_add_conversion_id() -> None:
+    """给 transactions 加 conversion_id 列（基金转换链接 ID）。幂等。"""
+    with get_connection() as conn:
+        cols = {r["name"] for r in
+                conn.execute("PRAGMA table_info(transactions)").fetchall()}
+        if "conversion_id" not in cols:
+            conn.execute(
+                "ALTER TABLE transactions ADD COLUMN conversion_id TEXT DEFAULT ''"
+            )
+
+
 def _migrate_dividend_alerts_unique() -> None:
     """给 dividend_alerts 加 UNIQUE(fund_code, ex_date, alert_type) 约束。
 
@@ -622,11 +635,11 @@ def add_transaction(tx: Transaction) -> int:
     with get_connection() as conn:
         cur = conn.execute(
             """
-            INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note,is_t1)
-            VALUES(?,?,?,?,?,?,?,?,?,?)
+            INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note,is_t1,conversion_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)
             """,
             (tx.fund_code.strip(), tx.action, tx.date, tx.amount, tx.shares,
-             tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1)),
+             tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1), tx.conversion_id),
         )
         return int(cur.lastrowid)
 
@@ -640,12 +653,44 @@ def update_transaction(tx: Transaction) -> None:
             """
             UPDATE transactions SET
                 fund_code=?, action=?, date=?, amount=?, shares=?, nav=?,
-                fee=?, channel=?, note=?, is_t1=?
+                fee=?, channel=?, note=?, is_t1=?, conversion_id=?
             WHERE id=?
             """,
             (tx.fund_code.strip(), tx.action, tx.date, tx.amount, tx.shares,
-             tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1), tx.id),
+             tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1), tx.conversion_id, tx.id),
         )
+
+
+def add_conversion(from_tx: Transaction, to_tx: Transaction) -> tuple[int, int]:
+    """原子插入两条关联交易（卖出腿 + 买入腿），共享同一 conversion_id。
+
+    返回 (from_tx_id, to_tx_id)。
+    """
+    conversion_id = str(uuid.uuid4())
+    from_tx.conversion_id = conversion_id
+    to_tx.conversion_id = conversion_id
+    from_tx.normalize()
+    to_tx.normalize()
+    with get_connection() as conn:
+        cur_from = conn.execute(
+            """
+            INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note,is_t1,conversion_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (from_tx.fund_code.strip(), from_tx.action, from_tx.date, from_tx.amount,
+             from_tx.shares, from_tx.nav, from_tx.fee, from_tx.channel, from_tx.note,
+             int(from_tx.is_t1), conversion_id),
+        )
+        cur_to = conn.execute(
+            """
+            INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note,is_t1,conversion_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (to_tx.fund_code.strip(), to_tx.action, to_tx.date, to_tx.amount,
+             to_tx.shares, to_tx.nav, to_tx.fee, to_tx.channel, to_tx.note,
+             int(to_tx.is_t1), conversion_id),
+        )
+        return int(cur_from.lastrowid), int(cur_to.lastrowid)
 
 
 def delete_transaction(tx_id: int) -> None:

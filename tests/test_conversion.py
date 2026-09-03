@@ -426,3 +426,56 @@ def test_conversion_api_t1_but_to_amount_provided():
             assert resp.status_code == 200
             data = resp.json()
             assert data["to"]["amount"] == 500.0
+
+
+def test_delete_transaction_clears_paired_conversion_id():
+    """删除转换的一条腿后，另一条的 conversion_id 被清空（防孤儿）。"""
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            from zfundpilot.models import Transaction
+
+            from_tx = Transaction(
+                fund_code="011612", action="sell", date="2026-01-05",
+                shares=100, nav=2.0, fee=1.5, channel="支付宝",
+            )
+            to_tx = Transaction(
+                fund_code="005827", action="buy", date="2026-01-05",
+                amount=198, nav=1.5, fee=2.0, channel="支付宝",
+            )
+            from_id, to_id = db.add_conversion(from_tx, to_tx)
+            cid = from_tx.conversion_id
+            assert cid
+
+            # 删除卖出腿
+            db.delete_transaction(from_id)
+
+            # 买入腿的 conversion_id 应被清空
+            with db.get_connection() as conn:
+                row = conn.execute(
+                    "SELECT conversion_id FROM transactions WHERE id=?", (to_id,)
+                ).fetchone()
+            assert row["conversion_id"] == ""
+
+
+def test_delete_non_conversion_transaction_unchanged():
+    """删除普通交易（无 conversion_id）不影响其他交易。"""
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            from zfundpilot.models import Transaction
+
+            tx = Transaction(
+                fund_code="011612", action="buy", date="2026-01-05",
+                amount=1000, nav=2.0, fee=1.5, channel="支付宝",
+            )
+            tx_id = db.add_transaction(tx)
+
+            db.delete_transaction(tx_id)
+
+            # 应正常删除，无副作用
+            with db.get_connection() as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) as n FROM transactions WHERE id=?", (tx_id,)
+                ).fetchone()
+            assert row["n"] == 0

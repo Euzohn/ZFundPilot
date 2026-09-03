@@ -637,6 +637,12 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-5">
+          {isEditing && editingTx?.conversion_id && (
+            <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+              <Repeat className="h-3.5 w-3.5 shrink-0 text-primary/70" />
+              {t.transactions.conversionLegHint}
+            </div>
+          )}
           {/* ── 基金代码 ── */}
           <div>
             <div className="flex gap-2">
@@ -1290,7 +1296,14 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
         open={confirmDeleteId != null}
         onOpenChange={(open) => { if (!open) setConfirmDeleteId(null) }}
         title={t.common.confirmDelete}
-        description={<>{t.fundDetail.confirmDeleteTxDesc}<strong>{t.fundDetail.irreversible}</strong></>}
+        description={
+          <>
+            {t.fundDetail.confirmDeleteTxDesc}<strong>{t.fundDetail.irreversible}</strong>
+            {confirmDeleteId != null && txs?.find(tx => tx.id === confirmDeleteId)?.conversion_id && (
+              <span className="block mt-1 text-warning">{t.transactions.conversionDeleteWarning}</span>
+            )}
+          </>
+        }
         confirmText={t.common.delete}
         tone="destructive"
         onConfirm={async () => {

@@ -14,6 +14,8 @@
 ### Fixed
 - 转入金额不可编辑：`value={toAmount || autoToAmount}` 导致清空后弹回卖出金额（`""` falsy 回退 auto）。改用 `toAmountManuallyEdited` ref 单向自动填充（镜像 `toFeeManuallyEdited` 模式），`value` 改为纯 `toAmount`。"自动"标签手编辑后隐藏；差值时显示"卖出净到账 ¥X（+/-Y.ZZ）"。新增 i18n 键 `sellNetProceeds`
 - 转换表单布局重排：转出/转入字段分行——Row1 [转出份额][转出净值][转出手续费]，Row2 [转入金额][转入净值][转入手续费]。空占位 div 加 `hidden sm:block` 确保仅 sm+ 4 列布局生效，移动端不产生多余间隙
+- 删除转换腿后孤儿 `conversion_id`：`delete_transaction` 删单条时检查 `conversion_id`，非空则同时清空配对腿的 `conversion_id`（`UPDATE … SET conversion_id=''`），避免剩余交易显示不可点击的「转换」badge。新增 2 个测试用例（孤儿清理 + 普通删除无副作用），总测试 405→407
+- 编辑/删除转换腿无上下文提示：编辑表单顶部，当 `editingTx.conversion_id` 存在时显示提示「此交易属于一笔基金转换，编辑仅作用于当前记录」；删除确认弹窗对转换腿追加警告「删除后将解除与配对交易的关联」。新增 i18n 键 `conversionLegHint`/`conversionDeleteWarning`
 
 ## [0.20.1] - 2026-09-01
 

@@ -412,6 +412,8 @@ const en: typeof zh = {
     pairedTransaction: "Paired Transaction",
     viewPairedTransaction: "View paired transaction",
     sellNetProceeds: "Net proceeds",
+    conversionLegHint: "This transaction is part of a fund conversion; editing only affects this record",
+    conversionDeleteWarning: "This transaction is part of a fund conversion; deleting will unlink it from the paired record",
   },
   settings: {
     title: "Settings",

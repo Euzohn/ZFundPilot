@@ -410,6 +410,8 @@ const zh = {
     pairedTransaction: "配对交易",
     viewPairedTransaction: "查看配对交易",
     sellNetProceeds: "卖出净到账",
+    conversionLegHint: "此交易属于一笔基金转换，编辑仅作用于当前记录",
+    conversionDeleteWarning: "此交易属于一笔基金转换，删除后将解除与配对交易的关联",
   },
   settings: {
     title: "设置",

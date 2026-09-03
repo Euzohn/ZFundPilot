@@ -695,6 +695,14 @@ def add_conversion(from_tx: Transaction, to_tx: Transaction) -> tuple[int, int]:
 
 def delete_transaction(tx_id: int) -> None:
     with get_connection() as conn:
+        row = conn.execute(
+            "SELECT conversion_id FROM transactions WHERE id=?", (tx_id,)
+        ).fetchone()
+        if row and row[0]:
+            conn.execute(
+                "UPDATE transactions SET conversion_id='' WHERE conversion_id=? AND id!=?",
+                (row[0], tx_id),
+            )
         conn.execute("DELETE FROM transactions WHERE id=?", (tx_id,))
 
 

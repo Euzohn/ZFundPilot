@@ -411,6 +411,7 @@ const en: typeof zh = {
     conversionFeeHint: "Conversion usually waives/reduces redemption fee; buy leg charged subscription fee",
     pairedTransaction: "Paired Transaction",
     viewPairedTransaction: "View paired transaction",
+    sellNetProceeds: "Net proceeds",
   },
   settings: {
     title: "Settings",

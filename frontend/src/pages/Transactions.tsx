@@ -211,6 +211,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
   const [toNavNotFound, setToNavNotFound] = useState(false)
   const [toFeeCalcLoading, setToFeeCalcLoading] = useState(false)
   const toFeeManuallyEdited = useRef(false)
+  const toAmountManuallyEdited = useRef(false)
   const toFeeCalcTimer = useRef<ReturnType<typeof setTimeout>>()
 
   // 持仓数据（用于卖出时校验 + 快捷填入）
@@ -431,6 +432,13 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
     ? (s * n - f).toFixed(2)
     : ""
 
+  // 单向自动填充转入金额：仅在用户未手编辑时跟随卖出净到账
+  useEffect(() => {
+    if (!toAmountManuallyEdited.current && autoToAmount) {
+      setToAmount(autoToAmount)
+    }
+  }, [autoToAmount])
+
   const handleFetchMeta = async (silent = false) => {
     if (!code.trim()) return
     setFetching(true)
@@ -482,6 +490,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
     // 转换腿重置
     setToCode(""); setToMeta(null); setToAmount(""); setToNav(""); setToFee("0")
     toFeeManuallyEdited.current = false
+    toAmountManuallyEdited.current = false
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -856,12 +865,17 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
                       {t.transactions.toAmountPending}
                     </div>
                   ) : (
-                    <Input type="number" step="0.01" min="0" value={toAmount || autoToAmount}
-                      onChange={(e) => { setToAmount(e.target.value); setFormErrors(prev => ({ ...prev, toAmount: undefined })) }}
+                    <>
+                    <Input type="number" step="0.01" min="0" value={toAmount}
+                      onChange={(e) => { toAmountManuallyEdited.current = true; setToAmount(e.target.value); setFormErrors(prev => ({ ...prev, toAmount: undefined })) }}
                       placeholder="0.00"
                       aria-invalid={!!formErrors.toAmount}
                       aria-describedby={formErrors.toAmount ? "tx-toamount-error" : undefined}
                     />
+                    {autoToAmount && parseFloat(toAmount) !== parseFloat(autoToAmount) && (
+                      <p className="text-[11px] text-muted-foreground/60 mt-1">{t.transactions.sellNetProceeds}: ¥{autoToAmount}</p>
+                    )}
+                    </>
                   )}
                   <FieldError id="tx-toamount-error" error={formErrors.toAmount} />
                 </div>

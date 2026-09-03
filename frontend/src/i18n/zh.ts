@@ -409,6 +409,7 @@ const zh = {
     conversionFeeHint: "转换通常免/减转出赎回费，转入按申购费计",
     pairedTransaction: "配对交易",
     viewPairedTransaction: "查看配对交易",
+    sellNetProceeds: "卖出净到账",
   },
   settings: {
     title: "设置",

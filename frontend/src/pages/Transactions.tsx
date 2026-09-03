@@ -857,7 +857,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
                     {t.transactions.toAmountYuan}
-                    {!afterThree && <span className="text-primary ml-1">{t.transactions.automatic}</span>}
+                    {!afterThree && !toAmountManuallyEdited.current && <span className="text-primary ml-1">{t.transactions.automatic}</span>}
                   </Label>
                   {afterThree ? (
                     <div className="h-9 flex items-center rounded-md border border-border bg-muted/50 px-3 text-sm text-muted-foreground cursor-not-allowed"
@@ -872,9 +872,19 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
                       aria-invalid={!!formErrors.toAmount}
                       aria-describedby={formErrors.toAmount ? "tx-toamount-error" : undefined}
                     />
-                    {autoToAmount && parseFloat(toAmount) !== parseFloat(autoToAmount) && (
-                      <p className="text-[11px] text-muted-foreground/60 mt-1">{t.transactions.sellNetProceeds}: ¥{autoToAmount}</p>
-                    )}
+                    {autoToAmount && (() => {
+                      const to = parseFloat(toAmount || "0")
+                      const auto = parseFloat(autoToAmount)
+                      if (to === auto) return null
+                      const diff = to - auto
+                      const sign = diff > 0 ? "+" : ""
+                      return (
+                        <p className="text-[11px] text-muted-foreground/60 mt-1">
+                          {t.transactions.sellNetProceeds}: ¥{autoToAmount}
+                          <span className="ml-1">（{sign}{diff.toFixed(2)}）</span>
+                        </p>
+                      )
+                    })()}
                     </>
                   )}
                   <FieldError id="tx-toamount-error" error={formErrors.toAmount} />

@@ -832,7 +832,6 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
               </>
             )}
             {action === "convert" && (
-              <>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">
                     {t.transactions.fromShares}{heldShares > 0 && <span className="text-muted-foreground/70 ml-1">{t.transactions.holding.replace("{n}", heldShares.toFixed(2))}</span>}
@@ -854,42 +853,6 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
                     </div>
                   )}
                 </div>
-                <div>
-                  <Label className="mb-1.5 block text-xs text-muted-foreground">
-                    {t.transactions.toAmountYuan}
-                    {!afterThree && !toAmountManuallyEdited.current && <span className="text-primary ml-1">{t.transactions.automatic}</span>}
-                  </Label>
-                  {afterThree ? (
-                    <div className="h-9 flex items-center rounded-md border border-border bg-muted/50 px-3 text-sm text-muted-foreground cursor-not-allowed"
-                      title={t.transactions.conversionFeeHint}>
-                      {t.transactions.toAmountPending}
-                    </div>
-                  ) : (
-                    <>
-                    <Input type="number" step="0.01" min="0" value={toAmount}
-                      onChange={(e) => { toAmountManuallyEdited.current = true; setToAmount(e.target.value); setFormErrors(prev => ({ ...prev, toAmount: undefined })) }}
-                      placeholder="0.00"
-                      aria-invalid={!!formErrors.toAmount}
-                      aria-describedby={formErrors.toAmount ? "tx-toamount-error" : undefined}
-                    />
-                    {autoToAmount && (() => {
-                      const to = parseFloat(toAmount || "0")
-                      const auto = parseFloat(autoToAmount)
-                      if (to === auto) return null
-                      const diff = to - auto
-                      const sign = diff > 0 ? "+" : ""
-                      return (
-                        <p className="text-[11px] text-muted-foreground/60 mt-1">
-                          {t.transactions.sellNetProceeds}: ¥{autoToAmount}
-                          <span className="ml-1">（{sign}{diff.toFixed(2)}）</span>
-                        </p>
-                      )
-                    })()}
-                    </>
-                  )}
-                  <FieldError id="tx-toamount-error" error={formErrors.toAmount} />
-                </div>
-              </>
             )}
             {/* 净值：买入/卖出/再投资需要，分红不需要 */}
             {action !== "dividend" && (
@@ -928,6 +891,41 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
             )}
             {action === "convert" && (
               <>
+                <div>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">
+                    {t.transactions.toAmountYuan}
+                    {!afterThree && !toAmountManuallyEdited.current && <span className="text-primary ml-1">{t.transactions.automatic}</span>}
+                  </Label>
+                  {afterThree ? (
+                    <div className="h-9 flex items-center rounded-md border border-border bg-muted/50 px-3 text-sm text-muted-foreground cursor-not-allowed"
+                      title={t.transactions.conversionFeeHint}>
+                      {t.transactions.toAmountPending}
+                    </div>
+                  ) : (
+                    <>
+                    <Input type="number" step="0.01" min="0" value={toAmount}
+                      onChange={(e) => { toAmountManuallyEdited.current = true; setToAmount(e.target.value); setFormErrors(prev => ({ ...prev, toAmount: undefined })) }}
+                      placeholder="0.00"
+                      aria-invalid={!!formErrors.toAmount}
+                      aria-describedby={formErrors.toAmount ? "tx-toamount-error" : undefined}
+                    />
+                    {autoToAmount && (() => {
+                      const to = parseFloat(toAmount || "0")
+                      const auto = parseFloat(autoToAmount)
+                      if (to === auto) return null
+                      const diff = to - auto
+                      const sign = diff > 0 ? "+" : ""
+                      return (
+                        <p className="text-[11px] text-muted-foreground/60 mt-1">
+                          {t.transactions.sellNetProceeds}: ¥{autoToAmount}
+                          <span className="ml-1">（{sign}{diff.toFixed(2)}）</span>
+                        </p>
+                      )
+                    })()}
+                    </>
+                  )}
+                  <FieldError id="tx-toamount-error" error={formErrors.toAmount} />
+                </div>
                 <div>
                   <Label className="mb-1.5 block text-xs text-muted-foreground">{t.transactions.toNav}</Label>
                   <div className="relative">

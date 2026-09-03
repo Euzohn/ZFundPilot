@@ -889,7 +889,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
                 )}
               </div>
             )}
-            {action === "convert" && <div />}
+            {action === "convert" && <div className="hidden sm:block" />}
             {action === "convert" && (
               <>
                 <div>

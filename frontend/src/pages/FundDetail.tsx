@@ -735,7 +735,14 @@ const handleDelete = async (txId: number) => {
         open={confirmDeleteId != null}
         onOpenChange={(open) => { if (!open) setConfirmDeleteId(null) }}
         title={t.fundDetail.confirmDeleteTitle}
-        description={<>{t.fundDetail.confirmDeleteTxDesc}<strong>{t.fundDetail.irreversible}</strong></>}
+        description={
+          <>
+            {t.fundDetail.confirmDeleteTxDesc}<strong>{t.fundDetail.irreversible}</strong>
+            {confirmDeleteId != null && txs?.find(tx => tx.id === confirmDeleteId)?.conversion_id && (
+              <span className="block mt-1 text-warning">{t.transactions.conversionDeleteWarning}</span>
+            )}
+          </>
+        }
         confirmText={t.common.delete}
         tone="destructive"
         onConfirm={async () => {

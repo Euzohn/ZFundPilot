@@ -105,6 +105,29 @@ export const RISK_LEVEL_DOT: Record<string, string> = {
   "高风险": "bg-rose-500",
 }
 
+// ── CSRC 行业分类（证监会 ~19 类，基金行业配置数据源）──
+export const INDUSTRIES: Record<string, Bilingual> = {
+  "农、林、牧、渔业": { zh: "农、林、牧、渔业", en: "Agriculture" },
+  "采矿业": { zh: "采矿业", en: "Mining" },
+  "制造业": { zh: "制造业", en: "Manufacturing" },
+  "电力、热力、燃气及水生产和供应业": { zh: "公用事业", en: "Utilities" },
+  "建筑业": { zh: "建筑业", en: "Construction" },
+  "批发和零售业": { zh: "批发零售", en: "Wholesale & Retail" },
+  "交通运输、仓储和邮政业": { zh: "交通运输", en: "Transportation" },
+  "住宿和餐饮业": { zh: "住宿餐饮", en: "Accommodation & Food" },
+  "信息传输、软件和信息技术服务业": { zh: "信息技术", en: "IT & Software" },
+  "金融业": { zh: "金融业", en: "Financials" },
+  "房地产业": { zh: "房地产", en: "Real Estate" },
+  "租赁和商务服务业": { zh: "租赁商务", en: "Leasing & Business" },
+  "科学研究和技术服务业": { zh: "科研技术", en: "Scientific Research" },
+  "水利、环境和公共设施管理业": { zh: "环境设施", en: "Environment & Utilities" },
+  "居民服务、修理和其他服务业": { zh: "居民服务", en: "Resident Services" },
+  "教育": { zh: "教育", en: "Education" },
+  "卫生和社会工作": { zh: "卫生社会工作", en: "Healthcare" },
+  "文化、体育和娱乐业": { zh: "文体娱乐", en: "Culture & Sports" },
+  "综合": { zh: "综合", en: "Conglomerate" },
+}
+
 // ── Helper functions ──
 export function translateFundType(type: string): string {
   const lang = getCurrentLang()
@@ -124,4 +147,9 @@ export function translateSector(sector: string): string {
 export function translateRiskLevel(level: string): string {
   const lang = getCurrentLang()
   return RISK_LEVELS[level]?.[lang] ?? level
+}
+
+export function translateIndustry(industry: string): string {
+  const lang = getCurrentLang()
+  return INDUSTRIES[industry]?.[lang] ?? industry
 }

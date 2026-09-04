@@ -312,6 +312,45 @@ export interface FundHoldings {
   quarter: string
 }
 
+// ── 基金行业配置（证监会分类）──
+export interface IndustryAllocation {
+  industry: string          // 行业类别，如 "制造业" / "金融业"
+  weight: number            // 占净值比例（小数）
+  market_value: number      // 市值（万元）
+  quarter: string           // 截止时间
+}
+
+export interface FundIndustryAllocation {
+  ok: boolean
+  fund_code: string
+  message: string
+  code: string
+  allocations: IndustryAllocation[]
+  quarter: string
+  stock_ratio: number
+}
+
+// ── 组合行业敞口（基金穿透聚合）──
+export interface IndustryExposureItem {
+  industry: string
+  market_value: number      // 加权市值（元）
+  weight: number            // 占组合总市值比（小数）
+  funds_count: number       // 贡献基金数
+  fund_codes: string[]      // 贡献基金代码
+}
+
+export interface IndustryExposure {
+  items: IndustryExposureItem[]
+  total_market_value: number
+  penetrated_market_value: number
+  unpenetrated_market_value: number
+  funds_count: number
+  funds_with_data: number
+  quarter: string
+  ok: boolean
+  message: string
+}
+
 // ── 同类排名走势 ──
 export interface RankingPoint {
   date: string

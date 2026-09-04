@@ -36,6 +36,8 @@ import type {
   VisionConfig,
   ParseScreenshotResult,
   ReconcileResponse,
+  IndustryExposure,
+  FundIndustryAllocation,
 } from "./types"
 import { getToken, clearToken } from "@/lib/auth"
 import { getCurrentLang } from "@/i18n/LanguageContext"
@@ -188,6 +190,8 @@ export const api = {
   getSummary: () => request<PortfolioSummary>("/summary"),
   getDistribution: (field: string) =>
     request<DistributionItem[]>(`/distribution/${field}`),
+  getIndustryExposure: () =>
+    request<IndustryExposure>("/portfolio/industry-exposure"),
 
   // Positions
   getPositions: (includeClosed = false) =>
@@ -228,6 +232,8 @@ export const api = {
     request<FeeRatesResponse>(`/funds/${encodeURIComponent(code)}/fee-rates`),
   getFundHoldings: (code: string) =>
     request<FundHoldings>(`/funds/${encodeURIComponent(code)}/holdings`),
+  getFundIndustryAllocation: (code: string) =>
+    request<FundIndustryAllocation>(`/funds/${encodeURIComponent(code)}/industry-allocation`),
   getFundRanking: (code: string) =>
     request<FundRanking>(`/funds/${encodeURIComponent(code)}/ranking`),
   getFundProfile: (code: string) =>

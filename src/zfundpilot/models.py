@@ -283,6 +283,69 @@ class FundHoldingsResult:
 
 
 @dataclass
+class IndustryAllocation:
+    """基金行业配置（单条，证监会行业分类）。"""
+    industry: str          # 行业类别，如 "制造业" / "金融业"
+    weight: float = 0.0    # 占净值比例（小数，0.6953 = 69.53%）
+    market_value: float = 0.0  # 市值（万元）
+    quarter: str = ""      # 截止时间，如 "2025-06-30"
+
+
+@dataclass
+class IndustryAllocationResult:
+    """单基金行业配置查询结果。"""
+    fund_code: str
+    ok: bool = False
+    message: str = ""
+    code: str = ""
+    allocations: list[IndustryAllocation] = None  # type: ignore[assignment]
+    quarter: str = ""                    # 最新报告期
+    stock_ratio: float = 0.0             # 行业合计 ≈ 股票占净值比
+
+    def __post_init__(self):
+        if self.allocations is None:
+            self.allocations = []
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class IndustryExposureItem:
+    """组合行业敞口聚合项。"""
+    industry: str
+    market_value: float = 0.0       # 加权市值（元）
+    weight: float = 0.0             # 占组合总市值比（小数）
+    funds_count: int = 0            # 贡献基金数
+    fund_codes: list[str] = None    # type: ignore[assignment]  # 贡献基金代码
+
+    def __post_init__(self):
+        if self.fund_codes is None:
+            self.fund_codes = []
+
+
+@dataclass
+class IndustryExposureResult:
+    """组合行业敞口聚合结果。"""
+    items: list[IndustryExposureItem] = None        # type: ignore[assignment]
+    total_market_value: float = 0.0     # 组合总市值（元）
+    penetrated_market_value: float = 0.0  # 行业穿透部分（元）
+    unpenetrated_market_value: float = 0.0  # 未穿透部分（债/现金/未披露，元）
+    funds_count: int = 0                # 持仓基金总数
+    funds_with_data: int = 0            # 有行业数据的基金数
+    quarter: str = ""                   # 最新报告期
+    ok: bool = False
+    message: str = ""
+
+    def __post_init__(self):
+        if self.items is None:
+            self.items = []
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class RankingPoint:
     """一条同类排名数据（排名百分位，越低越好）。"""
     date: str            # YYYY-MM-DD

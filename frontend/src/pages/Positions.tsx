@@ -19,12 +19,14 @@ import ErrorState from "@/components/ErrorState"
 import { cn } from "@/lib/utils"
 import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search, LayoutGrid, List } from "lucide-react"
 import { makeSortHeader } from "@/components/SortHeader"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import IndustryExposurePanel from "@/components/IndustryExposurePanel"
 import { useLang } from "@/i18n/LanguageContext"
 
 export default function Positions() {
   const navigate = useNavigate()
   const { t } = useLang()
-  const [showClosed, setShowClosed] = useState(() => localStorage.getItem("zfundpilot_showClosed") === "true")
+  const [activeTab, setActiveTab] = useState("list")
   const [channelFilter, setChannelFilter] = useState(() => localStorage.getItem("zfundpilot_channelFilter") ?? "")
   const [searchQuery, setSearchQuery] = useState("")
   const [viewMode, setViewMode] = useState<"list" | "grid">(() => localStorage.getItem("zfundpilot_positionsView") === "grid" ? "grid" : "list")
@@ -61,15 +63,14 @@ export default function Positions() {
     return Array.from(set).sort()
   }, [positions])
 
-  // 持久化渠道筛选和显示已清仓选项
-  useEffect(() => { localStorage.setItem("zfundpilot_showClosed", String(showClosed)) }, [showClosed])
+  // 持久化渠道筛选
   useEffect(() => { localStorage.setItem("zfundpilot_channelFilter", channelFilter) }, [channelFilter])
   useEffect(() => { localStorage.setItem("zfundpilot_positionsView", viewMode) }, [viewMode])
 
   const today = localDateStr()
 
   const view = positions
-    ? (showClosed ? positions : positions.filter((p) => p.is_open)).filter((p) => !channelFilter || p.channel === channelFilter)
+    ? positions.filter((p) => p.is_open).filter((p) => !channelFilter || p.channel === channelFilter)
     : []
 
   // 按基金合并（跨渠道）
@@ -149,6 +150,13 @@ export default function Positions() {
         <ErrorState message={error ?? undefined} onRetry={reload} />
       ) : (
       <>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="list">{t.positions.listTab}</TabsTrigger>
+          <TabsTrigger value="exposure">{t.positions.industryExposure}</TabsTrigger>
+          <TabsTrigger value="closed">{t.positions.closedTab}</TabsTrigger>
+        </TabsList>
+        <TabsContent value="list" className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <PageHeader title={t.positions.title} />
         <div className="flex items-center gap-2">
@@ -166,9 +174,6 @@ export default function Positions() {
             <option value="">{t.positions.allChannels}</option>
             {availableChannels.map((c) => <option key={c} value={c}>{c}</option>)}
           </Select>
-          <Button variant="outline" size="sm" onClick={() => setShowClosed(!showClosed)}>
-            {showClosed ? t.positions.hideClosed : t.positions.showClosed}
-          </Button>
           {viewMode === "grid" && (
             <Select value={sortField} onChange={(e) => { setSortField(e.target.value); setSortDir("desc") }} className="h-8 text-xs w-32" aria-label={t.positions.sortBy}>
               <option value="value">{t.positions.sortValue}</option>
@@ -491,9 +496,11 @@ export default function Positions() {
         )}
       </div>
       )}
-
-      {/* 已清仓记录（仅在 showClosed 时显示） */}
-      {showClosed && (
+        </TabsContent>
+        <TabsContent value="exposure" className="space-y-4">
+          <IndustryExposurePanel />
+        </TabsContent>
+        <TabsContent value="closed" className="space-y-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{t.positions.closedRecords}</CardTitle>
@@ -566,7 +573,8 @@ export default function Positions() {
             })()}
           </CardContent>
         </Card>
-      )}
+        </TabsContent>
+      </Tabs>
       </>
       )}
     </div>

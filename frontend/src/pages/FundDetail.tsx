@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { Position, Transaction, Fund, FundEstimate, FundHoldings as FundHoldingsType, FundRanking, FundProfile } from "@/api/types"
+import type { Position, Transaction, Fund, FundEstimate, FundHoldings as FundHoldingsType, FundRanking, FundProfile, FundIndustryAllocation as FundIndustryAllocationType } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import ErrorState from "@/components/ErrorState"
 import { Button } from "@/components/ui/button"
@@ -14,13 +14,14 @@ import { money, pct, signedMoney, navStr, pnlColor, localDateStr, formatLargeCN 
 import { RANGE_DAYS } from "@/lib/rangeLabels"
 import { isMarketOpen } from "@/lib/market"
 import { getColorForChannel } from "@/lib/channelColors"
-import { translateFundType, translateSector, translateChannel, translateRiskLevel, FUND_TYPE_DOT, RISK_LEVEL_DOT } from "@/lib/taxonomyLabels"
+import { translateFundType, translateSector, translateChannel, translateRiskLevel, translateIndustry, FUND_TYPE_DOT, RISK_LEVEL_DOT } from "@/lib/taxonomyLabels"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useLang } from "@/i18n/LanguageContext"
 import { useCompare } from "@/contexts/CompareContext"
 import { ArrowLeft, TrendingUp, TrendingDown, GitCompare, Star, Repeat, Pencil, Trash2, ChevronDown } from "lucide-react"
 import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, PieChart, Pie, LineChart } from "recharts"
+import { CHART_COLORS } from "@/lib/chartPalette"
 import MetricCard from "@/components/MetricCard"
 import ConfirmDialog from "@/components/ConfirmDialog"
 import TransactionDetailDialog from "@/components/TransactionDetailDialog"
@@ -53,6 +54,7 @@ export default function FundDetail() {
   )
   const { data: fundEstimate, reload: reloadEstimate } = useApi<FundEstimate>(() => api.getFundEstimate(code!), [code])
   const { data: holdingsData } = useApi<FundHoldingsType>(() => api.getFundHoldings(code!), [code])
+  const { data: industryData } = useApi<FundIndustryAllocationType>(() => api.getFundIndustryAllocation(code!), [code])
   const { data: rankingData } = useApi<FundRanking>(() => api.getFundRanking(code!), [code])
   const { data: profileData } = useApi<FundProfile>(() => api.getFundProfile(code!), [code])
   useEffect(() => {
@@ -650,6 +652,80 @@ const handleDelete = async (txId: number) => {
                         </TableCell>
                         <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
                           {formatLargeCN(h.market_value)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Industry allocation (CSRC) */}
+      {industryData?.ok && industryData.allocations?.length > 0 && (
+        <Card className="card-hover">
+          <CardHeader className="pb-2">
+            <div className="flex flex-wrap items-center justify-between gap-1">
+              <CardTitle className="text-sm font-medium text-muted-foreground">{t.fundDetail.industryAllocation}</CardTitle>
+              <span className="text-xs text-muted-foreground/60">
+                {industryData.quarter ? `${t.fundDetail.quarter}: ${industryData.quarter} · ` : ""}
+                {t.fundDetail.industryAllocationHint}
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-[240px_1fr]">
+              {/* Industry pie chart */}
+              <div>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={industryData.allocations.map((a) => ({ name: translateIndustry(a.industry), value: a.weight }))}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={45}
+                      outerRadius={80}
+                      paddingAngle={2}
+                    >
+                      {industryData.allocations.map((_, i) => (
+                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v: number, n: string) => [`${(v * 100).toFixed(2)}%`, n]}
+                      itemStyle={{ color: "hsl(var(--foreground))" }}
+                      contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12, color: "hsl(var(--foreground))" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Industry list */}
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">{t.positions.industry}</TableHead>
+                      <TableHead className="text-xs text-right">{t.fundDetail.weight}</TableHead>
+                      <TableHead className="text-xs text-right">{t.positions.industryMarketValue}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {industryData.allocations.map((a, i) => (
+                      <TableRow key={a.industry}>
+                        <TableCell className="text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full shrink-0" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                            {translateIndustry(a.industry)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right text-xs tabular-nums">{(a.weight * 100).toFixed(2)}%</TableCell>
+                        <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
+                          {a.market_value > 0 ? formatLargeCN(a.market_value) : "—"}
                         </TableCell>
                       </TableRow>
                     ))}

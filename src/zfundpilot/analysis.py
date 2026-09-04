@@ -33,6 +33,8 @@ from .models import (
     ACTION_REINVEST,
     ACTION_SELL,
     Fund,
+    IndustryExposureItem,
+    IndustryExposureResult,
     PortfolioSummary,
     Position,
     Transaction,
@@ -333,6 +335,69 @@ def distribution_by(positions: list[Position], field: str) -> pd.DataFrame:
     total = grouped["market_value"].sum()
     grouped["weight"] = grouped["market_value"] / total if total > 0 else 0.0
     return grouped.reset_index(drop=True)
+
+
+# ---------------------------------------------------------------------------
+# 组合行业敞口聚合（基金穿透）
+# ---------------------------------------------------------------------------
+def aggregate_industry_exposure(positions: list[Position] | None = None) -> IndustryExposureResult:
+    """跨基金聚合真实行业敞口。
+
+    对每只持仓基金取其官方行业配置（证监会分类），按「基金市值 × 行业占比」
+    加权求和。行业占比之和即股票部分，剩余（债/现金/未披露）计入未穿透。
+    失败基金（债基/新基无数据）市值也计入未穿透，不影响其他基金。
+    """
+    if positions is None:
+        positions = calculate_positions(include_closed=False)
+    open_positions = [p for p in positions if p.is_open]
+    if not open_positions:
+        return IndustryExposureResult(ok=False, message="无持仓")
+
+    total_mv = sum(p.market_value for p in open_positions)
+    aggregate: dict[str, dict] = {}
+    penetrated_mv = 0.0
+    latest_quarter = ""
+    funds_with_data = 0
+
+    for p in open_positions:
+        result = fetch_fund.fetch_fund_industry_allocation(p.fund_code)
+        if result is None or not result.ok or not result.allocations:
+            continue
+        funds_with_data += 1
+        if result.quarter and result.quarter > latest_quarter:
+            latest_quarter = result.quarter
+
+        for alloc in result.allocations:
+            effective_mv = p.market_value * alloc.weight
+            penetrated_mv += effective_mv
+            if alloc.industry not in aggregate:
+                aggregate[alloc.industry] = {"mv": 0.0, "funds": set()}
+            aggregate[alloc.industry]["mv"] += effective_mv
+            aggregate[alloc.industry]["funds"].add(p.fund_code)
+
+    items = [
+        IndustryExposureItem(
+            industry=ind,
+            market_value=data["mv"],
+            weight=data["mv"] / total_mv if total_mv > 0 else 0.0,
+            funds_count=len(data["funds"]),
+            fund_codes=sorted(data["funds"]),
+        )
+        for ind, data in aggregate.items()
+    ]
+    items.sort(key=lambda x: x.market_value, reverse=True)
+
+    return IndustryExposureResult(
+        items=items,
+        total_market_value=total_mv,
+        penetrated_market_value=penetrated_mv,
+        unpenetrated_market_value=max(total_mv - penetrated_mv, 0.0),
+        funds_count=len(open_positions),
+        funds_with_data=funds_with_data,
+        quarter=latest_quarter,
+        ok=True,
+        message="成功",
+    )
 
 
 # ---------------------------------------------------------------------------

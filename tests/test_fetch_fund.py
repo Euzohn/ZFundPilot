@@ -5,9 +5,10 @@ from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
 
 from zfundpilot import fetch_fund
-from zfundpilot.models import FundProfile, FundRankingResult
+from zfundpilot.models import FundProfile, FundRankingResult, IndustryAllocationResult
 
 
 def _fake_akshare(df):
@@ -213,3 +214,124 @@ def test_clear_caches():
     fetch_fund.clear_profile_cache()
     assert fetch_fund._ranking_cache == {}
     assert fetch_fund._profile_cache == {}
+
+
+# ---------------------------------------------------------------------------
+# 行业配置（基金穿透数据源）
+# ---------------------------------------------------------------------------
+
+def _fake_akshare_industry(df):
+    """构造假的 akshare 模块，使其 fund_portfolio_industry_allocation_em 返回 df。"""
+    fake = ModuleType("akshare")
+    fake.fund_portfolio_industry_allocation_em = MagicMock(return_value=df)
+    return fake
+
+
+def _industry_df() -> pd.DataFrame:
+    """构造行业配置 DataFrame（与 AkShare 返回列名一致）。"""
+    return pd.DataFrame(
+        {
+            "序号": [1, 2, 3],
+            "行业类别": ["制造业", "金融业", "采矿业"],
+            "占净值比例": [69.53, 1.17, 1.17],
+            "市值": [189787.96, 3195.41, 3194.76],
+            "截止时间": ["2023-09-30", "2023-09-30", "2023-09-30"],
+        }
+    )
+
+
+def test_fetch_fund_industry_allocation_success():
+    fake = _fake_akshare_industry(_industry_df())
+    with (
+        patch.dict(sys.modules, {"akshare": fake}),
+        patch.dict(fetch_fund._industry_cache, {}, clear=True),
+    ):
+        result = fetch_fund.fetch_fund_industry_allocation("000001")
+    assert result.ok
+    assert result.code == "ok"
+    assert len(result.allocations) == 3
+    assert result.allocations[0].industry == "制造业"
+    assert result.allocations[0].weight == pytest.approx(0.6953)
+    assert result.allocations[0].market_value == pytest.approx(189787.96)
+    assert result.quarter == "2023-09-30"
+    assert result.stock_ratio == pytest.approx(0.7187)
+
+
+def test_fetch_fund_industry_allocation_latest_quarter():
+    df = pd.DataFrame(
+        {
+            "行业类别": ["制造业", "金融业", "制造业", "采矿业"],
+            "占净值比例": [69.53, 1.17, 65.89, 1.93],
+            "市值": [189787.96, 3195.41, 193354.96, 11490.74],
+            "截止时间": ["2023-09-30", "2023-09-30", "2023-03-31", "2023-03-31"],
+        }
+    )
+    fake = _fake_akshare_industry(df)
+    with (
+        patch.dict(sys.modules, {"akshare": fake}),
+        patch.dict(fetch_fund._industry_cache, {}, clear=True),
+    ):
+        result = fetch_fund.fetch_fund_industry_allocation("000001")
+    assert result.ok
+    assert result.quarter == "2023-09-30"
+    assert len(result.allocations) == 2
+    assert {a.industry for a in result.allocations} == {"制造业", "金融业"}
+
+
+def test_fetch_fund_industry_allocation_empty():
+    fake = _fake_akshare_industry(pd.DataFrame())
+    with (
+        patch.dict(sys.modules, {"akshare": fake}),
+        patch.dict(fetch_fund._industry_cache, {}, clear=True),
+    ):
+        result = fetch_fund.fetch_fund_industry_allocation("000001")
+    assert not result.ok
+    assert result.code == "no_data"
+    assert result.allocations == []
+
+
+def test_fetch_fund_industry_allocation_year_fallback():
+    fake = _fake_akshare_industry(pd.DataFrame())
+    fake.fund_portfolio_industry_allocation_em.side_effect = [
+        pd.DataFrame(),  # 当年无数据
+        _industry_df(),  # 上一年有数据
+    ]
+    with (
+        patch.dict(sys.modules, {"akshare": fake}),
+        patch.dict(fetch_fund._industry_cache, {}, clear=True),
+    ):
+        result = fetch_fund.fetch_fund_industry_allocation("000001")
+    assert result.ok
+    assert result.quarter == "2023-09-30"
+    assert fake.fund_portfolio_industry_allocation_em.call_count == 2
+
+
+def test_fetch_fund_industry_allocation_fetch_error():
+    fake = _fake_akshare_industry(None)
+    fake.fund_portfolio_industry_allocation_em.side_effect = RuntimeError("boom")
+    with (
+        patch.dict(sys.modules, {"akshare": fake}),
+        patch.dict(fetch_fund._industry_cache, {}, clear=True),
+    ):
+        result = fetch_fund.fetch_fund_industry_allocation("000001")
+    assert not result.ok
+    assert result.allocations == []
+
+
+def test_fetch_fund_industry_allocation_uses_cache():
+    fake = _fake_akshare_industry(_industry_df())
+    cached = IndustryAllocationResult(
+        fund_code="000001", ok=True, message="成功", code="ok", allocations=[]
+    )
+    with (
+        patch.dict(sys.modules, {"akshare": fake}),
+        patch.dict(
+            fetch_fund._industry_cache,
+            {"000001": {"ts": fetch_fund.time.time(), "data": cached}},
+            clear=True,
+        ),
+    ):
+        result = fetch_fund.fetch_fund_industry_allocation("000001")
+    fake.fund_portfolio_industry_allocation_em.assert_not_called()
+    assert result.ok
+    assert result.allocations == []

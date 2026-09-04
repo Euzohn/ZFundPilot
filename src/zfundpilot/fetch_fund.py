@@ -31,6 +31,8 @@ from .models import (
     FundProfile,
     FundRankingResult,
     Holding,
+    IndustryAllocation,
+    IndustryAllocationResult,
     NavPoint,
     RankingPoint,
 )
@@ -1306,6 +1308,113 @@ def _safe_float_num(val) -> float:
         return 0.0
 
 
+# ---------------------------------------------------------------------------
+# 基金行业配置（证监会行业分类，基金穿透聚合数据源）
+# ---------------------------------------------------------------------------
+_industry_cache: dict[str, dict] = {}
+_INDUSTRY_CACHE_TTL = 3600  # 1 小时
+
+
+def fetch_fund_industry_allocation(fund_code: str) -> IndustryAllocationResult:
+    """获取基金行业配置（AkShare fund_portfolio_industry_allocation_em）。
+
+    返回证监会行业分类（约 19 类）的占净值比例，覆盖全持仓（不止前十大）。
+    当年无数据时回退上一年（新基金季报未出等情况）。失败不抛异常。
+    """
+    now = time.time()
+    cached = _industry_cache.get(fund_code)
+    if cached and now - cached["ts"] < _INDUSTRY_CACHE_TTL:
+        return cached["data"]
+
+    try:
+        import datetime as dt
+
+        import akshare as ak
+
+        current_year = dt.datetime.now(config.TIMEZONE).year
+        df = None
+        for year in (current_year, current_year - 1):
+            try:
+                df = ak.fund_portfolio_industry_allocation_em(
+                    symbol=fund_code, date=str(year))
+            except Exception:  # noqa: BLE001
+                df = None
+                continue
+            if df is not None and not df.empty:
+                break
+
+        if df is None or df.empty:
+            result = IndustryAllocationResult(
+                fund_code=fund_code, ok=False,
+                message="暂无行业配置数据", code="no_data",
+            )
+            _industry_cache[fund_code] = {"ts": now, "data": result}
+            return result
+
+        col_industry = _match_col(df.columns, ["行业类别", "行业"])
+        col_weight = _match_col(df.columns, ["占净值比例", "占比"])
+        col_mv = _match_col(df.columns, ["市值"])
+        col_quarter = _match_col(df.columns, ["截止时间", "报告期", "日期"])
+
+        if not col_industry or not col_weight:
+            result = IndustryAllocationResult(
+                fund_code=fund_code, ok=False,
+                message="无法识别列名", code="parse_error",
+            )
+            _industry_cache[fund_code] = {"ts": now, "data": result}
+            return result
+
+        # 取最新报告期（截止时间字典序即时间序，YYYY-MM-DD 可直接排序）
+        latest_q = ""
+        if col_quarter:
+            quarters = df[col_quarter].dropna().astype(str)
+            if not quarters.empty:
+                latest_q = str(sorted(quarters)[-1])
+                df = df[df[col_quarter].astype(str) == latest_q]
+
+        allocations: list[IndustryAllocation] = []
+        total_weight = 0.0
+        for _, row in df.iterrows():
+            industry = str(row.get(col_industry, "")).strip()
+            if not industry:
+                continue
+            weight = _safe_float_pct(row.get(col_weight))
+            mv = _safe_float_num(row.get(col_mv)) if col_mv else 0.0
+            total_weight += weight
+            allocations.append(IndustryAllocation(
+                industry=industry, weight=weight,
+                market_value=mv, quarter=latest_q,
+            ))
+
+        allocations.sort(key=lambda a: a.weight, reverse=True)
+
+        result = IndustryAllocationResult(
+            fund_code=fund_code, ok=True,
+            message="成功", code="ok",
+            allocations=allocations,
+            quarter=latest_q,
+            stock_ratio=total_weight,
+        )
+        _industry_cache[fund_code] = {"ts": now, "data": result}
+        return result
+
+    except Exception as exc:  # noqa: BLE001
+        result = IndustryAllocationResult(
+            fund_code=fund_code, ok=False,
+            message=str(exc), code="fetch_error",
+        )
+        _industry_cache[fund_code] = {"ts": now, "data": result}
+        return result
+
+
+def clear_industry_cache() -> None:
+    """清空行业配置缓存。"""
+    _industry_cache.clear()
+
+
+def clear_holdings_cache() -> None:
+    """清空重仓股缓存。"""
+    _holdings_cache.clear()
 
 
 # ---------------------------------------------------------------------------

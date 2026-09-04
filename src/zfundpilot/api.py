@@ -175,6 +175,7 @@ _ENDPOINT_LIMITS: dict[str, tuple[int, int]] = {
     "/api/funds/compare":      (60, 60),
     "/api/backtest/dca":       (60, 60),
     "/api/csv/import":         (30, 60),
+    "/api/portfolio/industry-exposure": (60, 60),
 }
 
 _DOMAIN_LIMITS: dict[str, tuple[int, int]] = {
@@ -836,6 +837,12 @@ def get_distribution(field: str) -> list[dict[str, Any]]:
     return df.to_dict(orient="records")
 
 
+@app.get("/api/portfolio/industry-exposure")
+def get_industry_exposure() -> dict[str, Any]:
+    """跨基金聚合真实行业敞口（基金穿透）。"""
+    return analysis.aggregate_industry_exposure().to_dict()
+
+
 # ---------------------------------------------------------------------------
 # 持仓
 # ---------------------------------------------------------------------------
@@ -1453,6 +1460,25 @@ def get_fund_holdings(code: str) -> dict[str, Any]:
         "cash_ratio": result.cash_ratio,
         "other_ratio": result.other_ratio,
         "quarter": result.quarter,
+    }
+
+
+@app.get("/api/funds/{code}/industry-allocation")
+def get_fund_industry_allocation(code: str) -> dict[str, Any]:
+    """返回单基金行业配置（证监会分类）。"""
+    result = fetch_fund.fetch_fund_industry_allocation(code)
+    return {
+        "ok": result.ok,
+        "fund_code": result.fund_code,
+        "message": result.message,
+        "code": result.code,
+        "allocations": [
+            {"industry": a.industry, "weight": a.weight,
+             "market_value": a.market_value, "quarter": a.quarter}
+            for a in result.allocations
+        ],
+        "quarter": result.quarter,
+        "stock_ratio": result.stock_ratio,
     }
 
 

@@ -341,6 +341,8 @@ const zh = {
     perShare: "元/份",
     recordDividend: "记为分红",
     recordReinvest: "记为再投",
+    dividendReinvestNote: "红利再投资（{perShare}元/份）",
+    dividendCashNote: "分红（{perShare}元/份，登记日{date}）",
 
     screenshotImport: "截图导入",
     screenshotImportShort: "截图",

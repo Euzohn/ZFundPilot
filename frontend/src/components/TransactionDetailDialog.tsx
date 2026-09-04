@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { money, navStr } from "@/lib/format"
+import { translateChannel } from "@/lib/taxonomyLabels"
 import { Pencil, Receipt, Hash, Wallet, Banknote, PieChart, DollarSign, FileText, Clock, ArrowUpRight, Link } from "lucide-react"
 import { useLang } from "@/i18n/LanguageContext"
 
@@ -83,7 +84,7 @@ export default function TransactionDetailDialog({ tx, fundName, pairedTx, open, 
           <Row icon={PieChart} label={t.transactions.sharesLabel} value={tx.shares?.toFixed(2) ?? "—"} mono />
           <Row icon={Hash} label={t.transactions.navLabel} value={navValue} mono />
           <Row icon={Banknote} label={t.transactions.feeLabel} value={tx.fee ? money(tx.fee) : "—"} mono />
-          <Row icon={Wallet} label={t.transactions.channelLabel} value={tx.channel || <span className="text-muted-foreground/60">{t.common.unlabeled}</span>} />
+          <Row icon={Wallet} label={t.transactions.channelLabel} value={tx.channel ? (translateChannel(tx.channel) || tx.channel) : <span className="text-muted-foreground/60">{t.common.unlabeled}</span>} />
           <Row icon={Clock} label={t.transactions.t1Label} value={tx.is_t1 ? t.aiChat.afterClose : t.aiChat.beforeClose} />
         </div>
 

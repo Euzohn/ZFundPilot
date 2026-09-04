@@ -4,6 +4,7 @@ import { getChannels, getChannelsAsync, saveChannels, getDefaultChannels } from 
 import { getChannelColors, getChannelColorsAsync, saveChannelColors, getDefaultChannelColors, getPalette } from "@/lib/channelColors"
 import { getColorTheme, getColorThemeAsync, saveColorTheme, applyColorTheme, type ColorTheme } from "@/lib/colorTheme"
 import { formatRelativeTime, formatTokens } from "@/lib/format"
+import { translateBackendError } from "@/lib/backendLabels"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
@@ -492,9 +493,9 @@ export default function Settings() {
       const res = await api.testAIConnection()
       setTestResult(res)
       if (res.ok) toast.success(`${t.settings.connectionSuccess} · ${res.provider} · ${res.model}`)
-      else toast.error(`${t.settings.connectionFailed}: ${res.error}`)
+      else toast.error(`${t.settings.connectionFailed}: ${translateBackendError(res.error || "")}`)
     } catch (e) {
-      toast.error(`${t.settings.testFailed}: ${e}`)
+      toast.error(`${t.settings.testFailed}: ${translateBackendError(String(e))}`)
     } finally {
       setTesting(false)
     }
@@ -519,9 +520,9 @@ export default function Settings() {
       const res = await api.testVision()
       setVisionTestResult(res)
       if (res.ok) toast.success(`${t.settings.visionTestOk} · ${res.model}`)
-      else toast.error(`${t.settings.visionTestFail}`.replace("{error}", res.error || ""))
+      else toast.error(`${t.settings.visionTestFail}`.replace("{error}", translateBackendError(res.error || "")))
     } catch (e) {
-      toast.error(`${t.settings.testFailed}: ${e}`)
+      toast.error(`${t.settings.testFailed}: ${translateBackendError(String(e))}`)
     } finally {
       setTestingVision(false)
     }

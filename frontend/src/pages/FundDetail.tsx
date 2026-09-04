@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { money, pct, signedMoney, navStr, pnlColor, localDateStr } from "@/lib/format"
+import { money, pct, signedMoney, navStr, pnlColor, localDateStr, formatLargeCN } from "@/lib/format"
 import { RANGE_DAYS } from "@/lib/rangeLabels"
 import { isMarketOpen } from "@/lib/market"
 import { getColorForChannel } from "@/lib/channelColors"
@@ -649,7 +649,7 @@ const handleDelete = async (txId: number) => {
                           </span>
                         </TableCell>
                         <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
-                          {h.market_value > 0 ? `${(h.market_value / 10000).toFixed(2)}亿` : "—"}
+                          {formatLargeCN(h.market_value)}
                         </TableCell>
                       </TableRow>
                     ))}

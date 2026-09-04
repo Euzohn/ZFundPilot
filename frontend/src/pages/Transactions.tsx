@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, Loader2, Receipt, ArrowUpDown, Repeat, Gift, Camera } from "lucide-react"
 import { getChannels, getChannelsAsync, saveChannels } from "@/lib/channels"
+import { translateChannel } from "@/lib/taxonomyLabels"
+import { translateBackendError } from "@/lib/backendLabels"
 import { makeSortHeader } from "@/components/SortHeader"
 import { useLang } from "@/i18n/LanguageContext"
 import FieldError from "@/components/FieldError"
@@ -1130,7 +1132,7 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
       <CardHeader className="flex-row items-center justify-between">
         <CardTitle className="text-base">{t.transactions.transactionFlow}</CardTitle>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={async () => { try { await api.exportCsv(); toast.success(t.transactions.csvExported) } catch (e) { toast.error(String(e)) } }}>
+          <Button variant="outline" size="sm" onClick={async () => { try { await api.exportCsv(); toast.success(t.transactions.csvExported) } catch (e) { toast.error(translateBackendError(String(e))) } }}>
             <FileDown className="mr-1 h-4 w-4" /> {t.transactions.exportCsv}
           </Button>
           <Button variant="destructive" size="sm" onClick={() => { setShowClearConfirm(true); setClearConfirmText("") }}>
@@ -1243,7 +1245,7 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
                     </TableCell>
                     <TableCell className="font-mono text-xs">{tx.fund_code}</TableCell>
                     <TableCell>{fund?.fund_name ?? tx.fund_code}</TableCell>
-                    <TableCell>{tx.channel || t.common.unlabeled}</TableCell>
+                    <TableCell>{tx.channel ? translateChannel(tx.channel) || tx.channel : t.common.unlabeled}</TableCell>
                     <TableCell className="text-right tabular-nums">{tx.amount ? money(tx.amount) : "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{tx.shares?.toFixed(2) ?? "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -1450,7 +1452,7 @@ function CSVImportExport() {
                         <TableCell className="text-right tabular-nums">{tx.amount ? money(tx.amount) : "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">{tx.shares?.toFixed(2) ?? "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">{tx.nav?.toFixed(4) ?? "—"}</TableCell>
-                        <TableCell>{tx.channel || "—"}</TableCell>
+                        <TableCell>{tx.channel ? translateChannel(tx.channel) || tx.channel : "—"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -1601,7 +1603,7 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
       setDialogOpen(false)
       reload()
     } catch (e: unknown) {
-      toast.error(errMsg(e) || t.common.saveFailed)
+      toast.error(translateBackendError(errMsg(e) ?? "") || t.common.saveFailed)
     } finally {
       setSaving(false)
     }
@@ -1613,7 +1615,7 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
       toast.success(plan.enabled ? t.transactions.paused : t.transactions.enabled)
       reload()
     } catch (e: unknown) {
-      toast.error(errMsg(e) || t.common.operationFailed)
+      toast.error(translateBackendError(errMsg(e) ?? "") || t.common.operationFailed)
     }
   }
 
@@ -1624,7 +1626,7 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
       setDeleting(null)
       reload()
     } catch (e: unknown) {
-      toast.error(errMsg(e) || t.common.deleteFailed)
+      toast.error(translateBackendError(errMsg(e) ?? "") || t.common.deleteFailed)
     }
   }
 
@@ -1636,11 +1638,10 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
       reload()
     } catch (e: unknown) {
       const err = (e ?? {}) as ApiError
-      const msg = err.body?.detail || err.message || ""
-      if (err.status === 409 || msg.includes("已执行")) {
+      if (err.status === 409) {
         toast.warning(t.transactions.alreadyExecutedToday)
       } else {
-        toast.error(msg || t.transactions.executeFailed)
+        toast.error(translateBackendError(err.body?.detail || err.message || "") || t.transactions.executeFailed)
       }
     } finally {
       setExecuting(null)

@@ -25,6 +25,17 @@ export function navStr(v: number | null | undefined): string {
   return v.toFixed(4)
 }
 
+// 大额市值格式化（持仓股市值，输入单位：万元）
+export function formatLargeCN(v: number | null | undefined): string {
+  if (v == null || v <= 0) return "—"
+  const lang = getCurrentLang()
+  const yi = v / 10000
+  if (lang === "zh") return `${yi.toFixed(2)}亿`
+  if (yi >= 10000) return `${(yi / 10000).toFixed(2)}T`
+  if (yi >= 100) return `${yi.toFixed(2)}B`
+  return `${(yi * 100).toFixed(2)}M`
+}
+
 export function pnlColor(v: number | null | undefined): string {
   if (v == null) return ""
   if (v > 0) return "text-gain"

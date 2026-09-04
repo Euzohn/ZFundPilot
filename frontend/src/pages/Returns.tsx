@@ -21,6 +21,7 @@ import { RANGE_DAYS } from "@/lib/rangeLabels"
 import { makeSortHeader } from "@/components/SortHeader"
 import { useLang } from "@/i18n/LanguageContext"
 import { CHART_COLORS } from "@/lib/chartPalette"
+import { translateChannel } from "@/lib/taxonomyLabels"
 
 const PALETTE = getPalette()
 
@@ -469,7 +470,7 @@ export default function Returns() {
                         {!p.is_open && <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">{t.returns.closed}</Badge>}
                       </span>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{p.channel || "—"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{p.channel ? translateChannel(p.channel) || p.channel : "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{money(p.total_cost)}</TableCell>
                     <TableCell className="text-right tabular-nums">{money(p.market_value)}</TableCell>
                     <TableCell className={`text-right tabular-nums ${pnlColor(p.unrealized_pnl)}`}>{money(p.unrealized_pnl)}</TableCell>

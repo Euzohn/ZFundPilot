@@ -208,3 +208,48 @@ export function translateMessage(code: string, fallback: string): string {
   const lang = getCurrentLang()
   return MESSAGE_CODES[code]?.[lang] ?? fallback
 }
+
+// ── Backend raw error messages (HTTPException detail) ──
+// 后端错误消息为裸中文（如 "用户名或密码错误"），前端展示前翻译。
+export const BACKEND_ERRORS: Record<string, Bilingual> = {
+  "用户名或密码错误": { zh: "用户名或密码错误", en: "Invalid username or password" },
+  "未启用密码认证": { zh: "未启用密码认证", en: "Password authentication not enabled" },
+  "当前密码错误": { zh: "当前密码错误", en: "Current password is incorrect" },
+  "新密码至少 6 位": { zh: "新密码至少 6 位", en: "New password must be at least 6 characters" },
+  "用户名至少 2 位": { zh: "用户名至少 2 位", en: "Username must be at least 2 characters" },
+  "图片大小不能超过 10MB": { zh: "图片大小不能超过 10MB", en: "Image size must not exceed 10MB" },
+  "图片为空": { zh: "图片为空", en: "Empty image" },
+  "交易信息不完整": { zh: "交易信息不完整", en: "Transaction info is incomplete" },
+  "转出基金和转入基金不能相同": { zh: "转出基金和转入基金不能相同", en: "From-fund and to-fund must be different" },
+  "转出信息不完整（需要份额）": { zh: "转出信息不完整（需要份额）", en: "From-side info incomplete (shares required)" },
+  "转入信息不完整（需要金额或份额）": { zh: "转入信息不完整（需要金额或份额）", en: "To-side info incomplete (amount or shares required)" },
+  "基金代码不能为空": { zh: "基金代码不能为空", en: "Fund code cannot be empty" },
+  "净值更新正在进行中": { zh: "净值更新正在进行中", en: "NAV update in progress" },
+  "CSV 文件大小不能超过 5MB": { zh: "CSV 文件大小不能超过 5MB", en: "CSV file size must not exceed 5MB" },
+  "该定投计划今日已执行": { zh: "该定投计划今日已执行", en: "This auto-invest plan was already executed today" },
+  "定投计划不存在": { zh: "定投计划不存在", en: "Auto-invest plan not found" },
+  "转出份额不能超过持有份额": { zh: "转出份额不能超过持有份额", en: "Shares out exceed holdings" },
+  "配置不完整（Base URL / API Key / Model）": { zh: "配置不完整（Base URL / API Key / Model）", en: "Incomplete config (Base URL / API Key / Model)" },
+  "AI 模型未配置，请先到设置页面配置。": { zh: "AI 模型未配置，请先到设置页面配置。", en: "AI model not configured. Please configure it in Settings." },
+  "视觉模型未配置，请先到设置页面配置。": { zh: "视觉模型未配置，请先到设置页面配置。", en: "Vision model not configured. Please configure it in Settings." },
+  "模型未返回内容": { zh: "模型未返回内容", en: "Model returned no content" },
+  "模型返回内容无法解析为 JSON": { zh: "模型返回内容无法解析为 JSON", en: "Model output is not valid JSON" },
+}
+
+/**
+ * 翻译后端裸错误消息。支持精确匹配 + 前缀匹配（含变量的消息，如 "未找到基金 000001"）。
+ * 无匹配时返回原文兜底。
+ */
+export function translateBackendError(msg: string): string {
+  // 去掉 "Error: " 前缀（String(e) 产物）
+  const raw = msg.replace(/^Error:\s*/, "")
+  const lang = getCurrentLang()
+  if (BACKEND_ERRORS[raw]) return BACKEND_ERRORS[raw][lang]
+  // 前缀匹配（含变量的消息，如 "未找到基金 000001"）：取最长命中，避免短 key 抢先
+  let best: [string, Bilingual] | null = null
+  for (const key of Object.keys(BACKEND_ERRORS)) {
+    if (raw.startsWith(key) && (!best || key.length > best[0].length)) best = [key, BACKEND_ERRORS[key]]
+  }
+  if (best) return best[1][lang]
+  return msg
+}

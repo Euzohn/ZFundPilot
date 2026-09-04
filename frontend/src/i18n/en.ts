@@ -343,6 +343,8 @@ const en: typeof zh = {
     perShare: "CNY/share",
     recordDividend: "Record Dividend",
     recordReinvest: "Record Reinvest",
+    dividendReinvestNote: "Dividend reinvest ({perShare}/share)",
+    dividendCashNote: "Dividend ({perShare}/share, record date {date})",
 
     screenshotImport: "Screenshot Import",
     screenshotImportShort: "Screenshot",

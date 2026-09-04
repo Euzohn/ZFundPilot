@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "sonner"
 import { getChannels } from "@/lib/channels"
+import { translateBackendError } from "@/lib/backendLabels"
 import { Camera, Upload, Loader2, Image as ImageIcon, X, RefreshCw, CheckCircle2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -101,7 +102,7 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
     try {
       const result = await api.parseScreenshot(image, mode, channel, userHint)
       if (!result.ok) {
-        setParseError(result.error)
+        setParseError(translateBackendError(result.error))
         return
       }
       if (mode === "transactions") {
@@ -110,7 +111,7 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
         setHoldingItems(result.items as ParsedHoldingItem[])
       }
     } catch (e) {
-      setParseError(String(e))
+      setParseError(translateBackendError(String(e)))
     } finally {
       setParsing(false)
     }
@@ -135,7 +136,7 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
       })
       setSelectedDiff(defaultSel)
     } catch (e) {
-      toast.error(String(e))
+      toast.error(translateBackendError(String(e)))
     } finally {
       setReconciling(false)
     }

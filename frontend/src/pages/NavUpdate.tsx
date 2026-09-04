@@ -14,7 +14,7 @@ import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { useLang } from "@/i18n/LanguageContext"
-import { translateMessage } from "@/lib/backendLabels"
+import { translateMessage, translateBackendError } from "@/lib/backendLabels"
 
 export default function NavUpdate() {
   // 和持仓页同源：用 getPositions 取数据（含 latest_date / latest_nav）
@@ -113,7 +113,7 @@ export default function NavUpdate() {
       await api.updateNav()
       // 轮询会自动更新 status
     } catch (e) {
-      setStartError(String(e))
+      setStartError(translateBackendError(String(e)))
     }
   }
 

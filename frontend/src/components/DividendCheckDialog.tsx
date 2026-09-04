@@ -75,8 +75,10 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
     const date = method === "reinvest" ? (alert.ex_date ?? "") : (alert.pay_date ?? "")
     const perShare = alert.per_share ?? 0
     const note = method === "reinvest"
-      ? `红利再投资(${perShare.toFixed(4)}元/份)`
-      : `分红(${perShare.toFixed(4)}元/份,登记日${alert.record_date ?? ""})`
+      ? t.transactions.dividendReinvestNote.replace("{perShare}", perShare.toFixed(4))
+      : t.transactions.dividendCashNote
+        .replace("{perShare}", perShare.toFixed(4))
+        .replace("{date}", alert.record_date ?? "")
     onOpenChange(false)
     navigate(`/transactions?action=${action}&code=${alert.fund_code}&date=${date}&amount=${alert.estimated_amount ?? 0}&note=${encodeURIComponent(note)}&alert_id=${alert.id}`)
   }

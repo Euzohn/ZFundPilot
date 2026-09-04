@@ -4,6 +4,11 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Added
+- 组合真实行业敞口（基金穿透）：跨基金聚合底层持仓的真实行业分布，而非基金名称推导的板块。后端 `fetch_fund_industry_allocation()` 封装 `ak.fund_portfolio_industry_allocation_em`（证监会 ~19 类行业配置，当年无数据回退上一年，1h 缓存），`analysis.aggregate_industry_exposure()` 按基金市值 × 行业占比加权求和，穿透/未穿透分离。新增 `GET /api/portfolio/industry-exposure`（60/min 限流）+ `GET /api/funds/{code}/industry-allocation`。前端 Positions 页改 Tabs 结构（持仓列表 / 行业敞口 / 已清仓），行业敞口 Tab 含汇总条 + BarChart + PieChart + 明细表（`IndustryExposurePanel` 组件）。FundDetail 页新增行业配置卡片（饼图 + 行业明细表）。`taxonomyLabels` 新增 19 个证监会行业双语映射 + `translateIndustry()`。AI 投顾上下文注入行业穿透数据（穿透覆盖度 + 前 10 大行业 + 未穿透部分）。新增 `tests/test_industry_exposure.py`（6 用例）+ `test_fetch_fund.py` 扩 6 个行业配置测试，总测试 407→419
+
 ## [0.21.0] - 2026-09-05
 
 ### Added

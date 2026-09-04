@@ -116,6 +116,7 @@ cd frontend && npm install && npm run dev
 - **手续费自动查询** — 录入交易时自动从天天基金拉取申购/赎回费率，按金额分档匹配，卖出按 FIFO 计算赎回费，支持手动覆盖
 - **持仓自动汇总** — 按「基金 + 渠道」用移动加权平均成本法汇总，卖出时结转已实现收益
 - **持仓明细视图** — 列表视图（跨渠道明细 + 净值新鲜度）与网格视图（Bento 大卡 + 占比条 + 成本/估值/盈亏/持仓天数/板块）自由切换
+- **行业穿透（基金穿透）** — 跨基金聚合底层持仓的真实行业敞口（证监会分类），揭示组合真实行业分布而非基金名称推导。持仓页行业敞口 Tab 含穿透覆盖度、BarChart + PieChart + 明细表；基金详情页展示单基金行业配置饼图。AI 投顾上下文注入行业穿透数据
 
 ### 分析与估值
 
@@ -189,11 +190,11 @@ ZFundPilot/
 │   ├── config.py         # 全局配置、渠道、风险阈值、认证/AI 配置存储
 │   ├── models.py         # 数据结构（Fund / Transaction / Position）
 │   ├── db.py             # SQLite 数据库操作
-│   ├── fetch_fund.py     # 净值获取 + 名称/类型/板块识别 + 费率查询 + 关键词映射 + 持仓/排名/档案
+│   ├── fetch_fund.py     # 净值获取 + 名称/类型/板块识别 + 费率查询 + 关键词映射 + 持仓/排名/档案/行业配置
 │   ├── fetch_estimate.py # 基金实时估值（AkShare fund_value_estimation_em）
 │   ├── compare.py        # 基金对比（收益率/风险/相关性多维度计算）
 │   ├── fund_filter.py    # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）
-│   ├── analysis.py       # 交易流水汇总、收益计算、组合曲线
+│   ├── analysis.py       # 交易流水汇总、收益计算、组合曲线、行业穿透聚合
 │   ├── risk.py           # 风险分析（回撤/波动率/集中度/结构占比）
 │   ├── rebalance.py      # 结构优化建议
 │   ├── backtest.py       # 定投策略回测
@@ -203,9 +204,9 @@ ZFundPilot/
 │   ├── api.py            # FastAPI REST API（37+ 路由 + 认证中间件）
 │   ├── ai.py             # AI 投顾对话（持仓上下文 + 联网搜索 + LLM 流式调用）
 │   └── scheduler.py      # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查
-├── tests/                # Pytest 测试套件（407 个用例）
+├── tests/                # Pytest 测试套件（419 个用例）
 │   ├── conftest.py       #   共享 fixtures
-│   └── test_*.py         #   21 个测试模块
+│   └── test_*.py         #   22 个测试模块
 ├── data/
 │   ├── fund.db           # SQLite 数据库（自动生成）
 │   ├── auth.json         # 用户名 / 密码哈希 / token 密钥（自动生成）

@@ -40,12 +40,12 @@ ZFundPilot/
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
 │   ├── models.py            # 数据结构（Fund/Transaction/Position/PortfolioSummary）
-│   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）+ 重仓股/排名/档案
+│   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）+ 重仓股/排名/档案/行业配置
 │   ├── fetch_estimate.py   # 基金实时估值（东财估值 + 指数/ETF 兜底）+ 指数历史收盘价持久化
 │   ├── fetch_dividend.py  # 基金分红检测（AkShare 分红送配 + 90 天窗口 + 交易去重 + 幽灵提醒自动清理）
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
 │   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）+ resolve_fund_code 名称→代码解析 + verify_fund_code 校验
-│   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）+ reconcile_holdings 截图持仓对账
+│   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）+ reconcile_holdings 截图持仓对账 + 行业穿透聚合
 │   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI）
 │   ├── rebalance.py         # 再平衡建议
 │   ├── backtest.py          # 定投策略回测（DCA + 一次性投入对比 + XIRR）
@@ -201,6 +201,7 @@ ZFundPilot/
 - `update_all_holdings_nav(codes, progress)`: 批量更新，0.3s 间隔限流
 - `fetch_fund_meta(fund_code)`: 获取基金名称/类型/板块
 - `fetch_fund_holdings(fund_code)`: 重仓股 + 资产配置（AkShare `fund_portfolio_hold_em`，1h 缓存，取最新季度前 10）
+- `fetch_fund_industry_allocation(fund_code)`: 行业配置（AkShare `fund_portfolio_industry_allocation_em`，证监会 ~19 类，当年无数据回退上一年，1h 缓存，覆盖全持仓）。基金穿透聚合数据源
 - `fetch_fund_ranking(fund_code)`: 同类排名百分位走势（AkShare `fund_open_fund_info_em(indicator="同类排名百分比")`，1h 缓存）
 - `fetch_fund_profile(fund_code)`: 基金档案（天天基金 `pingzhongdata` 的 `Data_currentFundManager` + `Data_fluctuationScale`，单请求，1h 缓存）
 - 缓存均带 `clear_*_cache()` 清空函数；费率 `fetch_fund_fee_rates` 另有 HTML 解析（`fundf10.eastmoney.com/jjfl_<code>.html`）
@@ -235,6 +236,7 @@ ZFundPilot/
 - `calculate_summary()`: 组合层面汇总（`total_cost` 不含 `pending_buy_cost`）
 - `build_portfolio_curve()`: 组合收益曲线（待确认买入用 `pending_value_delta` 占位市值，避免虚假亏损）
 - `build_channel_daily_pnl()`: 按渠道拆分的每日收益（堆叠柱状图）
+- `aggregate_industry_exposure(positions=None)`: 跨基金聚合真实行业敞口（基金穿透），遍历持仓基金取官方行业配置，按基金市值 × 行业占比加权求和，穿透/未穿透分离
 - 内存 TTL 缓存（60s），8 个写入端点自动清除缓存
 
 ### scheduler.py — 定时任务
@@ -444,6 +446,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ---
 
 ## 十二、当前工作状态
+
+### v0.22.0 - Unreleased
+
+- feat: 组合真实行业敞口（基金穿透）——跨基金聚合底层持仓的真实行业分布（证监会 ~19 类），而非基金名称推导的板块。`fetch_fund_industry_allocation()` 封装 `ak.fund_portfolio_industry_allocation_em`（当年无数据回退上一年，1h 缓存）；`aggregate_industry_exposure()` 按基金市值 × 行业占比加权求和，穿透/未穿透分离。新增 `GET /api/portfolio/industry-exposure` + `GET /api/funds/{code}/industry-allocation`。Positions 页改 Tabs（持仓列表/行业敞口/已清仓），行业敞口 Tab 含汇总条 + BarChart + PieChart + 明细表（`IndustryExposurePanel`）。FundDetail 新增行业配置卡片。AI 投顾上下文注入行业穿透数据。`taxonomyLabels` 新增 19 个证监会行业双语映射 + `translateIndustry()`。新增 12 个测试（6 fetch + 6 聚合），总测试 407→419
 
 ### v0.21.0 - 2026-09-05
 

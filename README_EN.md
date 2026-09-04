@@ -116,6 +116,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **Auto Fee Lookup** — Fetches purchase/redemption fee rates from Tiantian Fund on entry. FIFO-based redemption fee calculation. Manual override supported
 - **Auto Portfolio Aggregation** — Moving weighted average cost by fund + channel. Realized P&L transferred on sell
 - **Position Views** — Toggle between list view (cross-channel detail + NAV freshness) and grid view (Bento cards with allocation bars, cost/estimate/P&L, holding days/sector)
+- **Industry Look-Through** — Aggregates real industry exposure across funds (CSRC categories), revealing true portfolio industry distribution rather than fund-name-derived sectors. Positions page industry tab includes look-through coverage, BarChart + PieChart + detail table. Fund detail page shows single-fund industry allocation pie. AI advisor context includes industry exposure data
 
 ### Analysis & Estimates
 
@@ -189,11 +190,11 @@ ZFundPilot/
 │   ├── config.py         # Global config, channels, risk thresholds, auth/AI config
 │   ├── models.py         # Data structures (Fund / Transaction / Position)
 │   ├── db.py             # SQLite database operations
-│   ├── fetch_fund.py     # NAV fetching + name/type/sector + fee lookup + holdings/ranking/profile
+│   ├── fetch_fund.py     # NAV fetching + name/type/sector + fee lookup + holdings/ranking/profile/industry
 │   ├── fetch_estimate.py # Real-time fund estimate (AkShare)
 │   ├── compare.py        # Fund comparison (returns/risk/correlation)
 │   ├── fund_filter.py    # Fund filter (full market universe + metrics enrichment)
-│   ├── analysis.py       # Transaction aggregation, return calculation, curve
+│   ├── analysis.py       # Transaction aggregation, return calculation, curve, industry exposure
 │   ├── risk.py           # Risk analysis (drawdown/volatility/concentration)
 │   ├── rebalance.py      # Portfolio rebalancing advice
 │   ├── backtest.py       # DCA backtest
@@ -203,9 +204,9 @@ ZFundPilot/
 │   ├── api.py            # FastAPI REST API (37+ routes + auth middleware)
 │   ├── ai.py             # AI advisor chat (portfolio context + web search)
 │   └── scheduler.py      # APScheduler NAV update + auto-invest + dividend check + TP/SL check
-├── tests/                # Pytest test suite (407 tests)
+├── tests/                # Pytest test suite (419 tests)
 │   ├── conftest.py       #   Shared fixtures
-│   └── test_*.py         #   21 test modules
+│   └── test_*.py         #   22 test modules
 ├── data/
 │   ├── fund.db           # SQLite database (auto-generated)
 │   ├── auth.json         # Password hash / token secret (auto-generated)

@@ -335,3 +335,40 @@ def test_fetch_fund_industry_allocation_uses_cache():
     fake.fund_portfolio_industry_allocation_em.assert_not_called()
     assert result.ok
     assert result.allocations == []
+
+
+class TestCleanIndustryName:
+    """_clean_industry_name: 去掉前导数字/空白（数据源有时把序号拼到行业名前）。"""
+
+    def test_strips_leading_number(self):
+        assert fetch_fund._clean_industry_name("45信息技术") == "信息技术"
+
+    def test_strips_leading_number_with_spaces(self):
+        assert fetch_fund._clean_industry_name("12 制造业") == "制造业"
+
+    def test_normal_name_unchanged(self):
+        assert fetch_fund._clean_industry_name("非必需消费品") == "非必需消费品"
+
+    def test_empty_string(self):
+        assert fetch_fund._clean_industry_name("") == ""
+
+    def test_pipeline_integration(self):
+        """DataFrame 含脏值时，清洗后返回正确行业名。"""
+        df = pd.DataFrame(
+            {
+                "行业类别": ["45制造业", "非必需消费品", "11金融"],
+                "占净值比例": [80.0, 10.0, 5.0],
+                "市值": [1000, 500, 200],
+                "截止时间": ["2026-06-30"] * 3,
+            }
+        )
+        fake = _fake_akshare_industry(df)
+        with (
+            patch.dict(sys.modules, {"akshare": fake}),
+            patch.dict(fetch_fund._industry_cache, {}, clear=True),
+        ):
+            result = fetch_fund.fetch_fund_industry_allocation("000001")
+        assert result.ok
+        assert result.allocations[0].industry == "制造业"
+        assert result.allocations[1].industry == "非必需消费品"
+        assert result.allocations[2].industry == "金融"

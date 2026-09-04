@@ -204,7 +204,7 @@ ZFundPilot/
 │   ├── api.py            # FastAPI REST API (37+ routes + auth middleware)
 │   ├── ai.py             # AI advisor chat (portfolio context + web search)
 │   └── scheduler.py      # APScheduler NAV update + auto-invest + dividend check + TP/SL check
-├── tests/                # Pytest test suite (419 tests)
+├── tests/                # Pytest test suite (424 tests)
 │   ├── conftest.py       #   Shared fixtures
 │   └── test_*.py         #   22 test modules
 ├── data/

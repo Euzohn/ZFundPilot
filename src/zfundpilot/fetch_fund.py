@@ -1315,6 +1315,11 @@ _industry_cache: dict[str, dict] = {}
 _INDUSTRY_CACHE_TTL = 3600  # 1 小时
 
 
+def _clean_industry_name(name: str) -> str:
+    """清洗行业名：去掉前导数字/空白（数据源有时把序号拼到行业名前，如 '45信息技术'）。"""
+    return re.sub(r"^\d+\s*", "", name).strip()
+
+
 def fetch_fund_industry_allocation(fund_code: str) -> IndustryAllocationResult:
     """获取基金行业配置（AkShare fund_portfolio_industry_allocation_em）。
 
@@ -1375,7 +1380,7 @@ def fetch_fund_industry_allocation(fund_code: str) -> IndustryAllocationResult:
         allocations: list[IndustryAllocation] = []
         total_weight = 0.0
         for _, row in df.iterrows():
-            industry = str(row.get(col_industry, "")).strip()
+            industry = _clean_industry_name(str(row.get(col_industry, "")).strip())
             if not industry:
                 continue
             weight = _safe_float_pct(row.get(col_weight))

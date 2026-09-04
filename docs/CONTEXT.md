@@ -450,6 +450,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ### v0.22.0 - Unreleased
 
 - feat: 组合真实行业敞口（基金穿透）——跨基金聚合底层持仓的真实行业分布（证监会 ~19 类），而非基金名称推导的板块。`fetch_fund_industry_allocation()` 封装 `ak.fund_portfolio_industry_allocation_em`（当年无数据回退上一年，1h 缓存）；`aggregate_industry_exposure()` 按基金市值 × 行业占比加权求和，穿透/未穿透分离。新增 `GET /api/portfolio/industry-exposure` + `GET /api/funds/{code}/industry-allocation`。Positions 页改 Tabs（持仓列表/行业敞口/已清仓），行业敞口 Tab 含汇总条 + BarChart + PieChart + 明细表（`IndustryExposurePanel`）。FundDetail 新增行业配置卡片。AI 投顾上下文注入行业穿透数据。`taxonomyLabels` 新增 19 个证监会行业双语映射 + `translateIndustry()`。新增 12 个测试（6 fetch + 6 聚合），总测试 407→419
+- fix: 行业名称中英文夹杂——QDII 基金返回 GICS 分类（非必需消费品/电信服务/能源等）与 CSRC 分类混合，映射未覆盖透传中文。`INDUSTRIES` 扩展至 ~35 条（CSRC + GICS + 别名变体）；后端新增 `_clean_industry_name()` 清洗前导数字脏值（"45信息技术"→"信息技术"）。新增 5 个测试，总测试 419→424
 
 ### v0.21.0 - 2026-09-05
 

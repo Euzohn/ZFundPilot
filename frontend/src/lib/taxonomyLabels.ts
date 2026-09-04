@@ -105,8 +105,10 @@ export const RISK_LEVEL_DOT: Record<string, string> = {
   "高风险": "bg-rose-500",
 }
 
-// ── CSRC 行业分类（证监会 ~19 类，基金行业配置数据源）──
+// ── 行业分类（证监会 CSRC + GICS 全球行业分类，基金行业配置数据源）──
+// CSRC ~19 类用于境内基金；GICS 11 类用于 QDII 基金（两套分类可能在同一基金数据中混合出现）
 export const INDUSTRIES: Record<string, Bilingual> = {
+  // ── CSRC 证监会 ──
   "农、林、牧、渔业": { zh: "农、林、牧、渔业", en: "Agriculture" },
   "采矿业": { zh: "采矿业", en: "Mining" },
   "制造业": { zh: "制造业", en: "Manufacturing" },
@@ -126,6 +128,25 @@ export const INDUSTRIES: Record<string, Bilingual> = {
   "卫生和社会工作": { zh: "卫生社会工作", en: "Healthcare" },
   "文化、体育和娱乐业": { zh: "文体娱乐", en: "Culture & Sports" },
   "综合": { zh: "综合", en: "Conglomerate" },
+  // ── GICS 全球行业分类（QDII 基金）──
+  "非必需消费品": { zh: "非必需消费品", en: "Consumer Discretionary" },
+  "必需消费品": { zh: "必需消费品", en: "Consumer Staples" },
+  "医疗保健": { zh: "医疗保健", en: "Health Care" },
+  "信息技术": { zh: "信息技术", en: "Information Technology" },
+  "通信服务": { zh: "通信服务", en: "Communication Services" },
+  "能源": { zh: "能源", en: "Energy" },
+  "材料": { zh: "材料", en: "Materials" },
+  "工业": { zh: "工业", en: "Industrials" },
+  "公用事业": { zh: "公用事业", en: "Utilities" },
+  // ── 别名/变体 ──
+  "非日常生活消费品": { zh: "非必需消费品", en: "Consumer Discretionary" },
+  "日常生活消费品": { zh: "必需消费品", en: "Consumer Staples" },
+  "信息科技": { zh: "信息技术", en: "Information Technology" },
+  "科技": { zh: "科技", en: "Technology" },
+  "电信服务": { zh: "电信服务", en: "Telecommunications" },
+  "通讯": { zh: "通讯", en: "Telecom" },
+  "金融": { zh: "金融业", en: "Financials" },
+  "房地产": { zh: "房地产", en: "Real Estate" },
 }
 
 // ── Helper functions ──

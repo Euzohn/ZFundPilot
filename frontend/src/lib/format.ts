@@ -3,9 +3,8 @@ import { getCurrentLang } from "@/i18n/LanguageContext"
 export function money(v: number | null | undefined): string {
   if (v == null) return "—"
   const lang = getCurrentLang()
-  const symbol = lang === "zh" ? "¥" : "$"
   const locale = lang === "zh" ? "zh-CN" : "en-US"
-  return `${symbol}${v.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return `¥${v.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 export function pct(v: number | null | undefined, digits = 2): string {
@@ -17,9 +16,8 @@ export function signedMoney(v: number | null | undefined): string {
   if (v == null) return "—"
   const sign = v >= 0 ? "+" : "-"
   const lang = getCurrentLang()
-  const symbol = lang === "zh" ? "¥" : "$"
   const locale = lang === "zh" ? "zh-CN" : "en-US"
-  return `${sign}${symbol}${Math.abs(v).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return `${sign}¥${Math.abs(v).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 export function navStr(v: number | null | undefined): string {

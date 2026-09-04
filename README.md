@@ -203,9 +203,9 @@ ZFundPilot/
 │   ├── api.py            # FastAPI REST API（37+ 路由 + 认证中间件）
 │   ├── ai.py             # AI 投顾对话（持仓上下文 + 联网搜索 + LLM 流式调用）
 │   └── scheduler.py      # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查
-├── tests/                # Pytest 测试套件（390 个用例）
+├── tests/                # Pytest 测试套件（407 个用例）
 │   ├── conftest.py       #   共享 fixtures
-│   └── test_*.py         #   9 个测试模块
+│   └── test_*.py         #   21 个测试模块
 ├── data/
 │   ├── fund.db           # SQLite 数据库（自动生成）
 │   ├── auth.json         # 用户名 / 密码哈希 / token 密钥（自动生成）

@@ -13,7 +13,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.20.1`（git tag `v0.20.1`）
+- **版本**: `0.21.0`（git tag `v0.21.0`）
 - **License**: MIT
 
 ---
@@ -35,7 +35,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.20.1"
+│   ├── __init__.py          # __version__ = "0.21.0"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
@@ -149,7 +149,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.20.1")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.21.0")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
 - 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
@@ -445,8 +445,11 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ## 十二、当前工作状态
 
-### v0.21.0 - Unreleased
+### v0.21.0 - 2026-09-05
 
+- feat: 净值更新页进度条——更新进行中显示完成进度条（done/total 百分比，平滑过渡动画），保留 `(16/33)` 数字文本；README/README_EN 基金转换条目补充「转换」badge 可点击跳转配对腿说明
+- fix: 英文模式货币符号——`format.ts` `money()`/`signedMoney()` 数据全为人民币，切英文仅换 locale 格式（千分位），不再切换 $ 避免暗示 USD
+- fix: 英文模式硬编码中文漏网——`DividendCheckDialog` 分红备注改用 i18n 模板键（`dividendReinvestNote`/`dividendCashNote`）；`FundDetail` 持仓股市值「亿」改用 `formatLargeCN()`（英文 M/B/T）；`backendLabels` 新增 `BACKEND_ERRORS` 翻译表 + `translateBackendError()`（精确匹配 + 最长前缀匹配）；各 catch 块 toast/setParseError/setStartError 改用翻译；`Transactions`/`Returns`/`TransactionDetailDialog` 渠道显示加 `translateChannel()`；`Transactions` 定投执行去掉 `msg.includes("已执行")` 中文匹配改依赖 409 状态码
 - feat: 基金转换功能——交易表单操作类型新增「转换」，录入转出基金（卖出腿：份额+净值+赎回费）和转入基金（买入腿：金额+净值+申购费），`POST /api/conversions` 原子创建两条关联交易，共享 `conversion_id`（UUID）。`transactions` 表加 `conversion_id TEXT` 列（幂等迁移 `_migrate_add_conversion_id`），`Transaction`/`TransactionCreate` 同步扩展，`db.add_conversion()` 单连接原子插入。转出份额复用卖出持有量校验 + 快捷比例按钮，双基金代码独立识别，双净值自动加载，赎回费/申购费分别自动计算（防抖 500ms），T+1/自定义渠道支持。T+1 时转入金额可留空，非 T+1 时未填则从卖出腿自动推导。交易列表对有 `conversion_id` 的流水显示「转换」badge。编辑转换腿时 payload 保留 `conversion_id` 防断链。持仓计算零改动（sell+buy 逻辑天然兼容）。新增 `tests/test_conversion.py`（15 用例），总测试 390→405
 - feat: 转换腿关联——交易列表「转换」badge 可点击跳转配对腿详情弹窗（`role=button` + 键盘 Enter/Space 支持）；`TransactionDetailDialog` 新增「配对交易」区块（配对腿动作/代码/日期 + 「查看配对交易」按钮），配对腿从前端全量 `txs` 按 `conversion_id` 本地查找，无需新增 API。新增 i18n 键 `pairedTransaction`/`viewPairedTransaction`
 - fix: 转入金额不可编辑——`toAmountManuallyEdited` ref 单向自动填充（镜像 `toFeeManuallyEdited` 模式），`value` 改为纯 `toAmount` 解除清空回弹锁死。"自动"标签手编辑后隐藏；差值提示显示"卖出净到账 ¥X（+/-Y.ZZ）"。新增 i18n 键 `sellNetProceeds`

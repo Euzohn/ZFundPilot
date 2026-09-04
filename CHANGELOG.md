@@ -4,18 +4,21 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [0.21.0] - 2026-09-05
 
 ### Added
 - 基金转换功能：交易表单操作类型新增「转换」，一次录入转出基金（卖出腿：份额+净值+赎回费）和转入基金（买入腿：金额+净值+申购费），后端 `POST /api/conversions` 原子创建两条关联交易，共享 `conversion_id`（UUID）。转出份额带持有量校验 + 快捷比例按钮（复用卖出逻辑），双基金代码独立识别，双净值自动加载，赎回费/申购费分别自动计算（防抖 500ms）。支持 T+1 标记，T+1 时转入金额可留空（待净值确认），非 T+1 时未填转入金额则从卖出腿自动推导。支持自定义渠道。交易列表对有 `conversion_id` 的流水显示「转换」badge。`transactions` 表新增 `conversion_id TEXT` 列（幂等迁移），`Transaction`/`TransactionCreate` 模型同步扩展，编辑转换腿保留关联不断链。新增 `tests/test_conversion.py`（15 用例），测试总数 390→405
 - 转换腿关联：交易列表「转换」badge 可点击（`role=button` + 键盘 Enter/Space 支持）跳转配对腿详情弹窗；`TransactionDetailDialog` 新增「配对交易」区块（配对腿动作/代码/日期 + 「查看配对交易」按钮），配对腿从前端全量 `txs` 按 `conversion_id` 本地查找，无需新增 API。新增 i18n 键 `pairedTransaction`/`viewPairedTransaction`
 - 持仓明细页新增网格视图（Bento 大卡布局）：列表/网格视图切换，切换状态 `localStorage` 持久化（`zfundpilot_positionsView`）；网格模式下每只基金一张大卡，展示代码/名称 + 仓位占比条 + 成本/估值/盈亏额/盈亏率 + 持仓天数/板块/跟踪指数；按市值/盈亏额/收益率/名称排序（仅网格模式显示排序下拉）；底部汇总条展示持仓基金数 + 总估值 + 总盈亏额。已清仓持仓仍仅以表格显示（与现有筛选器一致）。新增 i18n 键 `viewList`/`viewGrid`/`sortValue`/`sortPnl`/`sortReturn`/`sortName`/`positionsTotal`/`fundCountHintGrid`
+- 净值更新页进度条：更新进行中显示完成进度条（done/total 百分比，平滑过渡动画），保留 `(16/33)` 数字文本。README/README_EN 基金转换条目补充「转换」badge 可点击跳转配对腿说明
 
 ### Fixed
 - 转入金额不可编辑：`value={toAmount || autoToAmount}` 导致清空后弹回卖出金额（`""` falsy 回退 auto）。改用 `toAmountManuallyEdited` ref 单向自动填充（镜像 `toFeeManuallyEdited` 模式），`value` 改为纯 `toAmount`。"自动"标签手编辑后隐藏；差值时显示"卖出净到账 ¥X（+/-Y.ZZ）"。新增 i18n 键 `sellNetProceeds`
 - 转换表单布局重排：转出/转入字段分行——Row1 [转出份额][转出净值][转出手续费]，Row2 [转入金额][转入净值][转入手续费]。空占位 div 加 `hidden sm:block` 确保仅 sm+ 4 列布局生效，移动端不产生多余间隙
 - 删除转换腿后孤儿 `conversion_id`：`delete_transaction` 删单条时检查 `conversion_id`，非空则同时清空配对腿的 `conversion_id`（`UPDATE … SET conversion_id=''`），避免剩余交易显示不可点击的「转换」badge。新增 2 个测试用例（孤儿清理 + 普通删除无副作用），总测试 405→407
 - 编辑/删除转换腿无上下文提示：编辑表单顶部，当 `editingTx.conversion_id` 存在时显示提示「此交易属于一笔基金转换，编辑仅作用于当前记录」；删除确认弹窗对转换腿追加警告「删除后将解除与配对交易的关联」。新增 i18n 键 `conversionLegHint`/`conversionDeleteWarning`
+- 英文模式货币符号：`format.ts` `money()`/`signedMoney()` 数据全为人民币，切英文仅换 locale 格式（千分位），不再切换为 $，避免 $ 暗示 USD 误导用户
+- 英文模式硬编码中文漏网：`DividendCheckDialog` 分红备注改用 i18n 模板键（`dividendReinvestNote`/`dividendCashNote`）；`FundDetail` 持仓股市值「亿」改用 `formatLargeCN()`（英文 M/B/T）；`backendLabels` 新增 `BACKEND_ERRORS` 翻译表 + `translateBackendError()`（精确匹配 + 最长前缀匹配），各 catch 块 toast/setParseError/setStartError 改用翻译；`Transactions`/`Returns`/`TransactionDetailDialog` 渠道显示加 `translateChannel()`；`Transactions` 定投执行去掉 `msg.includes("已执行")` 中文匹配，改依赖 409 状态码
 
 ## [0.20.1] - 2026-09-01
 

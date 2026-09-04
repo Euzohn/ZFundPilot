@@ -111,7 +111,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 ### Transactions & Holdings
 
 - **Transaction Management** — Record buys/sells/dividends/reinvests/conversions. Form entry + CSV bulk import/export + full backup ZIP export
-- **Fund Conversion** — Record a conversion (sell from-fund + buy to-fund) in one form. Two linked transactions created atomically, shares validated against holdings, redemption/subscription fees auto-calculated separately, conversions badged in the transaction log
+- **Fund Conversion** — Record a conversion (sell from-fund + buy to-fund) in one form. Two linked transactions created atomically, shares validated against holdings, redemption/subscription fees auto-calculated separately, conversions badged in the transaction log; click the badge to view the paired leg
 - **Multi-Channel Support** — Alipay, WeChat, Tiantian Fund, etc. Same fund tracked separately across channels
 - **Auto Fee Lookup** — Fetches purchase/redemption fee rates from Tiantian Fund on entry. FIFO-based redemption fee calculation. Manual override supported
 - **Auto Portfolio Aggregation** — Moving weighted average cost by fund + channel. Realized P&L transferred on sell

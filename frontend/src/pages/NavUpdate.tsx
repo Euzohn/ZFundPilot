@@ -210,6 +210,12 @@ export default function NavUpdate() {
           {updating && (
             <div className="flex flex-col items-center gap-3 py-4">
               <LogoRipple className="h-12 w-12" />
+              <div className="h-2 w-full max-w-sm rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-500 ease-out"
+                  style={{ width: `${status?.total ? Math.round((status.done / status.total) * 100) : 0}%` }}
+                />
+              </div>
               <p className="text-sm text-muted-foreground">
                 {t.navUpdate.fetchingNav} ({status?.done ?? 0}/{status?.total ?? 0})
               </p>

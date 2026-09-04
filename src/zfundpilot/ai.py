@@ -51,6 +51,21 @@ def build_portfolio_context() -> str:
             f"债券类: {report.bond_weight:.1%} | QDII: {report.qdii_weight:.1%}"
         )
 
+        # 行业穿透（跨基金聚合真实行业敞口）
+        exposure = analysis.aggregate_industry_exposure(open_positions)
+        if exposure.ok and exposure.items:
+            lines.append("\n## 行业敞口（基金穿透）")
+            lines.append(f"- 穿透覆盖度: {exposure.penetrated_market_value / exposure.total_market_value:.1%}"
+                         f"（{exposure.funds_with_data}/{exposure.funds_count} 只基金有行业数据）")
+            if exposure.quarter:
+                lines.append(f"- 报告期: {exposure.quarter}")
+            for item in exposure.items[:10]:
+                lines.append(f"- {item.industry}: {item.market_value:,.0f}({item.weight:.1%})"
+                             f" [{item.funds_count} 只基金]")
+            if exposure.unpenetrated_market_value > 0:
+                lines.append(f"- 未穿透（债/现金/未披露）: {exposure.unpenetrated_market_value:,.0f}"
+                             f"({exposure.unpenetrated_market_value / exposure.total_market_value:.1%})")
+
         if open_positions:
             lines.append("\n## 持仓明细")
             for p in open_positions:

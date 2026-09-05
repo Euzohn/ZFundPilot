@@ -19,7 +19,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useLang } from "@/i18n/LanguageContext"
 import { useCompare } from "@/contexts/CompareContext"
-import { ArrowLeft, TrendingUp, TrendingDown, GitCompare, Star, Repeat, Pencil, Trash2, ChevronDown } from "lucide-react"
+import { ArrowLeft, TrendingUp, TrendingDown, GitCompare, Star, Repeat, Pencil, Trash2, ChevronDown, FileText } from "lucide-react"
 import { ComposedChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, PieChart, Pie, LineChart } from "recharts"
 import { CHART_COLORS } from "@/lib/chartPalette"
 import MetricCard from "@/components/MetricCard"
@@ -194,7 +194,7 @@ const handleDelete = async (txId: number) => {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1 min-w-0">
-          <PageHeader title={fund?.fund_name ?? code} tracking="tight" truncate className="min-w-0" />
+          <PageHeader title={fund?.fund_name ?? code} icon={<FileText className="h-5 w-5" />} truncate className="min-w-0" />
           <div className="mt-1 flex items-center gap-2 flex-wrap text-sm">
             <span className="font-mono text-muted-foreground">{code}</span>
             {fund?.fund_type && (

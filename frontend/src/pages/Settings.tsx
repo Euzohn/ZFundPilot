@@ -31,7 +31,7 @@ import {
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
   SlidersHorizontal, LogOut, Loader2, CheckCircle2, XCircle, Zap,
   Search, X, Palette, UserCircle, Clock, Archive, FileDown, Gift,
-  Bell, TrendingUp, TrendingDown, Camera,
+  Bell, TrendingUp, TrendingDown, Camera, Settings as SettingsIcon,
 } from "lucide-react"
 
 const PROVIDER_NAMES: Record<string, { zh: string; en: string }> = {
@@ -592,7 +592,7 @@ export default function Settings() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t.settings.title} tracking="tight" />
+        <PageHeader title={t.settings.title} icon={<SettingsIcon className="h-5 w-5" />} />
 
       <Tabs defaultValue="ai">
         <TabsList className={cn("grid w-full sm:inline-flex sm:w-auto", authRequired ? "grid-cols-3" : "grid-cols-2")}>

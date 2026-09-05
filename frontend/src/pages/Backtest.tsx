@@ -3,7 +3,7 @@ import {
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
 } from "recharts"
-import { TrendingUp, Play, X } from "lucide-react"
+import { TrendingUp, Play, X, FlaskConical } from "lucide-react"
 import PageHeader from "@/components/PageHeader"
 import MetricCard from "@/components/MetricCard"
 import LoadingState from "@/components/LoadingState"
@@ -176,6 +176,7 @@ export default function Backtest() {
       <PageHeader
         title={t.backtest.title}
         subtitle={t.backtest.subtitle}
+        icon={<FlaskConical className="h-5 w-5" />}
       />
 
       {/* 输入区 */}

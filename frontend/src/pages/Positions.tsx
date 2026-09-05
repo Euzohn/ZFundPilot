@@ -17,7 +17,7 @@ import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import ErrorState from "@/components/ErrorState"
 import { cn } from "@/lib/utils"
-import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search, LayoutGrid, List } from "lucide-react"
+import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search, LayoutGrid, List, Wallet } from "lucide-react"
 import { makeSortHeader } from "@/components/SortHeader"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import IndustryExposurePanel from "@/components/IndustryExposurePanel"
@@ -150,6 +150,7 @@ export default function Positions() {
         <ErrorState message={error ?? undefined} onRetry={reload} />
       ) : (
       <>
+      <PageHeader title={t.positions.title} icon={<Wallet className="h-5 w-5" />} />
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="list">{t.positions.listTab}</TabsTrigger>
@@ -157,8 +158,7 @@ export default function Positions() {
           <TabsTrigger value="closed">{t.positions.closedTab}</TabsTrigger>
         </TabsList>
         <TabsContent value="list" className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <PageHeader title={t.positions.title} />
+      <div className="flex items-center justify-end flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />

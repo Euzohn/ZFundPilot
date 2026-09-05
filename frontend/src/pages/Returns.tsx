@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils"
 import { BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Area, ComposedChart, Cell, ReferenceLine } from "recharts"
 import PnLCalendar from "@/components/PnLCalendar"
 import TpSlAlertsPanel from "@/components/TpSlAlertsPanel"
-import { BarChart3, CalendarDays } from "lucide-react"
+import { BarChart3, CalendarDays, TrendingUp } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { getChannelColors, getChannelColorsAsync, getPalette } from "@/lib/channelColors"
 import { RANGE_DAYS } from "@/lib/rangeLabels"
@@ -265,7 +265,7 @@ export default function Returns() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t.returns.title} />
+      <PageHeader title={t.returns.title} icon={<TrendingUp className="h-5 w-5" />} />
 
       {/* Metrics — 详细指标，不与总览重复 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">

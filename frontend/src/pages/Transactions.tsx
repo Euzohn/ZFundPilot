@@ -19,7 +19,7 @@ import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, Loader2, Receipt, ArrowUpDown, Repeat, Gift, Camera } from "lucide-react"
+import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, Loader2, Receipt, ArrowUpDown, Repeat, Gift, Camera, ArrowLeftRight } from "lucide-react"
 import { getChannels, getChannelsAsync, saveChannels } from "@/lib/channels"
 import { translateChannel } from "@/lib/taxonomyLabels"
 import { translateBackendError } from "@/lib/backendLabels"
@@ -117,7 +117,7 @@ export default function Transactions() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t.transactions.title} />
+      <PageHeader title={t.transactions.title} icon={<ArrowLeftRight className="h-5 w-5" />} />
       <DividendCheckDialog open={dividendDialogOpen} onOpenChange={setDividendDialogOpen} />
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-5 sm:inline-flex sm:w-auto">

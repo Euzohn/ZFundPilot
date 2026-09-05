@@ -197,10 +197,7 @@ export default function Screener() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <Search className="h-5 w-5 text-primary" />
-        <PageHeader title={t.screener.title} tracking="tight" />
-      </div>
+      <PageHeader title={t.screener.title} icon={<Search className="h-5 w-5" />} />
 
       <Card>
         <CardContent className="p-4">

@@ -10,7 +10,7 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts"
-import { Wallet, Calendar } from "lucide-react"
+import { Wallet, Calendar, LayoutDashboard } from "lucide-react"
 import { CHART_COLORS } from "@/lib/chartPalette"
 import MetricCard from "@/components/MetricCard"
 import PageHeader from "@/components/PageHeader"
@@ -109,7 +109,7 @@ export default function Overview() {
   if (noData) {
     return (
       <div className="space-y-6">
-        <PageHeader title={t.overview.title} />
+        <PageHeader title={t.overview.title} icon={<LayoutDashboard className="h-5 w-5" />} />
         <Card>
           <CardContent className="py-20 text-center text-muted-foreground">
             {t.overview.noHoldingsHint}
@@ -121,7 +121,7 @@ export default function Overview() {
 
   return (
     <div className="space-y-6">
-        <PageHeader title={t.overview.title} tracking="tight" actions={summary.max_single_name ? (
+        <PageHeader title={t.overview.title} icon={<LayoutDashboard className="h-5 w-5" />} actions={summary.max_single_name ? (
           <p className="text-sm text-muted-foreground">
             {t.overview.maxHolding}：<span className="font-medium text-foreground">{summary.max_single_name}</span>
             {" "}{t.overview.weight} <span className="font-mono font-medium">{pct(summary.max_single_weight)}</span>

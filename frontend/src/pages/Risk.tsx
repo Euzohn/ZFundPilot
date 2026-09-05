@@ -9,7 +9,7 @@ import { pct, pnlColor } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
-import { ShieldAlert, AlertTriangle, Info, Lightbulb } from "lucide-react"
+import { ShieldAlert, AlertTriangle, Info, Lightbulb, Shield } from "lucide-react"
 import type { ReactNode } from "react"
 import MetricCard from "@/components/MetricCard"
 import { useLang } from "@/i18n/LanguageContext"
@@ -31,7 +31,7 @@ export default function Risk() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t.risk.title} />
+      <PageHeader title={t.risk.title} icon={<Shield className="h-5 w-5" />} />
 
       {/* Metrics */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">

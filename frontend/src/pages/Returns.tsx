@@ -29,6 +29,8 @@ const BENCHMARK_DEFS = [
   { code: "000300", labelKey: "benchmarkHS300" as const, color: CHART_COLORS[1] },
   { code: "000001", labelKey: "benchmarkSSE" as const, color: CHART_COLORS[2] },
   { code: "399006", labelKey: "benchmarkGEM" as const, color: CHART_COLORS[5] },
+  { code: "CPI", labelKey: "benchmarkCPI" as const, color: CHART_COLORS[6] },
+  { code: "M2", labelKey: "benchmarkM2" as const, color: CHART_COLORS[7] },
 ]
 
 function ChannelTooltip({ active, payload, label }: { active?: boolean; payload?: { dataKey: string; value: number; color: string }[]; label?: string }) {

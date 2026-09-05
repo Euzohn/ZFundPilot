@@ -15,7 +15,7 @@ from typing import Any
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from . import analysis, auto_invest, config, db, fetch_estimate, fetch_fund
+from . import analysis, auto_invest, config, db, fetch_estimate, fetch_fund, fetch_macro
 from .nav_update_state import nav_update_lock as _nav_update_lock
 from .nav_update_state import nav_update_state as _nav_update_state
 
@@ -42,13 +42,13 @@ _last_benchmark_run: datetime | None = None
 
 
 def _update_benchmark_indices() -> None:
-    """拉取并持久化基准指数历史收盘价。
+    """拉取并持久化基准指数历史收盘价 + 宏观财富水位（CPI/M2）。
 
     在净值更新后调用，确保 index_history 表保持最新。
     失败不阻塞主流程（已有 DB 缓存可用）。
     """
     global _last_benchmark_run
-    logger.info("[scheduler] 基准指数更新开始")
+    logger.info("[scheduler] 基准指数/宏观水位更新开始")
     today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
     for code, name in config.BENCHMARK_INDICES.items():
         db_latest = db.get_index_latest_date(code)
@@ -59,6 +59,14 @@ def _update_benchmark_indices() -> None:
         hist = fetch_estimate.fetch_index_history(code, "2010-01-01", today)
         if hist:
             logger.info("[scheduler] %s(%s) 更新到 %s (%d 条)",
+                        name, code, hist[-1]["date"], len(hist))
+        else:
+            logger.warning("[scheduler] %s(%s) 拉取失败", name, code)
+    for code, name in config.MACRO_INDICES.items():
+        # 宏观数据为月度，内部按新鲜度判断是否需要在线拉取（fetch_macro_history）
+        hist = fetch_macro.fetch_macro_history(code, "2008-01-01", today)
+        if hist:
+            logger.info("[scheduler] %s(%s) 最新月份 %s (%d 条)",
                         name, code, hist[-1]["date"], len(hist))
         else:
             logger.warning("[scheduler] %s(%s) 拉取失败", name, code)

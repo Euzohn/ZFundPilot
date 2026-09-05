@@ -121,7 +121,8 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 ### Analysis & Estimates
 
 - **NAV Updates** — AkShare primary, Tiantian Fund fallback. Auto-fetch fund name/type/sector on code entry
-- **Return Analysis** — Unrealized/realized P&L, portfolio return curve, benchmark comparison (CSI 300 / SSE Composite / ChiNext, data persisted for offline use), return rate ranking, day/week/month/year calendar view, stacked bar by channel
+- **Return Analysis** — Unrealized/realized P&L, portfolio return curve, benchmark comparison (CSI 300 / SSE Composite / ChiNext + CPI purchasing power / M2 wealth ranking waterlines, data persisted for offline use), return rate ranking, day/week/month/year calendar view, stacked bar by channel
+- **Wealth Waterlines (CPI/M2)** — Portfolio return curve overlaid with inflation purchasing power line (CPI MoM-chained price level) and social wealth ranking line (M2 stock expansion), answering "am I actually richer after inflation". Waterline uses last month-end before portfolio start as baseline, exactly 0 at start date. AI advisor context includes real return (inflation-adjusted) and wealth ranking direction
 - **Live Estimates** — Real-time fund change estimates during trading hours. Auto-invalidates when actual NAV is published. Auto-falls back to fundgz API (6 threads) when primary source is unavailable, with index/ETF fallback tier
 - **Fund Compare** — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix. Global compare basket with add/remove, badge count in nav bar
 - **Fund Screener** — Filter from full market universe by type/sector/keyword, top 30 auto-enriched with returns/risk metrics, sortable columns, one-click add to compare or watchlist
@@ -192,6 +193,7 @@ ZFundPilot/
 │   ├── db.py             # SQLite database operations
 │   ├── fetch_fund.py     # NAV fetching + name/type/sector + fee lookup + holdings/ranking/profile/industry
 │   ├── fetch_estimate.py # Real-time fund estimate (AkShare)
+│   ├── fetch_macro.py    # Macro wealth waterlines (CPI price level + M2 stock)
 │   ├── compare.py        # Fund comparison (returns/risk/correlation)
 │   ├── fund_filter.py    # Fund filter (full market universe + metrics enrichment)
 │   ├── analysis.py       # Transaction aggregation, return calculation, curve, industry exposure
@@ -204,9 +206,9 @@ ZFundPilot/
 │   ├── api.py            # FastAPI REST API (37+ routes + auth middleware)
 │   ├── ai.py             # AI advisor chat (portfolio context + web search)
 │   └── scheduler.py      # APScheduler NAV update + auto-invest + dividend check + TP/SL check
-├── tests/                # Pytest test suite (424 tests)
+├── tests/                # Pytest test suite (457 tests)
 │   ├── conftest.py       #   Shared fixtures
-│   └── test_*.py         #   22 test modules
+│   └── test_*.py         #   23 test modules
 ├── data/
 │   ├── fund.db           # SQLite database (auto-generated)
 │   ├── auth.json         # Password hash / token secret (auto-generated)

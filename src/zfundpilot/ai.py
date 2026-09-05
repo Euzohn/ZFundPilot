@@ -11,11 +11,12 @@ import json
 import logging
 import re
 from collections.abc import AsyncGenerator
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
 
-from . import analysis, config, db, rebalance, risk
+from . import analysis, config, db, fetch_macro, rebalance, risk
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,28 @@ def build_portfolio_context() -> str:
         lines.append(f"- 浮动盈亏: {summary.unrealized_pnl:+,.2f}")
         lines.append(f"- 总收益率: {summary.total_return:+.2%}")
         lines.append(f"- 持仓数量: {summary.holding_count}")
+
+        # 通胀与财富水位（CPI 购买力 / M2 社会财富排位）
+        try:
+            curve = analysis.build_portfolio_curve()
+            if not curve.empty and len(curve) >= 2:
+                start_date = str(curve["date"].iloc[0])
+                end_date = str(curve["date"].iloc[-1])
+                cpi_res = fetch_macro.fetch_macro_baseline("CPI", start_date, end_date)
+                m2_res = fetch_macro.fetch_macro_baseline("M2", start_date, end_date)
+                lines.append("\n## 通胀与财富水位")
+                if cpi_res:
+                    cpi_total = (cpi_res[0][-1]["close"] / cpi_res[1]) - 1
+                    real_return = summary.total_return - cpi_total
+                    lines.append(f"- 累计通胀(CPI): {cpi_total:+.2%}，实际收益(扣通胀): {real_return:+.2%}"
+                                 f"（{'跑赢通胀' if real_return > 0 else '跑输通胀'}）")
+                if m2_res:
+                    m2_growth = (m2_res[0][-1]["close"] / m2_res[1]) - 1
+                    rank = "上升" if summary.total_return >= m2_growth else "下降"
+                    lines.append(f"- M2 扩张: {m2_growth:+.2%}，组合收益: {summary.total_return:+.2%}，"
+                                 f"社会财富排位{rank}")
+        except Exception:  # noqa: BLE001
+            logger.debug("通胀/财富水位上下文构建失败，已跳过", exc_info=True)
 
         lines.append("\n## 风险指标")
         if report.max_drawdown is not None:
@@ -123,8 +146,6 @@ def build_portfolio_context() -> str:
 def _fetch_market_index() -> str:
     """获取主要大盘指数数据（失败返回空字符串）。"""
     try:
-        from datetime import datetime, timedelta
-
         import akshare as ak
 
         end = datetime.now(config.TIMEZONE).strftime("%Y%m%d")

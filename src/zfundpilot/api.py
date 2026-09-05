@@ -41,6 +41,7 @@ from . import (
     db,
     fetch_estimate,
     fetch_fund,
+    fetch_macro,
     fund_filter,
     rebalance,
     risk,
@@ -1673,6 +1674,10 @@ def get_portfolio_curve() -> list[dict[str, Any]]:
 
 # 基准指数代码 → 名称（从 config 导入，scheduler 共用）
 BENCHMARK_INDICES = config.BENCHMARK_INDICES
+# 宏观财富水位代码 → 名称（CPI/M2，与指数基准同构，scheduler 共用）
+MACRO_INDICES = config.MACRO_INDICES
+# 全部可用的对比代码（基准指数 + 宏观水位）
+COMPARABLE_CODES = {**BENCHMARK_INDICES, **MACRO_INDICES}
 
 
 @app.get("/api/portfolio/benchmark")
@@ -1680,17 +1685,18 @@ def get_portfolio_benchmark(indices: str = "") -> list[dict[str, Any]]:
     """获取基准指数累计收益率序列，与组合曲线日期对齐。
 
     Args:
-        indices: 逗号分隔的指数代码，如 "000300,000001,399006"
+        indices: 逗号分隔的代码，如 "000300,000001,399006,CPI,M2"
+                 基准指数代码（000300 等）+ 宏观财富水位代码（CPI/M2）
 
     Returns:
         [{date: "2025-01-01", "000300": 0.05, "000001": 0.03, ...}, ...]
-        每个指数的值为累计收益率（close / close_at_start - 1）。
-        失败的指数不包含在结果中。
+        每个代码的值为累计收益率（close / close_at_start - 1）。
+        失败的代码不包含在结果中。
     """
     if not indices:
         return []
     codes = [c.strip() for c in indices.split(",") if c.strip()]
-    codes = [c for c in codes if c in BENCHMARK_INDICES]
+    codes = [c for c in codes if c in COMPARABLE_CODES]
     if not codes:
         return []
 
@@ -1705,10 +1711,19 @@ def get_portfolio_benchmark(indices: str = "") -> list[dict[str, Any]]:
 
     series: dict[str, dict[str, float]] = {}
     for code in codes:
-        hist = fetch_estimate.fetch_index_history(code, start_date, end_date)
+        if code in MACRO_INDICES:
+            # 宏观水位（月度数据）：基期 = 建仓前最后一个月末水平，
+            # 使水位线在建仓日精确为 0，随后随通胀/货币扩张累积。
+            baseline_res = fetch_macro.fetch_macro_baseline(code, start_date, end_date)
+            if baseline_res:
+                hist, first_close = baseline_res
+            else:
+                hist, first_close = [], 0
+        else:
+            hist = fetch_estimate.fetch_index_history(code, start_date, end_date)
+            first_close = hist[0]["close"] if hist else 0
         if not hist:
             continue
-        first_close = hist[0]["close"]
         if first_close == 0:
             continue
         # 按日期建 Map，计算累计收益率
@@ -1725,7 +1740,7 @@ def get_portfolio_benchmark(indices: str = "") -> list[dict[str, Any]]:
         series[code] = filled
 
     if not series:
-        logger.warning("get_portfolio_benchmark: 所有指数数据均为空 %s", codes)
+        logger.warning("get_portfolio_benchmark: 所有基准数据均为空 %s", codes)
         return []
 
     result = []

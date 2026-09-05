@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Added
+- CPI/M2 财富水位线：组合收益曲线叠加通胀购买力线（CPI）与社会财富排位线（M2），回答「扣掉通胀我真的变富了吗」和「社会财富排位升还是降」。后端 `fetch_macro.py` 封装 `ak.macro_china_cpi()`（全国-当月为同比指数，链乘环比增长重建 2008-01=100 定基价格水平）+ `ak.macro_china_money_supply()`（M2 存量亿元），三级缓存（内存→DB→AkShare，复用 `index_history` 表，`source="macro"`），月度数据 45 天新鲜度窗口（含发布滞后）。`fetch_macro_baseline()` 选建仓日前最后一个月末作基期，使水位线在建仓日精确为 0。`/api/portfolio/benchmark` 端点扩展白名单（`COMPARABLE_CODES = BENCHMARK_INDICES | MACRO_INDICES`），宏观代码走 `fetch_macro` 分支，指数代码走原路径。前端 `BENCHMARK_DEFS` 新增 CPI/M2 两条（虚线，独立配色），i18n `benchmarkCPI`/`benchmarkM2`。调度器月度刷新宏观数据。AI 上下文新增「通胀与财富水位」段（累计通胀 + 实际收益 + M2 扩张 + 社会财富排位升降）。新增 `tests/test_fetch_macro.py`（29 用例），测试总数 428→457
 - 组合真实行业敞口（基金穿透）：跨基金聚合底层持仓的真实行业分布，而非基金名称推导的板块。后端 `fetch_fund_industry_allocation()` 封装 `ak.fund_portfolio_industry_allocation_em`（证监会 ~19 类行业配置，当年无数据回退上一年，1h 缓存），`analysis.aggregate_industry_exposure()` 按基金市值 × 行业占比加权求和，穿透/未穿透分离。新增 `GET /api/portfolio/industry-exposure`（60/min 限流）+ `GET /api/funds/{code}/industry-allocation`。前端 Positions 页改 Tabs 结构（持仓列表 / 行业敞口 / 已清仓），行业敞口 Tab 含汇总条 + BarChart + PieChart + 明细表（`IndustryExposurePanel` 组件）。FundDetail 页新增行业配置卡片（饼图 + 行业明细表）。`taxonomyLabels` 新增 19 个证监会行业双语映射 + `translateIndustry()`。AI 投顾上下文注入行业穿透数据（穿透覆盖度 + 前 10 大行业 + 未穿透部分）。新增 `tests/test_industry_exposure.py`（6 用例）+ `test_fetch_fund.py` 扩 6 个行业配置测试，总测试 407→419
 
 ### Changed

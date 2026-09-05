@@ -809,6 +809,8 @@ const zh = {
     benchmarkHS300: "沪深300",
     benchmarkSSE: "上证指数",
     benchmarkGEM: "创业板指",
+    benchmarkCPI: "CPI购买力",
+    benchmarkM2: "M2财富排位",
     curveNoDataHint: "净值历史不足，先到「净值更新」抓取数据后再查看曲线。",
     perFundDetail: "单基金收益明细",
     noPositions: "暂无持仓数据",

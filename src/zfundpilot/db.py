@@ -909,17 +909,19 @@ def get_nav_on_date(fund_code: str, date_str: str) -> sqlite3.Row | None:
 # 指数历史（基准对比）
 # ---------------------------------------------------------------------------
 def upsert_index_history(code: str,
-                         points: Iterable[tuple[str, float]]) -> int:
+                         points: Iterable[tuple[str, float]],
+                         source: str = "sina") -> int:
     """批量写入指数历史收盘价。
 
     Args:
-        code: 指数代码，如 "000300"
+        code: 指数代码，如 "000300"（宏观代码 "CPI"/"M2" 也存此表）
         points: [(date, close), ...]
+        source: 数据源标识，默认 "sina"；宏观数据传 "macro"
 
     Returns:
         写入行数。
     """
-    rows = [(code, d, c, "sina") for d, c in points]
+    rows = [(code, d, c, source) for d, c in points]
     if not rows:
         return 0
     with get_connection() as conn:

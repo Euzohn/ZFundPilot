@@ -42,6 +42,7 @@ ZFundPilot/
 │   ├── models.py            # 数据结构（Fund/Transaction/Position/PortfolioSummary）
 │   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）+ 重仓股/排名/档案/行业配置
 │   ├── fetch_estimate.py   # 基金实时估值（东财估值 + 指数/ETF 兜底）+ 指数历史收盘价持久化
+│   ├── fetch_macro.py     # 宏观财富水位数据（CPI 链乘价格水平 + M2 存量，三级缓存，复用 index_history 表）
 │   ├── fetch_dividend.py  # 基金分红检测（AkShare 分红送配 + 90 天窗口 + 交易去重 + 幽灵提醒自动清理）
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
 │   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）+ resolve_fund_code 名称→代码解析 + verify_fund_code 校验
@@ -52,7 +53,7 @@ ZFundPilot/
 │   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延）
 │   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
 │   ├── nav_update_state.py  # 净值更新共享状态+锁（api.py/scheduler.py 共用，避免循环导入）
-│   ├── scheduler.py         # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查 + 基准指数持久化
+│   ├── scheduler.py         # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查 + 基准指数/宏观水位持久化
 │   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）+ 视觉模型截图解析（parse_screenshot + resolve_fund_code 名称→代码后处理）
 │   └── data_io.py           # CSV 导入/导出 + 全量备份 ZIP
 ├── frontend/src/            # React 前端
@@ -92,7 +93,7 @@ ZFundPilot/
 │   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12 并行) → tsc → build
 ├── tests/                   # Pytest 测试套件
 │   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
-│   └── test_*.py            #   390 个测试用例
+│   └── test_*.py            #   457 个测试用例
 └── docs/CONTEXT.md              # 本文件（不追踪）
 ```
 
@@ -229,6 +230,19 @@ ZFundPilot/
 - 估算失效检测：`jzrq == gztime[:10]` 时标记 `ok=False`（真实净值已公布）
 - API: `GET /api/estimate`（批量 + 组合汇总，含指数兜底）+ `GET /api/funds/{code}/estimate`（单只，含指数兜底）
 - `fetch_index_history(symbol, start_date, end_date)`: 获取指数历史收盘价（新浪源 `ak.stock_zh_index_daily`），三级缓存（L1 内存 1h → L2 SQLite `index_history` 表 → L3 新浪在线）。在线拉取后自动持久化到 DB，离线时从 DB 返回已有数据。`_to_sina_symbol()` 转换代码格式（000300→sh000300），用于基准对比。`BENCHMARK_INDICES` 定义在 `config.py` 共享
+
+### fetch_macro.py — 宏观财富水位线
+
+- 数据源：`ak.macro_china_cpi()`（国家统计局月度 CPI，全国-当月为同比指数 base 100=上年同月）+ `ak.macro_china_money_supply()`（央行月度 M2 存量亿元），2008-01 起
+- CPI 价格水平重建：全国-当月不可直接累计，链乘「全国-环比增长」(MoM) 重建 2008-01=100 定基价格水平。`_build_cpi_level()` 先按日期升序排序（AkShare 返回降序）再链乘，确保水平值与月份一一对应
+- M2 存量：`货币和准货币(M2)-数量(亿元)` 直接取用，累计增速 = M2_latest/M2_baseline - 1
+- `_parse_cn_month("2026年07月份")` → `"2026-07-31"`（月末），用 `calendar.monthrange` 处理闰年
+- 三级缓存（L1 内存 1h → L2 SQLite `index_history` 表 → L3 AkShare 在线），复用指数历史表（code="CPI"/"M2"，`source="macro"`）。`upsert_index_history` 新增 `source` 参数（默认 "sina"，宏观传 "macro"）
+- 月度数据 45 天新鲜度窗口（`_MACRO_FRESH_DAYS=45`，含发布滞后），`_macro_is_fresh()` 判断是否需在线拉取
+- `fetch_macro_baseline(code, start_date, end_date)`: 核心函数——提前 60 天取数窗口，选建仓日前最后一个月末作基期（`baseline_pts[-1]`，无则退化首个月末），使水位线在建仓日精确为 0。返回 `(hist, baseline_close)`，无数据返回 None
+- API 端点：`/api/portfolio/benchmark` 扩展白名单 `COMPARABLE_CODES = BENCHMARK_INDICES | MACRO_INDICES`，宏观代码走 `fetch_macro.fetch_macro_baseline` 分支，指数代码走 `fetch_estimate.fetch_index_history`
+- 调度器月度刷新（`scheduler._update_benchmark_indices` 新增 MACRO_INDICES 循环）
+- AI 上下文：`build_portfolio_context()` 新增「通胀与财富水位」段（累计通胀 + 实际收益 + M2 扩张 + 社会财富排位升降），`fetch_macro` 延迟导入避免循环依赖
 
 ### analysis.py — 收益计算
 
@@ -449,6 +463,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### v0.22.0 - Unreleased
 
+- feat: CPI/M2 财富水位线——组合收益曲线叠加通胀购买力线（CPI）与社会财富排位线（M2），回答「扣掉通胀我真的变富了吗」。`fetch_macro.py` 封装 `ak.macro_china_cpi()`（全国-当月为同比指数，链乘环比重建 2008-01=100 定基价格水平，`_build_cpi_level` 先按日期升序再链乘）+ `ak.macro_china_money_supply()`（M2 存量亿元），三级缓存（内存→DB→AkShare，复用 `index_history` 表，`source="macro"`），月度 45 天新鲜度窗口。`fetch_macro_baseline()` 选建仓日前最后一个月末作基期，使水位线在建仓日精确为 0。`/api/portfolio/benchmark` 扩展白名单 `COMPARABLE_CODES`，宏观代码走 `fetch_macro` 分支。前端 `BENCHMARK_DEFS` 新增 CPI/M2（虚线独立配色），i18n `benchmarkCPI`/`benchmarkM2`。调度器月度刷新宏观数据。AI 上下文新增「通胀与财富水位」段。新增 `tests/test_fetch_macro.py`（29 用例），总测试 428→457
 - feat: 组合真实行业敞口（基金穿透）——跨基金聚合底层持仓的真实行业分布（证监会 ~19 类），而非基金名称推导的板块。`fetch_fund_industry_allocation()` 封装 `ak.fund_portfolio_industry_allocation_em`（当年无数据回退上一年，1h 缓存）；`aggregate_industry_exposure()` 按基金市值 × 行业占比加权求和，穿透/未穿透分离。新增 `GET /api/portfolio/industry-exposure` + `GET /api/funds/{code}/industry-allocation`。Positions 页改 Tabs（持仓列表/行业敞口/已清仓），行业敞口 Tab 含汇总条 + BarChart + PieChart + 明细表（`IndustryExposurePanel`）。FundDetail 新增行业配置卡片。AI 投顾上下文注入行业穿透数据。`taxonomyLabels` 新增 19 个证监会行业双语映射 + `translateIndustry()`。新增 12 个测试（6 fetch + 6 聚合），总测试 407→419
 - fix: 行业名称中英文夹杂——QDII 基金返回 GICS 分类（非必需消费品/电信服务/能源等）与 CSRC 分类混合，映射未覆盖透传中文。`INDUSTRIES` 扩展至 ~35 条（CSRC + GICS + 别名变体）；后端新增 `_clean_industry_name()` 清洗前导数字脏值（"45信息技术"→"信息技术"）。新增 5 个测试，总测试 419→424
 - feat: 页面标题统一加图标——`PageHeader` 新增 `icon` prop（`text-primary` 色 flex 居中），`tracking` 默认 `"default"`→`"tight"`。12 个内容页统一「图标+文字」：Overview→LayoutDashboard / Positions→Wallet / Returns→TrendingUp / Risk→Shield / Backtest→FlaskConical / NavUpdate→RefreshCw / Settings→SettingsIcon(别名) / Transactions→ArrowLeftRight / FundCompare→GitCompare / Screener→Search / Watchlist→Star / FundDetail→FileText。FundCompare/Screener/Watchlist 去手写 flex wrapper；清除 6 处冗余 `tracking="tight"`。Positions 页 PageHeader 从 list tab 内部提到 Tabs 上方（与 Transactions 一致），search/filter 改 `justify-end`

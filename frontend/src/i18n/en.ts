@@ -811,6 +811,8 @@ const en: typeof zh = {
     benchmarkHS300: "CSI 300",
     benchmarkSSE: "SSE Composite",
     benchmarkGEM: "ChiNext",
+    benchmarkCPI: "CPI (Purchasing Power)",
+    benchmarkM2: "M2 (Wealth Ranking)",
     curveNoDataHint: "Insufficient NAV history. Fetch data in NAV Update first.",
     perFundDetail: "Per-Fund Return Detail",
     noPositions: "No position data",

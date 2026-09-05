@@ -84,13 +84,12 @@ export default function IndustryExposurePanel() {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <SummaryCard label={t.positions.equityCoverage} value={pct(equityCoverage)} sub={t.positions.equityCoverageHint} />
         <SummaryCard label={t.positions.penetratedFunds} value={`${data.funds_with_data} / ${data.funds_count}`} />
         <SummaryCard label={t.positions.reportQuarter} value={data.quarter || "—"} />
-        {nonEquityMv > 0
-          ? <SummaryCard label={t.positions.nonEquityFunds} value={money(nonEquityMv)} />
-          : <SummaryCard label={t.positions.unpenetrated} value={money(data.unpenetrated_market_value)} sub={t.positions.unpenetratedHint} />}
+        <SummaryCard label={t.positions.unpenetrated} value={money(data.unpenetrated_market_value)} sub={t.positions.unpenetratedHint} />
+        <SummaryCard label={t.positions.nonEquityFunds} value={money(nonEquityMv)} />
       </div>
 
       <p className="text-xs text-muted-foreground">{t.positions.industryExposureHint}</p>

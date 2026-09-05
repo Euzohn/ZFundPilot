@@ -711,7 +711,6 @@ const en: typeof zh = {
     industryExposureHint: "Real industry allocation at the underlying holdings level (official fund quarterly disclosure)",
     listTab: "Positions",
     closedTab: "Closed",
-    lookThroughCoverage: "Look-through Coverage",
     equityCoverage: "Equity Coverage",
     equityCoverageHint: "Equity funds only",
     nonEquityFunds: "Bond etc. (N/A)",

@@ -709,7 +709,6 @@ const zh = {
     industryExposureHint: "穿透至底层持仓的真实行业分布（基金官方季报披露）",
     listTab: "持仓列表",
     closedTab: "已清仓",
-    lookThroughCoverage: "穿透覆盖度",
     equityCoverage: "权益穿透率",
     equityCoverageHint: "仅统计权益类基金",
     nonEquityFunds: "债基等（无需穿透）",

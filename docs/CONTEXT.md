@@ -13,7 +13,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.21.0`（git tag `v0.21.0`）
+- **版本**: `0.22.0`（git tag `v0.22.0`）
 - **License**: MIT
 
 ---
@@ -35,7 +35,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心功能：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.21.0"
+│   ├── __init__.py          # __version__ = "0.22.0"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
@@ -150,7 +150,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.21.0")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.22.0")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
 - 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
@@ -461,7 +461,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ## 十二、当前工作状态
 
-### v0.22.0 - Unreleased
+### v0.22.0 - 2026-09-05
 
 - feat: CPI/M2 财富水位线——组合收益曲线叠加通胀购买力线（CPI）与社会财富排位线（M2），回答「扣掉通胀我真的变富了吗」。`fetch_macro.py` 封装 `ak.macro_china_cpi()`（全国-当月为同比指数，链乘环比重建 2008-01=100 定基价格水平，`_build_cpi_level` 先按日期升序再链乘）+ `ak.macro_china_money_supply()`（M2 存量亿元），三级缓存（内存→DB→AkShare，复用 `index_history` 表，`source="macro"`），月度 45 天新鲜度窗口。`fetch_macro_baseline()` 选建仓日前最后一个月末作基期，使水位线在建仓日精确为 0。`/api/portfolio/benchmark` 扩展白名单 `COMPARABLE_CODES`，宏观代码走 `fetch_macro` 分支。前端 `BENCHMARK_DEFS` 新增 CPI/M2（虚线独立配色），i18n `benchmarkCPI`/`benchmarkM2`。调度器月度刷新宏观数据。AI 上下文新增「通胀与财富水位」段。新增 `tests/test_fetch_macro.py`（29 用例），总测试 428→457
 - feat: 组合真实行业敞口（基金穿透）——跨基金聚合底层持仓的真实行业分布（证监会 ~19 类），而非基金名称推导的板块。`fetch_fund_industry_allocation()` 封装 `ak.fund_portfolio_industry_allocation_em`（当年无数据回退上一年，1h 缓存）；`aggregate_industry_exposure()` 按基金市值 × 行业占比加权求和，穿透/未穿透分离。新增 `GET /api/portfolio/industry-exposure` + `GET /api/funds/{code}/industry-allocation`。Positions 页改 Tabs（持仓列表/行业敞口/已清仓），行业敞口 Tab 含汇总条 + BarChart + PieChart + 明细表（`IndustryExposurePanel`）。FundDetail 新增行业配置卡片。AI 投顾上下文注入行业穿透数据。`taxonomyLabels` 新增 19 个证监会行业双语映射 + `translateIndustry()`。新增 12 个测试（6 fetch + 6 聚合），总测试 407→419

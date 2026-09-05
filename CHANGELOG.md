@@ -4,7 +4,7 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [0.22.0] - 2026-09-05
 
 ### Added
 - CPI/M2 财富水位线：组合收益曲线叠加通胀购买力线（CPI）与社会财富排位线（M2），回答「扣掉通胀我真的变富了吗」和「社会财富排位升还是降」。后端 `fetch_macro.py` 封装 `ak.macro_china_cpi()`（全国-当月为同比指数，链乘环比增长重建 2008-01=100 定基价格水平）+ `ak.macro_china_money_supply()`（M2 存量亿元），三级缓存（内存→DB→AkShare，复用 `index_history` 表，`source="macro"`），月度数据 45 天新鲜度窗口（含发布滞后）。`fetch_macro_baseline()` 选建仓日前最后一个月末作基期，使水位线在建仓日精确为 0。`/api/portfolio/benchmark` 端点扩展白名单（`COMPARABLE_CODES = BENCHMARK_INDICES | MACRO_INDICES`），宏观代码走 `fetch_macro` 分支，指数代码走原路径。前端 `BENCHMARK_DEFS` 新增 CPI/M2 两条（虚线，独立配色），i18n `benchmarkCPI`/`benchmarkM2`。调度器月度刷新宏观数据。AI 上下文新增「通胀与财富水位」段（累计通胀 + 实际收益 + M2 扩张 + 社会财富排位升降）。新增 `tests/test_fetch_macro.py`（29 用例），测试总数 428→457

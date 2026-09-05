@@ -9,8 +9,12 @@
 ### Added
 - 组合真实行业敞口（基金穿透）：跨基金聚合底层持仓的真实行业分布，而非基金名称推导的板块。后端 `fetch_fund_industry_allocation()` 封装 `ak.fund_portfolio_industry_allocation_em`（证监会 ~19 类行业配置，当年无数据回退上一年，1h 缓存），`analysis.aggregate_industry_exposure()` 按基金市值 × 行业占比加权求和，穿透/未穿透分离。新增 `GET /api/portfolio/industry-exposure`（60/min 限流）+ `GET /api/funds/{code}/industry-allocation`。前端 Positions 页改 Tabs 结构（持仓列表 / 行业敞口 / 已清仓），行业敞口 Tab 含汇总条 + BarChart + PieChart + 明细表（`IndustryExposurePanel` 组件）。FundDetail 页新增行业配置卡片（饼图 + 行业明细表）。`taxonomyLabels` 新增 19 个证监会行业双语映射 + `translateIndustry()`。AI 投顾上下文注入行业穿透数据（穿透覆盖度 + 前 10 大行业 + 未穿透部分）。新增 `tests/test_industry_exposure.py`（6 用例）+ `test_fetch_fund.py` 扩 6 个行业配置测试，总测试 407→419
 
+### Changed
+- 页面标题统一加图标——`PageHeader` 新增 `icon` prop（`text-primary` 色，flex 居中），`tracking` 默认值 `"default"`→`"tight"`（全站字间距一致）。12 个内容页标题统一为「图标 + 文字」：Overview→LayoutDashboard / Positions→Wallet / Returns→TrendingUp / Risk→Shield / Backtest→FlaskConical / NavUpdate→RefreshCw / Settings→SettingsIcon(别名) / Transactions→ArrowLeftRight / FundCompare→GitCompare / Screener→Search / Watchlist→Star / FundDetail→FileText。FundCompare/Screener/Watchlist 移除手写 flex wrapper 改用 PageHeader `icon` prop；清除 6 处冗余 `tracking="tight"` prop
+
 ### Fixed
 - 行业名称中英文夹杂：QDII 基金返回 GICS 分类（非必需消费品/电信服务/能源等）与 CSRC 分类混合，映射表未覆盖导致未映射名称透传中文。扩展 `INDUSTRIES` 映射至 ~35 条（CSRC + GICS + 别名变体），覆盖「金融/金融业」「房地产/房地产业」「信息科技/信息技术」「通讯/电信服务/通信服务」等异写。后端新增 `_clean_industry_name()` 清洗前导数字脏值（如 "45信息技术"→"信息技术"）。新增 5 个测试，总测试 419→424
+- Positions 页布局——原 PageHeader 嵌套在 list tab 内部，切到「行业敞口」或「已清仓」tab 时标题消失。改为 PageHeader 提到 Tabs 上方（与 Transactions/Settings 标准模式一致），search/filter 控件改为 `justify-end` 右对齐
 
 ## [0.21.0] - 2026-09-05
 

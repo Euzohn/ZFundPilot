@@ -152,58 +152,64 @@ export default function Positions() {
       <>
       <PageHeader title={t.positions.title} icon={<Wallet className="h-5 w-5" />} />
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="list">{t.positions.listTab}</TabsTrigger>
-          <TabsTrigger value="exposure">{t.positions.industryExposure}</TabsTrigger>
-          <TabsTrigger value="closed">{t.positions.closedTab}</TabsTrigger>
-        </TabsList>
-        <TabsContent value="list" className="space-y-4">
-      <div className="flex items-center justify-end flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={t.positions.searchPlaceholder}
-              className="h-8 w-44 pl-7 text-xs"
-            />
-          </div>
-          <Select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="h-8 text-xs w-32">
-            <option value="">{t.positions.allChannels}</option>
-            {availableChannels.map((c) => <option key={c} value={c}>{c}</option>)}
-          </Select>
-          {viewMode === "grid" && (
-            <Select value={sortField} onChange={(e) => { setSortField(e.target.value); setSortDir("desc") }} className="h-8 text-xs w-32" aria-label={t.positions.sortBy}>
-              <option value="value">{t.positions.sortValue}</option>
-              <option value="pnl">{t.positions.sortPnl}</option>
-              <option value="return">{t.positions.sortReturn}</option>
-              <option value="name">{t.positions.sortName}</option>
-            </Select>
-          )}
-          <div className="flex items-center rounded-md border border-border overflow-hidden">
-            <Button
-              variant={viewMode === "list" ? "default" : "ghost"}
-              size="sm"
-              className="h-8 px-2 rounded-none"
-              onClick={() => setViewMode("list")}
-              title={t.positions.viewList}
-            >
-              <List className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant={viewMode === "grid" ? "default" : "ghost"}
-              size="sm"
-              className="h-8 px-2 rounded-none"
-              onClick={() => setViewMode("grid")}
-              title={t.positions.viewGrid}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-            </Button>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <TabsList>
+            <TabsTrigger value="list">{t.positions.listTab}</TabsTrigger>
+            <TabsTrigger value="exposure">{t.positions.industryExposure}</TabsTrigger>
+            <TabsTrigger value="closed">{t.positions.closedTab}</TabsTrigger>
+          </TabsList>
+          <div className="flex items-center gap-2">
+            {activeTab === "list" && (
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t.positions.searchPlaceholder}
+                  className="h-8 w-44 pl-7 text-xs"
+                />
+              </div>
+            )}
+            {(activeTab === "list" || activeTab === "closed") && (
+              <Select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="h-8 text-xs w-32">
+                <option value="">{t.positions.allChannels}</option>
+                {availableChannels.map((c) => <option key={c} value={c}>{c}</option>)}
+              </Select>
+            )}
+            {activeTab === "list" && viewMode === "grid" && (
+              <Select value={sortField} onChange={(e) => { setSortField(e.target.value); setSortDir("desc") }} className="h-8 text-xs w-32" aria-label={t.positions.sortBy}>
+                <option value="value">{t.positions.sortValue}</option>
+                <option value="pnl">{t.positions.sortPnl}</option>
+                <option value="return">{t.positions.sortReturn}</option>
+                <option value="name">{t.positions.sortName}</option>
+              </Select>
+            )}
+            {activeTab === "list" && (
+              <div className="flex items-center rounded-md border border-border overflow-hidden">
+                <Button
+                  variant={viewMode === "list" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-8 px-2 rounded-none"
+                  onClick={() => setViewMode("list")}
+                  title={t.positions.viewList}
+                >
+                  <List className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant={viewMode === "grid" ? "default" : "ghost"}
+                  size="sm"
+                  className="h-8 px-2 rounded-none"
+                  onClick={() => setViewMode("grid")}
+                  title={t.positions.viewGrid}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
           </div>
         </div>
-      </div>
+        <TabsContent value="list" className="space-y-4">
 
       {/* 按基金合并视图（主视图） */}
       {viewMode === "list" ? (

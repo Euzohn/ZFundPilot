@@ -160,14 +160,16 @@ export default function IndustryExposurePanel() {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <ResponsiveContainer width="100%" height={Math.max(260, chartData.length * 24)}>
-              <PieChart>
-                <Pie data={chartData} dataKey="market_value" nameKey="name" cx="50%" cy="50%" outerRadius={90} innerRadius={50} paddingAngle={2}>
-                  {chartData.map((d) => <Cell key={d.key} fill={fillFor(d)} stroke="none" />)}
-                </Pie>
-                <Tooltip content={<ExposureTooltip total={total} />} />
-              </PieChart>
-            </ResponsiveContainer>
+            <div className="mx-auto max-w-md">
+              <ResponsiveContainer width="100%" height={340}>
+                <PieChart>
+                  <Pie data={chartData} dataKey="market_value" nameKey="name" cx="50%" cy="50%" outerRadius="75%" innerRadius="40%" paddingAngle={2}>
+                    {chartData.map((d) => <Cell key={d.key} fill={fillFor(d)} stroke="none" />)}
+                  </Pie>
+                  <Tooltip content={<ExposureTooltip total={total} />} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </CardContent>
       </Card>

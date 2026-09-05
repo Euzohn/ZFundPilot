@@ -26,13 +26,14 @@ from typing import Any
 
 import pandas as pd
 
-from . import db, fetch_fund
+from . import config, db, fetch_fund
 from .models import (
     ACTION_BUY,
     ACTION_DIVIDEND,
     ACTION_REINVEST,
     ACTION_SELL,
     Fund,
+    FundMissingData,
     IndustryExposureItem,
     IndustryExposureResult,
     PortfolioSummary,
@@ -346,6 +347,7 @@ def aggregate_industry_exposure(positions: list[Position] | None = None) -> Indu
     对每只持仓基金取其官方行业配置（证监会分类），按「基金市值 × 行业占比」
     加权求和。行业占比之和即股票部分，剩余（债/现金/未披露）计入未穿透。
     失败基金（债基/新基无数据）市值也计入未穿透，不影响其他基金。
+    权益类基金（EQUITY_LIKE_TYPES）单独统计穿透率，债基/货基不计入分母。
     """
     if positions is None:
         positions = calculate_positions(include_closed=False)
@@ -354,14 +356,29 @@ def aggregate_industry_exposure(positions: list[Position] | None = None) -> Indu
         return IndustryExposureResult(ok=False, message="无持仓")
 
     total_mv = sum(p.market_value for p in open_positions)
+    equity_total_mv = sum(
+        p.market_value for p in open_positions
+        if p.fund_type in config.EQUITY_LIKE_TYPES
+    )
     aggregate: dict[str, dict] = {}
     penetrated_mv = 0.0
+    equity_penetrated_mv = 0.0
     latest_quarter = ""
     funds_with_data = 0
+    funds_missing: list = []
 
     for p in open_positions:
+        is_equity = p.fund_type in config.EQUITY_LIKE_TYPES
         result = fetch_fund.fetch_fund_industry_allocation(p.fund_code)
         if result is None or not result.ok or not result.allocations:
+            funds_missing.append(FundMissingData(
+                fund_code=p.fund_code,
+                fund_name=p.fund_name,
+                fund_type=p.fund_type,
+                market_value=p.market_value,
+                reason=result.code if result else "no_data",
+                is_equity=is_equity,
+            ))
             continue
         funds_with_data += 1
         if result.quarter and result.quarter > latest_quarter:
@@ -370,6 +387,8 @@ def aggregate_industry_exposure(positions: list[Position] | None = None) -> Indu
         for alloc in result.allocations:
             effective_mv = p.market_value * alloc.weight
             penetrated_mv += effective_mv
+            if is_equity:
+                equity_penetrated_mv += effective_mv
             if alloc.industry not in aggregate:
                 aggregate[alloc.industry] = {"mv": 0.0, "funds": set()}
             aggregate[alloc.industry]["mv"] += effective_mv
@@ -395,6 +414,9 @@ def aggregate_industry_exposure(positions: list[Position] | None = None) -> Indu
         funds_count=len(open_positions),
         funds_with_data=funds_with_data,
         quarter=latest_quarter,
+        funds_missing=funds_missing,
+        equity_total_market_value=equity_total_mv,
+        equity_penetrated_market_value=equity_penetrated_mv,
         ok=True,
         message="成功",
     )

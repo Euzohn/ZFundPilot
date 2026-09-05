@@ -1338,7 +1338,7 @@ def fetch_fund_industry_allocation(fund_code: str) -> IndustryAllocationResult:
 
         current_year = dt.datetime.now(config.TIMEZONE).year
         df = None
-        for year in (current_year, current_year - 1):
+        for year in (current_year, current_year - 1, current_year - 2):
             try:
                 df = ak.fund_portfolio_industry_allocation_em(
                     symbol=fund_code, date=str(year))

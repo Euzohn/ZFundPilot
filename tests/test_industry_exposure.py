@@ -5,9 +5,9 @@ from zfundpilot.analysis import aggregate_industry_exposure
 from zfundpilot.models import IndustryAllocation, IndustryAllocationResult, Position
 
 
-def _pos(code, name, mv):
+def _pos(code, name, mv, fund_type="股票型"):
     return Position(
-        fund_code=code, fund_name=name, fund_type="股票型", sector="权益",
+        fund_code=code, fund_name=name, fund_type=fund_type, sector="权益",
         market_value=mv, held_shares=1, total_cost=mv, weight=0.5,
     )
 
@@ -131,3 +131,89 @@ def test_aggregate_uses_calculate_positions_default():
         result = aggregate_industry_exposure()
     assert result.ok
     assert result.items[0].market_value == 50000
+
+
+def test_funds_missing_collected():
+    """缺数据的基金收集到 funds_missing 列表。"""
+    positions = [
+        _pos("000001", "股票基金A", 80000),
+        _pos("000002", "债券基金B", 20000, fund_type="债券型"),
+        _pos("000003", "股票基金C", 50000),
+    ]
+    allocs = {"000001": _alloc("000001", [("制造业", 0.6)])}
+    with _mock_fetch(allocs):
+        result = aggregate_industry_exposure(positions)
+
+    assert result.ok
+    assert len(result.funds_missing) == 2
+    missing_codes = {m.fund_code for m in result.funds_missing}
+    assert missing_codes == {"000002", "000003"}
+
+    bond = next(m for m in result.funds_missing if m.fund_code == "000002")
+    assert bond.fund_type == "债券型"
+    assert bond.market_value == 20000
+    assert bond.reason == "no_data"
+    assert bond.is_equity is False
+
+    equity = next(m for m in result.funds_missing if m.fund_code == "000003")
+    assert equity.fund_type == "股票型"
+    assert equity.is_equity is True
+
+
+def test_equity_coverage_excludes_bond_funds():
+    """权益穿透率分母只含权益类基金，债基不计入。"""
+    positions = [
+        _pos("000001", "股票基金", 80000, fund_type="股票型"),
+        _pos("000002", "债券基金", 20000, fund_type="债券型"),
+    ]
+    allocs = {"000001": _alloc("000001", [("制造业", 0.6)])}
+    with _mock_fetch(allocs):
+        result = aggregate_industry_exposure(positions)
+
+    assert result.ok
+    assert result.equity_total_market_value == 80000
+    assert result.equity_penetrated_market_value == 48000  # 80000 * 0.6
+    # 总穿透 = 48000, 总市值 = 100000, 总覆盖率 = 48%
+    assert result.penetrated_market_value == 48000
+    assert result.total_market_value == 100000
+    # 权益穿透率 = 48000/80000 = 60%, 远高于总覆盖率 48%
+    assert len(result.funds_missing) == 1
+    assert result.funds_missing[0].is_equity is False
+
+
+def test_equity_coverage_pure_equity_portfolio():
+    """纯权益组合：权益穿透率 == 总穿透率。"""
+    positions = [
+        _pos("000001", "股票A", 60000),
+        _pos("000002", "混合B", 40000, fund_type="混合型"),
+    ]
+    allocs = {
+        "000001": _alloc("000001", [("制造业", 0.5)]),
+        "000002": _alloc("000002", [("金融业", 0.4)]),
+    }
+    with _mock_fetch(allocs):
+        result = aggregate_industry_exposure(positions)
+
+    assert result.ok
+    assert result.equity_total_market_value == 100000
+    assert result.equity_penetrated_market_value == 46000  # 30000 + 16000
+    assert len(result.funds_missing) == 0
+
+
+def test_parse_error_reason():
+    """parse_error 原因正确传递到 funds_missing。"""
+    from zfundpilot.models import IndustryAllocationResult
+
+    positions = [_pos("000001", "股票基金", 50000)]
+    parse_err = IndustryAllocationResult(
+        fund_code="000001", ok=False, message="无法识别列名", code="parse_error",
+    )
+    with patch(
+        "zfundpilot.fetch_fund.fetch_fund_industry_allocation",
+        return_value=parse_err,
+    ):
+        result = aggregate_industry_exposure(positions)
+
+    assert result.ok
+    assert len(result.funds_missing) == 1
+    assert result.funds_missing[0].reason == "parse_error"

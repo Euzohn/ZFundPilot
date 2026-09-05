@@ -325,6 +325,17 @@ class IndustryExposureItem:
 
 
 @dataclass
+class FundMissingData:
+    """缺行业数据的基金诊断信息。"""
+    fund_code: str
+    fund_name: str = ""
+    fund_type: str = "其它"
+    market_value: float = 0.0
+    reason: str = "no_data"          # no_data / parse_error
+    is_equity: bool = False          # 是否权益类（EQUITY_LIKE_TYPES）
+
+
+@dataclass
 class IndustryExposureResult:
     """组合行业敞口聚合结果。"""
     items: list[IndustryExposureItem] = None        # type: ignore[assignment]
@@ -334,12 +345,17 @@ class IndustryExposureResult:
     funds_count: int = 0                # 持仓基金总数
     funds_with_data: int = 0            # 有行业数据的基金数
     quarter: str = ""                   # 最新报告期
+    funds_missing: list = None          # type: ignore[assignment]  # 缺数据基金诊断
+    equity_total_market_value: float = 0.0      # 权益类基金总市值（元）
+    equity_penetrated_market_value: float = 0.0  # 权益类穿透市值（元）
     ok: bool = False
     message: str = ""
 
     def __post_init__(self):
         if self.items is None:
             self.items = []
+        if self.funds_missing is None:
+            self.funds_missing = []
 
     def to_dict(self) -> dict:
         return asdict(self)

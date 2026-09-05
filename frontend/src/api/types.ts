@@ -339,6 +339,15 @@ export interface IndustryExposureItem {
   fund_codes: string[]      // 贡献基金代码
 }
 
+export interface FundMissingData {
+  fund_code: string
+  fund_name: string
+  fund_type: string
+  market_value: number
+  reason: string            // no_data / parse_error
+  is_equity: boolean        // 是否权益类
+}
+
 export interface IndustryExposure {
   items: IndustryExposureItem[]
   total_market_value: number
@@ -347,6 +356,9 @@ export interface IndustryExposure {
   funds_count: number
   funds_with_data: number
   quarter: string
+  funds_missing: FundMissingData[]
+  equity_total_market_value: number
+  equity_penetrated_market_value: number
   ok: boolean
   message: string
 }

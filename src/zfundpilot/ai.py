@@ -55,8 +55,15 @@ def build_portfolio_context() -> str:
         exposure = analysis.aggregate_industry_exposure(open_positions)
         if exposure.ok and exposure.items:
             lines.append("\n## 行业敞口（基金穿透）")
-            lines.append(f"- 穿透覆盖度: {exposure.penetrated_market_value / exposure.total_market_value:.1%}"
+            cov = exposure.penetrated_market_value / exposure.total_market_value if exposure.total_market_value > 0 else 0
+            lines.append(f"- 总穿透覆盖度: {cov:.1%}"
                          f"（{exposure.funds_with_data}/{exposure.funds_count} 只基金有行业数据）")
+            if exposure.equity_total_market_value > 0:
+                eq_cov = exposure.equity_penetrated_market_value / exposure.equity_total_market_value
+                non_eq_mv = exposure.total_market_value - exposure.equity_total_market_value
+                lines.append(f"- 权益类穿透率: {eq_cov:.1%}"
+                             f"（权益市值 {exposure.equity_total_market_value:,.0f}，"
+                             f"债基等无需穿透 {non_eq_mv:,.0f}）")
             if exposure.quarter:
                 lines.append(f"- 报告期: {exposure.quarter}")
             for item in exposure.items[:10]:
@@ -65,6 +72,11 @@ def build_portfolio_context() -> str:
             if exposure.unpenetrated_market_value > 0:
                 lines.append(f"- 未穿透（债/现金/未披露）: {exposure.unpenetrated_market_value:,.0f}"
                              f"({exposure.unpenetrated_market_value / exposure.total_market_value:.1%})")
+            equity_missing = [m for m in exposure.funds_missing if m.is_equity]
+            if equity_missing:
+                lines.append(f"- 权益类缺数据: {len(equity_missing)} 只"
+                             f"（{', '.join(m.fund_code for m in equity_missing[:5])}"
+                             f"{'…' if len(equity_missing) > 5 else ''}）")
 
         if open_positions:
             lines.append("\n## 持仓明细")

@@ -9,7 +9,7 @@ import {
 } from "recharts"
 import { money, pct } from "@/lib/format"
 import { chartColor } from "@/lib/chartPalette"
-import { translateIndustry } from "@/lib/taxonomyLabels"
+import { translateIndustry, translateFundType } from "@/lib/taxonomyLabels"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import ErrorState from "@/components/ErrorState"
@@ -55,7 +55,9 @@ export default function IndustryExposurePanel() {
   }
 
   const total = data.total_market_value
-  const coverage = total > 0 ? data.penetrated_market_value / total : 0
+  const equityTotal = data.equity_total_market_value
+  const equityCoverage = equityTotal > 0 ? data.equity_penetrated_market_value / equityTotal : 0
+  const nonEquityMv = total - equityTotal
 
   const chartData = [
     ...data.items.map((item) => ({
@@ -83,10 +85,12 @@ export default function IndustryExposurePanel() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <SummaryCard label={t.positions.lookThroughCoverage} value={pct(coverage)} />
+        <SummaryCard label={t.positions.equityCoverage} value={pct(equityCoverage)} sub={t.positions.equityCoverageHint} />
         <SummaryCard label={t.positions.penetratedFunds} value={`${data.funds_with_data} / ${data.funds_count}`} />
         <SummaryCard label={t.positions.reportQuarter} value={data.quarter || "—"} />
-        <SummaryCard label={t.positions.unpenetrated} value={money(data.unpenetrated_market_value)} sub={t.positions.unpenetratedHint} />
+        {nonEquityMv > 0
+          ? <SummaryCard label={t.positions.nonEquityFunds} value={money(nonEquityMv)} />
+          : <SummaryCard label={t.positions.unpenetrated} value={money(data.unpenetrated_market_value)} sub={t.positions.unpenetratedHint} />}
       </div>
 
       <p className="text-xs text-muted-foreground">{t.positions.industryExposureHint}</p>
@@ -160,6 +164,53 @@ export default function IndustryExposurePanel() {
           </Table>
         </CardContent>
       </Card>
+
+      {data.funds_missing.length > 0 && (
+        <details className="group">
+          <summary className="cursor-pointer select-none text-sm font-medium text-muted-foreground hover:text-foreground">
+            {t.positions.missingFunds} ({data.funds_missing.length})
+            <span className="ml-2 text-xs text-muted-foreground">{t.positions.missingFundsHint}</span>
+          </summary>
+          <div className="mt-2">
+            <Card className="card-hover">
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t.positions.fundCode}</TableHead>
+                      <TableHead>{t.positions.fundName}</TableHead>
+                      <TableHead>{t.positions.fundType}</TableHead>
+                      <TableHead className="text-right">{t.positions.industryMarketValue}</TableHead>
+                      <TableHead>{t.positions.missingFundsReason}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.funds_missing.map((m) => (
+                      <TableRow key={m.fund_code}>
+                        <TableCell className="font-mono text-xs">{m.fund_code}</TableCell>
+                        <TableCell>{m.fund_name || m.fund_code}</TableCell>
+                        <TableCell>
+                          <span className={m.is_equity ? "text-foreground" : "text-muted-foreground"}>
+                            {translateFundType(m.fund_type)}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{money(m.market_value)}</TableCell>
+                        <TableCell>
+                          <span className={m.is_equity ? "text-amber-600" : "text-muted-foreground"}>
+                            {m.is_equity
+                              ? m.reason === "parse_error" ? t.positions.reasonParseError : t.positions.reasonNoData
+                              : t.positions.expectedNoData}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
+        </details>
+      )}
     </div>
   )
 }

@@ -54,9 +54,19 @@ def test_aggregate_multiple_funds():
     assert items["制造业"].market_value == 70000
     assert items["制造业"].funds_count == 2
     assert items["制造业"].fund_codes == ["000001", "000002"]
+    # 贡献明细：000001 = 100000*0.5 = 50000，000002 = 50000*0.4 = 20000
+    funds = items["制造业"].funds
+    assert [f.fund_code for f in funds] == ["000001", "000002"]  # 按贡献市值降序
+    assert {f.fund_name for f in funds} == {"基金A", "基金B"}
+    contrib = {f.fund_code: f.market_value for f in funds}
+    assert contrib["000001"] == 50000
+    assert contrib["000002"] == 20000
+    assert funds[0].market_value >= funds[1].market_value
     # 金融业 = 100000*0.3 = 30000
     assert items["金融业"].market_value == 30000
     assert items["金融业"].funds_count == 1
+    assert items["金融业"].fund_codes == ["000001"]
+    assert items["金融业"].funds[0].fund_code == "000001"
     # 采矿业 = 50000*0.1 = 5000
     assert items["采矿业"].market_value == 5000
 

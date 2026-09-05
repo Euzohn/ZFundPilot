@@ -311,6 +311,14 @@ class IndustryAllocationResult:
 
 
 @dataclass
+class IndustryFundContribution:
+    """单个基金对某行业的贡献明细。"""
+    fund_code: str
+    fund_name: str = ""
+    market_value: float = 0.0        # 该基金对该行业的贡献市值（元）
+
+
+@dataclass
 class IndustryExposureItem:
     """组合行业敞口聚合项。"""
     industry: str
@@ -318,10 +326,13 @@ class IndustryExposureItem:
     weight: float = 0.0             # 占组合总市值比（小数）
     funds_count: int = 0            # 贡献基金数
     fund_codes: list[str] = None    # type: ignore[assignment]  # 贡献基金代码
+    funds: list = None              # type: ignore[assignment]  # 贡献基金明细（IndustryFundContribution）
 
     def __post_init__(self):
         if self.fund_codes is None:
             self.fund_codes = []
+        if self.funds is None:
+            self.funds = []
 
 
 @dataclass

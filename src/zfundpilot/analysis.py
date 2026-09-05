@@ -36,6 +36,7 @@ from .models import (
     FundMissingData,
     IndustryExposureItem,
     IndustryExposureResult,
+    IndustryFundContribution,
     PortfolioSummary,
     Position,
     Transaction,
@@ -396,20 +397,31 @@ def aggregate_industry_exposure(positions: list[Position] | None = None) -> Indu
             if is_equity:
                 equity_penetrated_mv += effective_mv
             if alloc.industry not in aggregate:
-                aggregate[alloc.industry] = {"mv": 0.0, "funds": set()}
+                aggregate[alloc.industry] = {"mv": 0.0, "funds": {}}
             aggregate[alloc.industry]["mv"] += effective_mv
-            aggregate[alloc.industry]["funds"].add(p.fund_code)
+            funds_by_code = aggregate[alloc.industry]["funds"]
+            if p.fund_code not in funds_by_code:
+                funds_by_code[p.fund_code] = {"name": p.fund_name, "mv": 0.0}
+            funds_by_code[p.fund_code]["mv"] += effective_mv
 
-    items = [
-        IndustryExposureItem(
+    items = []
+    for ind, data in aggregate.items():
+        funds_sorted = sorted(
+            [
+                IndustryFundContribution(fund_code=c, fund_name=d["name"], market_value=d["mv"])
+                for c, d in data["funds"].items()
+            ],
+            key=lambda x: x.market_value,
+            reverse=True,
+        )
+        items.append(IndustryExposureItem(
             industry=ind,
             market_value=data["mv"],
             weight=data["mv"] / total_mv if total_mv > 0 else 0.0,
             funds_count=len(data["funds"]),
-            fund_codes=sorted(data["funds"]),
-        )
-        for ind, data in aggregate.items()
-    ]
+            fund_codes=sorted(data["funds"].keys()),
+            funds=funds_sorted,
+        ))
     items.sort(key=lambda x: x.market_value, reverse=True)
 
     return IndustryExposureResult(

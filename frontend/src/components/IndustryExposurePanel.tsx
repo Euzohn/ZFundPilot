@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react"
-import { BarChart3, PieChart as PieChartIcon } from "lucide-react"
+import { Fragment, useEffect, useState } from "react"
+import { BarChart3, ChevronRight, PieChart as PieChartIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { IndustryExposure } from "@/api/types"
+import type { IndustryExposure, IndustryFundContribution } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
@@ -52,6 +52,18 @@ export default function IndustryExposurePanel() {
   const [chartType, setChartType] = useState<"bar" | "pie">(() =>
     localStorage.getItem("zfundpilot_industryChartType") === "pie" ? "pie" : "bar")
   useEffect(() => { localStorage.setItem("zfundpilot_industryChartType", chartType) }, [chartType])
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  const toggleIndustry = (key: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }
   const { data, loading, error, reload } = useApi<IndustryExposure>(() => api.getIndustryExposure())
 
   if (loading) return <LoadingState size="md" />
@@ -71,6 +83,7 @@ export default function IndustryExposurePanel() {
       name: translateIndustry(item.industry),
       market_value: item.market_value,
       isUnpenetrated: false,
+      funds: item.funds ?? [],
     })),
     ...(data.unpenetrated_market_value > 0
       ? [{
@@ -78,6 +91,7 @@ export default function IndustryExposurePanel() {
           name: t.positions.unpenetrated,
           market_value: data.unpenetrated_market_value,
           isUnpenetrated: true,
+          funds: [] as IndustryFundContribution[],
         }]
       : []),
   ]
@@ -166,6 +180,7 @@ export default function IndustryExposurePanel() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8" />
                 <TableHead>{t.positions.industry}</TableHead>
                 <TableHead className="text-right">{t.positions.industryMarketValue}</TableHead>
                 <TableHead className="text-right">{t.positions.industryWeight}</TableHead>
@@ -174,17 +189,59 @@ export default function IndustryExposurePanel() {
             </TableHeader>
             <TableBody>
               {chartData.map((d) => (
-                <TableRow key={d.key}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: fillFor(d) }} />
-                      <span>{d.name}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{money(d.market_value)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{pct(total > 0 ? d.market_value / total : 0)}</TableCell>
-                  <TableCell className="text-right tabular-nums">{fundsFor(d)}</TableCell>
-                </TableRow>
+                <Fragment key={d.key}>
+                  <TableRow>
+                    <TableCell className="w-8 p-2 pr-0">
+                      {d.isUnpenetrated ? null : (
+                        <button
+                          type="button"
+                          onClick={() => toggleIndustry(d.key)}
+                          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                          aria-label={t.positions.expandIndustry}
+                          aria-expanded={expanded.has(d.key)}
+                        >
+                          <ChevronRight className={cn("h-4 w-4 transition-transform duration-200", expanded.has(d.key) && "rotate-90")} />
+                        </button>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: fillFor(d) }} />
+                        <span>{d.name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{money(d.market_value)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{pct(total > 0 ? d.market_value / total : 0)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{fundsFor(d)}</TableCell>
+                  </TableRow>
+                  {!d.isUnpenetrated && expanded.has(d.key) && (
+                    <TableRow className="bg-muted/30 border-t-0">
+                      <TableCell colSpan={5} className="p-3 pt-0">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-muted-foreground">
+                              <th className="py-1 text-left font-medium">{t.positions.fundName}</th>
+                              <th className="py-1 text-right font-medium">{t.positions.contributionMv}</th>
+                              <th className="py-1 text-right font-medium">{t.positions.shareOfIndustry}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {d.funds.map((f) => (
+                              <tr key={f.fund_code} className="border-t border-border/60">
+                                <td className="py-1.5">
+                                  <span>{f.fund_name || f.fund_code}</span>
+                                  {f.fund_name && <span className="ml-2 font-mono text-[10px] text-muted-foreground">{f.fund_code}</span>}
+                                </td>
+                                <td className="py-1.5 text-right tabular-nums">{money(f.market_value)}</td>
+                                <td className="py-1.5 text-right tabular-nums">{pct(d.market_value > 0 ? f.market_value / d.market_value : 0)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
               ))}
             </TableBody>
           </Table>

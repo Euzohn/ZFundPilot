@@ -331,12 +331,19 @@ export interface FundIndustryAllocation {
 }
 
 // ── 组合行业敞口（基金穿透聚合）──
+export interface IndustryFundContribution {
+  fund_code: string
+  fund_name: string
+  market_value: number      // 该基金对该行业的贡献市值（元）
+}
+
 export interface IndustryExposureItem {
   industry: string
   market_value: number      // 加权市值（元）
   weight: number            // 占组合总市值比（小数）
   funds_count: number       // 贡献基金数
   fund_codes: string[]      // 贡献基金代码
+  funds: IndustryFundContribution[]   // 贡献基金明细
 }
 
 export interface FundMissingData {

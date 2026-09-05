@@ -141,12 +141,22 @@ export const INDUSTRIES: Record<string, Bilingual> = {
   // ── 别名/变体 ──
   "非日常生活消费品": { zh: "非必需消费品", en: "Consumer Discretionary" },
   "日常生活消费品": { zh: "必需消费品", en: "Consumer Staples" },
+  "消费者非必需品": { zh: "非必需消费品", en: "Consumer Discretionary" },
+  "消费者常用品": { zh: "必需消费品", en: "Consumer Staples" },
+  "可选消费": { zh: "非必需消费品", en: "Consumer Discretionary" },
+  "日常消费品": { zh: "必需消费品", en: "Consumer Staples" },
+  "日常消费": { zh: "必需消费品", en: "Consumer Staples" },
   "信息科技": { zh: "信息技术", en: "Information Technology" },
   "科技": { zh: "科技", en: "Technology" },
-  "电信服务": { zh: "电信服务", en: "Telecommunications" },
+  "电信服务": { zh: "通信服务", en: "Communication Services" },
   "通讯": { zh: "通讯", en: "Telecom" },
+  "通讯业务": { zh: "通信服务", en: "Communication Services" },
+  "电信业务": { zh: "通信服务", en: "Communication Services" },
   "金融": { zh: "金融业", en: "Financials" },
   "房地产": { zh: "房地产", en: "Real Estate" },
+  "原材料": { zh: "材料", en: "Materials" },
+  "基础材料": { zh: "材料", en: "Materials" },
+  "保健": { zh: "医疗保健", en: "Health Care" },
 }
 
 // ── Helper functions ──

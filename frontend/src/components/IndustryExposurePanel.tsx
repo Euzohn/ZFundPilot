@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react"
+import { BarChart3, PieChart as PieChartIcon } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { IndustryExposure } from "@/api/types"
@@ -46,6 +49,9 @@ function SummaryCard({ label, value, sub }: { label: string; value: string; sub?
 
 export default function IndustryExposurePanel() {
   const { t } = useLang()
+  const [chartType, setChartType] = useState<"bar" | "pie">(() =>
+    localStorage.getItem("zfundpilot_industryChartType") === "pie" ? "pie" : "bar")
+  useEffect(() => { localStorage.setItem("zfundpilot_industryChartType", chartType) }, [chartType])
   const { data, loading, error, reload } = useApi<IndustryExposure>(() => api.getIndustryExposure())
 
   if (loading) return <LoadingState size="md" />
@@ -94,12 +100,40 @@ export default function IndustryExposurePanel() {
 
       <p className="text-xs text-muted-foreground">{t.positions.industryExposureHint}</p>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card className="card-hover lg:col-span-2">
-          <CardHeader className="pb-2">
+      <Card className="card-hover">
+        <CardHeader className="pb-2">
+          <div className="flex flex-row items-center justify-between">
             <CardTitle className="text-sm font-medium text-muted-foreground">{t.positions.industryExposure}</CardTitle>
-          </CardHeader>
-          <CardContent>
+            <div className="inline-flex rounded-lg border border-border p-0.5">
+              <button
+                type="button"
+                onClick={() => setChartType("bar")}
+                title={t.positions.chartBar}
+                aria-pressed={chartType === "bar"}
+                className={cn(
+                  "flex items-center justify-center rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+                  chartType === "bar" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <BarChart3 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setChartType("pie")}
+                title={t.positions.chartPie}
+                aria-pressed={chartType === "pie"}
+                className={cn(
+                  "flex items-center justify-center rounded-md p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+                  chartType === "pie" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <PieChartIcon className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {chartType === "bar" ? (
             <ResponsiveContainer width="100%" height={Math.max(220, chartData.length * 24)}>
               <BarChart data={chartData} layout="vertical" margin={{ left: 10, right: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
@@ -111,15 +145,8 @@ export default function IndustryExposurePanel() {
                 <Tooltip content={<ExposureTooltip total={total} />} cursor={{ fill: "hsl(var(--primary))", opacity: 0.08 }} />
               </BarChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card className="card-hover">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{t.positions.industryWeight}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={Math.max(220, chartData.length * 24)}>
+          ) : (
+            <ResponsiveContainer width="100%" height={Math.max(260, chartData.length * 24)}>
               <PieChart>
                 <Pie data={chartData} dataKey="market_value" nameKey="name" cx="50%" cy="50%" outerRadius={90} innerRadius={50} paddingAngle={2}>
                   {chartData.map((d) => <Cell key={d.key} fill={fillFor(d)} stroke="none" />)}
@@ -127,9 +154,9 @@ export default function IndustryExposurePanel() {
                 <Tooltip content={<ExposureTooltip total={total} />} />
               </PieChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="card-hover">
         <CardHeader className="pb-2">

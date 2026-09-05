@@ -721,6 +721,8 @@ const zh = {
     noIndustryDataHint: "当前组合无可用行业披露（可能是债券/货币基金）",
     industry: "行业",
     industryWeight: "占比",
+    chartBar: "柱状图",
+    chartPie: "饼图",
     industryMarketValue: "市值",
     missingFunds: "缺数据基金",
     missingFundsHint: "以下基金未获取到行业配置数据",

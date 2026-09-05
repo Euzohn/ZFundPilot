@@ -723,6 +723,8 @@ const en: typeof zh = {
     noIndustryDataHint: "No usable industry disclosure in current portfolio (possibly bond/money-market funds)",
     industry: "Industry",
     industryWeight: "Weight",
+    chartBar: "Bar chart",
+    chartPie: "Pie chart",
     industryMarketValue: "Market Value",
     missingFunds: "Missing Data Funds",
     missingFundsHint: "Funds without industry allocation data",

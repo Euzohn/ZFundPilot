@@ -69,9 +69,13 @@ def build_portfolio_context() -> str:
             for item in exposure.items[:10]:
                 lines.append(f"- {item.industry}: {item.market_value:,.0f}({item.weight:.1%})"
                              f" [{item.funds_count} 只基金]")
-            if exposure.unpenetrated_market_value > 0:
+            if exposure.unpenetrated_market_value > 0 and exposure.total_market_value > 0:
                 lines.append(f"- 未穿透（债/现金/未披露）: {exposure.unpenetrated_market_value:,.0f}"
                              f"({exposure.unpenetrated_market_value / exposure.total_market_value:.1%})")
+        elif exposure.ok and exposure.funds_missing:
+            lines.append("\n## 行业敞口（基金穿透）")
+            lines.append(f"- 暂无行业数据（{exposure.funds_count} 只基金均缺数据）")
+        if exposure.ok:
             equity_missing = [m for m in exposure.funds_missing if m.is_equity]
             if equity_missing:
                 lines.append(f"- 权益类缺数据: {len(equity_missing)} 只"

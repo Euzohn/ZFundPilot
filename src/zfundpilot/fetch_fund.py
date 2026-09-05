@@ -1380,8 +1380,11 @@ def fetch_fund_industry_allocation(fund_code: str) -> IndustryAllocationResult:
         allocations: list[IndustryAllocation] = []
         total_weight = 0.0
         for _, row in df.iterrows():
-            industry = _clean_industry_name(str(row.get(col_industry, "")).strip())
-            if not industry:
+            raw_industry = row.get(col_industry, "")
+            if raw_industry is None:
+                continue
+            industry = _clean_industry_name(str(raw_industry).strip())
+            if not industry or industry.lower() in ("none", "nan"):
                 continue
             weight = _safe_float_pct(row.get(col_weight))
             mv = _safe_float_num(row.get(col_mv)) if col_mv else 0.0

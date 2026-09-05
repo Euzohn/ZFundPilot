@@ -371,12 +371,18 @@ def aggregate_industry_exposure(positions: list[Position] | None = None) -> Indu
         is_equity = p.fund_type in config.EQUITY_LIKE_TYPES
         result = fetch_fund.fetch_fund_industry_allocation(p.fund_code)
         if result is None or not result.ok or not result.allocations:
+            if result is None:
+                reason = "no_data"
+            elif not result.ok:
+                reason = result.code or "error"
+            else:
+                reason = "empty_allocations"
             funds_missing.append(FundMissingData(
                 fund_code=p.fund_code,
                 fund_name=p.fund_name,
                 fund_type=p.fund_type,
                 market_value=p.market_value,
-                reason=result.code if result else "no_data",
+                reason=reason,
                 is_equity=is_equity,
             ))
             continue

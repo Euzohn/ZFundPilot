@@ -151,7 +151,7 @@ export default function Positions() {
       ) : (
       <>
       <PageHeader title={t.positions.title} icon={<Wallet className="h-5 w-5" />} />
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-2">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <TabsList>
             <TabsTrigger value="list">{t.positions.listTab}</TabsTrigger>

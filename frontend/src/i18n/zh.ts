@@ -407,6 +407,7 @@ const zh = {
     fromSharesRequired: "请填写转出份额",
     toAmountRequired: "请填写转入金额",
     toAmountPending: "T+1 待确认",
+    toAmountOptional: "金额未知可留空，确认后补录",
     conversionSaved: "转换 {from}→{to} 已保存",
     conversionFeeHint: "转换通常免/减转出赎回费，转入按申购费计",
     pairedTransaction: "配对交易",

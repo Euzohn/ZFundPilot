@@ -507,8 +507,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
       const fromShares = parseFloat(shares) || null
       if (!fromShares) errs.shares = t.transactions.fromSharesRequired
        const toAmt = afterThree ? null : (parseFloat(toAmount) || parseFloat(autoToAmount) || null)
-       if (!afterThree && !toAmt) errs.toAmount = t.transactions.toAmountRequired
-      if (heldShares > 0 && fromShares && fromShares > heldShares) {
+      if (heldShares > 0 && fromShares && fromShares > heldShares + 1e-3) {
         errs.shares = t.transactions.convertExceedsHolding.replace("{n}", heldShares.toFixed(2))
       }
       if (code.trim() && toCode.trim() && code.trim() === toCode.trim()) errs.toCode = t.transactions.fromToSame
@@ -565,7 +564,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
     }
 
     // 卖出不能超过持有份额
-    if (action === "sell" && heldShares > 0 && finalShares && finalShares > heldShares) {
+    if (action === "sell" && heldShares > 0 && finalShares && finalShares > heldShares + 1e-3) {
       errs.shares = t.transactions.sellExceedsHolding.replace("{n}", heldShares.toFixed(2))
     }
 
@@ -794,7 +793,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 1 / 3).toFixed(2))}>1/3</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.5).toFixed(2))}>1/2</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.75).toFixed(2))}>3/4</Button>
-                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares(heldShares.toFixed(2))}>{t.common.all}</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares(heldShares.toFixed(4))}>{t.common.all}</Button>
                     </div>
                   )}
                 </div>
@@ -857,7 +856,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 1 / 3).toFixed(2))}>1/3</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.5).toFixed(2))}>1/2</Button>
                       <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares((heldShares * 0.75).toFixed(2))}>3/4</Button>
-                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares(heldShares.toFixed(2))}>{t.common.all}</Button>
+                      <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setShares(heldShares.toFixed(4))}>{t.common.all}</Button>
                     </div>
                   )}
                 </div>
@@ -918,6 +917,9 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
                       aria-invalid={!!formErrors.toAmount}
                       aria-describedby={formErrors.toAmount ? "tx-toamount-error" : undefined}
                     />
+                    {!parseFloat(toAmount || "0") && !autoToAmount && (
+                      <p className="text-[11px] text-warning mt-1">{t.transactions.toAmountOptional}</p>
+                    )}
                     {autoToAmount && (() => {
                       const to = parseFloat(toAmount || "0")
                       const auto = parseFloat(autoToAmount)

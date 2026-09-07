@@ -409,6 +409,7 @@ const en: typeof zh = {
     fromSharesRequired: "Please enter shares to convert out",
     toAmountRequired: "Please enter buy amount",
     toAmountPending: "T+1 pending",
+    toAmountOptional: "Leave empty if unknown; fill after confirmation",
     conversionSaved: "Converted {from}→{to}",
     conversionFeeHint: "Conversion usually waives/reduces redemption fee; buy leg charged subscription fee",
     pairedTransaction: "Paired Transaction",

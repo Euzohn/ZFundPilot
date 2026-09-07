@@ -986,7 +986,7 @@ def add_conversion(request: Request, body: ConversionCreate) -> dict[str, Any]:
     to_tx.normalize()
     if not from_tx.is_valid():
         raise HTTPException(400, "转出信息不完整（需要份额）")
-    if not body.is_t1 and not to_tx.is_valid():
+    if not body.is_t1 and body.to_amount is not None and not to_tx.is_valid():
         raise HTTPException(400, "转入信息不完整（需要金额或份额）")
     from_id, to_id = db.add_conversion(from_tx, to_tx)
     # 两个基金都可能缺净值，分别补拉

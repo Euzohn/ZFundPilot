@@ -428,6 +428,32 @@ def test_conversion_api_t1_but_to_amount_provided():
             assert data["to"]["amount"] == 500.0
 
 
+def test_conversion_api_pending_to_amount_no_nav():
+    """非 T+1 且 from_nav 未知、to_amount 为空：买入腿作为待确认占位保存（is_t1=False, amount=None）。"""
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            db.upsert_fund(db.Fund(fund_code="011612", fund_name="基金A", fund_type="偏股"))
+            db.upsert_fund(db.Fund(fund_code="005827", fund_name="基金B", fund_type="偏债"))
+            client = TestClient(api_module.app)
+            resp = client.post("/api/conversions", json={
+                "from_code": "011612",
+                "to_code": "005827",
+                "date": "2026-01-05",
+                "from_shares": 100,
+                "from_nav": None,
+                "to_amount": None,
+                "to_nav": None,
+                "is_t1": False,
+            })
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["to"]["fund_code"] == "005827"
+            assert data["to"]["action"] == "buy"
+            assert data["to"]["amount"] is None  # 待确认，金额未知
+            assert data["to"]["is_t1"] is False  # 时序仍为当日（非三点后）
+
+
 def test_delete_transaction_clears_paired_conversion_id():
     """删除转换的一条腿后，另一条的 conversion_id 被清空（防孤儿）。"""
     with TemporaryDirectory() as d:

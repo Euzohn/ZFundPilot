@@ -16,6 +16,7 @@ from typing import Any
 
 from . import analysis, config, db, fetch_fund
 from .models import ACTION_BUY, Transaction
+from .us_calendar import is_us_market_holiday, is_us_trading_day
 
 logger = logging.getLogger(__name__)
 CADENCES = ("daily", "week", "biweek", "month")
@@ -23,18 +24,45 @@ CADENCES = ("daily", "week", "biweek", "month")
 _execute_lock = threading.Lock()
 
 
-def _next_trading_day(fund_code: str, from_date: str) -> str:
-    """从 from_date 起找下一个有净值数据的交易日。
+def _is_qdii_fund(fund_code: str) -> bool:
+    """判断基金是否为 QDII（海外）基金，需跳过美股休市日。
 
-    有净值数据 → 返回实际交易日（过去日期场景）。
-    无净值数据（将来日期） → 至少跳过周末，周一返回。
+    口径与 risk.py / config.EQUITY_LIKE_TYPES 一致：fund_type == "QDII"。
+    基金不在库中或类型未知时返回 False，不影响国内基金定投。
     """
-    nav = db.get_nav_on_or_after(fund_code, from_date)
-    if nav:
-        return nav["date"]
+    fund = db.get_fund(fund_code)
+    return fund is not None and fund.fund_type == "QDII"
+
+
+def _next_trading_day(fund_code: str, from_date: str) -> str:
+    """从 from_date 起找下一个可定投交易日。
+
+    跳过周末（所有基金）和美股休市日（仅 QDII 基金）。
+    有净值数据时用净值数据推断实际交易日（覆盖中国法定节假日跳空）；
+    无净值数据（将来日期）至少跳过周末 + 美股休市日。
+
+    QDII 基金在美股休市日仍可能发布持平净值，因此不能仅凭净值存在与否判断
+    美股是否开市，必须用独立的美国市场日历校验。
+    """
     d = datetime.strptime(from_date, "%Y-%m-%d").date()
-    while d.weekday() >= 5:
-        d += timedelta(days=1)
+    qdii = _is_qdii_fund(fund_code)
+    for _ in range(20):
+        if d.weekday() >= 5:  # 周末
+            d += timedelta(days=1)
+            continue
+        if qdii and is_us_market_holiday(d):  # QDII 跳美股休市
+            d += timedelta(days=1)
+            continue
+        # d 是候选可投日；查净值推断实际交易日（覆盖中国节假日跳空）
+        nav = db.get_nav_on_or_after(fund_code, d.isoformat())
+        if nav and nav["date"] == d.isoformat():
+            return nav["date"]  # 命中当日净值 → 真实交易日
+        if nav and nav["date"] > d.isoformat():
+            # 中国节假日跳空：跳到净值日并重新校验（净值日可能落在美股休市日）
+            d = datetime.strptime(nav["date"], "%Y-%m-%d").date()
+            continue
+        # 无净值数据（将来日期）→ d 即为预测交易日
+        return d.isoformat()
     return d.isoformat()
 
 
@@ -184,13 +212,35 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
 def run_all_due() -> list[dict[str, Any]]:
     """检查并执行所有到期的定投计划。
 
+    QDII 基金在美股休市日（即使是中国工作日）跳过执行，不建仓、不更新
+    next_run，次日 09:00 自动重试（天然顺延）。所有基金遇周末亦跳过。
+    手动执行（/execute 端点）不受此限制。
+
     返回执行结果列表。
     """
     today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
+    today_d = datetime.now(config.TIMEZONE).date()
     plans = db.get_due_auto_invest_plans(today)
     results: list[dict[str, Any]] = []
     for p in plans:
         try:
+            # 可投性校验：周末或（QDII 且美股休市）→ 跳过，不建仓不更新 next_run
+            if today_d.weekday() >= 5:
+                results.append({
+                    "plan_id": p["id"], "fund_code": p["fund_code"],
+                    "status": "holiday", "reason": "周末",
+                    "date": today,
+                })
+                logger.info("[auto_invest] plan#%d %s 周末跳过", p["id"], p["fund_code"])
+                continue
+            if _is_qdii_fund(p["fund_code"]) and not is_us_trading_day(today_d):
+                results.append({
+                    "plan_id": p["id"], "fund_code": p["fund_code"],
+                    "status": "holiday", "reason": "美股休市",
+                    "date": today,
+                })
+                logger.info("[auto_invest] plan#%d %s 美股休市跳过", p["id"], p["fund_code"])
+                continue
             result = execute_plan(p, manual=False)
             result["plan_id"] = p["id"]
             if result.get("skipped"):

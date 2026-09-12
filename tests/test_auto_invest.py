@@ -17,6 +17,7 @@ from zfundpilot.auto_invest import (
     _next_trading_day,
     calculate_next_run,
     execute_plan,
+    run_all_due,
 )
 
 _TZ = ZoneInfo("Asia/Shanghai")
@@ -287,3 +288,99 @@ class TestNextTradingDay:
             mock_db.get_nav_on_or_after.return_value = None
             result = _next_trading_day("001", "2026-01-05")  # 周一
             assert result == "2026-01-05"
+
+
+# ---------------------------------------------------------------------------
+# _next_trading_day QDII 美股休市跳过测试
+# ---------------------------------------------------------------------------
+class TestNextTradingDayQDII:
+    """验证 QDII 基金 _next_trading_day 跳过美股休市日。"""
+
+    def test_qdii_skips_independence_day(self):
+        """QDII 基金从独立日 observed(7/3 周五) 起 → 跳到 7/6 周一。"""
+        with patch("zfundpilot.auto_invest.db") as mock_db:
+            mock_db.get_fund.return_value = MagicMock(fund_type="QDII")
+            mock_db.get_nav_on_or_after.return_value = None
+            result = _next_trading_day("001", "2026-07-03")  # 独立日 observed
+            assert result == "2026-07-06"  # 跳过 7/3(休市) + 7/4-5(周末)
+
+    def test_qdii_skips_thanksgiving(self):
+        """QDII 基金从感恩节(11/26 周四)起 → 跳到 11/27 周五。"""
+        with patch("zfundpilot.auto_invest.db") as mock_db:
+            mock_db.get_fund.return_value = MagicMock(fund_type="QDII")
+            mock_db.get_nav_on_or_after.return_value = None
+            result = _next_trading_day("001", "2026-11-26")
+            assert result == "2026-11-27"
+
+    def test_qdii_normal_day_unaffected(self):
+        """QDII 基金在普通交易日 → 正常返回。"""
+        with patch("zfundpilot.auto_invest.db") as mock_db:
+            mock_db.get_fund.return_value = MagicMock(fund_type="QDII")
+            mock_db.get_nav_on_or_after.return_value = None
+            result = _next_trading_day("001", "2026-07-06")  # 周一，普通交易日
+            assert result == "2026-07-06"
+
+    def test_non_qdii_not_affected_by_us_holiday(self):
+        """非 QDII 基金在美股休市日 → 不跳过（国内基金照常）。"""
+        with patch("zfundpilot.auto_invest.db") as mock_db:
+            mock_db.get_fund.return_value = MagicMock(fund_type="指数型")
+            mock_db.get_nav_on_or_after.return_value = None
+            result = _next_trading_day("001", "2026-07-03")  # 独立日 observed
+            assert result == "2026-07-03"  # 国内基金不跳美股休市
+
+
+# ---------------------------------------------------------------------------
+# run_all_due 休市/周末跳过测试
+# ---------------------------------------------------------------------------
+class TestRunAllDueHolidayGate:
+    """验证 run_all_due 在美股休市/周末跳过定投执行。"""
+
+    def test_qdii_skipped_on_us_holiday(self):
+        """QDII 计划在美股休市日(7/3) → 跳过，不建仓。"""
+        mock_dt = datetime(2026, 7, 3, 9, 0, tzinfo=_TZ)  # 独立日 observed 周五
+        plan = _make_plan(fund_code="001", next_run="2026-07-03", last_run=None)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_due_auto_invest_plans.return_value = [plan]
+            env.mock_db.get_fund.return_value = MagicMock(fund_type="QDII")
+            results = run_all_due()
+        assert len(results) == 1
+        assert results[0]["status"] == "holiday"
+        assert results[0]["reason"] == "美股休市"
+        env.mock_db.add_transaction.assert_not_called()
+
+    def test_qdii_executes_on_normal_day(self):
+        """QDII 计划在普通交易日(7/6 周一) → 正常执行。"""
+        mock_dt = datetime(2026, 7, 6, 9, 0, tzinfo=_TZ)
+        plan = _make_plan(fund_code="001", next_run="2026-07-06", last_run=None)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_due_auto_invest_plans.return_value = [plan]
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.get_fund.return_value = MagicMock(fund_type="QDII")
+            env.mock_db.get_nav_on_or_after.return_value = None
+            results = run_all_due()
+        assert results[0]["status"] == "success"
+        env.mock_db.add_transaction.assert_called_once()
+
+    def test_non_qdii_executes_on_us_holiday(self):
+        """非 QDII 计划在美股休市日(7/3) → 照常执行（国内基金不受影响）。"""
+        mock_dt = datetime(2026, 7, 3, 9, 0, tzinfo=_TZ)
+        plan = _make_plan(fund_code="001", next_run="2026-07-03", last_run=None)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_due_auto_invest_plans.return_value = [plan]
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.get_fund.return_value = MagicMock(fund_type="指数型")
+            env.mock_db.get_nav_on_or_after.return_value = None
+            results = run_all_due()
+        assert results[0]["status"] == "success"
+        env.mock_db.add_transaction.assert_called_once()
+
+    def test_weekend_skipped(self):
+        """所有基金遇周末(7/4 周六) → 跳过。"""
+        mock_dt = datetime(2026, 7, 4, 9, 0, tzinfo=_TZ)
+        plan = _make_plan(fund_code="001", next_run="2026-07-04", last_run=None)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_due_auto_invest_plans.return_value = [plan]
+            results = run_all_due()
+        assert results[0]["status"] == "holiday"
+        assert results[0]["reason"] == "周末"
+        env.mock_db.add_transaction.assert_not_called()

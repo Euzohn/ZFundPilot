@@ -4,6 +4,19 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Added
+- 行业敞口表可展开显示基金构成明细——点击行业行的展开箭头，展开显示该行业下每只贡献基金的名称/代码、贡献市值、占该行业比例。后端 `aggregate_industry_exposure` 聚合时按基金 × 行业维度记录市值贡献，新增 `IndustryFundContribution` dataclass（fund_code/fund_name/market_value），`IndustryExposureItem.funds` 字段按市值降序排列。前端 `IndustryExposurePanel` 行展开使用 `Fragment` + `Set<string>` 状态管理，未穿透行不可展开。新增 i18n 键 `contributionMv`/`shareOfIndustry`/`expandIndustry`。新增 `tests/test_industry_exposure.py` 扩展（基金构成明细断言），总测试 424→428
+
+### Changed
+- 行业敞口图表改为单图切换——原柱状图 + 饼图并排展示（柱图 lg:col-span-2 占 2/3 宽，饼图占 1/3），改为单图 BarChart/PieChart 切换（卡片右上角 `BarChart3`/`PieChartIcon` 图标按钮组，`aria-pressed` 高亮当前选中，`localStorage` 持久化 `zfundpilot_industryChartType`）。图表独占整行宽度，饼图不再被挤压。新增 i18n 键 `chartBar`/`chartPie`
+
+### Fixed
+- 行业敞口饼图全宽下过小——饼图改为单图独占全宽后，原固定 `outerRadius={90}`/`innerRadius={50}`（像素值）在全宽容器中显得偏小。改为居中容器 `<div className="mx-auto max-w-md">` + 百分比半径 `outerRadius="75%"`/`innerRadius="40%"`，高度固定 340，饼图自适应容器尺寸
+- 转换表单「全部」份额浮点精度修复 + 转入金额支持待确认留空——(1) 转出/卖出「全部」按钮 `setShares(heldShares.toFixed(2))` 会将浮点持有份额四舍五入超过实际持有量（如 123.4567 → "123.46" > 123.4567），导致 `fromShares > heldShares` 校验报错无法提交。改为 `toFixed(4)` + 校验加 `1e-3` 容差。(2) 非自动推导转入金额（`!autoToAmount`）时强制 `toAmount` 必填，但用户在 T+1 确认前确实不知道转入金额。移除 `if (!afterThree && !toAmt) errs.toAmount` 硬校验；后端 `api.py` 改为 `if not body.is_t1 and body.to_amount is not None and not to_tx.is_valid()` 仅在金额已填时校验完整性，空金额作为待确认占位保存。表单显示「金额未知可留空，确认后补录」提示。新增 i18n 键 `toAmountOptional`，新增测试 `test_conversion_api_pending_to_amount_no_nav`，总测试 457→458
+- QDII 基金定投在美股休市日误执行——美股休市的国内工作日（如独立日、感恩节、圣诞等），QDII 基金通常暂停申购/无法确认，但定投计划仍会在当日 09:00 扣款建仓。新增 `us_calendar.py`（纯算法纽交所日历，零联网依赖，Computus 算 Good Friday + 固定日周末顺延 + 浮动周几 + 跨年元旦 observed）。`auto_invest.py` 两层修复：(1) `_next_trading_day` 重写——QDII 基金跳过美股休市日（NAV 存在与否不能代表美股开市，QDII 在休市日仍发持平净值），(2) `run_all_due` 执行前 gate——周末（所有基金）或 QDII + 美股休市 → 跳过不建仓、不更新 next_run，次日自动重试（天然顺延）。手动执行 `/execute` 不受限制。非 QDII 基金零影响。新增 `tests/test_us_calendar.py`（26 用例）+ `test_auto_invest.py` 扩 7 用例（QDII 跳休市 + run_all_due gate），总测试 458→492
+
 ## [0.22.0] - 2026-09-05
 
 ### Added

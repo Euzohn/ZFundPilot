@@ -50,7 +50,8 @@ ZFundPilot/
 │   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI）
 │   ├── rebalance.py         # 再平衡建议
 │   ├── backtest.py          # 定投策略回测（DCA + 一次性投入对比 + XIRR）
-│   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延）
+│   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延 + QDII 跳美股休市）
+│   ├── us_calendar.py       # 美股（NYSE）算法日历（纯计算休市日，零联网依赖，供定投跳过 QDII 休市）
 │   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
 │   ├── nav_update_state.py  # 净值更新共享状态+锁（api.py/scheduler.py 共用，避免循环导入）
 │   ├── scheduler.py         # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查 + 基准指数/宏观水位持久化
@@ -189,10 +190,11 @@ ZFundPilot/
 
 - 数据库 `auto_invest_plans` 表存储定投计划（基金/金额/频率/定投日/启用状态/下次执行日）
 - 4 种频率：`daily`（每个交易日）/ `week`（每周）/ `biweek`（每双周）/ `month`（每月）
-- `calculate_next_run(plan)`: 根据频率计算下次执行日，遇非交易日顺延到最近的交易日（有净值数据时用净值数据推断；将来日期无净值数据时至少跳过周末）。`from_date` 缺省时取 `max(next_run, today)`，跳过停机期间错过的期数
+- `calculate_next_run(plan)`: 根据频率计算下次执行日，遇非交易日顺延到最近的交易日（有净值数据时用净值数据推断；将来日期无净值数据时至少跳过周末）。QDII 基金额外跳过美股休市日（`us_calendar.is_us_market_holiday`）。`from_date` 缺省时取 `max(next_run, today)`，跳过停机期间错过的期数
 - `execute_plan(plan, manual)`: 创建一笔买入交易（`nav=NULL`，等回填），自动通过 `fetch_fund.calc_purchase_fee` 计算手续费，更新 `last_run`/`last_tx_id`。手动执行（`manual=True`）不更新 `next_run`。15:00 前不加 T+1 标记（用当天净值），15:00 后加 `T+1确认` 标记（用次日净值）
   - **幂等保护**：`_execute_lock` 加锁后重新 `db.get_auto_invest_plan` 拉取最新 plan，若 `last_run == today` 则直接返回 `{ok: False, skipped: True}`，防止定时 + 手动或双击导致重复买入交易。返回 skipped 时不写入新交易
-- `run_all_due()`: 被 `scheduler.py` 每天 09:00 调用，检查所有 `enabled=1` 且 `next_run <= today` 的计划，逐个执行；skipped 的状态标记为 `"skipped"`
+- `run_all_due()`: 被 `scheduler.py` 每天 09:00 调用，检查所有 `enabled=1` 且 `next_run <= today` 的计划，逐个执行；skipped 的状态标记为 `"skipped"`。**休市 gate**：执行前检查今日可投性——周末（所有基金）或 QDII + 美股休市 → 跳过（不建仓、不更新 next_run，次日自动重试顺延），结果标记 `status="holiday"`。手动执行不受此限制
+- **QDII 美股休市跳过**：QDII 基金（`fund_type == "QDII"`）在美股休市日通常暂停申购，即使是中国工作日也不可定投。`_next_trading_day` 和 `run_all_due` 均用 `us_calendar` 校验美股开市（QDII 在休市日仍发持平净值，不能凭净值存在与否判断）。**已知限制**：国内法定节假日（春节/国庆等）将来日期预测不跳过，但 NAV 回填机制可自愈（`get_nav_on_or_after` 取下一个有净值的交易日）
 - API: 6 个端点 `POST/GET/PUT/DELETE /api/auto-invest/plans` + `/toggle` + `/execute`
 
 ### fetch_fund.py — 净值获取

@@ -7,6 +7,8 @@
 ## [Unreleased]
 
 ### Added
+- 组合与单基金 XIRR 年化收益率——原 `return_rate = 市值/成本 - 1` 是朴素总回报，对分批投入（定投）严重失真（近期大额投入会稀释整体收益率）。新增 `returns.py` 模块（`xirr` 二分法从 `backtest._xirr` 提出改 public + `_build_xirr_cashflows` 现金流构建），`analysis.calculate_summary()`/`calculate_positions()` 从交易流水构建现金流计算 XIRR（买入=流出、卖出/现金分红=流入、再投资=现金中性跳过、终端值=当前市值作"假设变现"，已清仓不加终端值）。`Position`/`PortfolioSummary` 新增 `annualized_return` 字段。Returns 页新增「年化收益」指标卡（grid 改 5 列）+ 单基金明细表「年化」可排序列。AI 投顾上下文新增「年化收益率(XIRR)」行。新增 `tests/test_returns.py`（20 用例），总测试 492→512
+
 - 行业敞口表可展开显示基金构成明细——点击行业行的展开箭头，展开显示该行业下每只贡献基金的名称/代码、贡献市值、占该行业比例。后端 `aggregate_industry_exposure` 聚合时按基金 × 行业维度记录市值贡献，新增 `IndustryFundContribution` dataclass（fund_code/fund_name/market_value），`IndustryExposureItem.funds` 字段按市值降序排列。前端 `IndustryExposurePanel` 行展开使用 `Fragment` + `Set<string>` 状态管理，未穿透行不可展开。新增 i18n 键 `contributionMv`/`shareOfIndustry`/`expandIndustry`。新增 `tests/test_industry_exposure.py` 扩展（基金构成明细断言），总测试 424→428
 
 ### Changed

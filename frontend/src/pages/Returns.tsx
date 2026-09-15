@@ -125,6 +125,7 @@ export default function Returns() {
           case "market_value": return p.market_value
           case "unrealized_pnl": return p.unrealized_pnl
           case "return_rate": return p.return_rate ?? -999
+          case "annualized_return": return p.annualized_return ?? -999
           case "realized_pnl": return p.realized_pnl
           case "dividend_total": return p.dividend_total
           case "weight": return p.weight
@@ -270,7 +271,7 @@ export default function Returns() {
       <PageHeader title={t.returns.title} icon={<TrendingUp className="h-5 w-5" />} />
 
       {/* Metrics — 详细指标，不与总览重复 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
           <p className="text-xs font-medium text-muted-foreground">{t.returns.holdingCost}</p>
           <p className="mt-1 text-lg md:text-xl font-bold tabular-nums">{money(summary.total_cost)}</p>
@@ -282,6 +283,10 @@ export default function Returns() {
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
           <p className="text-xs font-medium text-muted-foreground">{t.returns.realizedPnl}</p>
           <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${pnlColor(summary.realized_pnl)}`}>{signedMoney(summary.realized_pnl)}</p>
+        </CardContent></Card>
+        <Card className="card-hover"><CardContent className="p-4 md:p-5">
+          <p className="text-xs font-medium text-muted-foreground">{t.returns.annualReturn}</p>
+          <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${pnlColor(summary.annualized_return)}`}>{pct(summary.annualized_return)}</p>
         </CardContent></Card>
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
           <p className="text-xs font-medium text-muted-foreground">{t.returns.buySellDividend}</p>
@@ -457,6 +462,7 @@ export default function Returns() {
                   <SortHeader field="market_value" className="text-right">{t.returns.currentValue}</SortHeader>
                   <SortHeader field="unrealized_pnl" className="text-right">{t.returns.unrealizedPnl}</SortHeader>
                   <SortHeader field="return_rate" className="text-right">{t.returns.return}</SortHeader>
+                  <SortHeader field="annualized_return" className="text-right">{t.returns.annualized}</SortHeader>
                   <SortHeader field="realized_pnl" className="text-right">{t.returns.realized}</SortHeader>
                   <SortHeader field="dividend_total" className="text-right">{t.actionLabels.dividend}</SortHeader>
                   <SortHeader field="weight" className="text-right">{t.returns.weight}</SortHeader>
@@ -477,6 +483,7 @@ export default function Returns() {
                     <TableCell className="text-right tabular-nums">{money(p.market_value)}</TableCell>
                     <TableCell className={`text-right tabular-nums ${pnlColor(p.unrealized_pnl)}`}>{money(p.unrealized_pnl)}</TableCell>
                     <TableCell className={`text-right tabular-nums font-medium ${pnlColor(p.return_rate)}`}>{pct(p.return_rate)}</TableCell>
+                    <TableCell className={`text-right tabular-nums font-medium ${pnlColor(p.annualized_return)}`}>{pct(p.annualized_return)}</TableCell>
                     <TableCell className={`text-right tabular-nums ${pnlColor(p.realized_pnl)}`}>{money(p.realized_pnl)}</TableCell>
                     <TableCell className="text-right tabular-nums text-primary">{p.dividend_total ? money(p.dividend_total) : "—"}</TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">{pct(p.weight)}</TableCell>
@@ -493,6 +500,7 @@ export default function Returns() {
                   <TableCell className="text-right tabular-nums">{money(totals.market_value)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${pnlColor(totals.unrealized_pnl)}`}>{money(totals.unrealized_pnl)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
+                  <TableCell className={`text-right tabular-nums ${pnlColor(summary.annualized_return)}`}>{pct(summary.annualized_return)}</TableCell>
                   <TableCell className={`text-right tabular-nums ${pnlColor(totals.realized_pnl)}`}>{money(totals.realized_pnl)}</TableCell>
                   <TableCell className="text-right tabular-nums text-primary">{totals.dividend_total ? money(totals.dividend_total) : "—"}</TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">100%</TableCell>

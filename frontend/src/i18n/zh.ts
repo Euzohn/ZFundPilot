@@ -793,6 +793,7 @@ const zh = {
     period: "时间范围",
     fund: "基金",
     return: "收益率",
+    annualized: "年化",
     contribution: "贡献率",
     bestPerformer: "表现最佳",
     worstPerformer: "表现最差",

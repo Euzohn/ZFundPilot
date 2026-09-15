@@ -157,6 +157,7 @@ class Position:
     unrealized_pnl: float = 0.0       # 浮动盈亏
     realized_pnl: float = 0.0         # 已实现盈亏（历次卖出累计）
     return_rate: float | None = None   # 浮动收益率
+    annualized_return: float | None = None  # XIRR 年化收益率
     weight: float = 0.0               # 当前市值占组合比例
     buy_count: int = 0
     sell_count: int = 0
@@ -191,6 +192,7 @@ class PortfolioSummary:
     realized_pnl: float = 0.0         # 已实现盈亏
     total_pnl: float = 0.0            # 总盈亏
     total_return: float = 0.0         # 浮动收益率（市值/成本-1）
+    annualized_return: float | None = None  # XIRR 年化收益率
     total_buy: float = 0.0            # 累计买入金额
     total_sell: float = 0.0           # 累计卖出金额
     total_dividend: float = 0.0       # 累计分红金额（含再投资）

@@ -39,6 +39,8 @@ def build_portfolio_context() -> str:
         lines.append(f"- 当前市值: {summary.total_value:,.2f}")
         lines.append(f"- 浮动盈亏: {summary.unrealized_pnl:+,.2f}")
         lines.append(f"- 总收益率: {summary.total_return:+.2%}")
+        if summary.annualized_return is not None:
+            lines.append(f"- 年化收益率(XIRR): {summary.annualized_return:+.2%}")
         lines.append(f"- 持仓数量: {summary.holding_count}")
 
         # 通胀与财富水位（CPI 购买力 / M2 社会财富排位）

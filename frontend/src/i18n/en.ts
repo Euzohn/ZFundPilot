@@ -795,6 +795,7 @@ const en: typeof zh = {
     period: "Period",
     fund: "Fund",
     return: "Return",
+    annualized: "Annual",
     contribution: "Contribution",
     bestPerformer: "Best Performer",
     worstPerformer: "Worst Performer",

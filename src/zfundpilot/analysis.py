@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pandas as pd
@@ -41,6 +41,7 @@ from .models import (
     Position,
     Transaction,
 )
+from .returns import _build_xirr_cashflows, xirr
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +205,21 @@ def calculate_positions(include_closed: bool = False) -> list[Position]:
     for pos in positions:
         _apply_market_value(pos, nav_map)
 
+    # 按 (fund_code, channel) 分组交易，计算每只持仓的 XIRR
+    today = date.today()
+    tx_map: dict[tuple[str, str], list] = {}
+    for tx in transactions:
+        key = (tx.fund_code, tx.channel or "")
+        tx_map.setdefault(key, []).append(tx)
+    for pos in positions:
+        key = (pos.fund_code, pos.channel)
+        pos_txs = tx_map.get(key, [])
+        if len(pos_txs) < 2:
+            continue
+        terminal_value = pos.market_value if pos.is_open else 0.0
+        cashflows = _build_xirr_cashflows(pos_txs, terminal_value, today)
+        pos.annualized_return = xirr(cashflows)
+
     if not include_closed:
         positions = [p for p in positions if p.is_open]
 
@@ -236,10 +252,12 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
 
     # 累计买入/卖出/分红金额，直接从流水统计更准
     total_buy = total_sell = total_dividend = 0.0
+    all_txs: list = []
     for tx in _get_transactions_cached():
         tx.normalize()
         if not tx.amount:
             continue
+        all_txs.append(tx)
         if tx.action == ACTION_BUY:
             total_buy += tx.amount
         elif tx.action == ACTION_SELL:
@@ -259,6 +277,11 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
         total_dividend=total_dividend,
         holding_count=len(set(p.fund_code for p in open_positions)),
     )
+
+    # 组合级 XIRR（从全量交易流水计算）
+    if len(all_txs) >= 2 and summary.total_value > 0:
+        cashflows = _build_xirr_cashflows(all_txs, summary.total_value, date.today())
+        summary.annualized_return = xirr(cashflows)
 
     if open_positions:
         top = max(open_positions, key=lambda p: p.weight)

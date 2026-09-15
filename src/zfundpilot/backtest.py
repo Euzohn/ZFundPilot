@@ -19,6 +19,7 @@ import pandas as pd
 
 from . import db, fetch_fund, risk
 from .models import BacktestResult
+from .returns import xirr
 
 logger = logging.getLogger(__name__)
 
@@ -111,48 +112,6 @@ def _calc_redemption_fee_simulated(
         total_fee += shares * sell_nav * rate
 
     return round(total_fee, 2)
-
-
-# ---------------------------------------------------------------------------
-# XIRR（牛顿迭代 + 二分法兜底）
-# ---------------------------------------------------------------------------
-def _xirr(cashflows: list[tuple[dt.date, float]]) -> float | None:
-    """计算 XIRR（年化内部收益率）。
-
-    cashflows: [(date, amount), ...]，负数=流出（投入），正数=流入（变现）
-    返回小数（0.15 表示 15%），无解返回 None。
-    """
-    if len(cashflows) < 2:
-        return None
-
-    d0 = cashflows[0][0]
-
-    def npv(rate: float) -> float:
-        total = 0.0
-        for d, amt in cashflows:
-            years = (d - d0).days / 365.0
-            total += amt / ((1 + rate) ** years)
-        return total
-
-    lo, hi = -0.999, 10.0
-    npv_lo = npv(lo)
-    npv_hi = npv(hi)
-
-    if npv_lo * npv_hi > 0:
-        return None
-
-    for _ in range(200):
-        mid = (lo + hi) / 2
-        npv_mid = npv(mid)
-        if abs(npv_mid) < 1e-7:
-            return mid
-        if npv_mid * npv_lo < 0:
-            hi = mid
-        else:
-            lo = mid
-            npv_lo = npv_mid
-
-    return (lo + hi) / 2
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +219,7 @@ def _run_dca(
         for p in periods_detail
     ]
     cashflows.append((_parse_date(end_date), net_final_value))
-    annualized = _xirr(cashflows)
+    annualized = xirr(cashflows)
 
     # 曲线
     curve = _build_curve(timeline, navs, share_delta, cost_delta)
@@ -336,7 +295,7 @@ def _run_lumpsum(
         (_parse_date(buy_date), -total_amount),
         (_parse_date(end_date), net_final_value),
     ]
-    annualized = _xirr(cashflows)
+    annualized = xirr(cashflows)
 
     curve = _build_curve(timeline, navs, share_delta, cost_delta)
 

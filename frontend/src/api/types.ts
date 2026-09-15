@@ -94,6 +94,7 @@ export interface Position {
   unrealized_pnl: number
   realized_pnl: number
   return_rate: number | null
+  annualized_return: number | null
   weight: number
   buy_count: number
   sell_count: number
@@ -110,6 +111,7 @@ export interface PortfolioSummary {
   realized_pnl: number
   total_pnl: number
   total_return: number
+  annualized_return: number | null
   total_buy: number
   total_sell: number
   total_dividend: number

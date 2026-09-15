@@ -47,6 +47,7 @@ ZFundPilot/
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
 │   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）+ resolve_fund_code 名称→代码解析 + verify_fund_code 校验
 │   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）+ reconcile_holdings 截图持仓对账 + 行业穿透聚合
+│   ├── returns.py            # XIRR 年化收益率（二分法 + 现金流构建，供 analysis/backtest 共用）
 │   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI）
 │   ├── rebalance.py         # 再平衡建议
 │   ├── backtest.py          # 定投策略回测（DCA + 一次性投入对比 + XIRR）
@@ -94,7 +95,7 @@ ZFundPilot/
 │   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12 并行) → tsc → build
 ├── tests/                   # Pytest 测试套件
 │   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
-│   └── test_*.py            #   457 个测试用例
+│   └── test_*.py            #   512 个测试用例
 └── docs/CONTEXT.md              # 本文件（不追踪）
 ```
 
@@ -182,7 +183,7 @@ ZFundPilot/
 - `run_dca_backtest(fund_codes, start, end, amount, cadence, include_lumpsum)`: 对每只基金模拟定投 + 一次性投入
 - 定投频率：月（每月1号）/ 双周（每14天）/ 周（每7天），扣款日遇非交易日跳到下一个有净值的交易日
 - 计入申购费（`fetch_fund.calc_purchase_fee`）和赎回费（FIFO 按持有期匹配费率档）
-- 指标：XIRR 年化（二分法）、最大回撤（复用 `risk.calculate_max_drawdown`）、夏普比率（无风险利率 3%）
+- 指标：XIRR 年化（`returns.xirr` 二分法）、最大回撤（复用 `risk.calculate_max_drawdown`）、夏普比率（无风险利率 3%）
 - 净值数据不足时自动调 `fetch_fund.update_fund_nav` 拉取
 - `BacktestResult` dataclass 含曲线（`curve`）和每期明细（`periods_detail`）
 
@@ -248,12 +249,17 @@ ZFundPilot/
 
 ### analysis.py — 收益计算
 
-- `calculate_positions()`: 从 transactions 汇总持仓（待确认买入金额计入 `pending_buy_cost`，不参与市值/盈亏/收益率计算）
-- `calculate_summary()`: 组合层面汇总（`total_cost` 不含 `pending_buy_cost`）
+- `calculate_positions()`: 从 transactions 汇总持仓（待确认买入金额计入 `pending_buy_cost`，不参与市值/盈亏/收益率计算）。按 (基金, 渠道) 分组交易构建现金流，调 `returns.xirr` 计算每只持仓的 `annualized_return`（已清仓不加终端值）
+- `calculate_summary()`: 组合层面汇总（`total_cost` 不含 `pending_buy_cost`）。从全量交易流水构建组合级 XIRR 现金流，设 `summary.annualized_return`
 - `build_portfolio_curve()`: 组合收益曲线（待确认买入用 `pending_value_delta` 占位市值，避免虚假亏损）
 - `build_channel_daily_pnl()`: 按渠道拆分的每日收益（堆叠柱状图）
 - `aggregate_industry_exposure(positions=None)`: 跨基金聚合真实行业敞口（基金穿透），遍历持仓基金取官方行业配置，按基金市值 × 行业占比加权求和，穿透/未穿透分离
 - 内存 TTL 缓存（60s），8 个写入端点自动清除缓存
+
+### returns.py — XIRR 年化收益率
+
+- `xirr(cashflows)`: 二分法求解年化内部收益率（从 `backtest._xirr` 提出改 public），搜索范围 [‑0.999, 10.0]，200 次迭代，无解返回 None
+- `_build_xirr_cashflows(transactions, terminal_value, terminal_date)`: 从交易流水构建 XIRR 现金流——BUY=流出(负)、SELL=流入(正)、DIVIDEND=流入(正)、REINVEST=跳过(现金中性)、terminal_value>0 时追加终端值。供 `analysis` 和 `backtest` 共用
 
 ### scheduler.py — 定时任务
 

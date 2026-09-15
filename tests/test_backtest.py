@@ -9,9 +9,9 @@ from zfundpilot.backtest import (
     _generate_investment_dates,
     _parse_date,
     _resolve_nav_date,
-    _xirr,
 )
 from zfundpilot.fetch_fund import FeeRates, RedemptionTier
+from zfundpilot.returns import xirr
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +84,7 @@ class TestResolveNavDate:
 
 
 # ---------------------------------------------------------------------------
-# _xirr
+# xirr
 # ---------------------------------------------------------------------------
 class TestXirr:
     def test_simple_positive_return(self):
@@ -92,7 +92,7 @@ class TestXirr:
             (dt.date(2020, 1, 1), -1000),
             (dt.date(2021, 1, 1), 1100),
         ]
-        result = _xirr(cashflows)
+        result = xirr(cashflows)
         assert result is not None
         assert 0.09 < result < 0.11  # ~10%
 
@@ -101,18 +101,18 @@ class TestXirr:
             (dt.date(2020, 1, 1), 1000),
             (dt.date(2021, 1, 1), 1100),
         ]
-        result = _xirr(cashflows)
+        result = xirr(cashflows)
         assert result is None
 
     def test_single_cashflow(self):
-        assert _xirr([(dt.date(2020, 1, 1), -1000)]) is None
+        assert xirr([(dt.date(2020, 1, 1), -1000)]) is None
 
     def test_zero_return(self):
         cashflows = [
             (dt.date(2020, 1, 1), -1000),
             (dt.date(2021, 1, 1), 1000),
         ]
-        result = _xirr(cashflows)
+        result = xirr(cashflows)
         assert result is not None
         assert abs(result) < 0.01
 
@@ -122,7 +122,7 @@ class TestXirr:
             (dt.date(2020, 7, 1), -500),
             (dt.date(2021, 1, 1), 1100),
         ]
-        result = _xirr(cashflows)
+        result = xirr(cashflows)
         assert result is not None
         assert 0.05 < result < 0.15
 

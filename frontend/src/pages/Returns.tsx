@@ -70,6 +70,7 @@ export default function Returns() {
   const [channelColors, setChannelColors] = useState<Record<string, string>>(() => getChannelColors())
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
   const [benchmarks, setBenchmarks] = useState<Set<string>>(new Set(["000300"]))
+  const [rankMode, setRankMode] = useState<"return" | "annualized">("return")
   const [benchmarkData, setBenchmarkData] = useState<BenchmarkPoint[] | null>(null)
   const { t } = useLang()
 
@@ -262,8 +263,8 @@ export default function Returns() {
 
   // 收益率排序图数据
   const chartRows = openPositions
-    .filter((p) => p.return_rate != null)
-    .map((p) => ({ name: p.fund_name, rate: p.return_rate as number }))
+    .filter((p) => rankMode === "return" ? p.return_rate != null : p.annualized_return != null)
+    .map((p) => ({ name: p.fund_name, rate: rankMode === "return" ? (p.return_rate as number) : (p.annualized_return as number) }))
     .sort((a, b) => b.rate - a.rate)
 
   return (
@@ -514,7 +515,13 @@ export default function Returns() {
       {/* Return ranking — horizontal bar chart with color coding */}
       {chartRows.length > 0 && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">{t.returns.returnRanking}</CardTitle></CardHeader>
+          <CardHeader className="pb-2 flex-row items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-base">{t.returns.returnRanking}</CardTitle>
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant={rankMode === "return" ? "default" : "outline"} className="h-6 px-2 text-[11px]" onClick={() => setRankMode("return")}>{t.returns.return}</Button>
+              <Button size="sm" variant={rankMode === "annualized" ? "default" : "outline"} className="h-6 px-2 text-[11px]" onClick={() => setRankMode("annualized")}>{t.returns.annualized}</Button>
+            </div>
+          </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={Math.max(200, chartRows.length * 36)}>
               <BarChart data={chartRows} layout="vertical" margin={{ left: 10, right: 40, top: 5 }}>

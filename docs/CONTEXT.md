@@ -15,7 +15,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 - **持仓与交易管理** — 买卖/分红/再投资流水录入，CSV 批量导入，截图 AI 解析自动识别基金与金额
 - **净值自动更新** — 定时任务拉取净值（AkShare 优先、天天基金 fallback），实时估值（东财估值 + 指数/ETF 兜底）
 - **收益分析** — 累计收益曲线 + 基准对比（沪深300/上证/创业板/CPI/M2）、日/周/月盈亏日历、**XIRR 年化收益率**（组合与单基金，现金流含买卖/分红/再投资，终端值取当前市值作假设变现）、浮动收益率排序（可切换累计/年化）
-- **风险评估** — 最大回撤、年化波动率、集中度（HHI）、行业穿透（按 GICS 行业聚合底层敞口，可展开看构成基金）
+- **组合体检** — 四维诊断评分（配置/风险/流动性/收益，每维 0-100）+ 综合定级（优秀→危险）+ 风险提示 + 结构优化建议，一个 API 返回全量
 - **定投** — 计划自动执行（日/周/双周/月，交易日顺延，QDII 跳美股休市）+ 策略回测（DCA vs 一次性投入，XIRR 对比）
 - **基金筛选与对比** — 全市场池多条件筛选 + 指标增强 Top 30、多维度同框对比 + 相关性矩阵、自选关注列表
 - **AI 投顾** — OpenAI 兼容 API 对话 + 联网搜索，视觉模型截图解析（持仓截图→基金识别→建议导入）
@@ -60,7 +60,8 @@ ZFundPilot/
 │   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）+ resolve_fund_code 名称→代码解析 + verify_fund_code 校验
 │   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）+ reconcile_holdings 截图持仓对账 + 行业穿透聚合
 │   ├── returns.py            # XIRR 年化收益率（二分法 + 现金流构建，供 analysis/backtest 共用）
-│   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI）
+│   ├── health.py             # 组合体检四维评分（配置/风险/流动性/收益）+ 综合体检报告，供 api/ai 共用
+│   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI，部分被 health.py 复用）
 │   ├── rebalance.py         # 再平衡建议
 │   ├── backtest.py          # 定投策略回测（DCA + 一次性投入对比 + XIRR）
 │   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延 + QDII 跳美股休市）
@@ -79,7 +80,7 @@ ZFundPilot/
 │   │   ├── NavUpdate.tsx    # 净值更新
 │   │   ├── Positions.tsx    # 持仓明细（列表 + 网格双视图，网格为 Bento 大卡 + 仓位占比条）
 │   │   ├── Returns.tsx      # 收益分析（曲线/基准对比/排名/日历/止盈止损提醒）
-│   │   ├── Risk.tsx         # 风险评估
+│   │   ├── Risk.tsx         # 组合体检（四维评分 banner + 维度卡片 + 风险指标/提示/建议）
 │   │   ├── FundCompare.tsx     # 基金对比（多维度同框对比 + 相关性矩阵）
 │   │   ├── Screener.tsx       # 基金筛选（全市场筛选 + 指标排序 + 加自选/对比）
 │   │   ├── Watchlist.tsx      # 自选关注列表（追踪未持有基金，已持有的标「持仓中」badge，列头可排序）
@@ -107,7 +108,7 @@ ZFundPilot/
 │   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12 并行) → tsc → build
 ├── tests/                   # Pytest 测试套件
 │   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
-│   └── test_*.py            #   512 个测试用例
+│   └── test_*.py            #   542 个测试用例
 └── docs/CONTEXT.md              # 本文件（不追踪）
 ```
 
@@ -272,6 +273,13 @@ ZFundPilot/
 
 - `xirr(cashflows)`: 二分法求解年化内部收益率（从 `backtest._xirr` 提出改 public），搜索范围 [‑0.999, 10.0]，200 次迭代，无解返回 None
 - `_build_xirr_cashflows(transactions, terminal_value, terminal_date)`: 从交易流水构建 XIRR 现金流——BUY=流出(负)、SELL=流入(正)、DIVIDEND=流入(正)、REINVEST=跳过(现金中性)、terminal_value>0 时追加终端值。供 `analysis` 和 `backtest` 共用
+
+### health.py — 组合体检四维评分
+
+- `calculate_liquidity(positions)`: 返回 `(stable_weight, volatile_weight)`。stable=债券型（T+1~T+3 快赎回缓冲），volatile=权益类+其他。阈值见 `config.HealthThresholds`
+- `_score_allocation/_score_risk/_score_liquidity/_score_return`: 四维 0-100 评分规则引擎。配置(集中度+结构)、风险(回撤+波动)、流动性(债券占比+分散度)、收益(年化 XIRR vs CPI)。数据不足降级：回撤/波动 None→70 中性，年化 None→50 中性
+- `_tier(score)`: 定级 excellent(≥80)/good(≥60)/fair(≥40)/attention(≥20)/danger(<20)
+- `build_health_report()`: 一站式——复用 `analysis.calculate_summary`+`risk.build_risk_report`+`rebalance.generate_advice`，叠加流动性 + CPI 通胀(网络失败降级)，空组合直接返回 danger 0 分。供 `api.py` `/api/portfolio/health` 和 `ai.py` 上下文共用
 
 ### scheduler.py — 定时任务
 

@@ -30,6 +30,7 @@ import type {
   FundHoldings,
   FundRanking,
   FundProfile,
+  HealthReport,
   KeywordMaps,
   SchedulerStatus,
   TpSlConfig,
@@ -265,6 +266,7 @@ export const api = {
   // Risk & Rebalance
   getRiskReport: () => request<RiskReport>("/risk"),
   getRebalanceAdvice: () => request<Advice[]>("/rebalance"),
+  getHealthReport: () => request<HealthReport>("/portfolio/health"),
 
   // CSV
   downloadTemplate: () => downloadWithAuth("/csv/template", "transactions_template.csv"),

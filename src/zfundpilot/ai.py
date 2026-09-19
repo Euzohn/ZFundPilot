@@ -16,7 +16,7 @@ from typing import Any
 
 import httpx
 
-from . import analysis, config, db, fetch_macro, rebalance, risk
+from . import analysis, config, db, fetch_macro, health, rebalance, risk
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,16 @@ def build_portfolio_context() -> str:
             f"- 权益类: {report.equity_weight:.1%} | "
             f"债券类: {report.bond_weight:.1%} | QDII: {report.qdii_weight:.1%}"
         )
+
+        # 组合体检评分
+        try:
+            hr = health.build_health_report()
+            lines.append("\n## 组合体检评分")
+            lines.append(f"- 综合评分: {hr.overall_score}/100（{hr.overall_tier}）")
+            for dim in hr.dimensions:
+                lines.append(f"- {dim.name}: {dim.score}/100（{dim.status}）")
+        except Exception:  # noqa: BLE001
+            logger.debug("体检评分上下文构建失败，已跳过", exc_info=True)
 
         # 行业穿透（跨基金聚合真实行业敞口）
         exposure = analysis.aggregate_industry_exposure(open_positions)

@@ -8,7 +8,7 @@ import {
   Briefcase,
   RefreshCw,
   TrendingUp,
-  ShieldCheck,
+  Activity,
   Bot,
   GitCompare,
   FlaskConical,
@@ -51,7 +51,7 @@ const navGroups = [
     labelKey: "groupAnalysis" as const,
     items: [
       { to: "/returns", labelKey: "returns" as const, icon: TrendingUp },
-      { to: "/risk", labelKey: "risk" as const, icon: ShieldCheck },
+      { to: "/risk", labelKey: "risk" as const, icon: Activity },
       { to: "/compare", labelKey: "compare" as const, icon: GitCompare },
       { to: "/screener", labelKey: "screener" as const, icon: SearchIcon },
       { to: "/watchlist", labelKey: "watchlist" as const, icon: Star },

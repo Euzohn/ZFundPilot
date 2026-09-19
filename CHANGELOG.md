@@ -9,6 +9,7 @@
 ### Added
 - 前端全局 UI 质感升级——平滑滚动 + 页面淡入过渡（路由切换 200ms ease-out）+ 跳过导航无障碍链接（skip-to-content）+ Returns 页指标卡响应式修复（2→3→5 列，消除平板 2+2+1 单吊）+ 年化收益卡品牌强调色（红色小圆点标记 XIRR 指标）+ 404 页面（品牌化 NotFound 页 + 兜底路由）
 - 组合与单基金 XIRR 年化收益率——原 `return_rate = 市值/成本 - 1` 是朴素总回报，对分批投入（定投）严重失真（近期大额投入会稀释整体收益率）。新增 `returns.py` 模块（`xirr` 二分法从 `backtest._xirr` 提出改 public + `_build_xirr_cashflows` 现金流构建），`analysis.calculate_summary()`/`calculate_positions()` 从交易流水构建现金流计算 XIRR（买入=流出、卖出/现金分红=流入、再投资=现金中性跳过、终端值=当前市值作"假设变现"，已清仓不加终端值）。`Position`/`PortfolioSummary` 新增 `annualized_return` 字段。Returns 页新增「年化收益」指标卡（grid 改 5 列）+ 单基金明细表「年化」可排序列 + 浮动收益率排序柱状图切换（累计收益率/年化收益率按钮组，持仓时间不同的基金可用年化对比）。AI 投顾上下文新增「年化收益率(XIRR)」行。新增 `tests/test_returns.py`（20 用例），总测试 492→512
+- 组合体检四维诊断——将风险页升级为「组合体检」统一视图，四维评分（配置/风险/流动性/收益，每维 0-100）+ 定级（优秀/良好/一般/关注/危险）。新增 `health.py` 模块（`calculate_liquidity` 按债券型 vs 权益类区分流动缓冲垫 + 四维 `_score_*` 规则引擎 + `build_health_report` 一站式），新增 `/api/portfolio/health` 端点，Risk.tsx 重构为体检页（评分 banner + 四维卡片 + 流动性指标 + 保留所有风险指标/提示/建议），AI 上下文追加体检评分段，导航 icon 改为 Activity。新增 `tests/test_health.py`（30 用例），总测试 512→542
 
 - 行业敞口表可展开显示基金构成明细——点击行业行的展开箭头，展开显示该行业下每只贡献基金的名称/代码、贡献市值、占该行业比例。后端 `aggregate_industry_exposure` 聚合时按基金 × 行业维度记录市值贡献，新增 `IndustryFundContribution` dataclass（fund_code/fund_name/market_value），`IndustryExposureItem.funds` 字段按市值降序排列。前端 `IndustryExposurePanel` 行展开使用 `Fragment` + `Set<string>` 状态管理，未穿透行不可展开。新增 i18n 键 `contributionMv`/`shareOfIndustry`/`expandIndustry`。新增 `tests/test_industry_exposure.py` 扩展（基金构成明细断言），总测试 424→428
 

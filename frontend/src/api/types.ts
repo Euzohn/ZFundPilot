@@ -180,6 +180,24 @@ export interface Advice {
   text: string
 }
 
+export interface HealthDimension {
+  name: string
+  score: number
+  status: string
+  metrics: Record<string, unknown>
+}
+
+export interface HealthReport {
+  overall_score: number
+  overall_tier: string
+  dimensions: HealthDimension[]
+  stable_weight: number
+  volatile_weight: number
+  risk_report: RiskReport
+  advice: Advice[]
+  summary: PortfolioSummary
+}
+
 export interface FetchResult {
   fund_code: string
   ok: boolean

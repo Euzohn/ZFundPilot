@@ -43,6 +43,7 @@ from . import (
     fetch_fund,
     fetch_macro,
     fund_filter,
+    health,
     rebalance,
     risk,
     scheduler,
@@ -1780,6 +1781,12 @@ def get_risk_report() -> dict[str, Any]:
 def get_rebalance_advice() -> list[dict[str, Any]]:
     advice = rebalance.generate_advice()
     return [{"code": a.code, "params": a.params, "category": a.category, "text": a.text} for a in advice]
+
+
+@app.get("/api/portfolio/health")
+def get_health_report() -> dict[str, Any]:
+    report = health.build_health_report()
+    return report.to_dict()
 
 
 # ---------------------------------------------------------------------------

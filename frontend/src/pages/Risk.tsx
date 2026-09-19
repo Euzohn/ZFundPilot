@@ -1,15 +1,14 @@
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { RiskReport, Advice } from "@/api/types"
+import type { HealthReport, HealthDimension } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import LogoSpinner from "@/components/LogoSpinner"
 import ErrorState from "@/components/ErrorState"
 import { Badge } from "@/components/ui/badge"
 import { pct, pnlColor } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
-import { ShieldAlert, AlertTriangle, Info, Lightbulb, Shield } from "lucide-react"
+import { ShieldAlert, AlertTriangle, Info, Lightbulb, Activity } from "lucide-react"
 import type { ReactNode } from "react"
 import MetricCard from "@/components/MetricCard"
 import { useLang } from "@/i18n/LanguageContext"
@@ -21,32 +20,140 @@ const FLAG_STYLES: Record<string, { icon: ReactNode; variant: "destructive" | "w
   info: { icon: <Info className="h-5 w-5 text-primary" />, variant: "default" },
 }
 
+const SCORE_COLOR: Record<string, string> = {
+  excellent: "text-success",
+  good: "text-success",
+  fair: "text-warning",
+  attention: "text-orange-500",
+  danger: "text-destructive",
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  good: "text-success",
+  warning: "text-warning",
+  danger: "text-destructive",
+}
+
 export default function Risk() {
-  const { data: report, loading: rl, error: re, reload: reloadReport } = useApi<RiskReport>(() => api.getRiskReport())
-  const { data: advice, loading: al, error: ae, reload: reloadAdvice } = useApi<Advice[]>(() => api.getRebalanceAdvice())
+  const { data: hr, loading, error, reload } = useApi<HealthReport>(() => api.getHealthReport())
   const { t } = useLang()
 
-  if (re) return <ErrorState message={re} onRetry={reloadReport} />
-  if (rl || !report) return <LoadingState />
+  if (error) return <ErrorState message={error} onRetry={reload} />
+  if (loading || !hr) return <LoadingState />
+
+  const report = hr.risk_report
+  const advice = hr.advice
+
+  const tierLabels: Record<string, string> = {
+    excellent: t.health.tierExcellent,
+    good: t.health.tierGood,
+    fair: t.health.tierFair,
+    attention: t.health.tierAttention,
+    danger: t.health.tierDanger,
+  }
+  const dimLabels: Record<string, string> = {
+    allocation: t.health.allocation,
+    risk: t.health.risk,
+    liquidity: t.health.liquidity,
+    return: t.health.return,
+  }
+
+  const dimMetric = (dim: HealthDimension): { label: string; value: string } | null => {
+    const m = dim.metrics
+    if (dim.name === "allocation") {
+      const w = m.max_single_weight as number | undefined
+      return w != null && w > 0 ? { label: t.risk.maxSingleWeight, value: pct(w) } : null
+    }
+    if (dim.name === "risk") {
+      const dd = m.max_drawdown as number | null | undefined
+      return dd != null ? { label: t.risk.maxDrawdown, value: pct(dd) } : null
+    }
+    if (dim.name === "liquidity") {
+      const sw = m.stable_weight as number | undefined
+      return sw != null ? { label: t.health.stableWeight, value: pct(sw) } : null
+    }
+    if (dim.name === "return") {
+      const ar = m.annualized_return as number | null | undefined
+      return ar != null ? { label: t.health.return, value: pct(ar) } : null
+    }
+    return null
+  }
+
+  const tierVariant = (tier: string) => {
+    if (tier === "danger" || tier === "attention") return "destructive" as const
+    if (tier === "fair") return "warning" as const
+    return "default" as const
+  }
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t.risk.title} icon={<Shield className="h-5 w-5" />} />
+      <PageHeader title={t.health.title} subtitle={t.health.subtitle} icon={<Activity className="h-5 w-5" />} />
 
-      {/* Metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <MetricCard label={t.risk.maxDrawdown} value={report.max_drawdown != null ? pct(report.max_drawdown) : t.risk.insufficientData} color={pnlColor(report.max_drawdown ?? 0)} />
-        <MetricCard label={t.risk.annualVolatility} value={report.volatility != null ? pct(report.volatility) : t.risk.insufficientData} />
-        <MetricCard label={t.risk.maxSingleWeight} value={pct(report.max_single_weight)} sub={report.max_single_name} />
-        <MetricCard label={t.risk.concentrationHHI} value={report.hhi.toFixed(3)} />
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-        <MetricCard label={t.risk.equityWeight} value={pct(report.equity_weight)} />
-        <MetricCard label={t.risk.bondWeight} value={pct(report.bond_weight)} />
-        <MetricCard label={t.risk.qdiiWeight} value={pct(report.qdii_weight)} />
+      {/* 体检评级 Banner */}
+      <Card className="card-hover">
+        <CardContent className="p-4 md:p-5 flex items-center gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-muted">
+            <span className={`text-2xl font-bold tabular-nums ${SCORE_COLOR[hr.overall_tier] ?? "text-primary"}`}>
+              {hr.overall_score}
+            </span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium text-muted-foreground">{t.health.overallScore}</p>
+              <Badge variant={tierVariant(hr.overall_tier)}>{tierLabels[hr.overall_tier] ?? hr.overall_tier}</Badge>
+            </div>
+            <div className="mt-1.5 h-2 w-full rounded-full bg-muted overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${SCORE_COLOR[hr.overall_tier] ?? "bg-primary"}`}
+                style={{ width: `${Math.max(2, hr.overall_score)}%` }}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 四维评分卡 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        {hr.dimensions.map((dim) => {
+          const metric = dimMetric(dim)
+          return (
+            <Card key={dim.name} className="card-hover">
+              <CardContent className="p-4 md:p-5 text-center">
+                <p className="text-xs font-medium text-muted-foreground">{dimLabels[dim.name] ?? dim.name}</p>
+                <p className={`mt-1 text-2xl font-bold tabular-nums ${STATUS_COLOR[dim.status] ?? "text-foreground"}`}>
+                  {dim.score}
+                </p>
+                {metric && (
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {metric.label} {metric.value}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
 
-      {/* Risk flags */}
+      {/* 风险指标明细 */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">{t.risk.title}</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+            <MetricCard label={t.risk.maxDrawdown} value={report.max_drawdown != null ? pct(report.max_drawdown) : t.risk.insufficientData} color={pnlColor(report.max_drawdown ?? 0)} />
+            <MetricCard label={t.risk.annualVolatility} value={report.volatility != null ? pct(report.volatility) : t.risk.insufficientData} />
+            <MetricCard label={t.risk.maxSingleWeight} value={pct(report.max_single_weight)} sub={report.max_single_name} />
+            <MetricCard label={t.risk.concentrationHHI} value={report.hhi.toFixed(3)} />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
+            <MetricCard label={t.risk.equityWeight} value={pct(report.equity_weight)} />
+            <MetricCard label={t.risk.bondWeight} value={pct(report.bond_weight)} />
+            <MetricCard label={t.risk.qdiiWeight} value={pct(report.qdii_weight)} />
+            <MetricCard label={t.health.stableWeight} value={pct(hr.stable_weight)} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 风险提示 */}
       <Card>
         <CardHeader><CardTitle className="text-base">{t.risk.riskFlags}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
@@ -68,7 +175,7 @@ export default function Risk() {
         </CardContent>
       </Card>
 
-      {/* Rebalance advice */}
+      {/* 结构优化建议 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -78,23 +185,19 @@ export default function Risk() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">{t.risk.adviceDisclaimer}</p>
-          {al ? (
-            <div className="flex justify-center py-6"><LogoSpinner className="h-6 w-6" /></div>
-          ) : ae ? (
-            <ErrorState message={ae} onRetry={reloadAdvice} />
-          ) : advice && advice.length > 0 ? (
+          {advice && advice.length > 0 ? (
             advice.map((a, i) => {
               const { category, text } = translateAdvice(a)
               return (
-              <div key={i} className="flex items-start gap-3 rounded-md border p-3">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
-                  {i + 1}
-                </span>
-                <div>
-                  <Badge variant="outline" className="mr-2">{category}</Badge>
-                  <span className="text-sm text-muted-foreground">{text}</span>
+                <div key={i} className="flex items-start gap-3 rounded-md border p-3">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+                    {i + 1}
+                  </span>
+                  <div>
+                    <Badge variant="outline" className="mr-2">{category}</Badge>
+                    <span className="text-sm text-muted-foreground">{text}</span>
+                  </div>
                 </div>
-              </div>
               )
             })
           ) : (

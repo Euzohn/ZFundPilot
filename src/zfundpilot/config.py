@@ -153,6 +153,28 @@ class RiskThresholds:
     VOLATILITY_HIGH = 0.25    # 超过 25% 波动偏高
 
 
+class HealthThresholds:
+    """组合体检 — 四维评分阈值。"""
+
+    # ── 流动性 ──
+    STABLE_WEIGHT_GOOD = 0.20    # 债券占比 ≥ 20% 流动性良好
+    STABLE_WEIGHT_OK = 0.10      # ≥ 10% 及格
+    STABLE_WEIGHT_MIN = 0.05     # < 5% 无缓冲
+    DIVERSITY_COUNT = 5          # 持仓 ≥ 5 只额外加分
+
+    # ── 评分定级 ──
+    TIER_EXCELLENT = 80
+    TIER_GOOD = 60
+    TIER_FAIR = 40
+    TIER_ATTENTION = 20
+
+    # ── 收益维度 ──
+    RETURN_POSITIVE = 15    # 年化正收益加分
+    RETURN_BEAT_CPI = 15    # 跑赢通胀加分
+    RETURN_NEGATIVE = -20   # 年化亏损扣分
+    RETURN_DEEP_LOSS = -0.10
+
+
 # ---------------------------------------------------------------------------
 # 数据源配置
 # ---------------------------------------------------------------------------

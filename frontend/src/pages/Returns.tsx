@@ -272,7 +272,7 @@ export default function Returns() {
       <PageHeader title={t.returns.title} icon={<TrendingUp className="h-5 w-5" />} />
 
       {/* Metrics — 详细指标，不与总览重复 */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
           <p className="text-xs font-medium text-muted-foreground">{t.returns.holdingCost}</p>
           <p className="mt-1 text-lg md:text-xl font-bold tabular-nums">{money(summary.total_cost)}</p>
@@ -286,7 +286,10 @@ export default function Returns() {
           <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${pnlColor(summary.realized_pnl)}`}>{signedMoney(summary.realized_pnl)}</p>
         </CardContent></Card>
         <Card className="card-hover"><CardContent className="p-4 md:p-5">
-          <p className="text-xs font-medium text-muted-foreground">{t.returns.annualReturn}</p>
+          <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-accent" />
+            {t.returns.annualReturn}
+          </p>
           <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${pnlColor(summary.annualized_return)}`}>{pct(summary.annualized_return)}</p>
         </CardContent></Card>
         <Card className="card-hover"><CardContent className="p-4 md:p-5">

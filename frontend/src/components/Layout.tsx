@@ -187,6 +187,9 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      {/* 跳过导航链接（无障碍） */}
+      <a href="#main-content" className="skip-to-content">{t.nav.skipToContent}</a>
+
       {/* 噪点叠加层 */}
       <div className="grain-overlay" aria-hidden="true" />
 
@@ -307,9 +310,11 @@ export default function Layout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
+      <main id="main-content" className="flex-1 overflow-y-auto pt-14 md:pt-0">
         <div className="mx-auto max-w-7xl px-4 py-4 md:px-8 md:py-6">
-          <Outlet />
+          <div key={location.pathname} className="page-transition">
+            <Outlet />
+          </div>
         </div>
       </main>
     </div>

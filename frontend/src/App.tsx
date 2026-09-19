@@ -17,6 +17,7 @@ import Backtest from "@/pages/Backtest"
 import Watchlist from "@/pages/Watchlist"
 import Screener from "@/pages/Screener"
 import Login from "@/pages/Login"
+import NotFound from "@/pages/NotFound"
 import { api } from "@/api/client"
 import { getToken } from "@/lib/auth"
 import { initUiTheme } from "@/lib/theme"
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="watchlist" element={<Watchlist />} />
           <Route path="backtest" element={<Backtest />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
       </CompareProvider>

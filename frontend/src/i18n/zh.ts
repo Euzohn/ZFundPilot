@@ -100,6 +100,7 @@ const zh = {
     theme: "主题",
     language: "语言",
     switchLang: "切换语言",
+    skipToContent: "跳到主内容",
   },
   home: {
     tagline: "个人基金分析与风险管理系统",
@@ -1216,6 +1217,11 @@ const zh = {
     empty: "选择类型/板块筛选，或输入基金代码/名称搜索",
     noResults: "没有找到符合条件的基金，试试减少筛选条件",
     codeSearchHint: "代码搜索：忽略类型/板块筛选",
+  },
+  notFound: {
+    title: "页面未找到",
+    description: "你访问的页面不存在或已被移动。",
+    backHome: "返回首页",
   },
   periodLabels: {
     "1w": "近1周",

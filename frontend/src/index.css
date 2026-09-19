@@ -180,10 +180,40 @@
   box-shadow: 0 4px 12px -2px hsl(var(--foreground) / 0.08);
 }
 
-/* 移动端：禁止橡皮筋滚动 + 安全区适配 */
+/* 平滑滚动 + 禁止橡皮筋 */
+html {
+  scroll-behavior: smooth;
+}
 html, body {
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* 无障碍：跳过导航链接 */
+.skip-to-content {
+  position: absolute;
+  left: -9999px;
+  z-index: 999;
+  padding: 0.5rem 1rem;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-radius: 0 0 0.375rem 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+.skip-to-content:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+}
+
+/* 页面淡入过渡 */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-transition {
+  animation: page-in 200ms ease-out;
 }
 
 /* loading spinner */

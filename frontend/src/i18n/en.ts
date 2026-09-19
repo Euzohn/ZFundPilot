@@ -102,6 +102,7 @@ const en: typeof zh = {
     theme: "Theme",
     language: "Language",
     switchLang: "Switch language",
+    skipToContent: "Skip to main content",
   },
   home: {
     tagline: "Personal Fund Analysis & Risk Management System",
@@ -1218,6 +1219,11 @@ const en: typeof zh = {
     empty: "Select type/sector filters, or enter a fund code/name to search",
     noResults: "No funds match your criteria. Try removing some filters.",
     codeSearchHint: "Code search: type/sector filters ignored",
+  },
+  notFound: {
+    title: "Page not found",
+    description: "The page you are looking for doesn't exist or has been moved.",
+    backHome: "Back to home",
   },
   periodLabels: {
     "1w": "1W",

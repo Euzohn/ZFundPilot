@@ -34,6 +34,14 @@ const STATUS_COLOR: Record<string, string> = {
   danger: "text-destructive",
 }
 
+const BAR_BG: Record<string, string> = {
+  excellent: "bg-success",
+  good: "bg-success",
+  fair: "bg-warning",
+  attention: "bg-orange-500",
+  danger: "bg-destructive",
+}
+
 export default function Risk() {
   const { data: hr, loading, error, reload } = useApi<HealthReport>(() => api.getHealthReport())
   const { t } = useLang()
@@ -104,7 +112,7 @@ export default function Risk() {
             </div>
             <div className="mt-1.5 h-2 w-full rounded-full bg-muted overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all duration-500 ${SCORE_COLOR[hr.overall_tier] ?? "bg-primary"}`}
+                className={`h-full rounded-full transition-all duration-500 ${BAR_BG[hr.overall_tier] ?? "bg-primary"}`}
                 style={{ width: `${Math.max(2, hr.overall_score)}%` }}
               />
             </div>

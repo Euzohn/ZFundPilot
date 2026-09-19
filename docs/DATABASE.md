@@ -366,6 +366,8 @@
 | `CalcFeeResponse` | fetch_fund.py | 费率计算结果（fee/fee_rate/lots） |
 | `RiskReport` | risk.py | 风险报告（max_drawdown/volatility/hhi/flags 等） |
 | `RiskFlag` | risk.py | 风险提示条目（level/code/params/title/detail） |
+| `HealthReport` | health.py | 组合体检报告（overall_score/tier/dimensions/stable_weight + risk_report + advice + summary） |
+| `HealthDimension` | health.py | 四维评分（name/score/status/metrics） |
 | `Advice` | rebalance.py | 结构优化建议（code/params/category/text） |
 | `BacktestResult` | backtest.py | 回测结果（含曲线 + 每期明细） |
 | `AutoInvestPlan` | auto_invest.py | 定投计划（fund_code/amount/cadence/next_run 等） |

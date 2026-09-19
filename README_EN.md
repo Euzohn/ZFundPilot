@@ -51,8 +51,8 @@
   <img src="assets/readme/screenshots_en/returns.webp" alt="Return Analysis" width="90%">
   <p><b>Return Analysis</b> — Unrealized/realized P&L, portfolio curve, benchmark comparison, day/week/month/year calendar view</p>
   <br>
-  <img src="assets/readme/screenshots_en/risk.webp" alt="Risk Assessment" width="90%">
-  <p><b>Risk Assessment</b> — Max drawdown, annualized volatility, concentration HHI, structure breakdown</p>
+  <img src="assets/readme/screenshots_en/risk.webp" alt="Portfolio Health Check" width="90%">
+  <p><b>Portfolio Health Check</b> — 4-dimension diagnosis (allocation/risk/liquidity/return) + risk flags + rebalancing advice</p>
   <br>
   <img src="assets/readme/screenshots_en/compare.webp" alt="Fund Compare" width="90%">
   <p><b>Fund Compare</b> — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix</p>
@@ -132,9 +132,9 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **DCA Backtest** — Simulate DCA (monthly/biweekly/weekly) vs lump-sum with historical NAV data. Calculates XIRR, max drawdown, Sharpe ratio
 - **Auto-Invest Plan** — Set up daily/weekly/biweekly/monthly auto-buy, auto-skip non-trading days, auto-calculate fees, T+1 NAV backfill
 
-### Risk & Optimization
+### Health Check & Optimization
 
-- **Risk Analysis** — Max drawdown, annualized volatility, concentration (HHI), structure breakdown, risk flags
+- **Portfolio Health Check** — 4-dimension diagnosis (allocation/risk/liquidity/return, each 0-100) + overall tier (excellent→danger), reuses risk metrics + rebalancing advice, single API returns all
 - **Rebalancing Advice** — Structure-based optimization suggestions (not trading signals)
 - **Take-Profit / Stop-Loss Alerts** — Automatically checks fund returns after NAV update and alerts when thresholds are hit. State machine prevents repeats: after triggering, returns must fall back below the reset ratio before re-arming, avoiding repeated alerts after partial profit-taking. Independent take-profit/stop-loss toggles, globally configurable thresholds. Confirm jumps to transaction page pre-filled with sell
 - **Dividend Auto-Detection** — Scans held funds for unrecorded dividends daily at 09:30, dialog pre-fills for quick recording. Phantom alert auto-cleanup: marks invalid alerts as ignored when source data is corrected

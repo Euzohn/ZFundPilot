@@ -30,6 +30,7 @@ import ConfirmDialog from "@/components/ConfirmDialog"
 import TransactionDetailDialog from "@/components/TransactionDetailDialog"
 import DividendCheckDialog from "@/components/DividendCheckDialog"
 import ScreenshotImportPanel from "@/components/ScreenshotImportPanel"
+import { useTabParam } from "@/hooks/useTabParam"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 
 function actionBadgeClass(action: string): string {
@@ -47,7 +48,7 @@ export default function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState("form")
+  const [activeTab, setActiveTab] = useTabParam("tab", "form", ["form", "list", "csv", "auto-invest", "screenshot"])
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [listReloadKey, setListReloadKey] = useState(0)
   const [prefill, setPrefill] = useState<{ code: string; action: string; channel?: string; amount?: string; date?: string; note?: string; alert_id?: number; tp_sl_alert_id?: number } | null>(null)
@@ -60,6 +61,7 @@ export default function Transactions() {
   // 从 URL 参数消费预填数据（从持仓页/分红检查跳转过来）
   useEffect(() => {
     const code = searchParams.get("code")
+    if (!code) return
     const action = searchParams.get("action")
     const channel = searchParams.get("channel")
     const amount = searchParams.get("amount")
@@ -68,16 +70,21 @@ export default function Transactions() {
     const alertId = searchParams.get("alert_id")
     const tpSlAlertId = searchParams.get("tp_sl_alert_id")
     const tab = searchParams.get("tab")
-    if (tab === "auto-invest" && code) {
+    if (tab === "auto-invest") {
       setAutoInvestPrefillCode(code)
       setAutoInvestPrefillChannel(channel || undefined)
-      setActiveTab("auto-invest")
-      setSearchParams({}, { replace: true })
-    } else if (code) {
+    } else {
       setPrefill({ code, action: action || "buy", channel: channel || undefined, amount: amount || undefined, date: date || undefined, note: note ? decodeURIComponent(note) : undefined, alert_id: alertId ? Number(alertId) : undefined, tp_sl_alert_id: tpSlAlertId ? Number(tpSlAlertId) : undefined })
-      setActiveTab("form")
-      setSearchParams({}, { replace: true })
     }
+    // 清掉预填参数，保留 tab 参数
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev)
+        for (const k of ["code", "action", "channel", "amount", "date", "note", "alert_id", "tp_sl_alert_id"]) p.delete(k)
+        return p
+      },
+      { replace: true },
+    )
   }, [searchParams, setSearchParams])
 
   // 从 navigator.state 消费编辑数据（从详情页跳转过来）
@@ -88,7 +95,6 @@ export default function Transactions() {
       consumedEditTx.current = true
       setEditingTx(state.editTx)
       setPrefill(null)
-      setActiveTab("form")
       window.history.replaceState({}, "")
     }
   }, [location.state])

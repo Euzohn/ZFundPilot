@@ -23,6 +23,7 @@ import type { BacktestResult } from "@/api/types"
 import { money, pct, pnlColor } from "@/lib/format"
 import { useLang } from "@/i18n/LanguageContext"
 import { useCountUp } from "@/hooks/useCountUp"
+import { useTabParam } from "@/hooks/useTabParam"
 
 const CADENCE_VALUES = ["month", "biweek", "week"] as const
 const formatSharpe = (n: number) => n.toFixed(2)
@@ -69,6 +70,7 @@ function defaultEndDate(): string {
 
 export default function Backtest() {
   const { t } = useLang()
+  const [tab, setTab] = useTabParam("tab", "chart", ["chart", "detail", "compare"])
   const cadenceLabels: Record<string, string> = {
     month: t.backtest.monthly,
     biweek: t.backtest.biweekly,
@@ -310,7 +312,7 @@ export default function Backtest() {
             </div>
           ))}
 
-          <Tabs defaultValue="chart">
+          <Tabs value={tab} onValueChange={setTab}>
             <TabsList>
               <TabsTrigger value="chart">{t.backtest.cumulativeCurve}</TabsTrigger>
               <TabsTrigger value="detail">{t.backtest.periodDetail}</TabsTrigger>

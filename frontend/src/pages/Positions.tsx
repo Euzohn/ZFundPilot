@@ -20,13 +20,14 @@ import { cn } from "@/lib/utils"
 import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search, LayoutGrid, List, Wallet } from "lucide-react"
 import { makeSortHeader } from "@/components/SortHeader"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { useTabParam } from "@/hooks/useTabParam"
 import IndustryExposurePanel from "@/components/IndustryExposurePanel"
 import { useLang } from "@/i18n/LanguageContext"
 
 export default function Positions() {
   const navigate = useNavigate()
   const { t } = useLang()
-  const [activeTab, setActiveTab] = useState("list")
+  const [activeTab, setActiveTab] = useTabParam("tab", "list", ["list", "exposure", "closed"])
   const [channelFilter, setChannelFilter] = useState(() => localStorage.getItem("zfundpilot_channelFilter") ?? "")
   const [searchQuery, setSearchQuery] = useState("")
   const [viewMode, setViewMode] = useState<"list" | "grid">(() => localStorage.getItem("zfundpilot_positionsView") === "grid" ? "grid" : "list")

@@ -25,6 +25,7 @@ import FieldError from "@/components/FieldError"
 import { toast } from "sonner"
 import { useLang, type Lang } from "@/i18n/LanguageContext"
 import { cn } from "@/lib/utils"
+import { useTabParam } from "@/hooks/useTabParam"
 import type { AIUsageStats, AIUsageDaily, AuditLog, KeywordMaps, SchedulerStatus, TpSlConfig, VisionConfig } from "@/api/types"
 import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
@@ -589,12 +590,14 @@ export default function Settings() {
   }
 
   const authRequired = authStatus?.required
+  const [tab, setTab] = useTabParam("tab", "ai", ["account", "ai", "prefs"])
+  const activeTab = tab === "account" && authRequired !== true ? "ai" : tab
 
   return (
     <div className="space-y-6">
         <PageHeader title={t.settings.title} icon={<SettingsIcon className="h-5 w-5" />} />
 
-      <Tabs defaultValue="ai">
+      <Tabs value={activeTab} onValueChange={setTab}>
         <TabsList className={cn("grid w-full sm:inline-flex sm:w-auto", authRequired ? "grid-cols-3" : "grid-cols-2")}>
           {authRequired && (
             <TabsTrigger value="account" className="gap-1.5">

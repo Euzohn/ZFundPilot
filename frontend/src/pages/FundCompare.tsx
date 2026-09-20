@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
+import { useTabParam } from "@/hooks/useTabParam"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { FundCompareItem } from "@/api/types"
@@ -273,13 +274,21 @@ export default function FundCompare() {
   const { t } = useLang()
   const [searchParams, setSearchParams] = useSearchParams()
   const { codes, addCodes, removeCode, clear, count } = useCompare()
+  const [tab, setTab] = useTabParam("tab", "info", ["info", "returns", "risk", "chart", "correlation"])
 
   useEffect(() => {
     const q = searchParams.get("codes") || ""
     const urlCodes = q.split(",").filter((c) => /^\d{6}$/.test(c))
     if (urlCodes.length > 0) {
       addCodes(urlCodes)
-      setSearchParams({}, { replace: true })
+      setSearchParams(
+        (prev) => {
+          const p = new URLSearchParams(prev)
+          p.delete("codes")
+          return p
+        },
+        { replace: true },
+      )
     }
   }, [])
 
@@ -377,7 +386,7 @@ export default function FundCompare() {
             </div>
           )}
 
-          <Tabs defaultValue="info">
+          <Tabs value={tab} onValueChange={setTab}>
             <TabsList className="grid w-full grid-cols-5 sm:inline-flex sm:w-auto">
               <TabsTrigger value="info" className="gap-1"><Table2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.compare.basicInfo}</span></TabsTrigger>
               <TabsTrigger value="returns" className="gap-1"><TrendingUp className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t.compare.returnPerformance}</span></TabsTrigger>

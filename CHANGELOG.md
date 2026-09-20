@@ -7,6 +7,14 @@
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.23.0] - 2026-09-20
+
+### Added
 - 页面 Tab 状态同步到 URL——5 个含 Tab 的页面（持仓/交易/设置/回测/对比）刷新后不再回落到默认标签。新增 `useTabParam` hook（读 `?tab=` 查询参数，白名单校验非法值回落默认，切 tab 用 `replace:true` 写 URL）。Transactions/FundCompare 预填参数消费逻辑改为只清自身参数、保留 `tab`；Settings 无认证时 `account`→`ai` 兜底
 - 前端全局 UI 质感升级——平滑滚动 + 页面淡入过渡（路由切换 200ms ease-out）+ 跳过导航无障碍链接（skip-to-content）+ Returns 页指标卡响应式修复（2→3→5 列，消除平板 2+2+1 单吊）+ 年化收益卡品牌强调色（红色小圆点标记 XIRR 指标）+ 404 页面（品牌化 NotFound 页 + 兜底路由）
 - 组合与单基金 XIRR 年化收益率——原 `return_rate = 市值/成本 - 1` 是朴素总回报，对分批投入（定投）严重失真（近期大额投入会稀释整体收益率）。新增 `returns.py` 模块（`xirr` 二分法从 `backtest._xirr` 提出改 public + `_build_xirr_cashflows` 现金流构建），`analysis.calculate_summary()`/`calculate_positions()` 从交易流水构建现金流计算 XIRR（买入=流出、卖出/现金分红=流入、再投资=现金中性跳过、终端值=当前市值作"假设变现"，已清仓不加终端值）。`Position`/`PortfolioSummary` 新增 `annualized_return` 字段。Returns 页新增「年化收益」指标卡（grid 改 5 列）+ 单基金明细表「年化」可排序列 + 浮动收益率排序柱状图切换（累计收益率/年化收益率按钮组，持仓时间不同的基金可用年化对比）。AI 投顾上下文新增「年化收益率(XIRR)」行。新增 `tests/test_returns.py`（20 用例），总测试 492→512

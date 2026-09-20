@@ -25,7 +25,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.22.0`（git tag `v0.22.0`）
+- **版本**: `0.23.0`（git tag `v0.23.0`）
 - **License**: MIT
 
 ---
@@ -47,7 +47,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.22.0"
+│   ├── __init__.py          # __version__ = "0.23.0"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
@@ -165,7 +165,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.22.0")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.23.0")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
 - 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
@@ -489,6 +489,20 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ---
 
 ## 十二、当前工作状态
+
+### v0.23.0 - 2026-09-20
+
+- feat: 组合与单基金 XIRR 年化收益率——原 `return_rate = 市值/成本 - 1` 是朴素总回报，对分批投入（定投）严重失真。新增 `returns.py` 模块（`xirr` 二分法 + `_build_xirr_cashflows` 现金流构建），买入=流出、卖出/现金分红=流入、再投资=现金中性跳过、终端值=当前市值作"假设变现"，已清仓不加终端值。`Position`/`PortfolioSummary` 新增 `annualized_return` 字段。Returns 页新增「年化收益」指标卡 + 单基金明细表「年化」可排序列 + 浮动收益率排序柱状图切换（累计/年化按钮组）。AI 上下文新增「年化收益率(XIRR)」行。新增 `tests/test_returns.py`（20 用例），总测试 492→512
+- feat: 组合体检四维诊断——将风险页升级为「组合体检」统一视图，四维评分（配置/风险/流动性/收益，每维 0-100）+ 定级（优秀/良好/一般/关注/危险）。新增 `health.py` 模块（`calculate_liquidity` 按债券型 vs 权益类区分流动缓冲垫 + 四维 `_score_*` 规则引擎 + `build_health_report`），新增 `/api/portfolio/health` 端点，Risk.tsx 重构为体检页（评分 banner + 四维卡片 + 流动性指标 + 保留所有风险指标/提示/建议），AI 上下文追加体检评分段，导航 icon 改为 Activity。新增 `tests/test_health.py`（30 用例），总测试 512→542
+- feat: 前端全局 UI 质感升级——平滑滚动 + 页面淡入过渡（路由切换 200ms）+ 跳过导航无障碍链接（skip-to-content）+ Returns 页指标卡响应式修复（2→3→5 列）+ 年化收益卡品牌强调色（红色小圆点）+ 404 页面（品牌化 NotFound 页 + 兜底路由）
+- feat: 前端 UI 质量升级——侧边栏从硬编码 zinc/blue 改为语义 token（`bg-card`/`border-border`/`muted-foreground`，激活态 primary，深/浅主题均正确渲染）；`MetricCard` 新增 `iconTone` 语义 tint，Overview 删除重复 `CompactCard` 统一复用 `MetricCard`；`PageHeader` 标题加大（text-2xl/3xl）+ 总市值放大（text-3xl/4xl）；体检评级分数圆按 tier 淡色底 + 维度卡状态色顶条；`theme-color` meta 随明暗自适应
+- feat: 页面 Tab 状态同步到 URL——5 个含 Tab 的页面（持仓/交易/设置/回测/对比）刷新后不再回落到默认标签。新增 `useTabParam` hook（读 `?tab=` 查询参数，白名单校验非法值回落默认，切 tab 用 `replace:true`）。Transactions/FundCompare 预填参数消费逻辑改为只清自身参数、保留 `tab`；Settings 无认证时 `account`→`ai` 兜底
+- feat: 行业敞口表可展开显示基金构成明细——点击行业行的展开箭头，展开显示该行业下每只贡献基金的名称/代码、贡献市值、占该行业比例。新增 `IndustryFundContribution` dataclass + `IndustryExposureItem.funds` 字段。新增 `tests/test_industry_exposure.py` 扩展，总测试 424→428
+- changed: 行业敞口图表改为单图切换——柱状图 + 饼图并排改为单图 BarChart/PieChart 切换（`localStorage` 持久化 `zfundpilot_industryChartType`）
+- fix: 组合体检进度条不可见——填充条误用 `text-*` 色类（`SCORE_COLOR`），改为独立 `BAR_BG` 映射（`bg-success`/`bg-warning`/`bg-orange-500`/`bg-destructive`）
+- fix: 行业敞口饼图全宽下过小——改为居中容器 + 百分比半径 `outerRadius="75%"`/`innerRadius="40%"`
+- fix: 转换表单「全部」份额浮点精度 + 转入金额支持待确认留空——`toFixed(2)` → `toFixed(4)` + 校验加 `1e-3` 容差；非自动推导转入金额不再强制必填，空金额作为待确认占位保存。新增测试，总测试 457→458
+- fix: QDII 基金定投在美股休市日误执行——新增 `us_calendar.py`（纯算法纽交所日历，零联网依赖），`auto_invest.py` 两层修复（`_next_trading_day` QDII 跳美股休市 + `run_all_due` 执行前 gate）。新增 `tests/test_us_calendar.py`（26 用例）+ `test_auto_invest.py` 扩 7 用例，总测试 458→492
 
 ### v0.22.0 - 2026-09-05
 

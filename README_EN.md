@@ -49,7 +49,7 @@
   <p><b>NAV Updates</b> — AkShare primary, Tiantian Fund fallback, bulk NAV history fetch</p>
   <br>
   <img src="assets/readme/screenshots_en/returns.webp" alt="Return Analysis" width="90%">
-  <p><b>Return Analysis</b> — Unrealized/realized P&L, portfolio curve, benchmark comparison, day/week/month/year calendar view</p>
+  <p><b>Return Analysis</b> — Unrealized/realized P&L, XIRR annualized return, portfolio curve, benchmark comparison, day/week/month/year calendar view</p>
   <br>
   <img src="assets/readme/screenshots_en/risk.webp" alt="Portfolio Health Check" width="90%">
   <p><b>Portfolio Health Check</b> — 4-dimension diagnosis (allocation/risk/liquidity/return) + risk flags + rebalancing advice</p>
@@ -121,7 +121,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 ### Analysis & Estimates
 
 - **NAV Updates** — AkShare primary, Tiantian Fund fallback. Auto-fetch fund name/type/sector on code entry
-- **Return Analysis** — Unrealized/realized P&L, portfolio return curve, benchmark comparison (CSI 300 / SSE Composite / ChiNext + CPI purchasing power / M2 wealth ranking waterlines, data persisted for offline use), return rate ranking, day/week/month/year calendar view, stacked bar by channel
+- **Return Analysis** — Unrealized/realized P&L, XIRR annualized return (portfolio + per-fund, cash-flow bisection), portfolio return curve, benchmark comparison (CSI 300 / SSE Composite / ChiNext + CPI purchasing power / M2 wealth ranking waterlines, data persisted for offline use), return rate ranking (cumulative/annualized toggle), day/week/month/year calendar view, stacked bar by channel
 - **Wealth Waterlines (CPI/M2)** — Portfolio return curve overlaid with inflation purchasing power line (CPI MoM-chained price level) and social wealth ranking line (M2 stock expansion), answering "am I actually richer after inflation". Waterline uses last month-end before portfolio start as baseline, exactly 0 at start date. AI advisor context includes real return (inflation-adjusted) and wealth ranking direction
 - **Live Estimates** — Real-time fund change estimates during trading hours. Auto-invalidates when actual NAV is published. Auto-falls back to fundgz API (6 threads) when primary source is unavailable, with index/ETF fallback tier
 - **Fund Compare** — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix. Global compare basket with add/remove, badge count in nav bar
@@ -197,7 +197,9 @@ ZFundPilot/
 │   ├── compare.py        # Fund comparison (returns/risk/correlation)
 │   ├── fund_filter.py    # Fund filter (full market universe + metrics enrichment)
 │   ├── analysis.py       # Transaction aggregation, return calculation, curve, industry exposure
+│   ├── returns.py        # XIRR annualized return (cash-flow bisection + cashflow builder)
 │   ├── risk.py           # Risk analysis (drawdown/volatility/concentration)
+│   ├── health.py         # Portfolio health check (4-dimension scoring: allocation/risk/liquidity/return)
 │   ├── rebalance.py      # Portfolio rebalancing advice
 │   ├── backtest.py       # DCA backtest
 │   ├── auto_invest.py    # Auto-invest plan execution
@@ -206,9 +208,9 @@ ZFundPilot/
 │   ├── api.py            # FastAPI REST API (37+ routes + auth middleware)
 │   ├── ai.py             # AI advisor chat (portfolio context + web search)
 │   └── scheduler.py      # APScheduler NAV update + auto-invest + dividend check + TP/SL check
-├── tests/                # Pytest test suite (457 tests)
+├── tests/                # Pytest test suite (542 tests)
 │   ├── conftest.py       #   Shared fixtures
-│   └── test_*.py         #   23 test modules
+│   └── test_*.py         #   26 test modules
 ├── data/
 │   ├── fund.db           # SQLite database (auto-generated)
 │   ├── auth.json         # Password hash / token secret (auto-generated)

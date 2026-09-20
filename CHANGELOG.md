@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Added
+- 页面 Tab 状态同步到 URL——5 个含 Tab 的页面（持仓/交易/设置/回测/对比）刷新后不再回落到默认标签。新增 `useTabParam` hook（读 `?tab=` 查询参数，白名单校验非法值回落默认，切 tab 用 `replace:true` 写 URL）。Transactions/FundCompare 预填参数消费逻辑改为只清自身参数、保留 `tab`；Settings 无认证时 `account`→`ai` 兜底
 - 前端全局 UI 质感升级——平滑滚动 + 页面淡入过渡（路由切换 200ms ease-out）+ 跳过导航无障碍链接（skip-to-content）+ Returns 页指标卡响应式修复（2→3→5 列，消除平板 2+2+1 单吊）+ 年化收益卡品牌强调色（红色小圆点标记 XIRR 指标）+ 404 页面（品牌化 NotFound 页 + 兜底路由）
 - 组合与单基金 XIRR 年化收益率——原 `return_rate = 市值/成本 - 1` 是朴素总回报，对分批投入（定投）严重失真（近期大额投入会稀释整体收益率）。新增 `returns.py` 模块（`xirr` 二分法从 `backtest._xirr` 提出改 public + `_build_xirr_cashflows` 现金流构建），`analysis.calculate_summary()`/`calculate_positions()` 从交易流水构建现金流计算 XIRR（买入=流出、卖出/现金分红=流入、再投资=现金中性跳过、终端值=当前市值作"假设变现"，已清仓不加终端值）。`Position`/`PortfolioSummary` 新增 `annualized_return` 字段。Returns 页新增「年化收益」指标卡（grid 改 5 列）+ 单基金明细表「年化」可排序列 + 浮动收益率排序柱状图切换（累计收益率/年化收益率按钮组，持仓时间不同的基金可用年化对比）。AI 投顾上下文新增「年化收益率(XIRR)」行。新增 `tests/test_returns.py`（20 用例），总测试 492→512
 - 组合体检四维诊断——将风险页升级为「组合体检」统一视图，四维评分（配置/风险/流动性/收益，每维 0-100）+ 定级（优秀/良好/一般/关注/危险）。新增 `health.py` 模块（`calculate_liquidity` 按债券型 vs 权益类区分流动缓冲垫 + 四维 `_score_*` 规则引擎 + `build_health_report` 一站式），新增 `/api/portfolio/health` 端点，Risk.tsx 重构为体检页（评分 banner + 四维卡片 + 流动性指标 + 保留所有风险指标/提示/建议），AI 上下文追加体检评分段，导航 icon 改为 Activity。新增 `tests/test_health.py`（30 用例），总测试 512→542
@@ -14,9 +15,11 @@
 - 行业敞口表可展开显示基金构成明细——点击行业行的展开箭头，展开显示该行业下每只贡献基金的名称/代码、贡献市值、占该行业比例。后端 `aggregate_industry_exposure` 聚合时按基金 × 行业维度记录市值贡献，新增 `IndustryFundContribution` dataclass（fund_code/fund_name/market_value），`IndustryExposureItem.funds` 字段按市值降序排列。前端 `IndustryExposurePanel` 行展开使用 `Fragment` + `Set<string>` 状态管理，未穿透行不可展开。新增 i18n 键 `contributionMv`/`shareOfIndustry`/`expandIndustry`。新增 `tests/test_industry_exposure.py` 扩展（基金构成明细断言），总测试 424→428
 
 ### Changed
+- 前端 UI 质量升级——侧边栏从硬编码 zinc/blue 改为语义 token（`bg-card`/`border-border`/`muted-foreground`，激活态 primary，深/浅主题均正确渲染）；`MetricCard` 新增 `iconTone` 语义 tint，Overview 删除重复 `CompactCard` 统一复用 `MetricCard`；`PageHeader` 标题加大（text-2xl/3xl）+ 总市值放大（text-3xl/4xl）；体检评级分数圆按 tier 淡色底 + 维度卡状态色顶条；`theme-color` meta 随明暗自适应
 - 行业敞口图表改为单图切换——原柱状图 + 饼图并排展示（柱图 lg:col-span-2 占 2/3 宽，饼图占 1/3），改为单图 BarChart/PieChart 切换（卡片右上角 `BarChart3`/`PieChartIcon` 图标按钮组，`aria-pressed` 高亮当前选中，`localStorage` 持久化 `zfundpilot_industryChartType`）。图表独占整行宽度，饼图不再被挤压。新增 i18n 键 `chartBar`/`chartPie`
 
 ### Fixed
+- 组合体检进度条不可见——填充条误用 `text-*` 色类（`SCORE_COLOR`），改为独立 `BAR_BG` 映射（`bg-success`/`bg-warning`/`bg-orange-500`/`bg-destructive`）；同步补全 DATABASE.md（HealthReport/HealthDimension）+ README 组合体检描述
 - 行业敞口饼图全宽下过小——饼图改为单图独占全宽后，原固定 `outerRadius={90}`/`innerRadius={50}`（像素值）在全宽容器中显得偏小。改为居中容器 `<div className="mx-auto max-w-md">` + 百分比半径 `outerRadius="75%"`/`innerRadius="40%"`，高度固定 340，饼图自适应容器尺寸
 - 转换表单「全部」份额浮点精度修复 + 转入金额支持待确认留空——(1) 转出/卖出「全部」按钮 `setShares(heldShares.toFixed(2))` 会将浮点持有份额四舍五入超过实际持有量（如 123.4567 → "123.46" > 123.4567），导致 `fromShares > heldShares` 校验报错无法提交。改为 `toFixed(4)` + 校验加 `1e-3` 容差。(2) 非自动推导转入金额（`!autoToAmount`）时强制 `toAmount` 必填，但用户在 T+1 确认前确实不知道转入金额。移除 `if (!afterThree && !toAmt) errs.toAmount` 硬校验；后端 `api.py` 改为 `if not body.is_t1 and body.to_amount is not None and not to_tx.is_valid()` 仅在金额已填时校验完整性，空金额作为待确认占位保存。表单显示「金额未知可留空，确认后补录」提示。新增 i18n 键 `toAmountOptional`，新增测试 `test_conversion_api_pending_to_amount_no_nav`，总测试 457→458
 - QDII 基金定投在美股休市日误执行——美股休市的国内工作日（如独立日、感恩节、圣诞等），QDII 基金通常暂停申购/无法确认，但定投计划仍会在当日 09:00 扣款建仓。新增 `us_calendar.py`（纯算法纽交所日历，零联网依赖，Computus 算 Good Friday + 固定日周末顺延 + 浮动周几 + 跨年元旦 observed）。`auto_invest.py` 两层修复：(1) `_next_trading_day` 重写——QDII 基金跳过美股休市日（NAV 存在与否不能代表美股开市，QDII 在休市日仍发持平净值），(2) `run_all_due` 执行前 gate——周末（所有基金）或 QDII + 美股休市 → 跳过不建仓、不更新 next_run，次日自动重试（天然顺延）。手动执行 `/execute` 不受限制。非 QDII 基金零影响。新增 `tests/test_us_calendar.py`（26 用例）+ `test_auto_invest.py` 扩 7 用例（QDII 跳休市 + run_all_due gate），总测试 458→492

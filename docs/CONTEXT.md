@@ -92,7 +92,7 @@ ZFundPilot/
 │   ├── components/          # Layout + Logo 系列 + PnLCalendar + TpSlAlertsPanel + ScreenshotImportPanel + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
 │   ├── i18n/                # LanguageContext（Provider + useLang hook + getCurrentLang）+ zh.ts + en.ts
 │   ├── api/                 # client.ts + types.ts
-│   ├── hooks/               # useCountUp（animejs 数字动画，formatter 用 ref 存储避免 effect 重跑）
+│   ├── hooks/               # useCountUp（animejs 数字动画，formatter 用 ref 存储避免 effect 重跑）+ useTabParam（Tab 状态同步 ?tab= URL 参数）
 │   └── lib/                 # auth/channels/channelColors/colorTheme/format（按 lang 切换 ¥/$）/actionLabels/rangeLabels/useApi/backendLabels/taxonomyLabels
 ├── data/                    # SQLite 数据库 + auth.json + ai_config.json（gitignore）
 ├── Dockerfile               # 多阶段构建
@@ -308,6 +308,7 @@ ZFundPilot/
 
 - `/` → `<Home />`（独立全屏页，不在 Layout 内，无侧边栏）
 - `/overview`、`/transactions`、`/nav`、`/positions`、`/returns`、`/risk`、`/compare`、`/screener`、`/watchlist`、`/backtest`、`/ai`、`/settings` → 在 `<Layout />` 内（含侧边栏）
+- 页面内 Tab 状态同步到 `?tab=` 查询参数（`useTabParam` hook，`replace` 写入，白名单校验），刷新/分享/前进后退可恢复 Tab
 
 ### 首页（Home.tsx）
 

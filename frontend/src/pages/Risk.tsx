@@ -42,6 +42,20 @@ const BAR_BG: Record<string, string> = {
   danger: "bg-destructive",
 }
 
+const TIER_BG: Record<string, string> = {
+  excellent: "bg-success/10",
+  good: "bg-success/10",
+  fair: "bg-warning/10",
+  attention: "bg-orange-500/10",
+  danger: "bg-destructive/10",
+}
+
+const STATUS_BAR: Record<string, string> = {
+  good: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-destructive",
+}
+
 export default function Risk() {
   const { data: hr, loading, error, reload } = useApi<HealthReport>(() => api.getHealthReport())
   const { t } = useLang()
@@ -100,7 +114,7 @@ export default function Risk() {
       {/* 体检评级 Banner */}
       <Card className="card-hover">
         <CardContent className="p-4 md:p-5 flex items-center gap-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-muted">
+          <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${TIER_BG[hr.overall_tier] ?? "bg-muted"}`}>
             <span className={`text-2xl font-bold tabular-nums ${SCORE_COLOR[hr.overall_tier] ?? "text-primary"}`}>
               {hr.overall_score}
             </span>
@@ -125,7 +139,8 @@ export default function Risk() {
         {hr.dimensions.map((dim) => {
           const metric = dimMetric(dim)
           return (
-            <Card key={dim.name} className="card-hover">
+            <Card key={dim.name} className="card-hover overflow-hidden">
+              <div className={`h-1 w-full ${STATUS_BAR[dim.status] ?? "bg-muted"}`} />
               <CardContent className="p-4 md:p-5 text-center">
                 <p className="text-xs font-medium text-muted-foreground">{dimLabels[dim.name] ?? dim.name}</p>
                 <p className={`mt-1 text-2xl font-bold tabular-nums ${STATUS_COLOR[dim.status] ?? "text-foreground"}`}>

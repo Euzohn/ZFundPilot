@@ -2,6 +2,17 @@ import type { ElementType } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
+type IconTone = "default" | "primary" | "success" | "warning" | "danger" | "info"
+
+const ICON_TONE: Record<IconTone, string> = {
+  default: "bg-muted/50 text-muted-foreground",
+  primary: "bg-primary/10 text-primary",
+  success: "bg-success/10 text-success",
+  warning: "bg-warning/10 text-warning",
+  danger: "bg-destructive/10 text-destructive",
+  info: "bg-info/10 text-info",
+}
+
 interface MetricCardProps {
   label: string
   value: string
@@ -9,6 +20,7 @@ interface MetricCardProps {
   color?: string
   subColor?: string
   icon?: ElementType
+  iconTone?: IconTone
   size?: "default" | "sm"
   fade?: boolean
 }
@@ -20,6 +32,7 @@ export default function MetricCard({
   color,
   subColor,
   icon: Icon,
+  iconTone = "default",
   size = "default",
   fade = false,
 }: MetricCardProps) {
@@ -36,8 +49,8 @@ export default function MetricCard({
           {sub && <p className={cn("text-xs tabular-nums", subCls)}>{sub}</p>}
         </div>
         {Icon && (
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted/50">
-            <Icon className="h-5 w-5 text-muted-foreground" />
+          <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", ICON_TONE[iconTone])}>
+            <Icon className="h-5 w-5" />
           </div>
         )}
       </CardContent>

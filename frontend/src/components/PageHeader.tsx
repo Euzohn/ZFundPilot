@@ -27,7 +27,7 @@ export default function PageHeader({
         <div className="min-w-0">
           <h1
             className={cn(
-              "text-xl md:text-2xl font-bold",
+              "text-2xl md:text-3xl font-bold",
               tracking === "tight" && "tracking-tight",
               truncate && "truncate",
             )}

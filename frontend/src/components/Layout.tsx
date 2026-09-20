@@ -71,8 +71,8 @@ function NavLinks({ collapsed, onNavigate, dividendCount, tpSlCount, compareCoun
       "flex items-center rounded-lg text-sm font-medium transition-colors duration-200",
       collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2",
       isActive
-        ? "bg-blue-600/15 text-blue-300"
-        : "text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200",
+        ? "bg-primary/10 text-primary"
+        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
     )
 
   return (
@@ -80,7 +80,7 @@ function NavLinks({ collapsed, onNavigate, dividendCount, tpSlCount, compareCoun
       {navGroups.map((group) => (
         <div key={group.labelKey} className="mb-1">
           {!collapsed && (
-            <p className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600">{t.nav[group.labelKey]}</p>
+            <p className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">{t.nav[group.labelKey]}</p>
           )}
           {group.items.map(({ to, labelKey, icon: Icon }) => {
             const showBadge = to === "/transactions" && dividendCount > 0
@@ -98,28 +98,28 @@ function NavLinks({ collapsed, onNavigate, dividendCount, tpSlCount, compareCoun
               <span className="relative shrink-0">
                 <Icon className="h-[18px] w-[18px]" />
                 {collapsed && showBadge && (
-                  <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-red-500 ring-1 ring-zinc-900" />
+                  <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-destructive ring-1 ring-card" />
                 )}
                 {collapsed && showTpSlBadge && (
-                  <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-red-500 ring-1 ring-zinc-900" />
+                  <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-destructive ring-1 ring-card" />
                 )}
                 {collapsed && showCompareBadge && (
-                  <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-blue-500 ring-1 ring-zinc-900" />
+                  <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-primary ring-1 ring-card" />
                 )}
               </span>
               {!collapsed && <span className="whitespace-nowrap">{t.nav[labelKey]}</span>}
               {!collapsed && showBadge && (
-                <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold">
+                <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold">
                   {dividendCount > 99 ? "99+" : dividendCount}
                 </span>
               )}
               {!collapsed && showTpSlBadge && (
-                <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold">
+                <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold">
                   {tpSlCount > 99 ? "99+" : tpSlCount}
                 </span>
               )}
               {!collapsed && showCompareBadge && (
-                <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-500 text-white text-[10px] font-semibold">
+                <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
                   {compareCount > 99 ? "99+" : compareCount}
                 </span>
               )}
@@ -128,7 +128,7 @@ function NavLinks({ collapsed, onNavigate, dividendCount, tpSlCount, compareCoun
           })}
         </div>
       ))}
-      <div className="mt-2 border-t border-zinc-800/50 pt-2">
+      <div className="mt-2 border-t border-border pt-2">
         <NavLink
           to={bottomNav.to}
           onClick={onNavigate}
@@ -203,7 +203,7 @@ export default function Layout() {
           <Menu className="h-5 w-5" />
         </button>
         <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-600/15">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10">
             <Logo className="h-5 w-5" />
           </div>
           <span className="text-base font-bold tracking-tight">ZFundPilot</span>
@@ -213,28 +213,28 @@ export default function Layout() {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          "hidden md:flex flex-col bg-gradient-to-b from-zinc-900 to-zinc-950 text-zinc-300 transition-all duration-300",
+          "hidden md:flex flex-col border-r border-border bg-card text-card-foreground transition-all duration-300",
           collapsed ? "w-16" : "w-60",
         )}
       >
         <div className={cn("flex py-5", collapsed ? "justify-center" : "items-center gap-2.5 px-5")}>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600/20">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
             <Logo className="h-6 w-6" />
           </div>
           {!collapsed && (
-            <h1 className="text-base font-bold text-white tracking-tight whitespace-nowrap">ZFundPilot</h1>
+            <h1 className="text-base font-bold text-foreground tracking-tight whitespace-nowrap">ZFundPilot</h1>
           )}
         </div>
 
         <NavLinks collapsed={collapsed} dividendCount={dividendCount} tpSlCount={tpSlCount} compareCount={compareCount} />
 
-        <div className={cn("border-t border-zinc-800/60", collapsed ? "px-2 py-3" : "px-3 py-3")}>
+        <div className={cn("border-t border-border", collapsed ? "px-2 py-3" : "px-3 py-3")}>
           <a
             href="https://github.com/Euzohn/ZFundPilot"
             target="_blank"
             rel="noopener noreferrer"
             className={cn(
-              "flex items-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-white",
+              "flex items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
               collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 px-3 py-2 text-xs",
             )}
             title={collapsed ? "GitHub" : undefined}
@@ -246,7 +246,7 @@ export default function Layout() {
             variant="icon"
             label={collapsed ? undefined : t.nav.theme}
             className={cn(
-              "mt-1 text-zinc-500 hover:bg-zinc-800 hover:text-white",
+              "mt-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground",
               collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 px-3 py-2 text-xs",
             )}
           />
@@ -254,14 +254,14 @@ export default function Layout() {
             variant="icon"
             label={collapsed ? undefined : t.nav.language}
             className={cn(
-              "mt-1 text-zinc-500 hover:bg-zinc-800 hover:text-white",
+              "mt-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground",
               collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 px-3 py-2 text-xs",
             )}
           />
           <button
             onClick={toggle}
             className={cn(
-              "mt-1 flex items-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+              "mt-1 flex items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
               collapsed ? "justify-center w-full py-2" : "justify-start w-full gap-2 px-3 py-2 text-xs",
             )}
             title={collapsed ? t.nav.expandSidebar : t.nav.collapseSidebar}
@@ -286,20 +286,20 @@ export default function Layout() {
         aria-modal="true"
         aria-label={t.nav.menu}
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-gradient-to-b from-zinc-900 to-zinc-950 text-zinc-300 transition-transform duration-300 md:hidden",
+          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-card text-card-foreground transition-transform duration-300 md:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
         <div className="flex items-center justify-between py-5 px-5">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600/20">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
               <Logo className="h-6 w-6" />
             </div>
-            <h1 className="text-base font-bold text-white tracking-tight whitespace-nowrap">ZFundPilot</h1>
+            <h1 className="text-base font-bold text-foreground tracking-tight whitespace-nowrap">ZFundPilot</h1>
           </div>
           <button
             onClick={() => setMobileOpen(false)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
             aria-label={t.nav.closeMenu}
           >
             <X className="h-5 w-5" />

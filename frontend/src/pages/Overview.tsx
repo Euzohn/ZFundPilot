@@ -19,27 +19,13 @@ import EmptyState from "@/components/EmptyState"
 import { useLang } from "@/i18n/LanguageContext"
 import { translateFundType, translateChannel } from "@/lib/taxonomyLabels"
 
-function CompactCard({ label, value, sub, color }: {
-  label: string; value: string; sub?: string; color?: string
-}) {
-  return (
-    <Card className="card-hover">
-      <CardContent className="p-4 md:p-5">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <p className={`mt-1 text-lg md:text-xl font-bold tabular-nums ${color ?? ""}`}>{value}</p>
-        {sub && <p className={`text-xs tabular-nums ${color ?? "text-muted-foreground"}`}>{sub}</p>}
-      </CardContent>
-    </Card>
-  )
-}
-
 function HeroCard({ summary }: { summary: PortfolioSummary }) {
   const { t } = useLang()
   return (
     <Card className="card-hover col-span-1 lg:col-span-1">
       <CardContent className="p-4 md:p-5">
         <p className="text-xs font-medium text-muted-foreground">{t.overview.totalValue}</p>
-        <p className="mt-1 text-2xl font-bold tabular-nums text-foreground">{money(summary.total_value)}</p>
+        <p className="mt-1 text-3xl md:text-4xl font-bold tabular-nums text-foreground">{money(summary.total_value)}</p>
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums">
           <span className="text-muted-foreground">{t.overview.totalPnl}</span>
           <span className={`font-medium ${pnlColor(summary.total_pnl)}`}>
@@ -130,18 +116,18 @@ export default function Overview() {
 
       {/* Row 1: Period returns — compact cards, no icons */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
-        <CompactCard label={t.overview.estNav} value={hasEstimate ? signedMoney(estimate!.total_estimated_pnl) : "—"} sub={hasEstimate ? `${pct(estimate!.estimated_return)} · ${estimate!.gztime.slice(11, 16) || ""}` : undefined} color={hasEstimate ? pnlColor(estimate!.total_estimated_pnl) : undefined} />
-        <CompactCard label={dailyLabel} value={signedMoney(summary.daily_pnl)} sub={pct(summary.daily_return)} color={pnlColor(summary.daily_pnl)} />
-        <CompactCard label={t.overview.weekPnl} value={signedMoney(summary.week_pnl)} sub={pct(summary.week_return)} color={pnlColor(summary.week_pnl)} />
-        <CompactCard label={t.overview.monthPnl} value={signedMoney(summary.month_pnl)} sub={pct(summary.month_return)} color={pnlColor(summary.month_pnl)} />
-        <CompactCard label={t.overview.yearPnl} value={signedMoney(summary.year_pnl)} sub={pct(summary.year_return)} color={pnlColor(summary.year_pnl)} />
+        <MetricCard label={t.overview.estNav} value={hasEstimate ? signedMoney(estimate!.total_estimated_pnl) : "—"} sub={hasEstimate ? `${pct(estimate!.estimated_return)} · ${estimate!.gztime.slice(11, 16) || ""}` : undefined} color={hasEstimate ? pnlColor(estimate!.total_estimated_pnl) : undefined} />
+        <MetricCard label={dailyLabel} value={signedMoney(summary.daily_pnl)} sub={pct(summary.daily_return)} color={pnlColor(summary.daily_pnl)} />
+        <MetricCard label={t.overview.weekPnl} value={signedMoney(summary.week_pnl)} sub={pct(summary.week_return)} color={pnlColor(summary.week_pnl)} />
+        <MetricCard label={t.overview.monthPnl} value={signedMoney(summary.month_pnl)} sub={pct(summary.month_return)} color={pnlColor(summary.month_pnl)} />
+        <MetricCard label={t.overview.yearPnl} value={signedMoney(summary.year_pnl)} sub={pct(summary.year_return)} color={pnlColor(summary.year_pnl)} />
       </div>
 
       {/* Row 2: Hero + portfolio metrics — 3-col with hero card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
         <HeroCard summary={summary} />
-        <MetricCard icon={Wallet} label={t.overview.totalCost} value={money(summary.total_cost)} />
-        <MetricCard icon={Wallet} label={t.overview.holdingCount} value={`${summary.holding_count} ${t.common.units}`} sub={`${t.overview.navDate} ${summary.as_of_date ?? t.overview.notUpdated}`} />
+        <MetricCard icon={Wallet} iconTone="primary" label={t.overview.totalCost} value={money(summary.total_cost)} />
+        <MetricCard icon={Wallet} iconTone="info" label={t.overview.holdingCount} value={`${summary.holding_count} ${t.common.units}`} sub={`${t.overview.navDate} ${summary.as_of_date ?? t.overview.notUpdated}`} />
       </div>
 
       {/* Row 3: Transaction summary + max concentration — 2-col */}
@@ -158,7 +144,7 @@ export default function Overview() {
             </p>
           </CardContent>
         </Card>
-        <MetricCard icon={Calendar} label={t.overview.maxSingleWeight} value={pct(summary.max_single_weight)} sub={summary.max_single_name || undefined} />
+        <MetricCard icon={Calendar} iconTone="warning" label={t.overview.maxSingleWeight} value={pct(summary.max_single_weight)} sub={summary.max_single_name || undefined} />
       </div>
 
       {/* Row 4: Charts — bar chart spans 2 cols, pies 1 col each */}

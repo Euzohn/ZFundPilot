@@ -175,3 +175,40 @@ class TestClosedPositionXirr:
         r = xirr(cfs)
         assert r is not None
         assert abs(r - 0.10) < 0.001
+
+
+class TestFundLevelCashflow:
+    """基金级 XIRR 现金流（跨渠道合并，calculate_fund_xirr 核心逻辑）。"""
+
+    def test_multi_buy_with_terminal(self):
+        """多笔买入（模拟跨渠道）+ 终端值 → 正收益。"""
+        txs = [
+            Transaction(fund_code="001", action="buy", date="2024-01-01", amount=10000.0, nav=1.0),
+            Transaction(fund_code="001", action="buy", date="2024-06-01", amount=5000.0, nav=1.0),
+        ]
+        cfs = _build_xirr_cashflows(txs, terminal_value=16500.0, terminal_date=date(2025, 1, 1))
+        r = xirr(cfs)
+        assert r is not None
+        assert r > 0
+
+    def test_buy_sell_partial_with_terminal(self):
+        """买入 + 部分卖出 + 剩余终端值 → XIRR 正常计算。"""
+        txs = [
+            Transaction(fund_code="001", action="buy", date="2024-01-01", amount=10000.0, nav=1.0),
+            Transaction(fund_code="001", action="sell", date="2024-06-01", amount=6000.0, nav=1.1),
+        ]
+        cfs = _build_xirr_cashflows(txs, terminal_value=6600.0, terminal_date=date(2025, 1, 1))
+        r = xirr(cfs)
+        assert r is not None
+        assert r > 0
+
+    def test_dividend_cash_flow(self):
+        """现金分红作为中间流入，提升 XIRR。"""
+        txs = [
+            Transaction(fund_code="001", action="buy", date="2024-01-01", amount=10000.0, nav=1.0),
+            Transaction(fund_code="001", action="dividend", date="2024-06-01", amount=300.0, nav=1.0),
+        ]
+        cfs = _build_xirr_cashflows(txs, terminal_value=11000.0, terminal_date=date(2025, 1, 1))
+        r = xirr(cfs)
+        assert r is not None
+        assert r > 0.10

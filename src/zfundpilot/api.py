@@ -1099,6 +1099,11 @@ def get_fund(code: str) -> dict[str, Any]:
     return fund.to_dict()
 
 
+@app.get("/api/funds/{code}/xirr")
+def get_fund_xirr(code: str) -> dict[str, Any]:
+    return {"annualized_return": analysis.calculate_fund_xirr(code)}
+
+
 @app.post("/api/funds/{code}/fetch")
 def fetch_meta(code: str) -> dict[str, Any]:
     meta = fetch_fund.fetch_fund_meta(code)

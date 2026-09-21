@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { Position, Transaction, Fund, FundEstimate, FundHoldings as FundHoldingsType, FundRanking, FundProfile, FundIndustryAllocation as FundIndustryAllocationType } from "@/api/types"
+import type { Position, Transaction, Fund, FundEstimate, FundHoldings as FundHoldingsType, FundRanking, FundProfile, FundIndustryAllocation as FundIndustryAllocationType, FundXirr } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import ErrorState from "@/components/ErrorState"
 import { Button } from "@/components/ui/button"
@@ -57,6 +57,7 @@ export default function FundDetail() {
   const { data: industryData } = useApi<FundIndustryAllocationType>(() => api.getFundIndustryAllocation(code!), [code])
   const { data: rankingData } = useApi<FundRanking>(() => api.getFundRanking(code!), [code])
   const { data: profileData } = useApi<FundProfile>(() => api.getFundProfile(code!), [code])
+  const { data: xirrData } = useApi<FundXirr>(() => api.getFundXirr(code!), [code])
   useEffect(() => {
     if (!fundEstimate?.ok) return
     const interval = setInterval(() => {
@@ -355,7 +356,7 @@ const handleDelete = async (txId: number) => {
         <MetricCard size="sm" label={t.positions.marketValue} value={money(totalValue)} />
         <MetricCard size="sm" label={t.fundDetail.unrealizedPnl} value={signedMoney(totalUnrealized)} color={pnlColor(totalUnrealized)} />
         <MetricCard size="sm" label={t.fundDetail.realizedPnl} value={signedMoney(totalRealized)} color={pnlColor(totalRealized)} />
-        <MetricCard size="sm" label={t.positions.returnRate} value={pct(returnRate)} color={pnlColor(returnRate)} sub={latestNav != null && avgCost != null && latestNav < avgCost ? `${t.fundDetail.breakEven} ${pct(avgCost / latestNav - 1)}` : undefined} subColor="text-warning" />
+        <MetricCard size="sm" label={t.positions.returnRate} value={pct(returnRate)} color={pnlColor(returnRate)} sub={xirrData?.annualized_return != null ? `${t.returns.annualized} ${pct(xirrData.annualized_return)}` : undefined} subColor={xirrData?.annualized_return != null ? pnlColor(xirrData.annualized_return) : undefined} />
       </div>
 
       {/* 基金档案信息栏 */}

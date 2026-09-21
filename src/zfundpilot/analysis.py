@@ -343,6 +343,19 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
     return summary
 
 
+def calculate_fund_xirr(fund_code: str) -> float | None:
+    """单基金 XIRR 年化收益率（跨渠道合并）。"""
+    txs = db.get_transactions(fund_code=fund_code)
+    if len(txs) < 2:
+        return None
+    positions = calculate_positions()
+    terminal_value = sum(
+        p.market_value for p in positions if p.fund_code == fund_code and p.is_open
+    )
+    cashflows = _build_xirr_cashflows(txs, terminal_value, date.today())
+    return xirr(cashflows)
+
+
 # ---------------------------------------------------------------------------
 # 分布统计（按基金聚合，跨渠道合并）
 # ---------------------------------------------------------------------------

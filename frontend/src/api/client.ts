@@ -30,6 +30,7 @@ import type {
   FundHoldings,
   FundRanking,
   FundProfile,
+  FundXirr,
   HealthReport,
   KeywordMaps,
   SchedulerStatus,
@@ -239,6 +240,8 @@ export const api = {
     request<FundRanking>(`/funds/${encodeURIComponent(code)}/ranking`),
   getFundProfile: (code: string) =>
     request<FundProfile>(`/funds/${encodeURIComponent(code)}/profile`),
+  getFundXirr: (code: string) =>
+    request<FundXirr>(`/funds/${encodeURIComponent(code)}/xirr`),
   calcFundFee: (code: string, params: { action: string; amount?: number; shares?: number; date?: string }) => {
     const q = new URLSearchParams()
     q.set("action", params.action)

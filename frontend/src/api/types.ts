@@ -404,6 +404,11 @@ export interface FundRanking {
   points: RankingPoint[]
 }
 
+// ── 基金 XIRR ──
+export interface FundXirr {
+  annualized_return: number | null
+}
+
 // ── 基金档案 ──
 export interface FundProfile {
   ok: boolean

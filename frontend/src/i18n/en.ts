@@ -660,8 +660,6 @@ const en: typeof zh = {
     weekPnl: "Week P&L",
     monthPnl: "Month P&L",
     yearPnl: "Year P&L",
-    maxHolding: "Largest Holding",
-    weight: "weight",
     buySellDividend: "Total Buy / Sell / Dividend",
     maxSingleWeight: "Largest Fund Weight",
     sectorDist: "Sector Distribution",

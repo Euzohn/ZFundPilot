@@ -658,8 +658,6 @@ const zh = {
     weekPnl: "本周收益",
     monthPnl: "本月收益",
     yearPnl: "今年收益",
-    maxHolding: "最大单持仓",
-    weight: "占比",
     buySellDividend: "累计买入 / 卖出 / 分红",
     maxSingleWeight: "最大单基金占比",
     sectorDist: "板块分布",

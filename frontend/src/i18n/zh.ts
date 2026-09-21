@@ -948,7 +948,6 @@ const zh = {
     trackingIndex: "跟踪指数",
     unrealizedPnl: "浮动盈亏",
     realizedPnl: "已实现盈亏",
-    breakEven: "回本",
     byChannel: "各渠道持仓",
     untagged: "未标注",
     navTrend: "净值走势",

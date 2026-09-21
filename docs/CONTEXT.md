@@ -58,7 +58,7 @@ ZFundPilot/
 │   ├── fetch_dividend.py  # 基金分红检测（AkShare 分红送配 + 90 天窗口 + 交易去重 + 幽灵提醒自动清理）
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
 │   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）+ resolve_fund_code 名称→代码解析 + verify_fund_code 校验
-│   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）+ reconcile_holdings 截图持仓对账 + 行业穿透聚合
+│   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）+ reconcile_holdings 截图持仓对账 + 行业穿透聚合 + 单基金 XIRR
 │   ├── returns.py            # XIRR 年化收益率（二分法 + 现金流构建，供 analysis/backtest 共用）
 │   ├── health.py             # 组合体检四维评分（配置/风险/流动性/收益）+ 综合体检报告，供 api/ai 共用
 │   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI，部分被 health.py 复用）
@@ -264,6 +264,7 @@ ZFundPilot/
 
 - `calculate_positions()`: 从 transactions 汇总持仓（待确认买入金额计入 `pending_buy_cost`，不参与市值/盈亏/收益率计算）。按 (基金, 渠道) 分组交易构建现金流，调 `returns.xirr` 计算每只持仓的 `annualized_return`（已清仓不加终端值）
 - `calculate_summary()`: 组合层面汇总（`total_cost` 不含 `pending_buy_cost`）。从全量交易流水构建组合级 XIRR 现金流，设 `summary.annualized_return`
+- `calculate_fund_xirr(fund_code)`: 单基金 XIRR（跨渠道合并交易流水 + 开仓终端市值），供 API `/api/funds/{code}/xirr` 调用。`db.get_transactions(fund_code=...)` 取该基金全量交易、`calculate_positions()` 取开仓市值，复用 `_build_xirr_cashflows` + `xirr`
 - `build_portfolio_curve()`: 组合收益曲线（待确认买入用 `pending_value_delta` 占位市值，避免虚假亏损）
 - `build_channel_daily_pnl()`: 按渠道拆分的每日收益（堆叠柱状图）
 - `aggregate_industry_exposure(positions=None)`: 跨基金聚合真实行业敞口（基金穿透），遍历持仓基金取官方行业配置，按基金市值 × 行业占比加权求和，穿透/未穿透分离
@@ -272,7 +273,7 @@ ZFundPilot/
 ### returns.py — XIRR 年化收益率
 
 - `xirr(cashflows)`: 二分法求解年化内部收益率（从 `backtest._xirr` 提出改 public），搜索范围 [‑0.999, 10.0]，200 次迭代，无解返回 None
-- `_build_xirr_cashflows(transactions, terminal_value, terminal_date)`: 从交易流水构建 XIRR 现金流——BUY=流出(负)、SELL=流入(正)、DIVIDEND=流入(正)、REINVEST=跳过(现金中性)、terminal_value>0 时追加终端值。供 `analysis` 和 `backtest` 共用
+- `_build_xirr_cashflows(transactions, terminal_value, terminal_date)`: 从交易流水构建 XIRR 现金流——BUY=流出(负)、SELL=流入(正)、DIVIDEND=流入(正)、REINVEST=跳过(现金中性)、terminal_value>0 时追加终端值。供 `analysis`（持仓/组合/单基金 XIRR）和 `backtest` 共用
 
 ### health.py — 组合体检四维评分
 

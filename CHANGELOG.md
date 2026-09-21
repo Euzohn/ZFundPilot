@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Added
+- 基金详情页新增 XIRR 年化收益率——新增 `analysis.calculate_fund_xirr(fund_code)` 跨渠道合并交易流水 + 开仓终端市值计算单基金 XIRR，新增 `GET /api/funds/{code}/xirr` 端点。FundDetail 收益率卡 sub 从「保本 X%」改为「年化 X%」+ 涨跌色。新增 `tests/test_returns.py` 3 个基金级现金流测试，总测试 542→545
 
 ### Changed
 

@@ -950,7 +950,6 @@ const en: typeof zh = {
     trackingIndex: "Tracking Index",
     unrealizedPnl: "Unrealized P&L",
     realizedPnl: "Realized P&L",
-    breakEven: "Break-even",
     byChannel: "Positions by Channel",
     untagged: "Untagged",
     navTrend: "NAV Trend",

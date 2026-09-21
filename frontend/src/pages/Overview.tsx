@@ -32,10 +32,6 @@ function HeroCard({ summary }: { summary: PortfolioSummary }) {
             {signedMoney(summary.total_pnl)} <span className="text-muted-foreground">({pct(summary.total_return)})</span>
           </span>
         </div>
-        <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums text-muted-foreground">
-          <span>{t.overview.unrealized} {signedMoney(summary.unrealized_pnl)}</span>
-          <span>{t.overview.realized} {signedMoney(summary.realized_pnl)}</span>
-        </div>
       </CardContent>
     </Card>
   )
@@ -107,12 +103,7 @@ export default function Overview() {
 
   return (
     <div className="space-y-6">
-        <PageHeader title={t.overview.title} icon={<LayoutDashboard className="h-5 w-5" />} actions={summary.max_single_name ? (
-          <p className="text-sm text-muted-foreground">
-            {t.overview.maxHolding}：<span className="font-medium text-foreground">{summary.max_single_name}</span>
-            {" "}{t.overview.weight} <span className="font-mono font-medium">{pct(summary.max_single_weight)}</span>
-          </p>
-        ) : undefined} />
+        <PageHeader title={t.overview.title} icon={<LayoutDashboard className="h-5 w-5" />} />
 
       {/* Row 1: Period returns — compact cards, no icons */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
@@ -126,7 +117,25 @@ export default function Overview() {
       {/* Row 2: Hero + portfolio metrics — 3-col with hero card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
         <HeroCard summary={summary} />
-        <MetricCard icon={Wallet} iconTone="primary" label={t.overview.totalCost} value={money(summary.total_cost)} sub={`${t.overview.avgPerFund} ${money(summary.total_cost / summary.holding_count)}`} />
+        <Card className="card-hover h-full">
+          <CardContent className="p-4 md:p-5 h-full flex items-center justify-between">
+            <div className="space-y-0.5">
+              <p className="text-xs font-medium text-muted-foreground">{t.overview.totalCost}</p>
+              <p className="font-bold tabular-nums text-lg md:text-xl">{money(summary.total_cost)}</p>
+              {summary.annualized_return != null && (
+                <p className={`text-xs tabular-nums ${pnlColor(summary.annualized_return)}`}>
+                  {t.returns.annualized} {pct(summary.annualized_return)}
+                </p>
+              )}
+              <p className="text-xs tabular-nums text-muted-foreground">
+                {t.overview.unrealized} {signedMoney(summary.unrealized_pnl)} · {t.overview.realized} {signedMoney(summary.realized_pnl)}
+              </p>
+            </div>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Wallet className="h-5 w-5" />
+            </div>
+          </CardContent>
+        </Card>
         <MetricCard icon={Wallet} iconTone="info" label={t.overview.holdingCount} value={`${summary.holding_count} ${t.common.units}`} sub={`${t.overview.navDate} ${summary.as_of_date ?? t.overview.notUpdated}`} />
       </div>
 

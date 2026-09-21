@@ -126,7 +126,7 @@ export default function Overview() {
       {/* Row 2: Hero + portfolio metrics — 3-col with hero card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
         <HeroCard summary={summary} />
-        <MetricCard icon={Wallet} iconTone="primary" label={t.overview.totalCost} value={money(summary.total_cost)} />
+        <MetricCard icon={Wallet} iconTone="primary" label={t.overview.totalCost} value={money(summary.total_cost)} sub={`${t.overview.avgPerFund} ${money(summary.total_cost / summary.holding_count)}`} />
         <MetricCard icon={Wallet} iconTone="info" label={t.overview.holdingCount} value={`${summary.holding_count} ${t.common.units}`} sub={`${t.overview.navDate} ${summary.as_of_date ?? t.overview.notUpdated}`} />
       </div>
 

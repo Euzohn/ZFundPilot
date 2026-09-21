@@ -640,6 +640,7 @@ const en: typeof zh = {
     subtitle: "Holdings summary and today's estimate",
     totalValue: "Total Value",
     totalCost: "Total Cost",
+    avgPerFund: "Avg",
     totalPnl: "Total P&L",
     totalReturn: "Total Return",
     dailyPnl: "Today's P&L",

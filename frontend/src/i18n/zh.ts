@@ -638,6 +638,7 @@ const zh = {
     subtitle: "持仓概览与今日估算",
     totalValue: "总市值",
     totalCost: "总成本",
+    avgPerFund: "均值",
     totalPnl: "累计盈亏",
     totalReturn: "累计收益率",
     dailyPnl: "今日收益",

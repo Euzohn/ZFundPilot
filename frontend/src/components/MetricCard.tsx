@@ -42,7 +42,7 @@ export default function MetricCard({
 
   return (
     <Card className="card-hover">
-      <CardContent className={cn("flex items-center justify-between", padding)}>
+      <CardContent className={cn("flex h-full items-center justify-between", padding)}>
         <div className="space-y-0.5">
           <p className="text-xs font-medium text-muted-foreground">{label}</p>
           <p className={cn("font-bold tabular-nums", valueSize, fade && "fade-in-up", color)}>{value}</p>

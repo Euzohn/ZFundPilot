@@ -10,7 +10,7 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts"
-import { Wallet, Calendar, LayoutDashboard } from "lucide-react"
+import { Wallet, Calendar, LayoutDashboard, ArrowLeftRight } from "lucide-react"
 import { CHART_COLORS } from "@/lib/chartPalette"
 import MetricCard from "@/components/MetricCard"
 import PageHeader from "@/components/PageHeader"
@@ -132,16 +132,21 @@ export default function Overview() {
 
       {/* Row 3: Transaction summary + max concentration — 2-col */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
-        <Card className="card-hover">
-          <CardContent className="p-4 md:p-5">
-            <p className="text-xs font-medium text-muted-foreground">{t.overview.buySellDividend}</p>
-            <p className="mt-1 text-sm md:text-base font-bold tabular-nums">
-              <span className="text-primary">{money(summary.total_buy)}</span>
-              <span className="text-muted-foreground mx-1.5">/</span>
-              <span className="text-warning">{money(summary.total_sell)}</span>
-              <span className="text-muted-foreground mx-1.5">/</span>
-              <span className="text-info">{money(summary.total_dividend)}</span>
-            </p>
+        <Card className="card-hover h-full">
+          <CardContent className="p-4 md:p-5 h-full flex items-center justify-between">
+            <div className="space-y-0.5">
+              <p className="text-xs font-medium text-muted-foreground">{t.overview.buySellDividend}</p>
+              <p className="text-sm md:text-base font-bold tabular-nums">
+                <span className="text-primary">{money(summary.total_buy)}</span>
+                <span className="text-muted-foreground mx-1.5">/</span>
+                <span className="text-warning">{money(summary.total_sell)}</span>
+                <span className="text-muted-foreground mx-1.5">/</span>
+                <span className="text-info">{money(summary.total_dividend)}</span>
+              </p>
+            </div>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-info/10 text-info">
+              <ArrowLeftRight className="h-5 w-5" />
+            </div>
           </CardContent>
         </Card>
         <MetricCard icon={Calendar} iconTone="warning" label={t.overview.maxSingleWeight} value={pct(summary.max_single_weight)} sub={summary.max_single_name || undefined} />

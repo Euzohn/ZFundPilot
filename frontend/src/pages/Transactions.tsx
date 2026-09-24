@@ -19,9 +19,9 @@ import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
-import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, Loader2, Receipt, ArrowUpDown, Repeat, Gift, Camera, ArrowLeftRight } from "lucide-react"
+import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, Loader2, Receipt, ArrowUpDown, Repeat, Gift, Camera, ArrowLeftRight, AlertTriangle } from "lucide-react"
 import { getChannels, getChannelsAsync, saveChannels } from "@/lib/channels"
-import { translateChannel } from "@/lib/taxonomyLabels"
+import { translateChannel, translatePurchaseStatus } from "@/lib/taxonomyLabels"
 import { translateBackendError } from "@/lib/backendLabels"
 import { makeSortHeader } from "@/components/SortHeader"
 import { useLang } from "@/i18n/LanguageContext"
@@ -1567,6 +1567,21 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
     return base
   }
 
+  const planWarning = (plan: AutoInvestPlan): string | null => {
+    const status = plan.purchase_status
+    if (!status) return null
+    if (status === "暂停申购" || status === "封闭期") {
+      return t.transactions.planSuspended.replace("{status}", translatePurchaseStatus(status))
+    }
+    if (status === "限大额" && plan.daily_limit && plan.amount > plan.daily_limit) {
+      return t.transactions.planOverLimit.replace("{limit}", money(plan.daily_limit))
+    }
+    if (plan.min_purchase && plan.amount < plan.min_purchase) {
+      return t.transactions.planBelowMin.replace("{min}", money(plan.min_purchase))
+    }
+    return null
+  }
+
   const openCreate = () => {
     setEditingPlan(null)
     setCode(""); setAmount(""); setCadence("week"); setDayOfWeek("0")
@@ -1643,6 +1658,15 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
     try {
       const res = await api.executeAutoInvestPlan(plan.id)
       toast.success(t.transactions.planExecuteSuccess.replace("{id}", String(res.tx_id)))
+      if (res.warnings?.length) {
+        const warnText = (w: string): string => {
+          if (w === "suspended") return t.transactions.planSuspended.replace("{status}", translatePurchaseStatus(plan.purchase_status || ""))
+          if (w === "limit_exceeded") return t.transactions.planOverLimit.replace("{limit}", money(plan.daily_limit || 0))
+          if (w === "below_minimum") return t.transactions.planBelowMin.replace("{min}", money(plan.min_purchase || 0))
+          return w
+        }
+        toast.warning(res.warnings.map(warnText).join("；"))
+      }
       reload()
     } catch (e: unknown) {
       const err = (e ?? {}) as ApiError
@@ -1682,6 +1706,12 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
                       {plan.fund_name || plan.fund_code}
                     </CardTitle>
                     <p className="text-xs text-muted-foreground mt-0.5">{plan.fund_code}</p>
+                    {planWarning(plan) && (
+                      <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-500">
+                        <AlertTriangle className="h-3 w-3 shrink-0" />
+                        {planWarning(plan)}
+                      </p>
+                    )}
                   </div>
                   <Badge variant={plan.enabled ? "default" : "secondary"} className="text-[10px]">
                     {plan.enabled ? t.transactions.running : t.transactions.paused}

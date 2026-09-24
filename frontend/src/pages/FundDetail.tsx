@@ -14,7 +14,7 @@ import { money, pct, signedMoney, navStr, pnlColor, localDateStr, formatLargeCN 
 import { RANGE_DAYS } from "@/lib/rangeLabels"
 import { isMarketOpen } from "@/lib/market"
 import { getColorForChannel } from "@/lib/channelColors"
-import { translateFundType, translateSector, translateChannel, translateRiskLevel, translateIndustry, FUND_TYPE_DOT, RISK_LEVEL_DOT } from "@/lib/taxonomyLabels"
+import { translateFundType, translateSector, translateChannel, translateRiskLevel, translateIndustry, translatePurchaseStatus, FUND_TYPE_DOT, RISK_LEVEL_DOT, PURCHASE_STATUS_DOT } from "@/lib/taxonomyLabels"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useLang } from "@/i18n/LanguageContext"
@@ -205,6 +205,18 @@ const handleDelete = async (txId: number) => {
               </Badge>
             )}
             {fund?.sector && <Badge variant="outline" className="font-normal">{translateSector(fund.sector)}</Badge>}
+            {fund?.purchase_status && (
+              <Badge
+                variant="outline"
+                className={cn("font-normal gap-1.5",
+                  (fund.purchase_status === "暂停申购" || fund.purchase_status === "封闭期") &&
+                    "border-rose-500/40 text-rose-600 dark:text-rose-400")}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${PURCHASE_STATUS_DOT[fund.purchase_status] ?? "bg-zinc-400"}`} />
+                {translatePurchaseStatus(fund.purchase_status)}
+                {fund.purchase_status === "限大额" && fund.daily_limit ? ` ${money(fund.daily_limit)}/日` : ""}
+              </Badge>
+            )}
             {fund?.tracking_index && (
               <Badge variant="outline" className="font-normal gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-teal-500" />

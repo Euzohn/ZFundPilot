@@ -8,6 +8,7 @@
 
 ### Added
 - 基金详情页新增 XIRR 年化收益率——新增 `analysis.calculate_fund_xirr(fund_code)` 跨渠道合并交易流水 + 开仓终端市值计算单基金 XIRR，新增 `GET /api/funds/{code}/xirr` 端点。FundDetail 收益率卡 sub 从「保本 X%」改为「年化 X%」+ 涨跌色。新增 `tests/test_returns.py` 3 个基金级现金流测试，总测试 542→545
+- 定投申购状态可投性校验——定投执行前检查基金申购状态（暂停申购/封闭期→跳过，限大额且超日累计限额→跳过，金额低于购买起点→跳过），不建仓不更新 next_run 次日自动重试。新增 `fetch_fund.fetch_purchase_status`（`ak.fund_purchase_em` 全市场表 24h 缓存 + stale-if-error）+ `refresh_purchase_status` 写回 `funds` 表 3 个新字段（`purchase_status`/`daily_limit`/`min_purchase`）。scheduler 净值更新后 + 定投执行前（强制清缓存刷新）双重刷新。手动执行（`/execute`）遇不可申购仍建仓但返回 `warnings`。FundDetail 顶栏新增申购状态 badge（绿/橙/红色点），定投计划列表对不可申购基金显示 `AlertTriangle` 警告。新增 `tests/test_auto_invest.py` 9 个 gate 测试 + `tests/test_fetch_fund.py` 5 个申购状态测试 + `tests/test_db.py` 3 个迁移/读写测试，总测试 545→562
 
 ### Changed
 

@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 import urllib.request
 from collections.abc import Callable
@@ -1603,6 +1604,86 @@ def fetch_fund_profile(fund_code: str) -> FundProfile:
 def clear_profile_cache() -> None:
     """清空基金档案缓存。"""
     _profile_cache.clear()
+
+
+# ---------------------------------------------------------------------------
+# 申购状态（限购/暂停申购，定投可投性校验）
+# ---------------------------------------------------------------------------
+_purchase_cache: dict[str, dict] = {}
+_purchase_cache_ts: float = 0.0
+_PURCHASE_CACHE_TTL = 24 * 3600  # 24 小时（申购状态按日变化）
+_purchase_lock = threading.Lock()
+
+
+def _safe_float(v) -> float:
+    try:
+        f = float(v)
+        return 0.0 if f != f else f  # NaN -> 0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _load_purchase_table() -> dict[str, dict]:
+    """拉取全市场基金申购状态表（ak.fund_purchase_em），24h 缓存。
+
+    返回 {fund_code: {status, daily_limit, min_purchase}}。
+    网络失败时优先返回过期缓存（stale-if-error），无缓存则返回 {}。
+    """
+    global _purchase_cache_ts
+    now = time.time()
+    with _purchase_lock:
+        if _purchase_cache and now - _purchase_cache_ts < _PURCHASE_CACHE_TTL:
+            return _purchase_cache
+        try:
+            import akshare as ak
+
+            df = ak.fund_purchase_em()
+            table: dict[str, dict] = {}
+            for rec in df.to_dict("records"):
+                code = str(rec.get("基金代码", "") or "").strip()
+                if not code:
+                    continue
+                table[code] = {
+                    "status": str(rec.get("申购状态", "") or "").strip(),
+                    "daily_limit": _safe_float(rec.get("日累计限定金额", 0)),
+                    "min_purchase": _safe_float(rec.get("购买起点", 0)),
+                }
+            if table:
+                _purchase_cache.clear()
+                _purchase_cache.update(table)
+                _purchase_cache_ts = now
+            return _purchase_cache
+        except Exception:  # noqa: BLE001
+            logger.warning("申购状态拉取失败", exc_info=True)
+            return _purchase_cache
+
+
+def fetch_purchase_status(fund_codes: list[str]) -> dict[str, dict]:
+    """批量获取基金申购状态（全市场表本地过滤）。
+
+    返回 {fund_code: {status, daily_limit, min_purchase}}。
+    表中不存在的基金不出现在结果里（调用方按「未知」处理，不阻止定投）。
+    """
+    table = _load_purchase_table()
+    return {c: table[c] for c in fund_codes if c in table}
+
+
+def refresh_purchase_status(fund_codes: list[str]) -> int:
+    """拉取申购状态并写回 funds 表，返回更新数量。"""
+    statuses = fetch_purchase_status(fund_codes)
+    for code, info in statuses.items():
+        db.update_fund_purchase_status(
+            code, info["status"], info["daily_limit"], info["min_purchase"]
+        )
+    return len(statuses)
+
+
+def clear_purchase_status_cache() -> None:
+    """清空申购状态缓存。"""
+    global _purchase_cache_ts
+    with _purchase_lock:
+        _purchase_cache.clear()
+        _purchase_cache_ts = 0.0
 
 
 if __name__ == "__main__":

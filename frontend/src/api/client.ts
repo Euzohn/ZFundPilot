@@ -444,7 +444,7 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }),
   executeAutoInvestPlan: (id: number) =>
-    request<{ ok: boolean; tx_id?: number }>(`/auto-invest/plans/${id}/execute`, {
+    request<{ ok: boolean; tx_id?: number; warnings?: string[] }>(`/auto-invest/plans/${id}/execute`, {
       method: "POST",
     }),
 

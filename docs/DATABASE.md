@@ -36,6 +36,9 @@
 | `sector` | TEXT | DEFAULT '' | 板块（如 科技/消费/医药） |
 | `tracking_index` | TEXT | DEFAULT '' | 跟踪指数关键词（指数型基金用于实时估值，如 沪深300/半导体材料设备） |
 | `dividend_method` | TEXT | DEFAULT 'cash' | 分红方式：`cash` / `reinvest`（FundDetail 页可设置） |
+| `purchase_status` | TEXT | DEFAULT '' | 申购状态（开放申购/限大额/暂停申购/场内交易/封闭期/认购期，由 `fetch_fund.refresh_purchase_status` 每日刷新） |
+| `daily_limit` | REAL | DEFAULT 0 | 日累计限定金额（0 = 无限额，限大额基金的实际日购上限） |
+| `min_purchase` | REAL | DEFAULT 0 | 购买起点（最低申购金额） |
 | `created_at` | TEXT | DEFAULT datetime('now','localtime') | 创建时间 |
 | `updated_at` | TEXT | DEFAULT datetime('now','localtime') | 更新时间 |
 

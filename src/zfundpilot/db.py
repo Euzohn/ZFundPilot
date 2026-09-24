@@ -57,6 +57,9 @@ def init_db() -> None:
                 fund_type       TEXT DEFAULT '其它',
                 sector          TEXT DEFAULT '',
                 tracking_index  TEXT DEFAULT '',
+                purchase_status TEXT DEFAULT '',
+                daily_limit     REAL DEFAULT 0,
+                min_purchase    REAL DEFAULT 0,
                 created_at      TEXT DEFAULT (datetime('now','localtime')),
                 updated_at      TEXT DEFAULT (datetime('now','localtime'))
             );
@@ -190,6 +193,7 @@ def init_db() -> None:
     _migrate_nav_history_check()
     _migrate_add_indexes()
     _migrate_add_conversion_id()
+    _migrate_add_purchase_status()
 
 
 def _migrate_add_columns() -> None:
@@ -208,6 +212,25 @@ def _migrate_add_columns() -> None:
             # 回填：note 含 "T+1确认" 的旧交易标记为 is_t1
             conn.execute(
                 "UPDATE transactions SET is_t1=1 WHERE note LIKE '%T+1确认%'"
+            )
+
+
+def _migrate_add_purchase_status() -> None:
+    """为 funds 表补充申购状态字段（旧库升级）。幂等。"""
+    with get_connection() as conn:
+        cols = {r["name"] for r in
+                conn.execute("PRAGMA table_info(funds)").fetchall()}
+        if "purchase_status" not in cols:
+            conn.execute(
+                "ALTER TABLE funds ADD COLUMN purchase_status TEXT DEFAULT ''"
+            )
+        if "daily_limit" not in cols:
+            conn.execute(
+                "ALTER TABLE funds ADD COLUMN daily_limit REAL DEFAULT 0"
+            )
+        if "min_purchase" not in cols:
+            conn.execute(
+                "ALTER TABLE funds ADD COLUMN min_purchase REAL DEFAULT 0"
             )
 
 
@@ -623,6 +646,18 @@ def update_fund_dividend_method(fund_code: str, method: str) -> None:
             "UPDATE funds SET dividend_method=?, updated_at=datetime('now','localtime') "
             "WHERE fund_code=?",
             (method, fund_code),
+        )
+
+
+def update_fund_purchase_status(
+    fund_code: str, status: str, daily_limit: float, min_purchase: float
+) -> None:
+    """更新基金申购状态（定投执行前的可投性校验依据）。"""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE funds SET purchase_status=?, daily_limit=?, min_purchase=?, "
+            "updated_at=datetime('now','localtime') WHERE fund_code=?",
+            (status, daily_limit, min_purchase, fund_code),
         )
 
 

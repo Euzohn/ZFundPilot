@@ -5,6 +5,9 @@ export interface Fund {
   sector: string
   tracking_index: string
   dividend_method?: string
+  purchase_status?: string
+  daily_limit?: number
+  min_purchase?: number
 }
 
 export interface DividendEvent {
@@ -627,6 +630,9 @@ export interface AutoInvestPlan {
   last_tx_id: number | null
   created_at: string
   updated_at: string
+  purchase_status?: string
+  daily_limit?: number
+  min_purchase?: number
 }
 
 // ── 视觉模型配置 ──

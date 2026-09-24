@@ -130,7 +130,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **Screenshot Import** — Upload purchase record or holdings screenshots for AI vision model recognition. Holdings reconcile mode compares recorded shares by channel, one-click generates adjustment transactions. Vision model independently configurable (Zhipu GLM-4V / Qwen VL / GPT-4o / Kimi Vision), auto-matches fund codes from names when screenshots lack them
 - **Fund Details** — NAV trend + asset allocation pie chart + top 10 holdings + peer ranking trend + fund profile (manager/assets/inception date) + risk level + quick actions (compare/watchlist/buy/sell/auto-invest)
 - **DCA Backtest** — Simulate DCA (monthly/biweekly/weekly) vs lump-sum with historical NAV data. Calculates XIRR, max drawdown, Sharpe ratio
-- **Auto-Invest Plan** — Set up daily/weekly/biweekly/monthly auto-buy, auto-skip non-trading days, auto-calculate fees, T+1 NAV backfill
+- **Auto-Invest Plan** — Set up daily/weekly/biweekly/monthly auto-buy, auto-skip non-trading days, auto-calculate fees, T+1 NAV backfill. Pre-execution check for fund purchase status (suspended/limited/below-minimum auto-skipped, retries next day)
 
 ### Health Check & Optimization
 

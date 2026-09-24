@@ -19,6 +19,7 @@ from zfundpilot.auto_invest import (
     execute_plan,
     run_all_due,
 )
+from zfundpilot.models import Fund
 
 _TZ = ZoneInfo("Asia/Shanghai")
 
@@ -383,4 +384,132 @@ class TestRunAllDueHolidayGate:
             results = run_all_due()
         assert results[0]["status"] == "holiday"
         assert results[0]["reason"] == "周末"
+        env.mock_db.add_transaction.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 申购状态可投性 gate 测试（暂停申购/限购/购买起点）
+# ---------------------------------------------------------------------------
+class TestPurchasableGate:
+    """验证 execute_plan 依据申购状态跳过或告警。"""
+
+    def test_suspended_skipped(self):
+        """暂停申购 → 自动执行跳过，不建仓。"""
+        mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan(fund_code="160213", amount=1000)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.get_fund.return_value = Fund(
+                fund_code="160213", purchase_status="暂停申购"
+            )
+            result = execute_plan(plan, manual=False)
+        assert result["ok"] is False
+        assert result["skipped"] is True
+        assert result["skip_code"] == "suspended"
+        env.mock_db.add_transaction.assert_not_called()
+
+    def test_closed_period_skipped(self):
+        """封闭期 → 跳过。"""
+        mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan(fund_code="001", amount=1000)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.get_fund.return_value = Fund(
+                fund_code="001", purchase_status="封闭期"
+            )
+            result = execute_plan(plan, manual=False)
+        assert result["skip_code"] == "suspended"
+
+    def test_limit_exceeded_skipped(self):
+        """限大额且金额超日累计限额 → 跳过。"""
+        mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan(fund_code="001", amount=1000)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.get_fund.return_value = Fund(
+                fund_code="001", purchase_status="限大额", daily_limit=100
+            )
+            result = execute_plan(plan, manual=False)
+        assert result["skip_code"] == "limit_exceeded"
+        assert result["detail"]["daily_limit"] == 100
+        env.mock_db.add_transaction.assert_not_called()
+
+    def test_limit_not_exceeded_executes(self):
+        """限大额但金额未超限 → 正常执行。"""
+        mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan(fund_code="001", amount=1000)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.get_fund.return_value = Fund(
+                fund_code="001", purchase_status="限大额", daily_limit=2000
+            )
+            env.mock_db.get_nav_on_or_after.return_value = None
+            result = execute_plan(plan, manual=False)
+        assert result["ok"] is True
+        env.mock_db.add_transaction.assert_called_once()
+
+    def test_below_minimum_skipped(self):
+        """金额低于购买起点 → 跳过。"""
+        mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan(fund_code="001", amount=100)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.get_fund.return_value = Fund(
+                fund_code="001", purchase_status="开放申购", min_purchase=1000
+            )
+            result = execute_plan(plan, manual=False)
+        assert result["skip_code"] == "below_minimum"
+        env.mock_db.add_transaction.assert_not_called()
+
+    def test_open_purchase_executes(self):
+        """开放申购且无限额 → 正常执行。"""
+        mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan(fund_code="001", amount=1000)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.get_fund.return_value = Fund(
+                fund_code="001", purchase_status="开放申购"
+            )
+            env.mock_db.get_nav_on_or_after.return_value = None
+            result = execute_plan(plan, manual=False)
+        assert result["ok"] is True
+        assert result["warnings"] == []
+
+    def test_unknown_status_executes(self):
+        """状态未知（空）→ 放行，避免误伤。"""
+        mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan(fund_code="001", amount=1000)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.get_fund.return_value = Fund(fund_code="001")
+            env.mock_db.get_nav_on_or_after.return_value = None
+            result = execute_plan(plan, manual=False)
+        assert result["ok"] is True
+
+    def test_manual_suspended_warns_but_executes(self):
+        """手动执行遇暂停申购 → 仍建仓但带 warnings。"""
+        mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan(fund_code="001", amount=1000)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.get_fund.return_value = Fund(
+                fund_code="001", purchase_status="暂停申购"
+            )
+            result = execute_plan(plan, manual=True)
+        assert result["ok"] is True
+        assert result["warnings"] == ["suspended"]
+        env.mock_db.add_transaction.assert_called_once()
+
+    def test_run_all_due_suspended_status(self):
+        """run_all_due 对暂停申购计划标记 status=suspended 不建仓。"""
+        mock_dt = datetime(2026, 7, 6, 9, 0, tzinfo=_TZ)  # 周一
+        plan = _make_plan(fund_code="001", next_run="2026-07-06", last_run=None)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_due_auto_invest_plans.return_value = [plan]
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.get_fund.return_value = Fund(
+                fund_code="001", purchase_status="暂停申购"
+            )
+            results = run_all_due()
+        assert results[0]["status"] == "suspended"
         env.mock_db.add_transaction.assert_not_called()

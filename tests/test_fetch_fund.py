@@ -372,3 +372,88 @@ class TestCleanIndustryName:
         assert result.allocations[0].industry == "制造业"
         assert result.allocations[1].industry == "非必需消费品"
         assert result.allocations[2].industry == "金融"
+
+
+# ---------------------------------------------------------------------------
+# 申购状态（限购/暂停申购）
+# ---------------------------------------------------------------------------
+def _purchase_df() -> pd.DataFrame:
+    """构造申购状态 DataFrame（与 AkShare fund_purchase_em 列名一致）。"""
+    return pd.DataFrame(
+        {
+            "基金代码": ["160213", "000001"],
+            "申购状态": ["暂停申购", "限大额"],
+            "日累计限定金额": [100.0, float("nan")],
+            "购买起点": [10.0, 100.0],
+        }
+    )
+
+
+def _fake_akshare_purchase(df):
+    fake = ModuleType("akshare")
+    fake.fund_purchase_em = MagicMock(return_value=df)
+    return fake
+
+
+@pytest.fixture
+def purchase_cache():
+    """重置申购状态缓存，避免跨测试污染。"""
+    fetch_fund._purchase_cache.clear()
+    fetch_fund._purchase_cache_ts = 0.0
+    yield
+    fetch_fund._purchase_cache.clear()
+    fetch_fund._purchase_cache_ts = 0.0
+
+
+class TestFetchPurchaseStatus:
+    def test_filters_requested_codes(self, purchase_cache):
+        fake = _fake_akshare_purchase(_purchase_df())
+        with patch.dict(sys.modules, {"akshare": fake}):
+            result = fetch_fund.fetch_purchase_status(
+                ["160213", "000001", "999999"]
+            )
+        assert set(result) == {"160213", "000001"}
+        assert result["160213"]["status"] == "暂停申购"
+        assert result["160213"]["daily_limit"] == 100.0
+        assert result["000001"]["daily_limit"] == 0.0  # NaN -> 0
+        assert result["000001"]["min_purchase"] == 100.0
+
+    def test_empty_codes(self, purchase_cache):
+        fake = _fake_akshare_purchase(_purchase_df())
+        with patch.dict(sys.modules, {"akshare": fake}):
+            assert fetch_fund.fetch_purchase_status([]) == {}
+
+    def test_cache_hit_no_refetch(self, purchase_cache):
+        fake = _fake_akshare_purchase(_purchase_df())
+        with patch.dict(sys.modules, {"akshare": fake}):
+            fetch_fund.fetch_purchase_status(["000001"])
+            fetch_fund.fetch_purchase_status(["000001"])
+        assert fake.fund_purchase_em.call_count == 1
+
+    def test_network_failure_returns_stale(self, purchase_cache):
+        fake = _fake_akshare_purchase(_purchase_df())
+        with patch.dict(sys.modules, {"akshare": fake}):
+            first = fetch_fund.fetch_purchase_status(["000001"])
+        assert "000001" in first
+        # 过期 + 网络失败 → 返回过期缓存（stale-if-error）
+        fetch_fund._purchase_cache_ts = 0.0
+        failing = ModuleType("akshare")
+        failing.fund_purchase_em = MagicMock(side_effect=RuntimeError("boom"))
+        with patch.dict(sys.modules, {"akshare": failing}):
+            stale = fetch_fund.fetch_purchase_status(["000001"])
+        assert "000001" in stale
+
+    def test_write_back_to_db(self, purchase_cache):
+        fake = _fake_akshare_purchase(_purchase_df())
+        updates: list[tuple] = []
+
+        def _record(code, status, daily_limit, min_purchase):
+            updates.append((code, status, daily_limit, min_purchase))
+
+        with (
+            patch.dict(sys.modules, {"akshare": fake}),
+            patch.object(fetch_fund.db, "update_fund_purchase_status", _record),
+        ):
+            n = fetch_fund.refresh_purchase_status(["160213", "000001"])
+        assert n == 2
+        assert ("160213", "暂停申购", 100.0, 10.0) in updates

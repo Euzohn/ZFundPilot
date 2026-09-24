@@ -100,3 +100,48 @@ def test_ai_usage_daily_axis_uses_localtime():
             assert daily[-1]["tokens"] == 20
             by_date = {e["date"]: e["tokens"] for e in daily}
             assert by_date.get(yesterday.strftime("%Y-%m-%d")) == 10
+
+
+def test_update_fund_purchase_status_roundtrip():
+    """申购状态写入后可从 get_fund 读回。"""
+    from zfundpilot.models import Fund
+
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            db.upsert_fund(Fund("160213", "国泰纳斯达克100", "QDII"))
+            db.update_fund_purchase_status("160213", "暂停申购", 100.0, 10.0)
+            fund = db.get_fund("160213")
+            assert fund is not None
+            assert fund.purchase_status == "暂停申购"
+            assert fund.daily_limit == 100.0
+            assert fund.min_purchase == 10.0
+
+
+def test_upsert_fund_preserves_purchase_status():
+    """元数据刷新（upsert_fund）不覆盖已写入的申购状态。"""
+    from zfundpilot.models import Fund
+
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            db.upsert_fund(Fund("001", "测试基金", "混合型"))
+            db.update_fund_purchase_status("001", "限大额", 5000.0, 10.0)
+            db.upsert_fund(Fund("001", "测试基金改名", "混合型"))
+            fund = db.get_fund("001")
+            assert fund is not None
+            assert fund.fund_name == "测试基金改名"
+            assert fund.purchase_status == "限大额"
+            assert fund.daily_limit == 5000.0
+
+
+def test_init_db_purchase_status_idempotent():
+    """重复 init_db 不报错（迁移幂等）。"""
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            db.init_db()
+            with db.get_connection() as conn:
+                cols = {r["name"] for r in
+                        conn.execute("PRAGMA table_info(funds)").fetchall()}
+            assert {"purchase_status", "daily_limit", "min_purchase"} <= cols

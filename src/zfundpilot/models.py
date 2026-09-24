@@ -38,6 +38,9 @@ class Fund:
     sector: str = ""
     tracking_index: str = ""
     dividend_method: str = "cash"  # 'cash'（现金分红）/ 'reinvest'（红利再投资）
+    purchase_status: str = ""      # 申购状态：开放申购/限大额/暂停申购/场内交易/封闭期/认购期
+    daily_limit: float = 0.0       # 日累计限定金额（0 = 无限额）
+    min_purchase: float = 0.0      # 购买起点（最低申购金额）
 
     def to_dict(self) -> dict:
         return asdict(self)

@@ -21,6 +21,9 @@ from .us_calendar import is_us_market_holiday, is_us_trading_day
 logger = logging.getLogger(__name__)
 CADENCES = ("daily", "week", "biweek", "month")
 
+# ak.fund_purchase_em 的「申购状态」中不可定投的取值
+_SUSPENDED_STATUSES = ("暂停申购", "封闭期")
+
 _execute_lock = threading.Lock()
 
 
@@ -32,6 +35,37 @@ def _is_qdii_fund(fund_code: str) -> bool:
     """
     fund = db.get_fund(fund_code)
     return fund is not None and fund.fund_type == "QDII"
+
+
+def _check_purchasable(fund_code: str, amount: float) -> tuple[bool, str, dict]:
+    """检查基金当前是否可定投（申购状态 / 限购额度 / 购买起点）。
+
+    返回 (ok, reason_code, detail)。ok=True 表示可执行。
+    reason_code: "" / "suspended" / "limit_exceeded" / "below_minimum"
+
+    数据来自 funds 表（由 fetch_fund.refresh_purchase_status 每日刷新）。
+    基金不在库或状态未知时放行，避免误伤。
+    """
+    fund = db.get_fund(fund_code)
+    if fund is None:
+        return True, "", {}
+    status = fund.purchase_status if isinstance(fund.purchase_status, str) else ""
+    status = status.strip()
+    daily_limit = fund.daily_limit if isinstance(fund.daily_limit, (int, float)) else 0.0
+    min_purchase = (
+        fund.min_purchase if isinstance(fund.min_purchase, (int, float)) else 0.0
+    )
+    if status in _SUSPENDED_STATUSES:
+        return False, "suspended", {"purchase_status": status}
+    if daily_limit > 0 and amount > daily_limit:
+        return False, "limit_exceeded", {
+            "daily_limit": daily_limit, "amount": amount,
+        }
+    if min_purchase > 0 and amount < min_purchase:
+        return False, "below_minimum", {
+            "min_purchase": min_purchase, "amount": amount,
+        }
+    return True, "", {}
 
 
 def _next_trading_day(fund_code: str, from_date: str) -> str:
@@ -169,6 +203,24 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
         note = fresh.get("note", "定投")
         is_after_three = now.hour >= config.T1_CUTOFF_HOUR
 
+        # 可投性校验：暂停申购/封闭期、超限购额度、低于购买起点
+        purchasable, reason_code, detail = _check_purchasable(fund_code, amount)
+        warnings: list[str] = []
+        if not purchasable:
+            if manual:
+                warnings.append(reason_code)  # 手动执行放行，仅告警
+            else:
+                return {
+                    "ok": False,
+                    "skipped": True,
+                    "skip_code": reason_code,
+                    "reason": reason_code,
+                    "detail": detail,
+                    "fund_code": fund_code,
+                    "amount": amount,
+                    "date": today,
+                }
+
         fee_result = fetch_fund.calc_purchase_fee(fund_code, amount)
         fee = fee_result.fee
 
@@ -206,6 +258,7 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
             "fee": fee,
             "date": today,
             "after_three": is_after_three,
+            "warnings": warnings,
         }
 
 
@@ -244,8 +297,16 @@ def run_all_due() -> list[dict[str, Any]]:
             result = execute_plan(p, manual=False)
             result["plan_id"] = p["id"]
             if result.get("skipped"):
-                result["status"] = "skipped"
-                logger.info("[auto_invest] plan#%d %s 今日已执行, 跳过", p["id"], p["fund_code"])
+                skip_code = result.get("skip_code")
+                result["status"] = skip_code or "skipped"
+                if skip_code:
+                    logger.info(
+                        "[auto_invest] plan#%d %s 不可申购跳过(%s), 详情 %s",
+                        p["id"], p["fund_code"], skip_code, result.get("detail"),
+                    )
+                else:
+                    logger.info("[auto_invest] plan#%d %s 今日已执行, 跳过",
+                                p["id"], p["fund_code"])
             else:
                 result["status"] = "success"
                 logger.info("[auto_invest] 执行定投 plan#%d %s 金额 %.2f",

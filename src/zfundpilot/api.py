@@ -2093,9 +2093,13 @@ def create_auto_invest_plan(request: Request, body: AutoInvestPlanCreate) -> dic
 @app.get("/api/auto-invest/plans")
 def list_auto_invest_plans() -> list[dict[str, Any]]:
     plans = db.get_auto_invest_plans()
-    funds = {f.fund_code: f.fund_name for f in db.get_funds()}
+    funds = {f.fund_code: f for f in db.get_funds()}
     for p in plans:
-        p["fund_name"] = funds.get(p["fund_code"], "")
+        f = funds.get(p["fund_code"])
+        p["fund_name"] = f.fund_name if f else ""
+        p["purchase_status"] = f.purchase_status if f else ""
+        p["daily_limit"] = f.daily_limit if f else 0.0
+        p["min_purchase"] = f.min_purchase if f else 0.0
     return plans
 
 

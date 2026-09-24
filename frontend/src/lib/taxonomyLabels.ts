@@ -105,6 +105,25 @@ export const RISK_LEVEL_DOT: Record<string, string> = {
   "高风险": "bg-rose-500",
 }
 
+// ── 申购状态（ak.fund_purchase_em 的「申购状态」列）──
+export const PURCHASE_STATUSES: Record<string, Bilingual> = {
+  "开放申购": { zh: "开放申购", en: "Open" },
+  "限大额": { zh: "限大额", en: "Limited" },
+  "暂停申购": { zh: "暂停申购", en: "Suspended" },
+  "场内交易": { zh: "场内交易", en: "Exchange" },
+  "封闭期": { zh: "封闭期", en: "Closed" },
+  "认购期": { zh: "认购期", en: "Subscription" },
+}
+
+export const PURCHASE_STATUS_DOT: Record<string, string> = {
+  "开放申购": "bg-emerald-500",
+  "限大额": "bg-amber-500",
+  "暂停申购": "bg-rose-500",
+  "场内交易": "bg-zinc-400",
+  "封闭期": "bg-rose-500",
+  "认购期": "bg-sky-500",
+}
+
 // ── 行业分类（证监会 CSRC + GICS 全球行业分类，基金行业配置数据源）──
 // CSRC ~19 类用于境内基金；GICS 11 类用于 QDII 基金（两套分类可能在同一基金数据中混合出现）
 export const INDUSTRIES: Record<string, Bilingual> = {
@@ -183,4 +202,9 @@ export function translateRiskLevel(level: string): string {
 export function translateIndustry(industry: string): string {
   const lang = getCurrentLang()
   return INDUSTRIES[industry]?.[lang] ?? industry
+}
+
+export function translatePurchaseStatus(status: string): string {
+  const lang = getCurrentLang()
+  return PURCHASE_STATUSES[status]?.[lang] ?? status
 }

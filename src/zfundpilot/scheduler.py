@@ -125,6 +125,8 @@ def _run_nav_update() -> None:
         _run_tp_sl_check()
         # 持久化基准指数数据（确保离线可用）
         _update_benchmark_indices()
+        # 刷新基金申购状态（限购/暂停申购），供定投可投性校验
+        _refresh_purchase_status()
     except Exception as exc:  # noqa: BLE001
         logger.exception("[scheduler] 定时净值更新任务异常")
         _last_run = datetime.now(config.TIMEZONE)
@@ -163,12 +165,27 @@ def _parse_cron(expr: str) -> CronTrigger:
     )
 
 
+def _refresh_purchase_status() -> None:
+    """刷新库内所有基金的申购状态（限购/暂停申购），供定投可投性校验。"""
+    try:
+        codes = [f.fund_code for f in db.get_funds()]
+        if not codes:
+            return
+        n = fetch_fund.refresh_purchase_status(codes)
+        logger.info("[scheduler] 申购状态刷新: %d/%d", n, len(codes))
+    except Exception:  # noqa: BLE001
+        logger.warning("[scheduler] 申购状态刷新失败", exc_info=True)
+
+
 def _run_auto_invest() -> None:
     """执行定投计划检查任务（由调度器调用，每天 09:00）。"""
     global _last_auto_invest_run
     with _auto_invest_lock:
         logger.info("[scheduler] 定投计划检查开始")
         try:
+            # 执行前强制刷新申购状态，避免用过期数据判断可投性
+            fetch_fund.clear_purchase_status_cache()
+            _refresh_purchase_status()
             results = auto_invest.run_all_due()
             _last_auto_invest_run = datetime.now(config.TIMEZONE)
             if results:

@@ -182,6 +182,11 @@ def init_db() -> None:
                 UNIQUE(code, date)
             );
             CREATE INDEX IF NOT EXISTS idx_index_code_date ON index_history(code, date);
+
+            CREATE TABLE IF NOT EXISTS trade_calendar (
+                date       TEXT PRIMARY KEY,
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
             """
         )
     _migrate_add_columns()
@@ -1001,6 +1006,58 @@ def get_index_latest_date(code: str) -> str | None:
             (code,),
         ).fetchone()
     return row["d"] if row and row["d"] else None
+
+
+# ---------------------------------------------------------------------------
+# A 股交易日历（定投可投性校验，fetch_fund.refresh_trade_calendar 写入）
+# ---------------------------------------------------------------------------
+_trade_cal_cache: frozenset[str] | None = None
+_trade_cal_max: str | None = None
+
+
+def upsert_trade_calendar(dates: list[str]) -> int:
+    """批量写入交易日历（幂等）。失效内存缓存，返回写入行数。"""
+    global _trade_cal_cache, _trade_cal_max
+    rows = [(d,) for d in dates]
+    if not rows:
+        return 0
+    with get_connection() as conn:
+        conn.executemany(
+            "INSERT INTO trade_calendar(date) VALUES(?) "
+            "ON CONFLICT(date) DO NOTHING",
+            rows,
+        )
+    _trade_cal_cache = None
+    _trade_cal_max = None
+    return len(rows)
+
+
+def is_trading_day(date_str: str) -> bool:
+    """判断某日是否为 A 股交易日（trade_calendar 表为准）。
+
+    - 覆盖范围内不在日历 → 法定节假日/调休休市 → False
+    - 表为空（首启未刷新/网络失败）→ 退化周末判断（fail-open）
+    - 日期超出日历覆盖范围（如跨年日历未更新）→ 退化周末判断
+    """
+    global _trade_cal_cache, _trade_cal_max
+    # 快照到局部变量，避免 upsert 并发清空缓存导致读到不一致的 (cal, max) 组合
+    cal = _trade_cal_cache
+    cal_max = _trade_cal_max
+    if cal is None:
+        with get_connection() as conn:
+            rows = conn.execute("SELECT date FROM trade_calendar").fetchall()
+        cal = frozenset(r["date"] for r in rows)
+        cal_max = max(cal) if cal else None
+        _trade_cal_cache, _trade_cal_max = cal, cal_max
+    if not cal:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        return d.weekday() < 5
+    if date_str in cal:
+        return True
+    if cal_max and date_str > cal_max:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        return d.weekday() < 5
+    return False
 
 
 # ---------------------------------------------------------------------------

@@ -457,3 +457,68 @@ class TestFetchPurchaseStatus:
             n = fetch_fund.refresh_purchase_status(["160213", "000001"])
         assert n == 2
         assert ("160213", "暂停申购", 100.0, 10.0) in updates
+
+
+# ---------------------------------------------------------------------------
+# A 股交易日历
+# ---------------------------------------------------------------------------
+def _calendar_df():
+    """构造交易日历 DataFrame（date 对象 + 字符串混合）。"""
+    return pd.DataFrame(
+        {"trade_date": [pd.Timestamp("2026-09-30"), "2026-10-08", "2026-10-09"]}
+    )
+
+
+def _fake_akshare_calendar(df):
+    fake = ModuleType("akshare")
+    fake.tool_trade_date_hist_sina = MagicMock(return_value=df)
+    return fake
+
+
+@pytest.fixture
+def trade_cal_cache():
+    """重置交易日历缓存，避免跨测试污染。"""
+    fetch_fund._trade_cal_cache.clear()
+    fetch_fund._trade_cal_cache_ts = 0.0
+    yield
+    fetch_fund._trade_cal_cache.clear()
+    fetch_fund._trade_cal_cache_ts = 0.0
+
+
+class TestFetchTradeCalendar:
+    def test_parses_dates(self, trade_cal_cache):
+        fake = _fake_akshare_calendar(_calendar_df())
+        with patch.dict(sys.modules, {"akshare": fake}):
+            result = fetch_fund.fetch_trade_calendar()
+        assert result == {"2026-09-30", "2026-10-08", "2026-10-09"}
+
+    def test_cache_hit_no_refetch(self, trade_cal_cache):
+        fake = _fake_akshare_calendar(_calendar_df())
+        with patch.dict(sys.modules, {"akshare": fake}):
+            fetch_fund.fetch_trade_calendar()
+            fetch_fund.fetch_trade_calendar()
+        assert fake.tool_trade_date_hist_sina.call_count == 1
+
+    def test_network_failure_returns_stale(self, trade_cal_cache):
+        fake = _fake_akshare_calendar(_calendar_df())
+        with patch.dict(sys.modules, {"akshare": fake}):
+            first = fetch_fund.fetch_trade_calendar()
+        assert "2026-10-08" in first
+        fetch_fund._trade_cal_cache_ts = 0.0  # 强制过期
+        failing = ModuleType("akshare")
+        failing.tool_trade_date_hist_sina = MagicMock(side_effect=RuntimeError("boom"))
+        with patch.dict(sys.modules, {"akshare": failing}):
+            stale = fetch_fund.fetch_trade_calendar()
+        assert "2026-10-08" in stale
+
+    def test_refresh_persists(self, trade_cal_cache):
+        fake = _fake_akshare_calendar(_calendar_df())
+        saved: list[list[str]] = []
+        with (
+            patch.dict(sys.modules, {"akshare": fake}),
+            patch.object(fetch_fund.db, "upsert_trade_calendar",
+                         lambda dates: saved.append(dates) or len(dates)),
+        ):
+            n = fetch_fund.refresh_trade_calendar()
+        assert n == 3
+        assert saved == [["2026-09-30", "2026-10-08", "2026-10-09"]]

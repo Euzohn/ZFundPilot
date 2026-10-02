@@ -127,6 +127,8 @@ def _run_nav_update() -> None:
         _update_benchmark_indices()
         # 刷新基金申购状态（限购/暂停申购），供定投可投性校验
         _refresh_purchase_status()
+        # 刷新 A 股交易日历（法定节假日），供定投可投性校验
+        _refresh_trade_calendar()
     except Exception as exc:  # noqa: BLE001
         logger.exception("[scheduler] 定时净值更新任务异常")
         _last_run = datetime.now(config.TIMEZONE)
@@ -177,6 +179,15 @@ def _refresh_purchase_status() -> None:
         logger.warning("[scheduler] 申购状态刷新失败", exc_info=True)
 
 
+def _refresh_trade_calendar() -> None:
+    """刷新 A 股交易日历（持久化到 trade_calendar 表），供定投可投性校验。"""
+    try:
+        n = fetch_fund.refresh_trade_calendar()
+        logger.info("[scheduler] 交易日历刷新: %d 天", n)
+    except Exception:  # noqa: BLE001
+        logger.warning("[scheduler] 交易日历刷新失败", exc_info=True)
+
+
 def _run_auto_invest() -> None:
     """执行定投计划检查任务（由调度器调用，每天 09:00）。"""
     global _last_auto_invest_run
@@ -186,6 +197,8 @@ def _run_auto_invest() -> None:
             # 执行前强制刷新申购状态，避免用过期数据判断可投性
             fetch_fund.clear_purchase_status_cache()
             _refresh_purchase_status()
+            # 执行前刷新交易日历，确保节假日 gate 用最新日历
+            _refresh_trade_calendar()
             results = auto_invest.run_all_due()
             _last_auto_invest_run = datetime.now(config.TIMEZONE)
             if results:

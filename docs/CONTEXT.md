@@ -16,7 +16,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 - **净值自动更新** — 定时任务拉取净值（AkShare 优先、天天基金 fallback），实时估值（东财估值 + 指数/ETF 兜底）
 - **收益分析** — 累计收益曲线 + 基准对比（沪深300/上证/创业板/CPI/M2）、日/周/月盈亏日历、**XIRR 年化收益率**（组合与单基金，现金流含买卖/分红/再投资，终端值取当前市值作假设变现）、浮动收益率排序（可切换累计/年化）
 - **组合体检** — 四维诊断评分（配置/风险/流动性/收益，每维 0-100）+ 综合定级（优秀→危险）+ 风险提示 + 结构优化建议，一个 API 返回全量
-- **定投** — 计划自动执行（日/周/双周/月，交易日顺延，QDII 跳美股休市，申购状态可投性校验暂停/限购/低于起点自动跳过）+ 策略回测（DCA vs 一次性投入，XIRR 对比）
+- **定投** — 计划自动执行（日/周/双周/月，A 股交易日历顺延含法定节假日/调休，QDII 跳美股休市，申购状态可投性校验暂停/限购/低于起点自动跳过）+ 策略回测（DCA vs 一次性投入，XIRR 对比）
 - **基金筛选与对比** — 全市场池多条件筛选 + 指标增强 Top 30、多维度同框对比 + 相关性矩阵、自选关注列表
 - **AI 投顾** — OpenAI 兼容 API 对话 + 联网搜索，视觉模型截图解析（持仓截图→基金识别→建议导入）
 - **止盈止损提醒** — 按基金设定阈值，到达触发提醒（分红/止盈/止损三类，状态机防重复）
@@ -52,7 +52,7 @@ ZFundPilot/
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
 │   ├── models.py            # 数据结构（Fund/Transaction/Position/PortfolioSummary）
-│   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）+ 重仓股/排名/档案/行业配置/申购状态
+│   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）+ 重仓股/排名/档案/行业配置/申购状态/交易日历
 │   ├── fetch_estimate.py   # 基金实时估值（东财估值 + 指数/ETF 兜底）+ 指数历史收盘价持久化
 │   ├── fetch_macro.py     # 宏观财富水位数据（CPI 链乘价格水平 + M2 存量，三级缓存，复用 index_history 表）
 │   ├── fetch_dividend.py  # 基金分红检测（AkShare 分红送配 + 90 天窗口 + 交易去重 + 幽灵提醒自动清理）
@@ -64,7 +64,7 @@ ZFundPilot/
 │   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI，部分被 health.py 复用）
 │   ├── rebalance.py         # 再平衡建议
 │   ├── backtest.py          # 定投策略回测（DCA + 一次性投入对比 + XIRR）
-│   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延 + QDII 跳美股休市 + 申购状态可投性校验）
+│   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延 + QDII 跳美股休市 + 申购状态/法定节假日可投性校验）
 │   ├── us_calendar.py       # 美股（NYSE）算法日历（纯计算休市日，零联网依赖，供定投跳过 QDII 休市）
 │   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
 │   ├── nav_update_state.py  # 净值更新共享状态+锁（api.py/scheduler.py 共用，避免循环导入）
@@ -108,7 +108,7 @@ ZFundPilot/
 │   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12 并行) → tsc → build
 ├── tests/                   # Pytest 测试套件
 │   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
-│   └── test_*.py            #   562 个测试用例
+│   └── test_*.py            #   572 个测试用例
 └── docs/CONTEXT.md              # 本文件（不追踪）
 ```
 
@@ -130,6 +130,7 @@ ZFundPilot/
 | `dividend_alerts` | 提醒列表（分红 + 止盈止损，`alert_type` 区分 `dividend`/`take_profit`/`stop_loss`，`triggered_return`/`threshold` 仅 tp_sl 用） |
 | `tp_sl_alert_states` | 止盈止损状态机（fund_code + alert_type → armed/last_triggered_return/handled_at），控制重复提醒 |
 | `index_history` | 指数历史收盘价（沪深300/上证/创业板，持久化缓存，`UNIQUE(code, date)`） |
+| `trade_calendar` | A 股交易日历（`date` 主键，法定节假日/调休，供定投可投性校验） |
 
 ### 核心模型（models.py）
 
@@ -206,12 +207,13 @@ ZFundPilot/
 
 - 数据库 `auto_invest_plans` 表存储定投计划（基金/金额/频率/定投日/启用状态/下次执行日）
 - 4 种频率：`daily`（每个交易日）/ `week`（每周）/ `biweek`（每双周）/ `month`（每月）
-- `calculate_next_run(plan)`: 根据频率计算下次执行日，遇非交易日顺延到最近的交易日（有净值数据时用净值数据推断；将来日期无净值数据时至少跳过周末）。QDII 基金额外跳过美股休市日（`us_calendar.is_us_market_holiday`）。`from_date` 缺省时取 `max(next_run, today)`，跳过停机期间错过的期数
+- `calculate_next_run(plan)`: 根据频率计算下次执行日，遇非交易日顺延到最近的交易日（有净值数据时用净值数据推断；将来日期用 A 股交易日历跳过周末/法定节假日/调休，QDII 额外跳过美股休市日 `us_calendar.is_us_market_holiday`）。`from_date` 缺省时取 `max(next_run, today)`，跳过停机期间错过的期数
 - `execute_plan(plan, manual)`: 创建一笔买入交易（`nav=NULL`，等回填），自动通过 `fetch_fund.calc_purchase_fee` 计算手续费，更新 `last_run`/`last_tx_id`。手动执行（`manual=True`）不更新 `next_run`。15:00 前不加 T+1 标记（用当天净值），15:00 后加 `T+1确认` 标记（用次日净值）
   - **幂等保护**：`_execute_lock` 加锁后重新 `db.get_auto_invest_plan` 拉取最新 plan，若 `last_run == today` 则直接返回 `{ok: False, skipped: True}`，防止定时 + 手动或双击导致重复买入交易。返回 skipped 时不写入新交易
   - **申购状态可投性校验**：`_check_purchasable(fund_code, amount)` 在 `calc_purchase_fee` 前执行 gate——`purchase_status` 为「暂停申购」/「封闭期」→ skip `suspended`；`daily_limit > 0` 且 `amount > daily_limit` → skip `limit_exceeded`；`min_purchase > 0` 且 `amount < min_purchase` → skip `below_minimum`。被跳过的计划不更新 `next_run`（次日自动重试）。手动执行（`manual=True`）不跳过，仅在返回值 `warnings` 数组中告警。基金不在库或状态未知时放行，避免误伤
-- `run_all_due()`: 被 `scheduler.py` 每天 09:00 调用，检查所有 `enabled=1` 且 `next_run <= today` 的计划，逐个执行；skipped 的状态标记为 `skip_code`（`suspended`/`limit_exceeded`/`below_minimum`）或 `skipped`（今日已执行）。**休市 gate**：执行前检查今日可投性——周末（所有基金）或 QDII + 美股休市 → 跳过（不建仓、不更新 next_run，次日自动重试顺延），结果标记 `status="holiday"`。手动执行不受此限制
-- **QDII 美股休市跳过**：QDII 基金（`fund_type == "QDII"`）在美股休市日通常暂停申购，即使是中国工作日也不可定投。`_next_trading_day` 和 `run_all_due` 均用 `us_calendar` 校验美股开市（QDII 在休市日仍发持平净值，不能凭净值存在与否判断）。**已知限制**：国内法定节假日（春节/国庆等）将来日期预测不跳过，但 NAV 回填机制可自愈（`get_nav_on_or_after` 取下一个有净值的交易日）
+- `run_all_due()`: 被 `scheduler.py` 每天 09:00 调用，检查所有 `enabled=1` 且 `next_run <= today` 的计划，逐个执行；skipped 的状态标记为 `skip_code`（`suspended`/`limit_exceeded`/`below_minimum`）或 `skipped`（今日已执行）。**休市 gate**：执行前检查今日可投性——周末、国内法定节假日/调休（`db.is_trading_day`）、或 QDII + 美股休市 → 跳过（不建仓、不更新 next_run，下一交易日自动重试顺延），结果标记 `status="holiday"`。手动执行不受此限制
+- **QDII 美股休市跳过**：QDII 基金（`fund_type == "QDII"`）在美股休市日通常暂停申购，即使是中国工作日也不可定投。`_next_trading_day` 和 `run_all_due` 均用 `us_calendar` 校验美股开市（QDII 在休市日仍发持平净值，不能凭净值存在与否判断）
+- **国内法定节假日跳过**：A 股交易日历（`trade_calendar` 表，`ak.tool_trade_date_hist_sina` 含法定节假日 + 调休）由 `fetch_fund.refresh_trade_calendar` 每日刷新。`_next_trading_day` 和 `run_all_due` 均用 `db.is_trading_day` 排除节假日（国庆/春节等）。日历为空或超覆盖范围（跨年未更新）时退化周末判断，NAV 回填机制兜底
 - API: 6 个端点 `POST/GET/PUT/DELETE /api/auto-invest/plans` + `/toggle` + `/execute`
 
 ### fetch_fund.py — 净值获取
@@ -227,6 +229,8 @@ ZFundPilot/
 - 缓存均带 `clear_*_cache()` 清空函数；费率 `fetch_fund_fee_rates` 另有 HTML 解析（`fundf10.eastmoney.com/jjfl_<code>.html`）
 - `fetch_purchase_status(fund_codes)`: 批量获取基金申购状态（`ak.fund_purchase_em` 全市场表本地过滤，24h 内存缓存 + stale-if-error）。返回 `{code: {status, daily_limit, min_purchase}}`，表中不存在的基金不出现在结果里（调用方按「未知」放行）
 - `refresh_purchase_status(fund_codes)`: 拉取申购状态并写回 `funds` 表 3 个字段，返回更新数量。scheduler 净值更新后 + 定投执行前（清缓存强制刷新）调用
+- `fetch_trade_calendar()`: 获取 A 股交易日历（`ak.tool_trade_date_hist_sina`，含法定节假日 + 调休），24h 内存缓存 + stale-if-error，返回 `"YYYY-MM-DD"` 集合
+- `refresh_trade_calendar()`: 拉取日历并持久化到 `trade_calendar` 表，返回天数。scheduler 净值更新后 + 定投执行前调用
 
 ### fund_filter.py — 基金筛选
 
@@ -304,6 +308,7 @@ ZFundPilot/
 - **净值更新共享锁**：`_run_nav_update()` 与 `api.py` 的手动触发共用 `nav_update_lock`/`nav_update_state`（定义在 `nav_update_state.py`，避免循环导入）。定时与手动两路更新互斥，且共享进度/结果状态供前端显示。`running=True` 在锁内同步设置，`finally` 复位也加锁，进程启动（前）后无 TOCTOU 竞态
 - **基准指数持久化**：`_update_benchmark_indices()` 在净值更新后调用，遍历 `config.BENCHMARK_INDICES`（沪深300/上证指数/创业板指）逐只拉取并持久化到 `index_history` 表，确保离线时基准对比数据可用。DB 已有最新数据时跳过
 - **申购状态刷新**：`_refresh_purchase_status()` 在净值更新后 + 定投执行前调用，拉取 `ak.fund_purchase_em` 全市场申购状态表，过滤库内基金写回 `funds` 表（`purchase_status`/`daily_limit`/`min_purchase`）。定投执行前 `clear_purchase_status_cache()` 强制刷新确保数据新鲜
+- **交易日历刷新**：`_refresh_trade_calendar()` 在净值更新后 + 定投执行前调用，拉取 `ak.tool_trade_date_hist_sina` 持久化到 `trade_calendar` 表，供 `db.is_trading_day` 判断法定节假日
 - **分红检测任务**：每天 09:30 执行 `_run_dividend_check()`（`dividend_check` cron job），扫描持仓基金的未记录分红事件，新发现的存入 `dividend_alerts` 表。开关存 `preferences` 表 key=`dividend_auto_check`，默认启用。`_bootstrap_dividend_check()` 启动时若已过 09:30 且今日未执行过，立即补跑
 - **幽灵分红提醒自动清理**：`check_dividends()` 抓取数据时同步收集 `fetched_ex_dates`/`fetched_funds`（`fetched_funds.add(code)` 在空响应检查之前执行，确保 AkShare 返回空 DataFrame 的基金如 QDII 其提醒也被清理），调用 `_cleanup_stale_alerts()` 校验现有 pending 提醒是否仍存在于源数据中，不存在则自动标记为 `ignored`。TTL 兜底：pending 超 90 天（`_LOOKBACK_DAYS`）自动 ignore，防 fetch 持续失败的基金提醒永久残留。SQLite `created_at` 是朴素无时区字符串，与 aware `cutoff` 比较前补 `config.TIMEZONE`。清理数量存入 `fetch_dividend._last_cleanup_count`，`POST /api/dividends/scan` 响应含 `cleaned` 字段，scheduler 日志/审计也含清理计数
 
@@ -492,6 +497,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - **天天基金** (`fund.eastmoney.com/{code}.html`): 风险等级抓取（HTML 解析）
 - **天天基金** (`fundf10.eastmoney.com`): 费率抓取（HTML 解析）
 - **AkShare** (`ak.fund_purchase_em`): 全市场基金申购状态（申购状态/日累计限定金额/购买起点，供定投可投性校验）
+- **AkShare** (`ak.tool_trade_date_hist_sina`): A 股交易日历（法定节假日 + 调休，供定投可投性校验）
 - 均为东方财富旗下，无需额外 API key
 
 ---
@@ -500,6 +506,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- fix: 国内法定节假日定投误执行——`run_all_due` / `_next_trading_day` 只跳周末 + QDII 美股休市，不知道国内法定节假日/调休，国庆（10-1/10-2 工作日）照常建仓且每日计划假期逐日误执行。新增 A 股交易日历（`ak.tool_trade_date_hist_sina`）持久化到 `trade_calendar` 表（`db.upsert_trade_calendar` + `db.is_trading_day`，表为空/超覆盖范围退化周末判断，快照局部变量避免并发清缓存竞争），`fetch_fund.fetch_trade_calendar`（24h 缓存 + stale-if-error）+ `refresh_trade_calendar`。scheduler 净值更新后 + 定投执行前刷新日历。`run_all_due` 非交易日跳过（不建仓不更新 next_run，假期后首个交易日补齐），`_next_trading_day` 跳节假日预测 next_run。新增 10 个日历测试（auto_invest 4 + fetch_fund 4 + db 2），总测试 562→572
 - feat: 定投申购状态可投性校验——定投执行前检查基金申购状态（暂停申购/封闭期→跳过，限大额且超日累计限额→跳过，金额低于购买起点→跳过），不建仓不更新 next_run 次日自动重试。新增 `fetch_fund.fetch_purchase_status`（`ak.fund_purchase_em` 全市场表 24h 缓存 + stale-if-error）+ `refresh_purchase_status` 写回 `funds` 表 3 个新字段（`purchase_status`/`daily_limit`/`min_purchase`）。scheduler 净值更新后 + 定投执行前（强制清缓存刷新）双重刷新。手动执行遇不可申购仍建仓但返回 `warnings`。FundDetail 顶栏新增申购状态 badge（绿/橙/红色点），定投计划列表对不可申购基金显示 `AlertTriangle` 警告。新增 `tests/test_auto_invest.py` 9 个 gate 测试 + `tests/test_fetch_fund.py` 5 个申购状态测试 + `tests/test_db.py` 3 个迁移/读写测试，总测试 545→562
 
 ### v0.23.0 - 2026-09-20

@@ -13,6 +13,7 @@
 ### Changed
 
 ### Fixed
+- 国内法定节假日定投误执行——`run_all_due` / `_next_trading_day` 此前只跳周末 + QDII 美股休市，不知道国内法定节假日/调休，导致国庆（10-1/10-2 等工作日）照常建仓且每日计划在整个假期逐日误执行。新增 A 股交易日历（`ak.tool_trade_date_hist_sina`，含法定节假日 + 调休）持久化到 `trade_calendar` 表（`db.upsert_trade_calendar` + `db.is_trading_day`，表为空/超覆盖范围退化周末判断），`fetch_fund.fetch_trade_calendar`（24h 缓存 + stale-if-error）+ `refresh_trade_calendar`。scheduler 净值更新后 + 定投执行前刷新日历。`run_all_due` 非交易日跳过（`status="holiday"`，不建仓不更新 next_run，假期后首个交易日自动补齐），`_next_trading_day` 跳节假日预测 next_run。新增 `tests/test_auto_invest.py` 4 个 + `tests/test_fetch_fund.py` 4 个 + `tests/test_db.py` 2 个日历测试，总测试 562→572
 
 ## [0.23.0] - 2026-09-20
 

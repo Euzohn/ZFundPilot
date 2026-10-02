@@ -21,6 +21,7 @@
 | `dividend_alerts` | 提醒列表（分红 + 止盈止损） | `id` (自增) |
 | `tp_sl_alert_states` | 止盈止损状态机 | `(fund_code, alert_type)` |
 | `index_history` | 指数历史收盘价（基准对比，持久化缓存） | `id` (自增)，`UNIQUE(code, date)` |
+| `trade_calendar` | A 股交易日历（法定节假日/调休，定投可投性校验） | `date` |
 
 ---
 
@@ -310,6 +311,25 @@
 3. L3 新浪在线（`ak.stock_zh_index_daily`）→ 成功后持久化到 L2，失败时从 L2 返回
 
 **scheduler 集成**：`_update_benchmark_indices()` 在净值更新后调用，遍历 `config.BENCHMARK_INDICES` 逐只拉取并持久化。
+
+---
+
+## 12. trade_calendar — A 股交易日历
+
+存储 A 股交易日历（`ak.tool_trade_date_hist_sina`，含法定节假日 + 调休），供定投可投性校验（`auto_invest.run_all_due` / `_next_trading_day` 判断某日是否可定投）。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `date` | TEXT | PRIMARY KEY | 交易日 `YYYY-MM-DD` |
+| `created_at` | TEXT | DEFAULT datetime('now','localtime') | 创建时间 |
+
+**相关函数**（db.py）：
+- `upsert_trade_calendar(dates)`: 批量写入（`INSERT OR IGNORE`），失效内存缓存
+- `is_trading_day(date_str)`: 判断某日是否交易日。覆盖范围内以日历为准（非交易日 → False）；表为空或日期超出覆盖范围（跨年未更新）→ 退化周末判断（fail-open）
+
+**获取**（`fetch_fund.fetch_trade_calendar` / `refresh_trade_calendar`）：24h 内存缓存 + stale-if-error，scheduler 净值更新后 + 定投执行前刷新并持久化。
+
+**scheduler 集成**：`_refresh_trade_calendar()` 在净值更新后 + 定投执行前调用。
 
 ---
 

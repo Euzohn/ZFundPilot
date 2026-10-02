@@ -513,3 +513,59 @@ class TestPurchasableGate:
             results = run_all_due()
         assert results[0]["status"] == "suspended"
         env.mock_db.add_transaction.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 国内法定节假日 gate 测试（A 股交易日历）
+# ---------------------------------------------------------------------------
+class TestTradingCalendarGate:
+    """验证国内法定节假日（非交易日）跳过定投执行。"""
+
+    def test_cn_holiday_skipped(self):
+        """国庆假期（10-1 周四，工作日但非交易日）→ 跳过，不建仓。"""
+        mock_dt = datetime(2026, 10, 1, 9, 0, tzinfo=_TZ)
+        plan = _make_plan(fund_code="001", next_run="2026-10-01", last_run=None)
+        holidays = {"2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07"}
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_due_auto_invest_plans.return_value = [plan]
+            env.mock_db.is_trading_day.side_effect = lambda ds: ds not in holidays
+            results = run_all_due()
+        assert len(results) == 1
+        assert results[0]["status"] == "holiday"
+        assert results[0]["reason"] == "非交易日"
+        env.mock_db.add_transaction.assert_not_called()
+
+    def test_cn_trading_day_executes(self):
+        """假期后首个交易日（10-8 周四）→ 正常执行。"""
+        mock_dt = datetime(2026, 10, 8, 9, 0, tzinfo=_TZ)
+        plan = _make_plan(fund_code="001", next_run="2026-09-30", last_run=None)
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_due_auto_invest_plans.return_value = [plan]
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.is_trading_day.return_value = True
+            env.mock_db.get_nav_on_or_after.return_value = None
+            results = run_all_due()
+        assert results[0]["status"] == "success"
+        env.mock_db.add_transaction.assert_called_once()
+
+
+class TestNextTradingDayCNCalendar:
+    """验证 _next_trading_day 跳过国内法定节假日。"""
+
+    def test_skips_cn_holiday(self):
+        """从 10-1（国庆）起 → 跳到 10-8（假期后首个交易日）。"""
+        with patch("zfundpilot.auto_invest.db") as mock_db:
+            mock_db.is_trading_day.side_effect = (
+                lambda ds: not ("2026-10-01" <= ds <= "2026-10-07")
+            )
+            mock_db.get_nav_on_or_after.return_value = None
+            result = _next_trading_day("001", "2026-10-01")
+        assert result == "2026-10-08"
+
+    def test_normal_weekday_unaffected(self):
+        """普通工作日（10-8）→ 正常返回。"""
+        with patch("zfundpilot.auto_invest.db") as mock_db:
+            mock_db.is_trading_day.return_value = True
+            mock_db.get_nav_on_or_after.return_value = None
+            result = _next_trading_day("001", "2026-10-08")
+        assert result == "2026-10-08"

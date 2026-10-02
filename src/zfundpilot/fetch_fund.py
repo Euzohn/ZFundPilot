@@ -1686,6 +1686,57 @@ def clear_purchase_status_cache() -> None:
         _purchase_cache_ts = 0.0
 
 
+# ---------------------------------------------------------------------------
+# A 股交易日历（法定节假日/调休，定投可投性校验）
+# ---------------------------------------------------------------------------
+_trade_cal_cache: set[str] = set()
+_trade_cal_cache_ts: float = 0.0
+_TRADE_CAL_CACHE_TTL = 24 * 3600  # 24 小时（日历按年更新）
+_trade_cal_lock = threading.Lock()
+
+
+def fetch_trade_calendar() -> set[str]:
+    """获取 A 股交易日历（ak.tool_trade_date_hist_sina），24h 缓存。
+
+    返回 "YYYY-MM-DD" 字符串集合。交易所官方日历，含法定节假日 + 调休。
+    网络失败时优先返回过期缓存（stale-if-error），无缓存则返回空集。
+    """
+    global _trade_cal_cache_ts
+    now = time.time()
+    with _trade_cal_lock:
+        if _trade_cal_cache and now - _trade_cal_cache_ts < _TRADE_CAL_CACHE_TTL:
+            return _trade_cal_cache
+        try:
+            import akshare as ak
+
+            df = ak.tool_trade_date_hist_sina()
+            dates = {str(v)[:10] for v in df["trade_date"] if str(v)[:1].isdigit()}
+            if dates:
+                _trade_cal_cache.clear()
+                _trade_cal_cache.update(dates)
+                _trade_cal_cache_ts = now
+            return _trade_cal_cache
+        except Exception:  # noqa: BLE001
+            logger.warning("交易日历拉取失败", exc_info=True)
+            return _trade_cal_cache
+
+
+def refresh_trade_calendar() -> int:
+    """拉取交易日历并持久化到 trade_calendar 表，返回天数。"""
+    dates = fetch_trade_calendar()
+    if dates:
+        db.upsert_trade_calendar(sorted(dates))
+    return len(dates)
+
+
+def clear_trade_calendar_cache() -> None:
+    """清空交易日历缓存。"""
+    global _trade_cal_cache_ts
+    with _trade_cal_lock:
+        _trade_cal_cache.clear()
+        _trade_cal_cache_ts = 0.0
+
+
 if __name__ == "__main__":
     import sys
 

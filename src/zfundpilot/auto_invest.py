@@ -71,9 +71,10 @@ def _check_purchasable(fund_code: str, amount: float) -> tuple[bool, str, dict]:
 def _next_trading_day(fund_code: str, from_date: str) -> str:
     """从 from_date 起找下一个可定投交易日。
 
-    跳过周末（所有基金）和美股休市日（仅 QDII 基金）。
+    跳过周末（所有基金）、国内法定节假日/调休（A 股交易日历，所有基金）
+    和美股休市日（仅 QDII 基金）。
     有净值数据时用净值数据推断实际交易日（覆盖中国法定节假日跳空）；
-    无净值数据（将来日期）至少跳过周末 + 美股休市日。
+    无净值数据（将来日期）至少跳过周末 + 交易日历节假日 + 美股休市日。
 
     QDII 基金在美股休市日仍可能发布持平净值，因此不能仅凭净值存在与否判断
     美股是否开市，必须用独立的美国市场日历校验。
@@ -82,6 +83,9 @@ def _next_trading_day(fund_code: str, from_date: str) -> str:
     qdii = _is_qdii_fund(fund_code)
     for _ in range(20):
         if d.weekday() >= 5:  # 周末
+            d += timedelta(days=1)
+            continue
+        if not db.is_trading_day(d.isoformat()):  # 国内法定节假日/调休
             d += timedelta(days=1)
             continue
         if qdii and is_us_market_holiday(d):  # QDII 跳美股休市
@@ -285,6 +289,14 @@ def run_all_due() -> list[dict[str, Any]]:
                     "date": today,
                 })
                 logger.info("[auto_invest] plan#%d %s 周末跳过", p["id"], p["fund_code"])
+                continue
+            if not db.is_trading_day(today):  # 国内法定节假日/调休
+                results.append({
+                    "plan_id": p["id"], "fund_code": p["fund_code"],
+                    "status": "holiday", "reason": "非交易日",
+                    "date": today,
+                })
+                logger.info("[auto_invest] plan#%d %s 非交易日跳过", p["id"], p["fund_code"])
                 continue
             if _is_qdii_fund(p["fund_code"]) and not is_us_trading_day(today_d):
                 results.append({

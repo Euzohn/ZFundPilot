@@ -145,3 +145,36 @@ def test_init_db_purchase_status_idempotent():
                 cols = {r["name"] for r in
                         conn.execute("PRAGMA table_info(funds)").fetchall()}
             assert {"purchase_status", "daily_limit", "min_purchase"} <= cols
+
+
+def test_trade_calendar_roundtrip():
+    """交易日历 upsert + is_trading_day 三态（空表/范围内/超范围）。"""
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            # 空表 → 退化周末判断（周六休、工作日放行）
+            assert db.is_trading_day("2026-10-03") is False  # 周六
+            assert db.is_trading_day("2026-10-01") is True   # 周四（退化工作日放行）
+            # 写入日历
+            n = db.upsert_trade_calendar(["2026-09-30", "2026-10-08", "2026-10-09"])
+            assert n == 3
+            assert db.is_trading_day("2026-10-08") is True
+            assert db.is_trading_day("2026-09-30") is True
+            assert db.is_trading_day("2026-10-01") is False  # 范围内非交易日（国庆）
+            # 超出覆盖范围（max=2026-10-09）→ 退化周末判断
+            assert db.is_trading_day("2027-01-02") is False  # 周六
+            assert db.is_trading_day("2027-01-04") is True   # 周一
+
+
+def test_trade_calendar_upsert_idempotent():
+    """重复 upsert 不报错且不重复。"""
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            db.upsert_trade_calendar(["2026-10-08"])
+            db.upsert_trade_calendar(["2026-10-08"])
+            with db.get_connection() as conn:
+                cnt = conn.execute(
+                    "SELECT COUNT(*) AS c FROM trade_calendar"
+                ).fetchone()["c"]
+            assert cnt == 1

@@ -48,7 +48,7 @@ export default function TransactionDetailDialog({ tx, fundName, pairedTx, open, 
     ? "—"
     : tx.nav != null
       ? navStr(tx.nav)
-      : <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10 text-[11px] px-1.5 py-0">{t.transactions.pendingConfirm}</Badge>
+      : <Badge variant="outline" className="whitespace-nowrap text-warning border-warning/40 bg-warning/10 text-[11px] px-1.5 py-0">{t.transactions.pendingConfirm}</Badge>
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

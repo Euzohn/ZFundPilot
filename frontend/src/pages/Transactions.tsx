@@ -1257,7 +1257,7 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
                     <TableCell className="text-right tabular-nums">{tx.amount ? money(tx.amount) : "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{tx.shares?.toFixed(2) ?? "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {tx.nav != null ? tx.nav.toFixed(4) : tx.action === "dividend" ? "—" : <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10">{t.transactions.pendingConfirm}</Badge>}
+                      {tx.nav != null ? tx.nav.toFixed(4) : tx.action === "dividend" ? "—" : <Badge variant="outline" className="whitespace-nowrap text-warning border-warning/40 bg-warning/10">{t.transactions.pendingConfirm}</Badge>}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{tx.fee || "—"}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">{tx.note}</TableCell>

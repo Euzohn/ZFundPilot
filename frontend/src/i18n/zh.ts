@@ -697,6 +697,7 @@ const zh = {
     noPositionsHint: "添加交易记录后即可查看持仓",
     searchPlaceholder: "搜索名称/代码/板块",
     allChannels: "全部渠道",
+    allRiskLevels: "全部风险等级",
     hideClosed: "隐藏已清仓",
     showClosed: "显示已清仓",
     listTitle: "持仓列表",

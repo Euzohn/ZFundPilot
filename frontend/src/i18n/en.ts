@@ -699,6 +699,7 @@ const en: typeof zh = {
     noPositionsHint: "Add transactions to view positions",
     searchPlaceholder: "Search name/code/sector",
     allChannels: "All channels",
+    allRiskLevels: "All risk levels",
     hideClosed: "Hide closed",
     showClosed: "Show closed",
     listTitle: "Position List",

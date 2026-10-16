@@ -97,6 +97,13 @@ export const RISK_LEVELS: Record<string, Bilingual> = {
   "高风险": { zh: "高风险", en: "High" },
 }
 
+export const RISK_LEVEL_ORDER: string[] = Object.keys(RISK_LEVELS)
+
+export function riskLevelRank(level: string): number {
+  const i = RISK_LEVEL_ORDER.indexOf(level)
+  return i < 0 ? RISK_LEVEL_ORDER.length : i
+}
+
 export const RISK_LEVEL_DOT: Record<string, string> = {
   "低风险": "bg-emerald-500",
   "中低风险": "bg-teal-500",

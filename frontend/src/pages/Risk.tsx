@@ -13,7 +13,7 @@ import type { ReactNode } from "react"
 import MetricCard from "@/components/MetricCard"
 import { useLang } from "@/i18n/LanguageContext"
 import { translateRiskFlag, translateAdvice } from "@/lib/backendLabels"
-import { translateRiskLevel, RISK_LEVEL_DOT } from "@/lib/taxonomyLabels"
+import { translateRiskLevel, RISK_LEVEL_DOT, RISK_LEVEL_ORDER } from "@/lib/taxonomyLabels"
 import { cn } from "@/lib/utils"
 
 const FLAG_STYLES: Record<string, { icon: ReactNode; variant: "destructive" | "warning" | "default" }> = {
@@ -57,8 +57,6 @@ const STATUS_BAR: Record<string, string> = {
   warning: "bg-warning",
   danger: "bg-destructive",
 }
-
-const RISK_ORDER = ["低风险", "中低风险", "中风险", "中高风险", "高风险"]
 
 export default function Risk() {
   const { data: hr, loading, error, reload } = useApi<HealthReport>(() => api.getHealthReport())
@@ -187,7 +185,10 @@ export default function Risk() {
         <CardContent>
           {riskDistLoading ? <LoadingState size="sm" /> : riskDist && riskDist.length > 0 ? (
             <div className="space-y-3">
-              {RISK_ORDER.filter(level => riskDist.some(d => String(d.risk_level) === level)).map(level => {
+              {[
+                ...RISK_LEVEL_ORDER.filter(level => riskDist.some(d => String(d.risk_level) === level)),
+                ...riskDist.map(d => String(d.risk_level)).filter(level => !RISK_LEVEL_ORDER.includes(level)),
+              ].map(level => {
                 const item = riskDist.find(d => String(d.risk_level) === level)!
                 const weight = item.weight as number
                 return (

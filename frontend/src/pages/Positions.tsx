@@ -11,7 +11,7 @@ import { Select } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
 import { isMarketOpen } from "@/lib/market"
-import { translateFundType, translateSector, translateRiskLevel, RISK_LEVEL_DOT } from "@/lib/taxonomyLabels"
+import { translateFundType, translateSector, translateRiskLevel, RISK_LEVEL_DOT, riskLevelRank } from "@/lib/taxonomyLabels"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
@@ -123,7 +123,7 @@ export default function Positions() {
           case "value": return m.value
           case "pnl": return m.pnl
           case "return": return m.cost ? m.value / m.cost - 1 : -999
-          case "risk": return m.riskLevel
+          case "risk": return riskLevelRank(m.riskLevel)
           case "channels": return m.channels
           default: return m.value
         }
@@ -184,7 +184,7 @@ export default function Positions() {
             )}
             {activeTab === "list" && (
               <Select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)} className="h-8 text-xs w-28">
-                <option value="">{t.common.riskLevel}</option>
+                <option value="">{t.positions.allRiskLevels}</option>
                 <option value="低风险">{t.riskLevelLabels.low}</option>
                 <option value="中低风险">{t.riskLevelLabels.lowMedium}</option>
                 <option value="中风险">{t.riskLevelLabels.medium}</option>

@@ -60,6 +60,7 @@ def init_db() -> None:
                 purchase_status TEXT DEFAULT '',
                 daily_limit     REAL DEFAULT 0,
                 min_purchase    REAL DEFAULT 0,
+                risk_level      TEXT DEFAULT '',
                 created_at      TEXT DEFAULT (datetime('now','localtime')),
                 updated_at      TEXT DEFAULT (datetime('now','localtime'))
             );
@@ -199,6 +200,18 @@ def init_db() -> None:
     _migrate_add_indexes()
     _migrate_add_conversion_id()
     _migrate_add_purchase_status()
+    _migrate_add_risk_level()
+
+
+def _migrate_add_risk_level() -> None:
+    """为 funds 表补充 risk_level 字段（旧库升级）。幂等。"""
+    with get_connection() as conn:
+        cols = {r["name"] for r in
+                conn.execute("PRAGMA table_info(funds)").fetchall()}
+        if "risk_level" not in cols:
+            conn.execute(
+                "ALTER TABLE funds ADD COLUMN risk_level TEXT DEFAULT ''"
+            )
 
 
 def _migrate_add_columns() -> None:
@@ -663,6 +676,16 @@ def update_fund_purchase_status(
             "UPDATE funds SET purchase_status=?, daily_limit=?, min_purchase=?, "
             "updated_at=datetime('now','localtime') WHERE fund_code=?",
             (status, daily_limit, min_purchase, fund_code),
+        )
+
+
+def update_fund_risk_level(fund_code: str, risk_level: str) -> None:
+    """更新基金风险等级。"""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE funds SET risk_level=?, "
+            "updated_at=datetime('now','localtime') WHERE fund_code=?",
+            (risk_level, fund_code),
         )
 
 

@@ -8,6 +8,7 @@ export interface Fund {
   purchase_status?: string
   daily_limit?: number
   min_purchase?: number
+  risk_level?: string
 }
 
 export interface DividendEvent {
@@ -88,6 +89,7 @@ export interface Position {
   sector: string
   channel: string
   tracking_index: string
+  risk_level: string
   held_shares: number
   total_cost: number
   avg_cost_nav: number | null

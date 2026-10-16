@@ -1,10 +1,10 @@
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { HealthReport, HealthDimension } from "@/api/types"
+import type { HealthReport, HealthDimension, DistributionItem } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import ErrorState from "@/components/ErrorState"
 import { Badge } from "@/components/ui/badge"
-import { pct, pnlColor } from "@/lib/format"
+import { pct, pnlColor, money } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
@@ -13,6 +13,8 @@ import type { ReactNode } from "react"
 import MetricCard from "@/components/MetricCard"
 import { useLang } from "@/i18n/LanguageContext"
 import { translateRiskFlag, translateAdvice } from "@/lib/backendLabels"
+import { translateRiskLevel, RISK_LEVEL_DOT } from "@/lib/taxonomyLabels"
+import { cn } from "@/lib/utils"
 
 const FLAG_STYLES: Record<string, { icon: ReactNode; variant: "destructive" | "warning" | "default" }> = {
   danger: { icon: <ShieldAlert className="h-5 w-5 text-destructive" />, variant: "destructive" },
@@ -56,8 +58,11 @@ const STATUS_BAR: Record<string, string> = {
   danger: "bg-destructive",
 }
 
+const RISK_ORDER = ["低风险", "中低风险", "中风险", "中高风险", "高风险"]
+
 export default function Risk() {
   const { data: hr, loading, error, reload } = useApi<HealthReport>(() => api.getHealthReport())
+  const { data: riskDist, loading: riskDistLoading } = useApi<DistributionItem[]>(() => api.getDistribution("risk_level"))
   const { t } = useLang()
 
   if (error) return <ErrorState message={error} onRetry={reload} />
@@ -173,6 +178,37 @@ export default function Risk() {
             <MetricCard label={t.risk.qdiiWeight} value={pct(report.qdii_weight)} />
             <MetricCard label={t.health.stableWeight} value={pct(hr.stable_weight)} />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* 持仓风险等级分布 */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">{t.risk.riskLevelDist}</CardTitle></CardHeader>
+        <CardContent>
+          {riskDistLoading ? <LoadingState size="sm" /> : riskDist && riskDist.length > 0 ? (
+            <div className="space-y-3">
+              {RISK_ORDER.filter(level => riskDist.some(d => String(d.risk_level) === level)).map(level => {
+                const item = riskDist.find(d => String(d.risk_level) === level)!
+                const weight = item.weight as number
+                return (
+                  <div key={level} className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 w-20 shrink-0">
+                      <span className={`h-2 w-2 rounded-full ${RISK_LEVEL_DOT[level] ?? "bg-zinc-400"}`} />
+                      <span className="text-sm">{translateRiskLevel(level)}</span>
+                    </div>
+                    <div className="flex-1 h-6 rounded-full bg-muted/50 overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full transition-all", RISK_LEVEL_DOT[level] ?? "bg-zinc-400")}
+                        style={{ width: `${Math.max(2, weight * 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-sm tabular-nums w-12 text-right">{pct(weight)}</span>
+                    <span className="text-xs tabular-nums text-muted-foreground w-20 text-right">{money(item.market_value as number)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : <EmptyState title={t.common.noData} size="sm" />}
         </CardContent>
       </Card>
 

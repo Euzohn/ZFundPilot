@@ -217,6 +217,42 @@ def test_clear_caches():
 
 
 # ---------------------------------------------------------------------------
+# 风险等级（轻量抓取 + 批量写回）
+# ---------------------------------------------------------------------------
+def test_fetch_risk_level_success():
+    with patch.object(fetch_fund, "_http_get", return_value=_FUND_DETAIL_HTML_SAMPLE):
+        assert fetch_fund.fetch_risk_level("005827") == "中高风险"
+
+
+def test_fetch_risk_level_no_match():
+    with patch.object(fetch_fund, "_http_get", return_value="<html>no risk</html>"):
+        assert fetch_fund.fetch_risk_level("005827") == ""
+
+
+def test_fetch_risk_level_http_error():
+    with patch.object(fetch_fund, "_http_get", side_effect=RuntimeError("boom")):
+        assert fetch_fund.fetch_risk_level("005827") == ""
+
+
+def test_refresh_risk_levels_writes_back():
+    updates: list[tuple[str, str]] = []
+
+    def _record(code, level):
+        updates.append((code, level))
+
+    def _fake_fetch(code):
+        return {"005827": "中高风险", "000001": ""}.get(code, "")
+
+    with (
+        patch.object(fetch_fund, "fetch_risk_level", side_effect=_fake_fetch),
+        patch.object(fetch_fund.db, "update_fund_risk_level", _record),
+    ):
+        n = fetch_fund.refresh_risk_levels(["005827", "000001"])
+    assert n == 1  # 空值不写回
+    assert updates == [("005827", "中高风险")]
+
+
+# ---------------------------------------------------------------------------
 # 行业配置（基金穿透数据源）
 # ---------------------------------------------------------------------------
 

@@ -17,7 +17,7 @@ import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { useLang } from "@/i18n/LanguageContext"
-import { translateFundType, translateChannel } from "@/lib/taxonomyLabels"
+import { translateFundType, translateChannel, translateRiskLevel } from "@/lib/taxonomyLabels"
 
 function HeroCard({ summary }: { summary: PortfolioSummary }) {
   const { t } = useLang()
@@ -70,6 +70,7 @@ export default function Overview() {
   const { data: typeDist, loading: typeDistLoading } = useApi<DistributionItem[]>(() => api.getDistribution("fund_type"))
   const { data: channelDist, loading: channelDistLoading } = useApi<DistributionItem[]>(() => api.getDistribution("channel"))
   const { data: sectorDist, loading: sectorDistLoading } = useApi<DistributionItem[]>(() => api.getDistribution("sector"))
+  const { data: riskDist, loading: riskDistLoading } = useApi<DistributionItem[]>(() => api.getDistribution("risk_level"))
 
   const { data: estimate, reload: reloadEstimate } = useApi<EstimateSummary>(() => api.getEstimate())
 
@@ -162,7 +163,7 @@ export default function Overview() {
       </div>
 
       {/* Row 4: Charts — bar chart spans 2 cols, pies 1 col each */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">
         <Card className="card-hover lg:col-span-2">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t.overview.sectorDist}</CardTitle></CardHeader>
           <CardContent>
@@ -190,6 +191,22 @@ export default function Overview() {
                     {typeDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip nameKey="fund_type" />} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : <EmptyState title={t.common.noData} size="lg" />}
+          </CardContent>
+        </Card>
+
+        <Card className="card-hover">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t.overview.riskDist}</CardTitle></CardHeader>
+          <CardContent>
+            {riskDistLoading ? <LoadingState size="sm" /> : riskDist && riskDist.length > 0 ? (
+              <ResponsiveContainer width="100%" height={240}>
+                <PieChart>
+                  <Pie data={riskDist.map(d => ({ ...d, risk_level: translateRiskLevel(String(d.risk_level)) }))} dataKey="market_value" nameKey="risk_level" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
+                    {riskDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
+                  </Pie>
+                  <Tooltip content={<ChartTooltip nameKey="risk_level" />} />
                 </PieChart>
               </ResponsiveContainer>
             ) : <EmptyState title={t.common.noData} size="lg" />}

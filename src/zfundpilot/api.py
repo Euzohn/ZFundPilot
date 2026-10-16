@@ -832,7 +832,7 @@ def get_summary() -> dict[str, Any]:
 
 @app.get("/api/distribution/{field}")
 def get_distribution(field: str) -> list[dict[str, Any]]:
-    if field not in ("fund_type", "sector", "channel"):
+    if field not in ("fund_type", "sector", "channel", "risk_level"):
         raise HTTPException(400, f"不支持的字段: {field}")
     positions = analysis.calculate_positions()
     df = analysis.distribution_by(positions, field)

@@ -129,6 +129,8 @@ def _run_nav_update() -> None:
         _refresh_purchase_status()
         # 刷新 A 股交易日历（法定节假日），供定投可投性校验
         _refresh_trade_calendar()
+        # 刷新基金风险等级，供持仓/纵览/体检页展示
+        _refresh_risk_levels()
     except Exception as exc:  # noqa: BLE001
         logger.exception("[scheduler] 定时净值更新任务异常")
         _last_run = datetime.now(config.TIMEZONE)
@@ -186,6 +188,18 @@ def _refresh_trade_calendar() -> None:
         logger.info("[scheduler] 交易日历刷新: %d 天", n)
     except Exception:  # noqa: BLE001
         logger.warning("[scheduler] 交易日历刷新失败", exc_info=True)
+
+
+def _refresh_risk_levels() -> None:
+    """刷新库内所有基金的风险等级，供持仓/纵览/体检页展示。"""
+    try:
+        codes = [f.fund_code for f in db.get_funds()]
+        if not codes:
+            return
+        n = fetch_fund.refresh_risk_levels(codes)
+        logger.info("[scheduler] 风险等级刷新: %d/%d", n, len(codes))
+    except Exception:  # noqa: BLE001
+        logger.warning("[scheduler] 风险等级刷新失败", exc_info=True)
 
 
 def _run_auto_invest() -> None:

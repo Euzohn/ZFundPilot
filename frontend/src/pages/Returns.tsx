@@ -21,7 +21,7 @@ import { RANGE_DAYS } from "@/lib/rangeLabels"
 import { makeSortHeader } from "@/components/SortHeader"
 import { useLang } from "@/i18n/LanguageContext"
 import { CHART_COLORS } from "@/lib/chartPalette"
-import { translateChannel } from "@/lib/taxonomyLabels"
+import { translateChannel, translateRiskLevel, RISK_LEVEL_DOT } from "@/lib/taxonomyLabels"
 
 const PALETTE = getPalette()
 
@@ -479,6 +479,12 @@ export default function Returns() {
                     <TableCell className="font-medium">
                       <span className="flex items-center gap-1.5">
                         {p.fund_name}
+                        {p.risk_level && (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                            <span className={`h-1.5 w-1.5 rounded-full ${RISK_LEVEL_DOT[p.risk_level] ?? "bg-zinc-400"}`} />
+                            {translateRiskLevel(p.risk_level)}
+                          </span>
+                        )}
                         {!p.is_open && <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">{t.returns.closed}</Badge>}
                       </span>
                     </TableCell>

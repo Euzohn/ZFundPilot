@@ -11,7 +11,7 @@ import { Select } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
 import { isMarketOpen } from "@/lib/market"
-import { translateFundType, translateSector } from "@/lib/taxonomyLabels"
+import { translateFundType, translateSector, translateRiskLevel, RISK_LEVEL_DOT } from "@/lib/taxonomyLabels"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
@@ -29,6 +29,7 @@ export default function Positions() {
   const { t } = useLang()
   const [activeTab, setActiveTab] = useTabParam("tab", "list", ["list", "exposure", "closed"])
   const [channelFilter, setChannelFilter] = useState(() => localStorage.getItem("zfundpilot_channelFilter") ?? "")
+  const [riskFilter, setRiskFilter] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [viewMode, setViewMode] = useState<"list" | "grid">(() => localStorage.getItem("zfundpilot_positionsView") === "grid" ? "grid" : "list")
   const [sortField, setSortField] = useState("value")
@@ -71,13 +72,15 @@ export default function Positions() {
   const today = localDateStr()
 
   const view = positions
-    ? positions.filter((p) => p.is_open).filter((p) => !channelFilter || p.channel === channelFilter)
+    ? positions.filter((p) => p.is_open)
+        .filter((p) => !channelFilter || p.channel === channelFilter)
+        .filter((p) => !riskFilter || p.risk_level === riskFilter)
     : []
 
   // 按基金合并（跨渠道）
-  const merged: Record<string, { name: string; type: string; sector: string; trackingIndex: string; value: number; cost: number; pnl: number; shares: number; avgCost: number | null; latestNav: number | null; channels: number; latestDate: string | null; channel: string | null }> = {}
+  const merged: Record<string, { name: string; type: string; sector: string; trackingIndex: string; riskLevel: string; value: number; cost: number; pnl: number; shares: number; avgCost: number | null; latestNav: number | null; channels: number; latestDate: string | null; channel: string | null }> = {}
   for (const p of view.filter((p) => p.is_open)) {
-    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, trackingIndex: p.tracking_index || "", value: 0, cost: 0, pnl: 0, shares: 0, avgCost: null, latestNav: p.latest_nav, channels: 0, latestDate: p.latest_date, channel: p.channel }
+    const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, trackingIndex: p.tracking_index || "", riskLevel: p.risk_level || "", value: 0, cost: 0, pnl: 0, shares: 0, avgCost: null, latestNav: p.latest_nav, channels: 0, latestDate: p.latest_date, channel: p.channel }
     m.value += p.market_value
     m.cost += p.total_cost
     m.pnl += p.unrealized_pnl
@@ -120,6 +123,7 @@ export default function Positions() {
           case "value": return m.value
           case "pnl": return m.pnl
           case "return": return m.cost ? m.value / m.cost - 1 : -999
+          case "risk": return m.riskLevel
           case "channels": return m.channels
           default: return m.value
         }
@@ -178,11 +182,22 @@ export default function Positions() {
                 {availableChannels.map((c) => <option key={c} value={c}>{c}</option>)}
               </Select>
             )}
+            {activeTab === "list" && (
+              <Select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)} className="h-8 text-xs w-28">
+                <option value="">{t.common.riskLevel}</option>
+                <option value="低风险">{t.riskLevelLabels.low}</option>
+                <option value="中低风险">{t.riskLevelLabels.lowMedium}</option>
+                <option value="中风险">{t.riskLevelLabels.medium}</option>
+                <option value="中高风险">{t.riskLevelLabels.mediumHigh}</option>
+                <option value="高风险">{t.riskLevelLabels.high}</option>
+              </Select>
+            )}
             {activeTab === "list" && viewMode === "grid" && (
               <Select value={sortField} onChange={(e) => { setSortField(e.target.value); setSortDir("desc") }} className="h-8 text-xs w-32" aria-label={t.positions.sortBy}>
                 <option value="value">{t.positions.sortValue}</option>
                 <option value="pnl">{t.positions.sortPnl}</option>
                 <option value="return">{t.positions.sortReturn}</option>
+                <option value="risk">{t.common.riskLevel}</option>
                 <option value="name">{t.positions.sortName}</option>
               </Select>
             )}
@@ -230,6 +245,7 @@ export default function Positions() {
                   <TableRow>
                     <SortHeader field="name">{t.common.name}</SortHeader>
                     <SortHeader field="type">{t.common.type}</SortHeader>
+                    <SortHeader field="risk" className="whitespace-nowrap">{t.common.riskLevel}</SortHeader>
                     <SortHeader field="sector">{t.common.sector}</SortHeader>
                     <SortHeader field="value" className="text-right">{t.positions.marketValue}</SortHeader>
                     <SortHeader field="pnl" className="text-right">{t.positions.pnl}</SortHeader>
@@ -260,6 +276,14 @@ export default function Positions() {
                         </div>
                       </TableCell>
                       <TableCell><Badge variant="outline">{translateFundType(m.type)}</Badge></TableCell>
+                      <TableCell>
+                        {m.riskLevel ? (
+                          <Badge variant="outline" className="font-normal gap-1.5 whitespace-nowrap">
+                            <span className={`h-1.5 w-1.5 rounded-full ${RISK_LEVEL_DOT[m.riskLevel] ?? "bg-zinc-400"}`} />
+                            {translateRiskLevel(m.riskLevel)}
+                          </Badge>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
                       <TableCell>
                         <div className="flex flex-col items-start gap-0.5">
                           {m.sector ? <Badge variant="outline" className="font-normal">{translateSector(m.sector)}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
@@ -348,7 +372,7 @@ export default function Positions() {
                   const hasFilteredEstimate = sortedRows.some(([code]) => estimateMap[code] != null)
                   return (
                     <TableRow className="border-t-2 border-border bg-muted/80 [&>td]:py-2.5 [&>td]:font-bold [&>td]:text-sm">
-                      <TableCell colSpan={3} className="text-foreground">{t.common.total}（{sortedRows.length} {t.common.units}）</TableCell>
+                      <TableCell colSpan={4} className="text-foreground">{t.common.total}（{sortedRows.length} {t.common.units}）</TableCell>
                       <TableCell className="text-right tabular-nums text-foreground">{money(totalValue)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalPnl)}`}>{money(totalPnl)}</TableCell>
                       <TableCell className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
@@ -397,6 +421,12 @@ export default function Positions() {
                         <div className="flex items-center gap-2">
                           <p className="font-semibold text-sm truncate" title={m.name}>{m.name}</p>
                           <span className="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground shrink-0">{translateFundType(m.type)}</span>
+                          {m.riskLevel && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground shrink-0 inline-flex items-center gap-1">
+                              <span className={`h-1.5 w-1.5 rounded-full ${RISK_LEVEL_DOT[m.riskLevel] ?? "bg-zinc-400"}`} />
+                              {translateRiskLevel(m.riskLevel)}
+                            </span>
+                          )}
                         </div>
                         <p className="font-mono text-xs text-muted-foreground mt-0.5">
                           {code}{m.sector ? ` · ${translateSector(m.sector)}` : ""}{m.trackingIndex ? ` · ${m.trackingIndex}` : ""}{` · ${m.channels} ${t.positions.channelCount}`}

@@ -1571,16 +1571,7 @@ def fetch_fund_profile(fund_code: str) -> FundProfile:
         profile.code = "fetch_error"
 
     # 风险等级（失败不影响档案主体）
-    try:
-        html = _http_get(f"https://fund.eastmoney.com/{fund_code}.html")
-        m = re.search(
-            r"</a>&nbsp;&nbsp;\|&nbsp;&nbsp;(低风险|中低风险|中风险|中高风险|高风险)",
-            html,
-        )
-        if m:
-            profile.risk_level = m.group(1)
-    except Exception:  # noqa: BLE001
-        logger.debug("风险等级抓取失败 %s", fund_code, exc_info=True)
+    profile.risk_level = fetch_risk_level(fund_code)
 
     # 费率（失败不影响档案主体）
     try:
@@ -1604,6 +1595,34 @@ def fetch_fund_profile(fund_code: str) -> FundProfile:
 def clear_profile_cache() -> None:
     """清空基金档案缓存。"""
     _profile_cache.clear()
+
+
+def fetch_risk_level(fund_code: str) -> str:
+    """抓取单只基金的风险等级（轻量：仅 1 个 HTTP 请求）。
+
+    从天天基金 HTML 页正则提取，返回 '' 表示未获取到。
+    """
+    try:
+        html = _http_get(f"https://fund.eastmoney.com/{fund_code}.html")
+        m = re.search(
+            r"</a>&nbsp;&nbsp;\|&nbsp;&nbsp;(低风险|中低风险|中风险|中高风险|高风险)",
+            html,
+        )
+        return m.group(1) if m else ""
+    except Exception:  # noqa: BLE001
+        logger.debug("风险等级抓取失败 %s", fund_code, exc_info=True)
+        return ""
+
+
+def refresh_risk_levels(fund_codes: list[str]) -> int:
+    """批量刷新基金风险等级并写回 funds 表，返回更新数量。"""
+    n = 0
+    for code in fund_codes:
+        level = fetch_risk_level(code)
+        if level:
+            db.update_fund_risk_level(code, level)
+            n += 1
+    return n
 
 
 # ---------------------------------------------------------------------------

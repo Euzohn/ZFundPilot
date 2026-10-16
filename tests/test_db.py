@@ -147,6 +147,48 @@ def test_init_db_purchase_status_idempotent():
             assert {"purchase_status", "daily_limit", "min_purchase"} <= cols
 
 
+def test_update_fund_risk_level_roundtrip():
+    """风险等级写入后可从 get_fund 读回。"""
+    from zfundpilot.models import Fund
+
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            db.upsert_fund(Fund("005827", "易方达蓝筹精选", "混合型"))
+            db.update_fund_risk_level("005827", "中高风险")
+            fund = db.get_fund("005827")
+            assert fund is not None
+            assert fund.risk_level == "中高风险"
+
+
+def test_upsert_fund_preserves_risk_level():
+    """元数据刷新（upsert_fund）不覆盖已写入的风险等级。"""
+    from zfundpilot.models import Fund
+
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            db.upsert_fund(Fund("001", "测试基金", "混合型"))
+            db.update_fund_risk_level("001", "高风险")
+            db.upsert_fund(Fund("001", "测试基金改名", "混合型"))
+            fund = db.get_fund("001")
+            assert fund is not None
+            assert fund.fund_name == "测试基金改名"
+            assert fund.risk_level == "高风险"
+
+
+def test_init_db_risk_level_idempotent():
+    """重复 init_db 不报错（risk_level 迁移幂等）。"""
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            db.init_db()
+            with db.get_connection() as conn:
+                cols = {r["name"] for r in
+                        conn.execute("PRAGMA table_info(funds)").fetchall()}
+            assert "risk_level" in cols
+
+
 def test_trade_calendar_roundtrip():
     """交易日历 upsert + is_trading_day 三态（空表/范围内/超范围）。"""
     with TemporaryDirectory() as d:

@@ -134,3 +134,16 @@ class TestBuildPositions:
         assert pos.realized_pnl == 150.0
         assert pos.held_shares == 500
         assert pos.total_cost == 500
+
+    def test_risk_level_inherited_from_fund(self):
+        """Position 从 Fund 表继承风险等级；无 Fund 记录时为空。"""
+        txs = [
+            Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-01",
+                        amount=1000, shares=500, nav=2.0),
+            Transaction(fund_code="002", action=ACTION_BUY, date="2025-01-01",
+                        amount=1000, shares=500, nav=2.0),
+        ]
+        funds = {"001": Fund(fund_code="001", fund_name="A", risk_level="中高风险")}
+        positions = _build_positions_from_transactions(txs, funds)
+        assert positions[("001", "")].risk_level == "中高风险"
+        assert positions[("002", "")].risk_level == ""

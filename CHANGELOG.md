@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-10-16
+
 ### Added
 - 持仓明细列表自定义列——持仓列表（表格视图）工具栏新增「列设置」Popover，勾选控制显示哪些列 + 「恢复默认列」，偏好存 `localStorage`（`zfundpilot_positionsColumns`，按规范列序重排）。共 13 个可切换列（名称锁定/类型/风险等级/板块/市值/盈亏/收益率/日内涨跌/渠道 + 新增可选列 份额/持仓成本/成本单价/最新净值），新增列可排序；表头/单元格/合计行均按可见列动态渲染，合计行不再依赖固定 `colSpan`。复用现有 `Popover`/`Checkbox` 组件，新增 i18n 键 `positions.columns`/`positions.resetColumns`。前端无测试框架，`npm run build`（tsc + vite）通过
 - 风险等级全站展示——`risk_level` 此前仅基金详情页实时抓取（`FundProfile` 临时态），不持久化不透传。新增 `funds.risk_level` 列（`_migrate_add_risk_level` 迁移 + CREATE TABLE）+ `Fund`/`Position` 模型字段，`fetch_fund.fetch_risk_level`（轻量单请求：仅 HTML 页正则，从 `fetch_fund_profile` 抽出复用）+ `refresh_risk_levels` 批量写回，scheduler 净值更新后刷新。`Position.risk_level` 自动透传到 `/api/positions`；`/api/distribution/{field}` 白名单加 `risk_level`。前端四处展示：持仓页列表/卡片视图风险色点 badge + 风险等级筛选下拉 + 排序选项（列表视图新增「风险等级」列，排序按 低→高 语义序）、纵览页风险分布饼图（grid 改 lg:4/xl:5 列）、收益分析页单基金明细 name 旁色点、组合体检页「持仓风险等级分布」进度条卡（按 低→中低→中→中高→高 排序，显示占比+市值，含未标注「其它」项以保证占比合计）。新增 i18n 键 `common.riskLevel`/`riskLevelLabels.*`/`positions.allRiskLevels`/`overview.riskDist`/`risk.riskLevelDist`。新增 `tests/test_db.py` 3 个 + `tests/test_fetch_fund.py` 4 个 + `tests/test_analysis.py` 1 个测试，总测试 572→580

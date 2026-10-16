@@ -138,6 +138,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **Rebalancing Advice** — Structure-based optimization suggestions (not trading signals)
 - **Take-Profit / Stop-Loss Alerts** — Automatically checks fund returns after NAV update and alerts when thresholds are hit. State machine prevents repeats: after triggering, returns must fall back below the reset ratio before re-arming, avoiding repeated alerts after partial profit-taking. Independent take-profit/stop-loss toggles, globally configurable thresholds. Confirm jumps to transaction page pre-filled with sell
 - **Dividend Auto-Detection** — Scans held funds for unrecorded dividends daily at 09:30, dialog pre-fills for quick recording. Phantom alert auto-cleanup: marks invalid alerts as ignored when source data is corrected
+- **Risk-Level Display** — Fund risk levels (low/low-medium/medium/medium-high/high) persisted and shown site-wide: colored badges + risk-level filter + semantic sort in the positions list, risk-distribution pie on the overview, per-fund dots in returns analysis, and a risk-level distribution bar in the health check
 
 ### AI Assistant
 

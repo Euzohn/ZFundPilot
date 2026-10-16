@@ -25,7 +25,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.23.0`（git tag `v0.23.0`）
+- **版本**: `0.24.0`（git tag `v0.24.0`）
 - **License**: MIT
 
 ---
@@ -47,7 +47,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.23.0"
+│   ├── __init__.py          # __version__ = "0.24.0"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
@@ -170,7 +170,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.23.0")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.24.0")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
 - 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
@@ -512,6 +512,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ## 十二、当前工作状态
 
 ### [Unreleased]
+
+### v0.24.0 - 2026-10-16
 
 - changed: 持仓明细页移动端适配完善——列表视图工具栏控件组加 `flex-wrap`（窄屏下搜索框 `w-full`、渠道/风险下拉 `flex-1`，`sm` 起 `sm:w-auto`/固定宽 + 右对齐），修复此前控件横向溢出；列表表格窄屏 `[&_td]:px-2 [&_th]:px-2`（`sm:` 恢复 `px-4`）收紧内边距；「名称」列 `sticky left-0` + `border-r`（表头 `z-20`/表体 `z-10`/合计行 `bg-muted` 一致），横向滚动时基金名固定可见；列设置浮层加 `max-w-[calc(100vw-2rem)]`
 

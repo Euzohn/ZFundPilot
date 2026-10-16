@@ -40,7 +40,7 @@
 | `purchase_status` | TEXT | DEFAULT '' | 申购状态（开放申购/限大额/暂停申购/场内交易/封闭期/认购期，由 `fetch_fund.refresh_purchase_status` 每日刷新） |
 | `daily_limit` | REAL | DEFAULT 0 | 日累计限定金额（0 = 无限额，限大额基金的实际日购上限） |
 | `min_purchase` | REAL | DEFAULT 0 | 购买起点（最低申购金额） |
-| `risk_level` | TEXT | DEFAULT '' | 风险等级（低风险/中低风险/中风险/中高风险/高风险，由 `fetch_fund.refresh_risk_levels` 每日刷新，供持仓/纵览/收益/体检页展示） |
+| `risk_level` | TEXT | DEFAULT '' | 风险等级（低风险/中低风险/中风险/中高风险/高风险，由 `fetch_fund.refresh_risk_levels` 在定时净值更新/手动刷新/启动补全时写入，供持仓/纵览/收益/体检页展示） |
 | `created_at` | TEXT | DEFAULT datetime('now','localtime') | 创建时间 |
 | `updated_at` | TEXT | DEFAULT datetime('now','localtime') | 更新时间 |
 

@@ -5,7 +5,10 @@
 2. _convert_dow 数值转换（0=周日 → 0=周一）
 3. CronTrigger 时区为 config.TIMEZONE
 4. _convert_dow 保留字母缩写不转换
+5. refresh_fund_metadata 依次调用申购状态/交易日历/风险等级刷新
+6. _bootstrap_risk_levels 仅补全 risk_level 为空的基金
 """
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -56,6 +59,63 @@ class TestParseCron:
         trigger = CronTrigger(hour=9, minute=0, timezone=config.TIMEZONE)
         assert trigger.timezone == config.TIMEZONE
         assert str(trigger.timezone) == str(config.TIMEZONE)
+
+
+class TestRefreshFundMetadata:
+    """验证基金元数据刷新逻辑（申购状态 / 交易日历 / 风险等级）。"""
+
+    def test_refresh_fund_metadata_calls_all(self):
+        from zfundpilot import scheduler
+
+        calls: list[str] = []
+        with (
+            patch.object(scheduler, "_refresh_purchase_status",
+                         side_effect=lambda: calls.append("purchase")),
+            patch.object(scheduler, "_refresh_trade_calendar",
+                         side_effect=lambda: calls.append("calendar")),
+            patch.object(scheduler, "_refresh_risk_levels",
+                         side_effect=lambda: calls.append("risk")),
+        ):
+            scheduler.refresh_fund_metadata()
+        assert calls == ["purchase", "calendar", "risk"]
+
+    def test_bootstrap_only_missing_risk_levels(self):
+        from zfundpilot import scheduler
+        from zfundpilot.models import Fund
+
+        funds = [
+            Fund(fund_code="001", fund_name="A", risk_level="中高风险"),
+            Fund(fund_code="002", fund_name="B", risk_level=""),
+            Fund(fund_code="003", fund_name="C", risk_level=""),
+        ]
+        refreshed: list[list[str]] = []
+
+        def _record(codes):
+            refreshed.append(codes)
+            return len(codes)
+
+        with (
+            patch.object(scheduler.db, "get_funds", return_value=funds),
+            patch.object(scheduler.fetch_fund, "refresh_risk_levels", _record),
+            patch.object(scheduler.analysis, "clear_analysis_cache"),
+        ):
+            scheduler._bootstrap_risk_levels()
+        assert refreshed == [["002", "003"]]
+
+    def test_bootstrap_noop_when_all_present(self):
+        from zfundpilot import scheduler
+        from zfundpilot.models import Fund
+
+        funds = [Fund(fund_code="001", fund_name="A", risk_level="低风险")]
+
+        def _should_not_call(codes):  # pragma: no cover
+            raise AssertionError("不应调用 refresh_risk_levels")
+
+        with (
+            patch.object(scheduler.db, "get_funds", return_value=funds),
+            patch.object(scheduler.fetch_fund, "refresh_risk_levels", _should_not_call),
+        ):
+            scheduler._bootstrap_risk_levels()
 
 
 class TestConvertDow:

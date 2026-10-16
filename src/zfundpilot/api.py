@@ -1612,7 +1612,11 @@ def update_nav(request: Request) -> dict[str, Any]:
             if updated:
                 db.log_audit("nav_backfill", ip=client_ip,
                               detail={"count": len(updated), "items": updated})
+            # 同步刷新基金元数据（申购状态/交易日历/风险等级），与定时任务行为一致
             _nav_update_state["results"] = [r.__dict__ for r in results]
+            scheduler.refresh_fund_metadata()
+            # 元数据写入后失效持仓缓存，确保接口立即返回新值
+            analysis.clear_analysis_cache()
         except Exception as exc:  # noqa: BLE001
             _nav_update_state["error"] = str(exc)
         finally:

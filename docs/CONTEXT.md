@@ -108,7 +108,7 @@ ZFundPilot/
 │   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12 并行) → tsc → build
 ├── tests/                   # Pytest 测试套件
 │   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
-│   └── test_*.py            #   580 个测试用例
+│   └── test_*.py            #   583 个测试用例
 └── docs/CONTEXT.md              # 本文件（不追踪）
 ```
 
@@ -234,7 +234,7 @@ ZFundPilot/
 - `fetch_trade_calendar()`: 获取 A 股交易日历（`ak.tool_trade_date_hist_sina`，含法定节假日 + 调休），24h 内存缓存 + stale-if-error，返回 `"YYYY-MM-DD"` 集合
 - `refresh_trade_calendar()`: 拉取日历并持久化到 `trade_calendar` 表，返回天数。scheduler 净值更新后 + 定投执行前调用
 - `fetch_risk_level(fund_code)`: 轻量抓取单只基金风险等级（`fund.eastmoney.com/{code}.html` HTML 正则，仅 1 个请求，从 `fetch_fund_profile` 抽出复用），返回 `""` 表示未获取到
-- `refresh_risk_levels(fund_codes)`: 批量抓取风险等级并写回 `funds.risk_level`，返回更新数量（空值不写回）。scheduler 净值更新后调用
+- `refresh_risk_levels(fund_codes)`: 批量抓取风险等级并写回 `funds.risk_level`，返回更新数量（空值不写回）。scheduler 净值更新后 + 手动刷新 + 启动补全时调用
 
 ### fund_filter.py — 基金筛选
 
@@ -313,7 +313,9 @@ ZFundPilot/
 - **基准指数持久化**：`_update_benchmark_indices()` 在净值更新后调用，遍历 `config.BENCHMARK_INDICES`（沪深300/上证指数/创业板指）逐只拉取并持久化到 `index_history` 表，确保离线时基准对比数据可用。DB 已有最新数据时跳过
 - **申购状态刷新**：`_refresh_purchase_status()` 在净值更新后 + 定投执行前调用，拉取 `ak.fund_purchase_em` 全市场申购状态表，过滤库内基金写回 `funds` 表（`purchase_status`/`daily_limit`/`min_purchase`）。定投执行前 `clear_purchase_status_cache()` 强制刷新确保数据新鲜
 - **交易日历刷新**：`_refresh_trade_calendar()` 在净值更新后 + 定投执行前调用，拉取 `ak.tool_trade_date_hist_sina` 持久化到 `trade_calendar` 表，供 `db.is_trading_day` 判断法定节假日
-- **风险等级刷新**：`_refresh_risk_levels()` 在净值更新后调用，逐只轻量抓取库内基金风险等级（每只仅 1 个 HTML 请求）写回 `funds.risk_level`，供持仓/纵览/收益/体检页展示
+- **风险等级刷新**：`_refresh_risk_levels()` 逐只轻量抓取库内基金风险等级（每只仅 1 个 HTML 请求）写回 `funds.risk_level`，供持仓/纵览/收益/体检页展示
+- **基金元数据刷新（共享）**：`refresh_fund_metadata()` = `_refresh_purchase_status()` + `_refresh_trade_calendar()` + `_refresh_risk_levels()` 三项。定时净值更新后（`_run_nav_update`）与手动刷新（`api.update_nav`）共用，刷新后清 `analysis` 缓存，确保两路行为一致、接口立即返回新值
+- **风险等级启动补全**：`_bootstrap_risk_levels()` 在调度器启动时补抓 `risk_level` 为空的基金（部署后无需等到 21:00 定时任务即可展示），仅处理空值避免每次重启全量抓取
 - **分红检测任务**：每天 09:30 执行 `_run_dividend_check()`（`dividend_check` cron job），扫描持仓基金的未记录分红事件，新发现的存入 `dividend_alerts` 表。开关存 `preferences` 表 key=`dividend_auto_check`，默认启用。`_bootstrap_dividend_check()` 启动时若已过 09:30 且今日未执行过，立即补跑
 - **幽灵分红提醒自动清理**：`check_dividends()` 抓取数据时同步收集 `fetched_ex_dates`/`fetched_funds`（`fetched_funds.add(code)` 在空响应检查之前执行，确保 AkShare 返回空 DataFrame 的基金如 QDII 其提醒也被清理），调用 `_cleanup_stale_alerts()` 校验现有 pending 提醒是否仍存在于源数据中，不存在则自动标记为 `ignored`。TTL 兜底：pending 超 90 天（`_LOOKBACK_DAYS`）自动 ignore，防 fetch 持续失败的基金提醒永久残留。SQLite `created_at` 是朴素无时区字符串，与 aware `cutoff` 比较前补 `config.TIMEZONE`。清理数量存入 `fetch_dividend._last_cleanup_count`，`POST /api/dividends/scan` 响应含 `cleaned` 字段，scheduler 日志/审计也含清理计数
 
@@ -511,6 +513,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- fix: 风险等级部署后显示「其它」——`funds.risk_level` 仅由定时净值更新（`0 21 * * 1-5`）内的 `_refresh_risk_levels()` 写入，手动刷新与容器启动都不触发，部署后当天 21:00 前持仓/纵览/收益/体检页风险等级全为空（归入「其它」），详情页因实时抓取正常。将三项元数据刷新抽取为 `refresh_fund_metadata()`（定时 + 手动共用，刷新后清 analysis 缓存）+ 新增启动补全 `_bootstrap_risk_levels()`（仅抓空值）。新增 3 个 scheduler 测试，总测试 580→583
 - feat: 风险等级全站展示——`risk_level` 此前仅 FundDetail 实时抓取（`FundProfile` 临时态），不持久化。新增 `funds.risk_level` 列（`_migrate_add_risk_level` + CREATE TABLE）+ `Fund`/`Position` 模型字段，`fetch_fund.fetch_risk_level`（轻量单请求 HTML 正则，从 `fetch_fund_profile` 抽出复用）+ `refresh_risk_levels` 批量写回，scheduler 净值更新后刷新。`Position.risk_level` 经 `/api/positions` 自动透传；`/api/distribution/{field}` 白名单加 `risk_level`。前端四处：持仓页列表/卡片风险色点 badge + 筛选下拉 + 排序（列表新增「风险等级」列，按 低→高 语义序）、纵览页风险分布饼图（grid lg:4/xl:5 列）、收益页单基金明细 name 旁色点、体检页「持仓风险等级分布」进度条卡（低→高排序，占比+市值，含未标注「其它」）。新增 i18n 键 `common.riskLevel`/`riskLevelLabels.*`/`positions.allRiskLevels`/`overview.riskDist`/`risk.riskLevelDist`。新增 8 个测试（db 3 + fetch_fund 4 + analysis 1），总测试 572→580
 - fix: 国内法定节假日定投误执行——`run_all_due` / `_next_trading_day` 只跳周末 + QDII 美股休市，不知道国内法定节假日/调休，国庆（10-1/10-2 工作日）照常建仓且每日计划假期逐日误执行。新增 A 股交易日历（`ak.tool_trade_date_hist_sina`）持久化到 `trade_calendar` 表（`db.upsert_trade_calendar` + `db.is_trading_day`，表为空/超覆盖范围退化周末判断，快照局部变量避免并发清缓存竞争），`fetch_fund.fetch_trade_calendar`（24h 缓存 + stale-if-error）+ `refresh_trade_calendar`。scheduler 净值更新后 + 定投执行前刷新日历。`run_all_due` 非交易日跳过（不建仓不更新 next_run，假期后首个交易日补齐），`_next_trading_day` 跳节假日预测 next_run。新增 10 个日历测试（auto_invest 4 + fetch_fund 4 + db 2），总测试 562→572
 - feat: 定投申购状态可投性校验——定投执行前检查基金申购状态（暂停申购/封闭期→跳过，限大额且超日累计限额→跳过，金额低于购买起点→跳过），不建仓不更新 next_run 次日自动重试。新增 `fetch_fund.fetch_purchase_status`（`ak.fund_purchase_em` 全市场表 24h 缓存 + stale-if-error）+ `refresh_purchase_status` 写回 `funds` 表 3 个新字段（`purchase_status`/`daily_limit`/`min_purchase`）。scheduler 净值更新后 + 定投执行前（强制清缓存刷新）双重刷新。手动执行遇不可申购仍建仓但返回 `warnings`。FundDetail 顶栏新增申购状态 badge（绿/橙/红色点），定投计划列表对不可申购基金显示 `AlertTriangle` 警告。新增 `tests/test_auto_invest.py` 9 个 gate 测试 + `tests/test_fetch_fund.py` 5 个申购状态测试 + `tests/test_db.py` 3 个迁移/读写测试，总测试 545→562

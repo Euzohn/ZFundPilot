@@ -125,12 +125,10 @@ def _run_nav_update() -> None:
         _run_tp_sl_check()
         # 持久化基准指数数据（确保离线可用）
         _update_benchmark_indices()
-        # 刷新基金申购状态（限购/暂停申购），供定投可投性校验
-        _refresh_purchase_status()
-        # 刷新 A 股交易日历（法定节假日），供定投可投性校验
-        _refresh_trade_calendar()
-        # 刷新基金风险等级，供持仓/纵览/体检页展示
-        _refresh_risk_levels()
+        # 刷新基金元数据（申购状态/交易日历/风险等级）
+        refresh_fund_metadata()
+        # 元数据写入后失效持仓缓存，确保接口立即返回新值
+        analysis.clear_analysis_cache()
     except Exception as exc:  # noqa: BLE001
         logger.exception("[scheduler] 定时净值更新任务异常")
         _last_run = datetime.now(config.TIMEZONE)
@@ -200,6 +198,34 @@ def _refresh_risk_levels() -> None:
         logger.info("[scheduler] 风险等级刷新: %d/%d", n, len(codes))
     except Exception:  # noqa: BLE001
         logger.warning("[scheduler] 风险等级刷新失败", exc_info=True)
+
+
+def refresh_fund_metadata() -> None:
+    """刷新基金元数据（申购状态 / 交易日历 / 风险等级）。
+
+    净值更新后 + 手动刷新（`/api/nav/update`）时调用，确保持仓/纵览/收益/体检
+    页展示的元数据（尤其风险等级）与最新数据一致。
+    """
+    _refresh_purchase_status()
+    _refresh_trade_calendar()
+    _refresh_risk_levels()
+
+
+def _bootstrap_risk_levels() -> None:
+    """启动时补全缺失的风险等级（部署 / 新基金首次采集）。
+
+    仅处理 `risk_level` 为空的基金，避免每次重启都全量抓取。
+    """
+    try:
+        missing = [f.fund_code for f in db.get_funds() if not f.risk_level]
+        if not missing:
+            return
+        n = fetch_fund.refresh_risk_levels(missing)
+        if n:
+            analysis.clear_analysis_cache()
+        logger.info("[scheduler] 风险等级启动补全: %d/%d", n, len(missing))
+    except Exception:  # noqa: BLE001
+        logger.warning("[scheduler] 风险等级启动补全失败", exc_info=True)
 
 
 def _run_auto_invest() -> None:
@@ -433,6 +459,9 @@ def init_scheduler() -> None:
         _scheduler.pause_job("dividend_check")
     else:
         threading.Thread(target=_bootstrap_dividend_check, daemon=True).start()
+
+    # 启动补全缺失的风险等级（部署后无需等待定时任务即可展示）
+    threading.Thread(target=_bootstrap_risk_levels, daemon=True).start()
 
 
 def _bootstrap_auto_invest() -> None:

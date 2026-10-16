@@ -14,6 +14,7 @@
 ### Changed
 
 ### Fixed
+- 风险等级部署后显示「其它」——`funds.risk_level` 仅由**定时净值更新任务**（默认 `0 21 * * 1-5`）内的 `_refresh_risk_levels()` 写入，手动「刷新净值」(`POST /api/nav/update`) 与容器启动均不触发，导致部署后当天 21:00 前持仓/纵览/收益/体检页的风险等级全部为空（`distribution_by` 归入「其它」），而基金详情页因实时抓取显示正常。修复：将申购状态/交易日历/风险等级三项刷新抽取为 `scheduler.refresh_fund_metadata()`，定时任务与手动刷新共用（并刷新后清 `analysis` 缓存）；新增启动补全 `_bootstrap_risk_levels()`（仅抓取 `risk_level` 为空的基金）。新增 3 个 scheduler 测试，总测试 580→583
 - 国内法定节假日定投误执行——`run_all_due` / `_next_trading_day` 此前只跳周末 + QDII 美股休市，不知道国内法定节假日/调休，导致国庆（10-1/10-2 等工作日）照常建仓且每日计划在整个假期逐日误执行。新增 A 股交易日历（`ak.tool_trade_date_hist_sina`，含法定节假日 + 调休）持久化到 `trade_calendar` 表（`db.upsert_trade_calendar` + `db.is_trading_day`，表为空/超覆盖范围退化周末判断），`fetch_fund.fetch_trade_calendar`（24h 缓存 + stale-if-error）+ `refresh_trade_calendar`。scheduler 净值更新后 + 定投执行前刷新日历。`run_all_due` 非交易日跳过（`status="holiday"`，不建仓不更新 next_run，假期后首个交易日自动补齐），`_next_trading_day` 跳节假日预测 next_run。新增 `tests/test_auto_invest.py` 4 个 + `tests/test_fetch_fund.py` 4 个 + `tests/test_db.py` 2 个日历测试，总测试 562→572
 - 交易流水净值列「待确认」徽标换行——`Badge` 组件基础样式 `inline-flex` 缺 `whitespace-nowrap`，交易流水 12 列表格在窄屏下净值列被挤压，导致「待确认」/「Pending」文字在徽标内折行。`Transactions.tsx` 交易流水中 + `TransactionDetailDialog.tsx` 详情弹窗两处徽标补 `whitespace-nowrap` 强制单行
 

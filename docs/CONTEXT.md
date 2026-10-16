@@ -78,7 +78,7 @@ ZFundPilot/
 │   │   ├── Overview.tsx     # 组合总览
 │   │   ├── Transactions.tsx # 交易管理（录入/流水/CSV/定投计划/截图导入）
 │   │   ├── NavUpdate.tsx    # 净值更新
-│   │   ├── Positions.tsx    # 持仓明细（列表 + 网格双视图，网格为 Bento 大卡 + 仓位占比条）
+│   │   ├── Positions.tsx    # 持仓明细（列表 + 网格双视图，网格为 Bento 大卡 + 仓位占比条；列表视图支持自定义列）
 │   │   ├── Returns.tsx      # 收益分析（曲线/基准对比/排名/日历/止盈止损提醒）
 │   │   ├── Risk.tsx         # 组合体检（四维评分 banner + 维度卡片 + 风险指标/提示/建议）
 │   │   ├── FundCompare.tsx     # 基金对比（多维度同框对比 + 相关性矩阵）
@@ -513,6 +513,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- feat: 持仓明细列表自定义列——持仓列表（表格视图）工具栏新增「列设置」`Popover`（勾选控制列 + 「恢复默认列」），偏好存 `localStorage`（`zfundpilot_positionsColumns`，读取时按规范列序重排并过滤未知 id）。共 13 个可切换列：名称（锁定，始终显示）/类型/风险等级/板块/市值/盈亏/收益率/日内涨跌/渠道 = 默认可见 9 列（与改造前一致）；新增可选列 份额/持仓成本/成本单价/最新净值（默认隐藏，可排序）。表头/单元格（`renderCell`）/合计行均按可见列动态渲染，合计行改「每列一格」不再依赖固定 `colSpan`（值/盈亏/收益率/日内涨跌/份额/成本列显示合计，其余留空）。`操作`/`跳转` 两列固定。复用 `Popover`/`Checkbox` 组件，新增 i18n 键 `positions.columns`/`positions.resetColumns`。前端无测试框架，`npm run build`（tsc + vite）通过
 - fix: 风险等级部署后显示「其它」——`funds.risk_level` 仅由定时净值更新（`0 21 * * 1-5`）内的 `_refresh_risk_levels()` 写入，手动刷新与容器启动都不触发，部署后当天 21:00 前持仓/纵览/收益/体检页风险等级全为空（归入「其它」），详情页因实时抓取正常。将三项元数据刷新抽取为 `refresh_fund_metadata()`（定时 + 手动共用，刷新后清 analysis 缓存）+ 新增启动补全 `_bootstrap_risk_levels()`（仅抓空值）。新增 3 个 scheduler 测试，总测试 580→583
 - feat: 风险等级全站展示——`risk_level` 此前仅 FundDetail 实时抓取（`FundProfile` 临时态），不持久化。新增 `funds.risk_level` 列（`_migrate_add_risk_level` + CREATE TABLE）+ `Fund`/`Position` 模型字段，`fetch_fund.fetch_risk_level`（轻量单请求 HTML 正则，从 `fetch_fund_profile` 抽出复用）+ `refresh_risk_levels` 批量写回，scheduler 净值更新后刷新。`Position.risk_level` 经 `/api/positions` 自动透传；`/api/distribution/{field}` 白名单加 `risk_level`。前端四处：持仓页列表/卡片风险色点 badge + 筛选下拉 + 排序（列表新增「风险等级」列，按 低→高 语义序）、纵览页风险分布饼图（grid lg:4/xl:5 列）、收益页单基金明细 name 旁色点、体检页「持仓风险等级分布」进度条卡（低→高排序，占比+市值，含未标注「其它」）。新增 i18n 键 `common.riskLevel`/`riskLevelLabels.*`/`positions.allRiskLevels`/`overview.riskDist`/`risk.riskLevelDist`。新增 8 个测试（db 3 + fetch_fund 4 + analysis 1），总测试 572→580
 - fix: 国内法定节假日定投误执行——`run_all_due` / `_next_trading_day` 只跳周末 + QDII 美股休市，不知道国内法定节假日/调休，国庆（10-1/10-2 工作日）照常建仓且每日计划假期逐日误执行。新增 A 股交易日历（`ak.tool_trade_date_hist_sina`）持久化到 `trade_calendar` 表（`db.upsert_trade_calendar` + `db.is_trading_day`，表为空/超覆盖范围退化周末判断，快照局部变量避免并发清缓存竞争），`fetch_fund.fetch_trade_calendar`（24h 缓存 + stale-if-error）+ `refresh_trade_calendar`。scheduler 净值更新后 + 定投执行前刷新日历。`run_all_due` 非交易日跳过（不建仓不更新 next_run，假期后首个交易日补齐），`_next_trading_day` 跳节假日预测 next_run。新增 10 个日历测试（auto_invest 4 + fetch_fund 4 + db 2），总测试 562→572

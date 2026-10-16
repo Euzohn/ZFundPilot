@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select } from "@/components/ui/select"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { money, pct, signedMoney, pnlColor, localDateStr } from "@/lib/format"
 import { isMarketOpen } from "@/lib/market"
@@ -17,12 +19,89 @@ import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import ErrorState from "@/components/ErrorState"
 import { cn } from "@/lib/utils"
-import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search, LayoutGrid, List, Wallet } from "lucide-react"
+import { TrendingUp, TrendingDown, ChevronRight, ChevronUp, ChevronDown, Search, LayoutGrid, List, Wallet, Columns3 } from "lucide-react"
 import { makeSortHeader } from "@/components/SortHeader"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { useTabParam } from "@/hooks/useTabParam"
 import IndustryExposurePanel from "@/components/IndustryExposurePanel"
-import { useLang } from "@/i18n/LanguageContext"
+import { useLang, type Translation } from "@/i18n/LanguageContext"
+
+// ---------------------------------------------------------------------------
+// 自定义列：定义 + localStorage 持久化
+// ---------------------------------------------------------------------------
+type ColumnId =
+  | "name" | "type" | "risk" | "sector" | "value" | "pnl" | "return"
+  | "dailyChange" | "shares" | "cost" | "costPerUnit" | "latestNav" | "channels"
+
+interface PositionColumn {
+  id: ColumnId
+  label: (t: Translation) => string
+  sortField?: string
+  /** 数值列：表头/单元格右对齐 */
+  numeric?: boolean
+  defaultVisible: boolean
+  /** 锁定列不可取消（始终显示） */
+  locked?: boolean
+  headerClassName?: string
+}
+
+const POSITION_COLUMNS: readonly PositionColumn[] = [
+  { id: "name", label: (t) => t.common.name, sortField: "name", defaultVisible: true, locked: true },
+  { id: "type", label: (t) => t.common.type, sortField: "type", defaultVisible: true },
+  { id: "risk", label: (t) => t.common.riskLevel, sortField: "risk", defaultVisible: true, headerClassName: "whitespace-nowrap" },
+  { id: "sector", label: (t) => t.common.sector, sortField: "sector", defaultVisible: true },
+  { id: "value", label: (t) => t.positions.marketValue, sortField: "value", numeric: true, defaultVisible: true },
+  { id: "pnl", label: (t) => t.positions.pnl, sortField: "pnl", numeric: true, defaultVisible: true },
+  { id: "return", label: (t) => t.positions.returnRate, sortField: "return", numeric: true, defaultVisible: true },
+  { id: "dailyChange", label: (t) => t.positions.dailyChange, numeric: true, defaultVisible: true },
+  { id: "shares", label: (t) => t.positions.shares, sortField: "shares", numeric: true, defaultVisible: false },
+  { id: "cost", label: (t) => t.positions.cost, sortField: "cost", numeric: true, defaultVisible: false },
+  { id: "costPerUnit", label: (t) => t.positions.costPerUnit, sortField: "avgCost", numeric: true, defaultVisible: false },
+  { id: "latestNav", label: (t) => t.positions.latestNav, sortField: "latestNav", numeric: true, defaultVisible: false },
+  { id: "channels", label: (t) => t.common.channel, sortField: "channels", numeric: true, defaultVisible: true },
+]
+
+const COLUMNS_STORAGE_KEY = "zfundpilot_positionsColumns"
+
+const defaultColumnIds = (): ColumnId[] =>
+  POSITION_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.id)
+
+/** 按规范顺序重排，渲染顺序不受存储顺序影响 */
+const orderColumnIds = (ids: readonly string[]): ColumnId[] => {
+  const set = new Set(ids)
+  return POSITION_COLUMNS.filter((c) => set.has(c.id)).map((c) => c.id)
+}
+
+function loadVisibleColumns(): ColumnId[] {
+  try {
+    const raw = localStorage.getItem(COLUMNS_STORAGE_KEY)
+    if (!raw) return defaultColumnIds()
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) throw new Error("invalid columns")
+    return orderColumnIds(parsed.filter((x): x is ColumnId =>
+      POSITION_COLUMNS.some((c) => c.id === x),
+    ))
+  } catch {
+    return defaultColumnIds()
+  }
+}
+
+interface MergedPosition {
+  name: string
+  type: string
+  sector: string
+  trackingIndex: string
+  riskLevel: string
+  value: number
+  cost: number
+  pnl: number
+  shares: number
+  avgCost: number | null
+  latestNav: number | null
+  channels: number
+  latestDate: string | null
+  channel: string | null
+}
 
 export default function Positions() {
   const navigate = useNavigate()
@@ -32,6 +111,7 @@ export default function Positions() {
   const [riskFilter, setRiskFilter] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [viewMode, setViewMode] = useState<"list" | "grid">(() => localStorage.getItem("zfundpilot_positionsView") === "grid" ? "grid" : "list")
+  const [visibleCols, setVisibleCols] = useState<ColumnId[]>(loadVisibleColumns)
   const [sortField, setSortField] = useState("value")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [closedSortField, setClosedSortField] = useState("realized")
@@ -68,6 +148,17 @@ export default function Positions() {
   // 持久化渠道筛选
   useEffect(() => { localStorage.setItem("zfundpilot_channelFilter", channelFilter) }, [channelFilter])
   useEffect(() => { localStorage.setItem("zfundpilot_positionsView", viewMode) }, [viewMode])
+  useEffect(() => {
+    try { localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(visibleCols)) } catch {}
+  }, [visibleCols])
+
+  const toggleColumn = (id: ColumnId) => {
+    setVisibleCols((prev) =>
+      prev.includes(id) ? prev.filter((c) => c !== id) : orderColumnIds([...prev, id]),
+    )
+  }
+  const resetColumns = () => setVisibleCols(defaultColumnIds())
+  const visibleColumns = POSITION_COLUMNS.filter((c) => c.locked || visibleCols.includes(c.id))
 
   const today = localDateStr()
 
@@ -78,7 +169,7 @@ export default function Positions() {
     : []
 
   // 按基金合并（跨渠道）
-  const merged: Record<string, { name: string; type: string; sector: string; trackingIndex: string; riskLevel: string; value: number; cost: number; pnl: number; shares: number; avgCost: number | null; latestNav: number | null; channels: number; latestDate: string | null; channel: string | null }> = {}
+  const merged: Record<string, MergedPosition> = {}
   for (const p of view.filter((p) => p.is_open)) {
     const m = merged[p.fund_code] ?? { name: p.fund_name, type: p.fund_type, sector: p.sector, trackingIndex: p.tracking_index || "", riskLevel: p.risk_level || "", value: 0, cost: 0, pnl: 0, shares: 0, avgCost: null, latestNav: p.latest_nav, channels: 0, latestDate: p.latest_date, channel: p.channel }
     m.value += p.market_value
@@ -125,6 +216,10 @@ export default function Positions() {
           case "return": return m.cost ? m.value / m.cost - 1 : -999
           case "risk": return riskLevelRank(m.riskLevel)
           case "channels": return m.channels
+          case "shares": return m.shares
+          case "cost": return m.cost
+          case "avgCost": return m.avgCost ?? -999
+          case "latestNav": return m.latestNav ?? -999
           default: return m.value
         }
       }
@@ -143,6 +238,111 @@ export default function Positions() {
   )
 
   const SortHeader = makeSortHeader({ sortField, sortDir, toggleSort })
+
+  const renderCell = (colId: ColumnId, code: string, m: MergedPosition, ret: number | null, breakevenGain: number | null) => {
+    switch (colId) {
+      case "name":
+        return (
+          <TableCell key={colId}>
+            <div className="flex flex-col">
+              <span className="font-medium max-w-[160px] truncate" title={m.name}>{m.name}</span>
+              <span className="font-mono text-xs text-muted-foreground">{code}</span>
+            </div>
+          </TableCell>
+        )
+      case "type":
+        return <TableCell key={colId}><Badge variant="outline">{translateFundType(m.type)}</Badge></TableCell>
+      case "risk":
+        return (
+          <TableCell key={colId}>
+            {m.riskLevel ? (
+              <Badge variant="outline" className="font-normal gap-1.5 whitespace-nowrap">
+                <span className={`h-1.5 w-1.5 rounded-full ${RISK_LEVEL_DOT[m.riskLevel] ?? "bg-zinc-400"}`} />
+                {translateRiskLevel(m.riskLevel)}
+              </Badge>
+            ) : <span className="text-xs text-muted-foreground">—</span>}
+          </TableCell>
+        )
+      case "sector":
+        return (
+          <TableCell key={colId}>
+            <div className="flex flex-col items-start gap-0.5">
+              {m.sector ? <Badge variant="outline" className="font-normal">{translateSector(m.sector)}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
+              {m.trackingIndex && (
+                <span className="text-xs text-muted-foreground">{m.trackingIndex}</span>
+              )}
+            </div>
+          </TableCell>
+        )
+      case "value":
+        return (
+          <TableCell key={colId} className="text-right tabular-nums font-medium">
+            <div className="flex flex-col items-end">
+              <span>{money(m.value)}</span>
+              <span className={`text-xs font-normal ${m.latestDate === today ? "text-muted-foreground" : "text-warning"}`}>
+                {m.latestDate ?? "—"}
+              </span>
+            </div>
+          </TableCell>
+        )
+      case "pnl":
+        return <TableCell key={colId} className={`text-right tabular-nums ${pnlColor(m.pnl)}`}>{money(m.pnl)}</TableCell>
+      case "return":
+        return (
+          <TableCell key={colId} className={`text-right tabular-nums ${pnlColor(ret)}`}>
+            <div className="flex flex-col items-end">
+              <span>{pct(ret)}</span>
+              {breakevenGain != null && (
+                <span className="text-xs font-normal text-warning">{t.positions.breakeven} {pct(breakevenGain)}</span>
+              )}
+            </div>
+          </TableCell>
+        )
+      case "dailyChange":
+        return (
+          <TableCell key={colId} className="text-right tabular-nums">
+            {estimateMap[code] != null ? (() => {
+              const e = estimateMap[code]
+              const scaledPnl = e.shares ? (m.shares / e.shares) * e.pnl : e.pnl
+              return (
+                <div className="flex flex-col items-end">
+                  <span className={cn(pnlColor(e.gszzl / 100), !e.ok && "opacity-70")}>
+                    {pct(e.gszzl / 100)}
+                    {e.ok && <span className="ml-0.5 text-[10px] opacity-50">{t.positions.estLabel}</span>}
+                  </span>
+                  {!e.ok && e.pnl !== 0 && (
+                    <span className={cn("text-xs font-normal", pnlColor(scaledPnl))}>
+                      {signedMoney(scaledPnl)}
+                    </span>
+                  )}
+                </div>
+              )
+            })() : (
+              <span className="text-xs text-muted-foreground">—</span>
+            )}
+          </TableCell>
+        )
+      case "shares":
+        return <TableCell key={colId} className="text-right tabular-nums">{m.shares.toLocaleString()}</TableCell>
+      case "cost":
+        return <TableCell key={colId} className="text-right tabular-nums">{money(m.cost)}</TableCell>
+      case "costPerUnit":
+        return <TableCell key={colId} className="text-right tabular-nums">{m.avgCost != null ? `¥${m.avgCost.toFixed(4)}` : "—"}</TableCell>
+      case "latestNav":
+        return (
+          <TableCell key={colId} className="text-right tabular-nums">
+            {m.latestNav != null ? (
+              <div className="flex flex-col items-end">
+                <span>{m.latestNav.toFixed(4)}</span>
+                <span className="text-xs text-muted-foreground">{m.latestDate ?? "—"}</span>
+              </div>
+            ) : <span className="text-xs text-muted-foreground">—</span>}
+          </TableCell>
+        )
+      case "channels":
+        return <TableCell key={colId} className="text-right tabular-nums text-muted-foreground">{m.channels}</TableCell>
+    }
+  }
 
   const totalValue = viewMode === "grid" ? sortedRows.reduce((s, [, m]) => s + m.value, 0) : 0
   const totalPnl = viewMode === "grid" ? sortedRows.reduce((s, [, m]) => s + m.pnl, 0) : 0
@@ -223,6 +423,52 @@ export default function Positions() {
                 </Button>
               </div>
             )}
+            {activeTab === "list" && viewMode === "list" && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2 text-xs"
+                    title={t.positions.columns}
+                    aria-label={t.positions.columns}
+                  >
+                    <Columns3 className="h-3.5 w-3.5" />
+                    <span className="hidden md:inline">{t.positions.columns}</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-44 p-2">
+                  <div className="space-y-0.5">
+                    {POSITION_COLUMNS.map((col) => (
+                      <label
+                        key={col.id}
+                        className={cn(
+                          "flex items-center gap-2 rounded px-2 py-1.5 text-xs",
+                          col.locked ? "cursor-default opacity-70" : "cursor-pointer hover:bg-muted/50",
+                        )}
+                      >
+                        <Checkbox
+                          className="h-3.5 w-3.5"
+                          checked={col.locked || visibleCols.includes(col.id)}
+                          disabled={col.locked}
+                          onCheckedChange={() => toggleColumn(col.id)}
+                        />
+                        {col.label(t)}
+                      </label>
+                    ))}
+                    <div className="mt-1 border-t border-border pt-1">
+                      <button
+                        type="button"
+                        className="w-full rounded px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                        onClick={resetColumns}
+                      >
+                        {t.positions.resetColumns}
+                      </button>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
           </div>
         </div>
         <TabsContent value="list" className="space-y-4">
@@ -243,15 +489,17 @@ export default function Positions() {
             <Table>
               <TableHeader>
                   <TableRow>
-                    <SortHeader field="name">{t.common.name}</SortHeader>
-                    <SortHeader field="type">{t.common.type}</SortHeader>
-                    <SortHeader field="risk" className="whitespace-nowrap">{t.common.riskLevel}</SortHeader>
-                    <SortHeader field="sector">{t.common.sector}</SortHeader>
-                    <SortHeader field="value" className="text-right">{t.positions.marketValue}</SortHeader>
-                    <SortHeader field="pnl" className="text-right">{t.positions.pnl}</SortHeader>
-                    <SortHeader field="return" className="text-right">{t.positions.returnRate}</SortHeader>
-                    <TableHead className="text-right">{t.positions.dailyChange}</TableHead>
-                    <SortHeader field="channels" className="text-right">{t.common.channel}</SortHeader>
+                    {visibleColumns.map((col) =>
+                      col.sortField ? (
+                        <SortHeader key={col.id} field={col.sortField} className={cn(col.numeric && "text-right", col.headerClassName)}>
+                          {col.label(t)}
+                        </SortHeader>
+                      ) : (
+                        <TableHead key={col.id} className={cn(col.numeric && "text-right", col.headerClassName)}>
+                          {col.label(t)}
+                        </TableHead>
+                      ),
+                    )}
                     <TableHead className="w-20">{t.common.actions}</TableHead>
                     <TableHead className="w-8"></TableHead>
                   </TableRow>
@@ -269,68 +517,7 @@ export default function Positions() {
                       role="button"
                       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/fund/${code}`) } }}
                     >
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="font-medium max-w-[160px] truncate" title={m.name}>{m.name}</span>
-                          <span className="font-mono text-xs text-muted-foreground">{code}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell><Badge variant="outline">{translateFundType(m.type)}</Badge></TableCell>
-                      <TableCell>
-                        {m.riskLevel ? (
-                          <Badge variant="outline" className="font-normal gap-1.5 whitespace-nowrap">
-                            <span className={`h-1.5 w-1.5 rounded-full ${RISK_LEVEL_DOT[m.riskLevel] ?? "bg-zinc-400"}`} />
-                            {translateRiskLevel(m.riskLevel)}
-                          </Badge>
-                        ) : <span className="text-xs text-muted-foreground">—</span>}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col items-start gap-0.5">
-                          {m.sector ? <Badge variant="outline" className="font-normal">{translateSector(m.sector)}</Badge> : <span className="text-xs text-muted-foreground">—</span>}
-                          {m.trackingIndex && (
-                            <span className="text-xs text-muted-foreground">{m.trackingIndex}</span>
-                          )}
-                        </div>
-                      </TableCell>
-<TableCell className="text-right tabular-nums font-medium">
-                        <div className="flex flex-col items-end">
-                          <span>{money(m.value)}</span>
-                          <span className={`text-xs font-normal ${m.latestDate === today ? "text-muted-foreground" : "text-warning"}`}>
-                            {m.latestDate ?? "—"}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className={`text-right tabular-nums ${pnlColor(m.pnl)}`}>{money(m.pnl)}</TableCell>
-                      <TableCell className={`text-right tabular-nums ${pnlColor(ret)}`}>
-                        <div className="flex flex-col items-end">
-                          <span>{pct(ret)}</span>
-                          {breakevenGain != null && (
-                            <span className="text-xs font-normal text-warning">{t.positions.breakeven} {pct(breakevenGain)}</span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {estimateMap[code] != null ? (() => {
-                          const e = estimateMap[code]
-                          const scaledPnl = e.shares ? (m.shares / e.shares) * e.pnl : e.pnl
-                          return (
-                            <div className="flex flex-col items-end">
-                              <span className={cn(pnlColor(e.gszzl / 100), !e.ok && "opacity-70")}>
-                                {pct(e.gszzl / 100)}
-                                {e.ok && <span className="ml-0.5 text-[10px] opacity-50">{t.positions.estLabel}</span>}
-                              </span>
-                              {!e.ok && e.pnl !== 0 && (
-                                <span className={cn("text-xs font-normal", pnlColor(scaledPnl))}>
-                                  {signedMoney(scaledPnl)}
-                                </span>
-                              )}
-                            </div>
-                          )
-                        })() : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">{m.channels}</TableCell>
+                      {visibleColumns.map((col) => renderCell(col.id, code, m, ret, breakevenGain))}
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1">
                           <Button
@@ -370,16 +557,35 @@ export default function Positions() {
                     return s + (m.shares / e.shares) * e.pnl
                   }, 0)
                   const hasFilteredEstimate = sortedRows.some(([code]) => estimateMap[code] != null)
+                  const totalShares = sortedRows.reduce((s, [, m]) => s + m.shares, 0)
                   return (
                     <TableRow className="border-t-2 border-border bg-muted/80 [&>td]:py-2.5 [&>td]:font-bold [&>td]:text-sm">
-                      <TableCell colSpan={4} className="text-foreground">{t.common.total}（{sortedRows.length} {t.common.units}）</TableCell>
-                      <TableCell className="text-right tabular-nums text-foreground">{money(totalValue)}</TableCell>
-                      <TableCell className={`text-right tabular-nums ${pnlColor(totalPnl)}`}>{money(totalPnl)}</TableCell>
-                      <TableCell className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
-                      <TableCell className={`text-right tabular-nums ${hasFilteredEstimate ? pnlColor(totalEstPnl) : ""}`}>
-                        {hasFilteredEstimate ? signedMoney(totalEstPnl) : "—"}
-                      </TableCell>
-                      <TableCell colSpan={3}></TableCell>
+                      {visibleColumns.map((col) => {
+                        switch (col.id) {
+                          case "name":
+                            return <TableCell key={col.id} className="text-foreground">{t.common.total}（{sortedRows.length} {t.common.units}）</TableCell>
+                          case "value":
+                            return <TableCell key={col.id} className="text-right tabular-nums text-foreground">{money(totalValue)}</TableCell>
+                          case "pnl":
+                            return <TableCell key={col.id} className={`text-right tabular-nums ${pnlColor(totalPnl)}`}>{money(totalPnl)}</TableCell>
+                          case "return":
+                            return <TableCell key={col.id} className={`text-right tabular-nums ${pnlColor(totalRet)}`}>{pct(totalRet)}</TableCell>
+                          case "dailyChange":
+                            return (
+                              <TableCell key={col.id} className={`text-right tabular-nums ${hasFilteredEstimate ? pnlColor(totalEstPnl) : ""}`}>
+                                {hasFilteredEstimate ? signedMoney(totalEstPnl) : "—"}
+                              </TableCell>
+                            )
+                          case "shares":
+                            return <TableCell key={col.id} className="text-right tabular-nums">{totalShares.toLocaleString()}</TableCell>
+                          case "cost":
+                            return <TableCell key={col.id} className="text-right tabular-nums">{money(totalCost)}</TableCell>
+                          default:
+                            return <TableCell key={col.id} />
+                        }
+                      })}
+                      <TableCell></TableCell>
+                      <TableCell></TableCell>
                     </TableRow>
                   )
                 })()}

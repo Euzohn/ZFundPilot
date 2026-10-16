@@ -715,6 +715,8 @@ const en: typeof zh = {
     fundCountHintGrid: "Total {n} funds",
     viewList: "List",
     viewGrid: "Grid",
+    columns: "Columns",
+    resetColumns: "Reset columns",
     sortBy: "Sort by",
     sortValue: "Market value",
     sortPnl: "P&L",

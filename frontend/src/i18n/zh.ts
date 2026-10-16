@@ -713,6 +713,8 @@ const zh = {
     fundCountHintGrid: "共 {n} 只基金",
     viewList: "列表",
     viewGrid: "网格",
+    columns: "列设置",
+    resetColumns: "恢复默认列",
     sortBy: "排序",
     sortValue: "按市值",
     sortPnl: "按盈亏",

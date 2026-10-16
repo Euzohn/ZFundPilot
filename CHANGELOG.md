@@ -13,6 +13,7 @@
 - 定投申购状态可投性校验——定投执行前检查基金申购状态（暂停申购/封闭期→跳过，限大额且超日累计限额→跳过，金额低于购买起点→跳过），不建仓不更新 next_run 次日自动重试。新增 `fetch_fund.fetch_purchase_status`（`ak.fund_purchase_em` 全市场表 24h 缓存 + stale-if-error）+ `refresh_purchase_status` 写回 `funds` 表 3 个新字段（`purchase_status`/`daily_limit`/`min_purchase`）。scheduler 净值更新后 + 定投执行前（强制清缓存刷新）双重刷新。手动执行（`/execute`）遇不可申购仍建仓但返回 `warnings`。FundDetail 顶栏新增申购状态 badge（绿/橙/红色点），定投计划列表对不可申购基金显示 `AlertTriangle` 警告。新增 `tests/test_auto_invest.py` 9 个 gate 测试 + `tests/test_fetch_fund.py` 5 个申购状态测试 + `tests/test_db.py` 3 个迁移/读写测试，总测试 545→562
 
 ### Changed
+- 持仓明细页移动端适配完善——修复列表视图工具栏控件在窄屏下横向溢出（控制组 `flex-wrap`，窄屏搜索框/下拉全宽、下拉 `flex-1` 平铺，`sm` 起恢复固定宽度并右对齐）；列表表格窄屏收紧单元格内边距（`px-2`，`sm:px-4`）；「名称」列改为左固定（`sticky left-0` + 右侧分隔线，表头/表体/合计行一致），横向滚动时基金名始终可见；列设置浮层加 `max-w-[calc(100vw-2rem)]` 防越界
 
 ### Fixed
 - 风险等级部署后显示「其它」——`funds.risk_level` 仅由**定时净值更新任务**（默认 `0 21 * * 1-5`）内的 `_refresh_risk_levels()` 写入，手动「刷新净值」(`POST /api/nav/update`) 与容器启动均不触发，导致部署后当天 21:00 前持仓/纵览/收益/体检页的风险等级全部为空（`distribution_by` 归入「其它」），而基金详情页因实时抓取显示正常。修复：将申购状态/交易日历/风险等级三项刷新抽取为 `scheduler.refresh_fund_metadata()`，定时任务与手动刷新共用（并刷新后清 `analysis` 缓存）；新增启动补全 `_bootstrap_risk_levels()`（仅抓取 `risk_level` 为空的基金）。新增 3 个 scheduler 测试，总测试 580→583

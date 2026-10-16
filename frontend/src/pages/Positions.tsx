@@ -46,7 +46,7 @@ interface PositionColumn {
 }
 
 const POSITION_COLUMNS: readonly PositionColumn[] = [
-  { id: "name", label: (t) => t.common.name, sortField: "name", defaultVisible: true, locked: true },
+  { id: "name", label: (t) => t.common.name, sortField: "name", defaultVisible: true, locked: true, headerClassName: "sticky left-0 z-20 bg-card border-r border-border/60" },
   { id: "type", label: (t) => t.common.type, sortField: "type", defaultVisible: true },
   { id: "risk", label: (t) => t.common.riskLevel, sortField: "risk", defaultVisible: true, headerClassName: "whitespace-nowrap" },
   { id: "sector", label: (t) => t.common.sector, sortField: "sector", defaultVisible: true },
@@ -243,7 +243,7 @@ export default function Positions() {
     switch (colId) {
       case "name":
         return (
-          <TableCell key={colId}>
+          <TableCell key={colId} className="sticky left-0 z-10 bg-card border-r border-border/60">
             <div className="flex flex-col">
               <span className="font-medium max-w-[160px] truncate" title={m.name}>{m.name}</span>
               <span className="font-mono text-xs text-muted-foreground">{code}</span>
@@ -363,27 +363,27 @@ export default function Positions() {
             <TabsTrigger value="exposure">{t.positions.industryExposure}</TabsTrigger>
             <TabsTrigger value="closed">{t.positions.closedTab}</TabsTrigger>
           </TabsList>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
             {activeTab === "list" && (
-              <div className="relative">
+              <div className="relative w-full sm:w-auto">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={t.positions.searchPlaceholder}
-                  className="h-8 w-44 pl-7 text-xs"
+                  className="h-8 w-full pl-7 text-xs sm:w-44"
                 />
               </div>
             )}
             {(activeTab === "list" || activeTab === "closed") && (
-              <Select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="h-8 text-xs w-32">
+              <Select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="h-8 flex-1 text-xs sm:flex-none sm:w-32">
                 <option value="">{t.positions.allChannels}</option>
                 {availableChannels.map((c) => <option key={c} value={c}>{c}</option>)}
               </Select>
             )}
             {activeTab === "list" && (
-              <Select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)} className="h-8 text-xs w-28">
+              <Select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)} className="h-8 flex-1 text-xs sm:flex-none sm:w-28">
                 <option value="">{t.positions.allRiskLevels}</option>
                 <option value="低风险">{t.riskLevelLabels.low}</option>
                 <option value="中低风险">{t.riskLevelLabels.lowMedium}</option>
@@ -393,7 +393,7 @@ export default function Positions() {
               </Select>
             )}
             {activeTab === "list" && viewMode === "grid" && (
-              <Select value={sortField} onChange={(e) => { setSortField(e.target.value); setSortDir("desc") }} className="h-8 text-xs w-32" aria-label={t.positions.sortBy}>
+              <Select value={sortField} onChange={(e) => { setSortField(e.target.value); setSortDir("desc") }} className="h-8 flex-1 text-xs sm:flex-none sm:w-32" aria-label={t.positions.sortBy}>
                 <option value="value">{t.positions.sortValue}</option>
                 <option value="pnl">{t.positions.sortPnl}</option>
                 <option value="return">{t.positions.sortReturn}</option>
@@ -437,7 +437,7 @@ export default function Positions() {
                     <span className="hidden md:inline">{t.positions.columns}</span>
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent align="end" className="w-44 p-2">
+                <PopoverContent align="end" className="w-44 max-w-[calc(100vw-2rem)] p-2">
                   <div className="space-y-0.5">
                     {POSITION_COLUMNS.map((col) => (
                       <label
@@ -486,7 +486,7 @@ export default function Positions() {
             {sortedRows.length === 0 ? (
             <EmptyState title={t.positions.noPositions} />
           ) : (
-            <Table>
+            <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-4 sm:[&_th]:px-4">
               <TableHeader>
                   <TableRow>
                     {visibleColumns.map((col) =>
@@ -563,7 +563,7 @@ export default function Positions() {
                       {visibleColumns.map((col) => {
                         switch (col.id) {
                           case "name":
-                            return <TableCell key={col.id} className="text-foreground">{t.common.total}（{sortedRows.length} {t.common.units}）</TableCell>
+                            return <TableCell key={col.id} className="sticky left-0 z-10 bg-muted border-r border-border/60 text-foreground">{t.common.total}（{sortedRows.length} {t.common.units}）</TableCell>
                           case "value":
                             return <TableCell key={col.id} className="text-right tabular-nums text-foreground">{money(totalValue)}</TableCell>
                           case "pnl":

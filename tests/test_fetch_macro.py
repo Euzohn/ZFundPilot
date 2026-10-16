@@ -95,11 +95,18 @@ class TestBuildCpiLevel:
 # _macro_is_fresh
 # ---------------------------------------------------------------------------
 class TestMacroIsFresh:
+    def _days_ago(self, days: int) -> str:
+        from datetime import datetime, timedelta
+
+        from zfundpilot import config
+
+        return (datetime.now(config.TIMEZONE).date() - timedelta(days=days)).isoformat()
+
     def test_recent(self):
-        assert _macro_is_fresh("2026-08-31")
+        assert _macro_is_fresh(self._days_ago(10))
 
     def test_stale(self):
-        assert not _macro_is_fresh("2026-01-31")
+        assert not _macro_is_fresh(self._days_ago(100))
 
     def test_invalid(self):
         assert not _macro_is_fresh("garbage")

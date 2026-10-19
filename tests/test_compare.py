@@ -1,6 +1,9 @@
 """compare 模块纯函数测试：收益率、风险指标、相关性、归一化。"""
+from unittest.mock import patch
+
 import pandas as pd
 
+from zfundpilot import fetch_fund
 from zfundpilot.compare import (
     _calculate_calmar,
     _calculate_correlation,
@@ -9,6 +12,7 @@ from zfundpilot.compare import (
     _calculate_sharpe,
     _calculate_volatility,
     _calculate_win_rate,
+    _get_fund_archive,
     _nav_to_series,
     _normalize_nav,
 )
@@ -216,3 +220,57 @@ class TestNormalizeNav:
     def test_zero_first(self):
         nav = pd.Series([0.0, 1.0])
         assert _normalize_nav(nav) == []
+
+
+# ---------------------------------------------------------------------------
+# _get_fund_archive（天天基金档案页解析）
+# ---------------------------------------------------------------------------
+_ARCHIVE_HTML = """
+<div class="bs_gl">
+  <p>
+    <label>成立日期：<span>2008-06-19</span></label>
+    <label>基金经理：&nbsp;&nbsp;<a href="//fund.eastmoney.com/manager/30189744.html">张坤</a>&nbsp;&nbsp;<a href="//fund.eastmoney.com/manager/30808626.html">彭珂</a></label>
+    <label>净资产规模：<span>
+        67.77亿元
+        （截止至：2026-06-30）</span></label>
+  </p>
+</div>
+<table class="info w790"><tr><th>基金经理人</th><td><a href="//fund.eastmoney.com/manager/30189744.html">张坤</a>、<a href="//fund.eastmoney.com/manager/30808626.html">彭珂</a></td><th>成立来分红</th><td>每份累计1.79元</td></tr></table>
+"""
+
+_OVERVIEW_ONLY_HTML = """
+<div class="bs_gl">
+  <label>基金经理：&nbsp;&nbsp;<a href="//fund.eastmoney.com/manager/1.html">张三</a></label>
+</div>
+"""
+
+
+class TestGetFundArchive:
+    def test_parse_overview_and_table(self):
+        with patch.object(fetch_fund, "_http_get", return_value=_ARCHIVE_HTML):
+            archive = _get_fund_archive("110011")
+        assert archive["inception"] == "2008-06-19"
+        assert archive["scale"] == 67.77
+        assert archive["manager"] == "张坤、彭珂"
+
+    def test_manager_falls_back_to_overview(self):
+        with patch.object(fetch_fund, "_http_get", return_value=_OVERVIEW_ONLY_HTML):
+            archive = _get_fund_archive("000001")
+        assert archive["manager"] == "张三"
+
+    def test_legacy_scale_label(self):
+        html = "<label>基金规模：12.34亿元</label>"
+        with patch.object(fetch_fund, "_http_get", return_value=html):
+            archive = _get_fund_archive("000002")
+        assert archive["scale"] == 12.34
+
+    def test_scale_in_table_cell(self):
+        html = "<table><tr><th>净资产规模</th><td>8.88亿元（截止至：2026年06月30日）</td></tr></table>"
+        with patch.object(fetch_fund, "_http_get", return_value=html):
+            archive = _get_fund_archive("000003")
+        assert archive["scale"] == 8.88
+
+    def test_fetch_failure_returns_fallback(self):
+        with patch.object(fetch_fund, "_http_get", side_effect=RuntimeError("boom")):
+            archive = _get_fund_archive("000004")
+        assert archive == {"inception": "", "scale": None, "manager": ""}

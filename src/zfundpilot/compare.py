@@ -120,13 +120,21 @@ def _get_fund_archive(fund_code: str) -> dict:
         if m:
             inception = m.group(1)
         scale = None
-        m = re.search(r"基金规模[：:]\s*([\d.]+)\s*亿元", text)
+        # 页面标签为「净资产规模」（兼容「基金规模」），数值可能包在 <span> 内
+        m = re.search(
+            r"(?:净资产规模|基金规模)[：:]?\s*(?:<[^>]+>\s*)*([\d.]+)\s*亿元", text
+        )
         if m:
             scale = float(m.group(1))
         manager = ""
-        m = re.search(r"基金经理[：:]\s*([^<]+)", text)
+        # 经理姓名在 <a> 标签内（可能多位）：优先「基金经理人」表格行，
+        # 回退到概要区「基金经理：」标签
+        m = re.search(r"基金经理人</th>\s*<td[^>]*>(.*?)</td>", text, re.S)
+        if not m:
+            m = re.search(r"基金经理[：:]\s*(?:&nbsp;)*\s*(.*?)</label>", text, re.S)
         if m:
-            manager = m.group(1).strip()
+            names = re.findall(r"<a[^>]*>([^<]+)</a>", m.group(1))
+            manager = "、".join(n.strip() for n in names if n.strip())
         return {"inception": inception, "scale": scale, "manager": manager}
     except Exception:
         logger.debug("基金档案 HTML 解析失败", exc_info=True)

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -88,6 +89,7 @@ def _run_nav_update() -> None:
         _nav_update_state["total"] = 0
         _nav_update_state["done"] = 0
         _nav_update_state["current"] = ""
+        _nav_update_state["phase"] = ""
         _nav_update_state["results"] = []
         _nav_update_state["error"] = ""
 
@@ -110,6 +112,7 @@ def _run_nav_update() -> None:
             _nav_update_state["current"] = code
 
         results = fetch_fund.update_all_holdings_nav(codes=codes, progress=_progress)
+        _nav_update_state["phase"] = "backfill"
         updated = analysis.backfill_transaction_navs()
         if updated:
             db.log_audit("nav_backfill", ip=None,
@@ -121,12 +124,18 @@ def _run_nav_update() -> None:
         ok = sum(1 for r in results if r.ok)
         fail = len(results) - ok
         logger.info("[scheduler] 净值更新完成: %d 成功, %d 失败", ok, fail)
+
+        def _set_phase(phase: str) -> None:
+            _nav_update_state["phase"] = phase
+
         # 净值更新完成后自动执行止盈止损检查
+        _set_phase("tp_sl")
         _run_tp_sl_check()
         # 持久化基准指数数据（确保离线可用）
+        _set_phase("benchmark")
         _update_benchmark_indices()
         # 刷新基金元数据（申购状态/交易日历/风险等级）
-        refresh_fund_metadata()
+        refresh_fund_metadata(on_phase=_set_phase)
         # 元数据写入后失效持仓缓存，确保接口立即返回新值
         analysis.clear_analysis_cache()
     except Exception as exc:  # noqa: BLE001
@@ -138,6 +147,7 @@ def _run_nav_update() -> None:
         with _nav_update_lock:
             _nav_update_state["running"] = False
             _nav_update_state["current"] = ""
+            _nav_update_state["phase"] = ""
 
 
 def _convert_dow(dow: str) -> str:
@@ -200,14 +210,25 @@ def _refresh_risk_levels() -> None:
         logger.warning("[scheduler] 风险等级刷新失败", exc_info=True)
 
 
-def refresh_fund_metadata() -> None:
+def refresh_fund_metadata(
+    on_phase: Callable[[str], None] | None = None,
+) -> None:
     """刷新基金元数据（申购状态 / 交易日历 / 风险等级）。
 
     净值更新后 + 手动刷新（`/api/nav/update`）时调用，确保持仓/纵览/收益/体检
     页展示的元数据（尤其风险等级）与最新数据一致。
+
+    ``on_phase`` 可选回调在每步开始前触发，供调用方上报进度阶段（如写入
+    ``nav_update_state["phase"]``），让前端在净值抓取完成后仍能看到尾部进度。
     """
+    if on_phase:
+        on_phase("purchase_status")
     _refresh_purchase_status()
+    if on_phase:
+        on_phase("trade_calendar")
     _refresh_trade_calendar()
+    if on_phase:
+        on_phase("risk_levels")
     _refresh_risk_levels()
 
 

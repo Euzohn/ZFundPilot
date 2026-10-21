@@ -124,6 +124,11 @@ export default function NavUpdate() {
   const okCount = results?.filter((r) => r.ok).length ?? 0
   const failCount = results?.filter((r) => !r.ok).length ?? 0
 
+  // 尾部阶段标签（净值抓取完成后：回填/基准/风险等级等），无则空串走净值抓取文案
+  const phaseLabel = status?.phase
+    ? (t.navUpdate.phase as Record<string, string>)[status.phase] ?? t.navUpdate.postUpdate
+    : ""
+
   // 合并更新结果
   const displayRows = useMemo(() => {
     if (results) {
@@ -216,11 +221,22 @@ export default function NavUpdate() {
                   style={{ width: `${status?.total ? Math.round((status.done / status.total) * 100) : 0}%` }}
                 />
               </div>
-              <p className="text-sm text-muted-foreground">
-                {t.navUpdate.fetchingNav} ({status?.done ?? 0}/{status?.total ?? 0})
-              </p>
-              {status?.current && (
-                <p className="font-mono text-xs text-muted-foreground/70">{status.current}</p>
+              {status?.phase ? (
+                <>
+                  <p className="text-sm text-muted-foreground">{phaseLabel}…</p>
+                  <p className="text-xs text-muted-foreground/60">
+                    {status?.done ?? 0}/{status?.total ?? 0} {t.navUpdate.units}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    {t.navUpdate.fetchingNav} ({status?.done ?? 0}/{status?.total ?? 0})
+                  </p>
+                  {status?.current && (
+                    <p className="font-mono text-xs text-muted-foreground/70">{status.current}</p>
+                  )}
+                </>
               )}
             </div>
           )}

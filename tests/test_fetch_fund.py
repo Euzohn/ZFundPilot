@@ -252,6 +252,27 @@ def test_refresh_risk_levels_writes_back():
     assert updates == [("005827", "中高风险")]
 
 
+def test_refresh_risk_levels_concurrent_many():
+    """并发刷新应处理全部代码（含空值不写回）；DB 写入主线程串行。"""
+    codes = [f"00000{i}" for i in range(8)]
+    levels = {codes[0]: "低风险", codes[3]: "中高风险", codes[7]: "高风险"}
+    updates: list[tuple[str, str]] = []
+
+    def _record(code, level):
+        updates.append((code, level))
+
+    def _fake_fetch(code):
+        return levels.get(code, "")
+
+    with (
+        patch.object(fetch_fund, "fetch_risk_level", side_effect=_fake_fetch),
+        patch.object(fetch_fund.db, "update_fund_risk_level", _record),
+    ):
+        n = fetch_fund.refresh_risk_levels(codes)
+    assert n == 3
+    assert set(updates) == {("000000", "低风险"), ("000003", "中高风险"), ("000007", "高风险")}
+
+
 # ---------------------------------------------------------------------------
 # 行业配置（基金穿透数据源）
 # ---------------------------------------------------------------------------

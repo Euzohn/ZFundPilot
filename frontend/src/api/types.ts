@@ -218,6 +218,7 @@ export interface NavUpdateStatus {
   total: number
   done: number
   current: string
+  phase: string
   results: FetchResult[]
   error: string
 }

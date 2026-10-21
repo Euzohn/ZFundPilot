@@ -19,11 +19,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import re
 import threading
 import time
 import urllib.request
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from . import config, db
@@ -1614,11 +1616,26 @@ def fetch_risk_level(fund_code: str) -> str:
         return ""
 
 
+_RISK_EXECUTOR = ThreadPoolExecutor(max_workers=6, thread_name_prefix="risk-level")
+
+
 def refresh_risk_levels(fund_codes: list[str]) -> int:
-    """批量刷新基金风险等级并写回 funds 表，返回更新数量。"""
+    """批量刷新基金风险等级并写回 funds 表，返回更新数量。
+
+    6 线程并发抓取（与 compare/fund_filter 的指标增强一致），每任务加随机抖动
+    避免请求被对齐成同步突发。单只失败不影响整体（``fetch_risk_level`` 已吞异常
+    返回空串，空值不写回）。DB 写入在主线程串行执行，规避 SQLite 并发写。
+    """
+    if not fund_codes:
+        return 0
     n = 0
-    for code in fund_codes:
-        level = fetch_risk_level(code)
+
+    def _fetch_one(code: str) -> tuple[str, str]:
+        # 轻微随机抖动，避免 6 个 worker 的请求被对齐成同步突发
+        time.sleep(random.uniform(0.05, 0.25))
+        return code, fetch_risk_level(code)
+
+    for code, level in _RISK_EXECUTOR.map(_fetch_one, fund_codes):
         if level:
             db.update_fund_risk_level(code, level)
             n += 1

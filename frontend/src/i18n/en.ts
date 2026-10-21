@@ -798,6 +798,15 @@ const en: typeof zh = {
     updateSuccess: "Update Success",
     stale: "Stale",
     upToDate: "Up to date",
+    postUpdate: "Processing post-update tasks",
+    phase: {
+      backfill: "Backfilling transaction NAVs",
+      tp_sl: "Checking take-profit/stop-loss",
+      benchmark: "Updating benchmark indices",
+      purchase_status: "Refreshing purchase status",
+      trade_calendar: "Refreshing trade calendar",
+      risk_levels: "Refreshing risk levels",
+    },
   },
   returns: {
     title: "Returns",

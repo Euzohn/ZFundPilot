@@ -1591,6 +1591,7 @@ def update_nav(request: Request) -> dict[str, Any]:
         _nav_update_state["total"] = 0
         _nav_update_state["done"] = 0
         _nav_update_state["current"] = ""
+        _nav_update_state["phase"] = ""
         _nav_update_state["results"] = []
         _nav_update_state["error"] = ""
 
@@ -1607,6 +1608,7 @@ def update_nav(request: Request) -> dict[str, Any]:
                 _nav_update_state["current"] = code
 
             results = fetch_fund.update_all_holdings_nav(codes=codes, progress=_progress)
+            _nav_update_state["phase"] = "backfill"
             updated = analysis.backfill_transaction_navs()
             analysis.clear_analysis_cache()
             if updated:
@@ -1614,7 +1616,11 @@ def update_nav(request: Request) -> dict[str, Any]:
                               detail={"count": len(updated), "items": updated})
             # 同步刷新基金元数据（申购状态/交易日历/风险等级），与定时任务行为一致
             _nav_update_state["results"] = [r.__dict__ for r in results]
-            scheduler.refresh_fund_metadata()
+
+            def _set_phase(phase: str) -> None:
+                _nav_update_state["phase"] = phase
+
+            scheduler.refresh_fund_metadata(on_phase=_set_phase)
             # 元数据写入后失效持仓缓存，确保接口立即返回新值
             analysis.clear_analysis_cache()
         except Exception as exc:  # noqa: BLE001
@@ -1623,6 +1629,7 @@ def update_nav(request: Request) -> dict[str, Any]:
             with _nav_update_lock:
                 _nav_update_state["running"] = False
                 _nav_update_state["current"] = ""
+                _nav_update_state["phase"] = ""
 
     threading.Thread(target=_run, daemon=True).start()
     return {"ok": True, "message": "净值更新已启动", "total": len(codes)}

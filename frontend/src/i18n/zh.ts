@@ -796,6 +796,15 @@ const zh = {
     updateSuccess: "更新成功",
     stale: "过时",
     upToDate: "已是最新",
+    postUpdate: "正在处理后续任务",
+    phase: {
+      backfill: "回填交易净值",
+      tp_sl: "止盈止损检查",
+      benchmark: "更新基准指数",
+      purchase_status: "刷新申购状态",
+      trade_calendar: "刷新交易日历",
+      risk_levels: "刷新风险等级",
+    },
   },
   returns: {
     title: "收益分析",

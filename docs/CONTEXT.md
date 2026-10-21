@@ -67,7 +67,7 @@ ZFundPilot/
 │   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延 + QDII 跳美股休市 + 申购状态/法定节假日可投性校验）
 │   ├── us_calendar.py       # 美股（NYSE）算法日历（纯计算休市日，零联网依赖，供定投跳过 QDII 休市）
 │   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
-│   ├── nav_update_state.py  # 净值更新共享状态+锁（api.py/scheduler.py 共用，避免循环导入）
+│   ├── nav_update_state.py  # 净值更新共享状态+锁+阶段(phase)字段（api.py/scheduler.py 共用，避免循环导入）
 │   ├── scheduler.py         # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查 + 基准指数/宏观水位持久化
 │   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）+ 视觉模型截图解析（parse_screenshot + resolve_fund_code 名称→代码后处理）
 │   └── data_io.py           # CSV 导入/导出 + 全量备份 ZIP
@@ -234,7 +234,7 @@ ZFundPilot/
 - `fetch_trade_calendar()`: 获取 A 股交易日历（`ak.tool_trade_date_hist_sina`，含法定节假日 + 调休），24h 内存缓存 + stale-if-error，返回 `"YYYY-MM-DD"` 集合
 - `refresh_trade_calendar()`: 拉取日历并持久化到 `trade_calendar` 表，返回天数。scheduler 净值更新后 + 定投执行前调用
 - `fetch_risk_level(fund_code)`: 轻量抓取单只基金风险等级（`fund.eastmoney.com/{code}.html` HTML 正则，仅 1 个请求，从 `fetch_fund_profile` 抽出复用），返回 `""` 表示未获取到
-- `refresh_risk_levels(fund_codes)`: 批量抓取风险等级并写回 `funds.risk_level`，返回更新数量（空值不写回）。scheduler 净值更新后 + 手动刷新 + 启动补全时调用
+- `refresh_risk_levels(fund_codes)`: 批量抓取风险等级并写回 `funds.risk_level`，返回更新数量（空值不写回）。scheduler 净值更新后 + 手动刷新 + 启动补全时调用。6 线程并发抓取（`ThreadPoolExecutor`，与 compare/fund_filter 一致）+ 随机抖动；DB 写入主线程串行
 
 ### fund_filter.py — 基金筛选
 
@@ -309,7 +309,7 @@ ZFundPilot/
 - `config.TIMEZONE`: 所有 `datetime.now()` 调用使用此时区，不依赖系统时区
 - **止盈止损检查**：嵌入 `_run_nav_update()` 末尾，净值更新完成后自动执行 `_run_tp_sl_check()`。扫描所有持仓 `return_rate`，≥ 止盈阈值或 ≤ 止损阈值时生成提醒。状态机：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio` 以下后重新 `armed`（避免部分止盈后重复提醒）。配置存 `preferences` 表（`tp_sl_enabled`/`tp_sl_take_profit`/`tp_sl_stop_loss`/`tp_sl_take_profit_enabled`/`tp_sl_stop_loss_enabled`/`tp_sl_reset_ratio`），默认关闭。`tp_sl_alert_states` 表记录每只基金每个方向的 armed 状态。复用 `dividend_alerts` 表（`alert_type` 区分 `dividend`/`take_profit`/`stop_loss`）
 - API: `GET /api/scheduler/status` + `PUT /api/scheduler/toggle` + `PUT /api/scheduler/cron`；`GET/PUT /api/alerts/config`（止盈止损配置）；`GET /api/alerts` + `GET /api/alerts/count`（统一提醒列表/计数，支持 `?type=tp_sl`）；`PUT /api/alerts/{id}`（更新状态：confirmed/ignored/pending，pending 时清空 resolved_at）
-- **净值更新共享锁**：`_run_nav_update()` 与 `api.py` 的手动触发共用 `nav_update_lock`/`nav_update_state`（定义在 `nav_update_state.py`，避免循环导入）。定时与手动两路更新互斥，且共享进度/结果状态供前端显示。`running=True` 在锁内同步设置，`finally` 复位也加锁，进程启动（前）后无 TOCTOU 竞态
+- **净值更新共享锁**：`_run_nav_update()` 与 `api.py` 的手动触发共用 `nav_update_lock`/`nav_update_state`（定义在 `nav_update_state.py`，避免循环导入）。定时与手动两路更新互斥，且共享进度/结果状态供前端显示。`running=True` 在锁内同步设置，`finally` 复位也加锁，进程启动（前）后无 TOCTOU 竞态。`phase` 字段在尾部任务（回填/止盈止损/基准指数/元数据刷新）期间实时上报当前阶段，供前端在净值抓取完成后显示「刷新风险等级…」等标签而非停在 100% 静默等待
 - **基准指数持久化**：`_update_benchmark_indices()` 在净值更新后调用，遍历 `config.BENCHMARK_INDICES`（沪深300/上证指数/创业板指）逐只拉取并持久化到 `index_history` 表，确保离线时基准对比数据可用。DB 已有最新数据时跳过
 - **申购状态刷新**：`_refresh_purchase_status()` 在净值更新后 + 定投执行前调用，拉取 `ak.fund_purchase_em` 全市场申购状态表，过滤库内基金写回 `funds` 表（`purchase_status`/`daily_limit`/`min_purchase`）。定投执行前 `clear_purchase_status_cache()` 强制刷新确保数据新鲜
 - **交易日历刷新**：`_refresh_trade_calendar()` 在净值更新后 + 定投执行前调用，拉取 `ak.tool_trade_date_hist_sina` 持久化到 `trade_calendar` 表，供 `db.is_trading_day` 判断法定节假日
@@ -513,6 +513,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- perf: 净值更新尾部「风险等级刷新」串行改 6 线程并发（`ThreadPoolExecutor` + 随机抖动，与 compare/fund_filter 一致），35 只基金耗时从 ~30s 降至 ~6s；DB 写入仍在主线程串行。单只失败不阻塞（`fetch_risk_level` 已吞异常返回空串，空值不写回）
+- feat: 净值更新进度新增「阶段」状态（`nav_update_state.phase`，前端 `NavUpdateStatus.phase`）——净值抓取完成后尾部任务（回填/止盈止损/基准指数/申购状态·交易日历·风险等级）实时上报当前阶段，前端进度条不再停在 100% 静默等待，显示「刷新风险等级…」等阶段标签
 - fix: 基金筛选/对比页「规模」「基金经理」为空——`compare._get_fund_archive` 档案页解析正则失配（规模页标签为「净资产规模」而非「基金规模」；经理姓名在 `<a>` 内，旧正则只捕到 `&nbsp;`）。改为兼容双标签 + 跳过中间标签取值；经理优先「基金经理人」表格行、回退「基金经理：」概要区，提取全部 `<a>` 姓名（支持多位）。新增 5 个 `test_compare.py` 用例，总测试 583→588
 
 ### v0.24.0 - 2026-10-16

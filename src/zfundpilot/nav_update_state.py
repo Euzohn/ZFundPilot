@@ -14,6 +14,7 @@ nav_update_state: dict[str, Any] = {
     "total": 0,
     "done": 0,
     "current": "",
+    "phase": "",
     "results": [],
     "error": "",
 }

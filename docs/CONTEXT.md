@@ -513,7 +513,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
-- fix: 定投计划卡片（`transactions?tab=auto-invest`）未显示渠道——`AutoInvestPlansPanel` 卡片漏渲染 `plan.channel`，需点编辑才见。卡片头部（代码行下）加渠道行：有渠道显色点（`getColorForChannel`，与详情页/持仓页一致）+ `translateChannel` 译名；空显「未标注」不带色点。纯前端，复用现有 i18n 键
+- fix: 定投计划卡片（`transactions?tab=auto-invest`）未显示渠道——`AutoInvestPlansPanel` 卡片漏渲染 `plan.channel`，需点编辑才见。卡片头部代码同行显示渠道：有渠道显色点（`getColorForChannel`，与详情页/持仓页一致）+ `translateChannel` 译名；空渠道仅显示代码。纯前端，复用现有 i18n 键
 - perf: 净值更新尾部「风险等级刷新」串行改 6 线程并发（`ThreadPoolExecutor` + 随机抖动，与 compare/fund_filter 一致），35 只基金耗时从 ~30s 降至 ~6s；DB 写入仍在主线程串行。单只失败不阻塞（`fetch_risk_level` 已吞异常返回空串，空值不写回）
 - feat: 净值更新进度新增「阶段」状态（`nav_update_state.phase`，前端 `NavUpdateStatus.phase`）——净值抓取完成后尾部任务（回填/止盈止损/基准指数/申购状态·交易日历·风险等级）实时上报当前阶段，前端进度条不再停在 100% 静默等待，显示「刷新风险等级…」等阶段标签
 - fix: 基金筛选/对比页「规模」「基金经理」为空——`compare._get_fund_archive` 档案页解析正则失配（规模页标签为「净资产规模」而非「基金规模」；经理姓名在 `<a>` 内，旧正则只捕到 `&nbsp;`）。改为兼容双标签 + 跳过中间标签取值；经理优先「基金经理人」表格行、回退「基金经理：」概要区，提取全部 `<a>` 姓名（支持多位）。新增 5 个 `test_compare.py` 用例，总测试 583→588

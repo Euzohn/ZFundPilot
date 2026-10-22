@@ -1706,15 +1706,14 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
                     <CardTitle className="text-sm font-semibold">
                       {plan.fund_name || plan.fund_code}
                     </CardTitle>
-                    <p className="text-xs text-muted-foreground mt-0.5">{plan.fund_code}</p>
-                    <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-                      {plan.channel ? (
+                    <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                      <span>{plan.fund_code}</span>
+                      {plan.channel && (
                         <>
+                          <span className="text-muted-foreground/40">·</span>
                           <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: getColorForChannel(plan.channel) }} />
-                          {translateChannel(plan.channel) || plan.channel}
+                          <span>{translateChannel(plan.channel) || plan.channel}</span>
                         </>
-                      ) : (
-                        <span>{t.common.unlabeled}</span>
                       )}
                     </p>
                     {planWarning(plan) && (

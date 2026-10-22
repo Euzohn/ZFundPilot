@@ -20,6 +20,7 @@ import EmptyState from "@/components/EmptyState"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { Search, Plus, Pencil, Trash2, Download, Upload, FileDown, Loader2, Receipt, ArrowUpDown, Repeat, Gift, Camera, ArrowLeftRight, AlertTriangle } from "lucide-react"
+import { getColorForChannel } from "@/lib/channelColors"
 import { getChannels, getChannelsAsync, saveChannels } from "@/lib/channels"
 import { translateChannel, translatePurchaseStatus } from "@/lib/taxonomyLabels"
 import { translateBackendError } from "@/lib/backendLabels"
@@ -1706,6 +1707,16 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
                       {plan.fund_name || plan.fund_code}
                     </CardTitle>
                     <p className="text-xs text-muted-foreground mt-0.5">{plan.fund_code}</p>
+                    <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+                      {plan.channel ? (
+                        <>
+                          <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: getColorForChannel(plan.channel) }} />
+                          {translateChannel(plan.channel) || plan.channel}
+                        </>
+                      ) : (
+                        <span>{t.common.unlabeled}</span>
+                      )}
+                    </p>
                     {planWarning(plan) && (
                       <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-500">
                         <AlertTriangle className="h-3 w-3 shrink-0" />

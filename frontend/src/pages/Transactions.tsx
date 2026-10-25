@@ -1138,7 +1138,7 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
 
   return (
     <Card>
-      <CardHeader className="flex-row items-center justify-between">
+      <CardHeader className="flex-row items-center justify-between flex-wrap gap-2">
         <CardTitle className="text-base">{t.transactions.transactionFlow}</CardTitle>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={async () => { try { await api.exportCsv(); toast.success(t.transactions.csvExported) } catch (e) { toast.error(translateBackendError(String(e))) } }}>

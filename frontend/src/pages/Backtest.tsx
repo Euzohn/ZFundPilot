@@ -444,10 +444,10 @@ export default function Backtest() {
                 <CardContent>
                   {selectedDca && selectedDca.periods_detail.length > 0 ? (
                     <div className="overflow-x-auto">
-                      <Table>
+                      <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-4 sm:[&_th]:px-4">
                         <TableHeader>
                           <TableRow>
-                            <TableHead>{t.backtest.plannedDate}</TableHead>
+                            <TableHead className="sticky left-0 z-20 bg-muted/50 border-r border-border/60 whitespace-nowrap">{t.backtest.plannedDate}</TableHead>
                             <TableHead>{t.backtest.actualDate}</TableHead>
                             <TableHead className="text-right">{t.common.nav}</TableHead>
                             <TableHead className="text-right">{t.common.amount}</TableHead>
@@ -461,7 +461,7 @@ export default function Backtest() {
                         <TableBody>
                           {selectedDca.periods_detail.map((p, i) => (
                             <TableRow key={i}>
-                              <TableCell className="tabular-nums">{p.planned_date}</TableCell>
+                              <TableCell className="sticky left-0 z-10 bg-background border-r border-border/60 tabular-nums whitespace-nowrap">{p.planned_date}</TableCell>
                               <TableCell className="tabular-nums">{p.actual_date}</TableCell>
                               <TableCell className="text-right tabular-nums">{p.nav.toFixed(4)}</TableCell>
                               <TableCell className="text-right tabular-nums">{money(p.amount)}</TableCell>
@@ -490,10 +490,10 @@ export default function Backtest() {
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
-                    <Table>
+                    <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-4 sm:[&_th]:px-4">
                       <TableHeader>
                         <TableRow>
-                          <TableHead>{t.backtest.fund}</TableHead>
+                          <TableHead className="sticky left-0 z-20 bg-muted/50 border-r border-border/60 whitespace-nowrap">{t.backtest.fund}</TableHead>
                           <TableHead>{t.backtest.strategy}</TableHead>
                           <TableHead className="text-right">{t.backtest.totalInvested}</TableHead>
                           <TableHead className="text-right">{t.backtest.finalValue}</TableHead>
@@ -507,7 +507,7 @@ export default function Backtest() {
                       <TableBody>
                         {results.map((r, i) => (
                           <TableRow key={i}>
-                            <TableCell className="font-medium">
+                            <TableCell className="sticky left-0 z-10 bg-background border-r border-border/60 font-medium whitespace-nowrap">
                               {r.fund_name}（{r.fund_code}）
                             </TableCell>
                             <TableCell>

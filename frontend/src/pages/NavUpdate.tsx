@@ -289,7 +289,7 @@ export default function NavUpdate() {
           ) : sortedRows.length === 0 ? (
             <EmptyState title={t.navUpdate.noFundData} />
           ) : (
-            <Table>
+            <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-3 sm:[&_th]:px-3">
               <TableHeader>
                 <TableRow>
                   <TableHead>{t.navUpdate.fundName}</TableHead>

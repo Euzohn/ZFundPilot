@@ -268,7 +268,7 @@ export default function Screener() {
 
       {!loading && !error && results.length > 0 && (
         <>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-3">
               <p className="text-xs text-muted-foreground">
                 {t.compare.resultCount.replace("{total}", String(total)).replace("{shown}", String(results.length))}

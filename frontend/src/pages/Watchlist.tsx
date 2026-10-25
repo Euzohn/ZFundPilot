@@ -234,10 +234,10 @@ export default function Watchlist() {
           </div>
 
           <div className="overflow-x-auto rounded-md border">
-            <Table className="w-full text-sm">
+            <Table className="w-full text-sm [&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-3 sm:[&_th]:px-3">
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <SortHeader field="code" className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.code}</SortHeader>
+                  <SortHeader field="code" className="sticky left-0 z-20 bg-muted/50 border-r border-border/60 px-3 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{t.common.code}</SortHeader>
                   <SortHeader field="name" className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.name}</SortHeader>
                   <SortHeader field="type" className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.type}</SortHeader>
                   <SortHeader field="sector" className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">{t.compare.sector}</SortHeader>
@@ -250,7 +250,7 @@ export default function Watchlist() {
               <TableBody>
                 {sorted.map((item) => (
                   <TableRow key={item.fund_code} className="border-t border-border/50">
-                    <TableCell className="px-3 py-2 font-mono text-xs">{item.fund_code}</TableCell>
+                    <TableCell className="sticky left-0 z-10 bg-background border-r border-border/60 px-3 py-2 font-mono text-xs whitespace-nowrap">{item.fund_code}</TableCell>
                     <TableCell className="max-w-[200px] px-3 py-2 text-xs">
                       <div className="flex items-center gap-1.5">
                         <span className="truncate" title={item.fund_name}>{item.fund_name || "—"}</span>

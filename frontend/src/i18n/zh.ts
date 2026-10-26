@@ -124,6 +124,7 @@ const zh = {
     marketOpen: "开市",
     marketClosed: "闭市",
     nav: "净值",
+    navDate: "净值日期",
     navLatest: "最新",
     concentration: "集中度",
     concHigh: "高",

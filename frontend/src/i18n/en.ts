@@ -126,6 +126,7 @@ const en: typeof zh = {
     marketOpen: "OPEN",
     marketClosed: "CLOSED",
     nav: "NAV",
+    navDate: "NAV DATE",
     navLatest: "CURRENT",
     concentration: "CONCENTRATION",
     concHigh: "HIGH",

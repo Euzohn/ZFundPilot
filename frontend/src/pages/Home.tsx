@@ -265,7 +265,7 @@ export default function Home() {
                   {mkt ? tr.marketOpen : tr.marketClosed}
                 </span>
                 <span aria-hidden="true" className="mx-3 text-white/40">///</span>
-                <span className="text-white/60">{tr.nav}:</span>{" "}
+                <span className="text-white/60">{tr.navDate}:</span>{" "}
                 <span className={summary.as_of_date === todayStr ? "text-gain-400" : "text-white/80"}>
                   {navStatus}
                 </span>

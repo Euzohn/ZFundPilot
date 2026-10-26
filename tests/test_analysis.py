@@ -2,7 +2,12 @@
 from datetime import datetime as _datetime
 from zoneinfo import ZoneInfo
 
-from zfundpilot.analysis import _build_data_status, _build_positions_from_transactions
+from zfundpilot.analysis import (
+    _build_data_status,
+    _build_positions_from_transactions,
+    calculate_summary,
+    clear_analysis_cache,
+)
 from zfundpilot.models import (
     ACTION_BUY,
     ACTION_DIVIDEND,
@@ -319,3 +324,35 @@ class TestBuildDataStatus:
         original_date = p.latest_date
         _build_data_status([p])
         assert p.latest_date == original_date
+
+    def test_summary_cache_refreshes_after_clear(self, monkeypatch):
+        """清空分析缓存后 calculate_summary 重新计算 data_status，未清则命中旧摘要。"""
+        _freeze_now(monkeypatch, 2026, 10, 30)  # normal_ref = 2026-10-29
+        monkeypatch.setattr("zfundpilot.analysis.db.is_trading_day", _weekday_trading_day())
+        monkeypatch.setattr("zfundpilot.analysis.db.get_transactions_without_nav", lambda: [])
+        # 隔离数据库依赖：流水、净值曲线都返回空
+        monkeypatch.setattr("zfundpilot.analysis._get_transactions_cached", lambda: [])
+        monkeypatch.setattr("zfundpilot.analysis.build_portfolio_curve", lambda: {"date": []})
+
+        stale = [_pos("001", held=100, latest_date="2026-10-28")]
+        fresh = [_pos("001", held=100, latest_date="2026-10-29")]
+        monkeypatch.setattr("zfundpilot.analysis.calculate_positions",
+                            lambda include_closed=True: stale)
+
+        clear_analysis_cache()
+        try:
+            s1 = calculate_summary()
+            assert s1.data_status.stale_nav_fund_count == 1
+
+            # 数据源变化但缓存未清 → 仍返回旧摘要，证明命中缓存
+            monkeypatch.setattr("zfundpilot.analysis.calculate_positions",
+                                lambda include_closed=True: fresh)
+            s2 = calculate_summary()
+            assert s2.data_status.stale_nav_fund_count == 1
+
+            # 清缓存后 → 重新计算，反映最新数据
+            clear_analysis_cache()
+            s3 = calculate_summary()
+            assert s3.data_status.stale_nav_fund_count == 0
+        finally:
+            clear_analysis_cache()

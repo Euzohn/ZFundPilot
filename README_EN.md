@@ -149,6 +149,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 
 - **Password Auth** — Username + password login, HMAC-signed token, bcrypt password hashing, login rate limiting
 - **Agent Read-only Tokens** — High-entropy tokens independent of web login; server stores only SHA-256 digests; scoped to `portfolio:read`/`funds:read`/`health:read`, default-deny, revocable; unavailable when no admin password is configured
+- **Agent Read-only Tools** — `/api/agent/tools/*` exposes portfolio summary, data status, positions, and fund detail as scoped read-only endpoints; no transaction/settings/export writes
 - **API Key Encryption** — AI API key encrypted at rest (Fernet AES-128-CBC + HMAC-SHA256)
 - **Audit Log** — Sensitive operations logged, viewable in Settings
 - **Language Switch** — Full UI supports Chinese/English toggle, switch from sidebar, data format (¥/$) adapts automatically

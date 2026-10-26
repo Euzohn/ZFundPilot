@@ -9,7 +9,8 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from zfundpilot import agent_tokens, api, config, db
+from zfundpilot import agent_tokens, analysis, api, config, db
+from zfundpilot.models import Fund, NavPoint
 
 
 @pytest.fixture
@@ -18,7 +19,9 @@ def temp_db(monkeypatch):
     with TemporaryDirectory() as d:
         monkeypatch.setattr(config, "DB_PATH", str(Path(d) / "test.db"))
         db.init_db()
+        analysis.clear_analysis_cache()
         yield
+        analysis.clear_analysis_cache()
 
 
 @pytest.fixture
@@ -257,3 +260,118 @@ class TestRequireAgentScope:
         resp = TestClient(_probe_app("portfolio:read")).get(
             "/probe", headers={"Authorization": "Bearer zfag_whatever"})
         assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Agent 只读工具端点
+# ---------------------------------------------------------------------------
+class TestAgentTools:
+    def _headers(self, *scopes: str) -> dict[str, str]:
+        plaintext, _ = agent_tokens.issue_token("agent", list(scopes))
+        return {"Authorization": f"Bearer {plaintext}"}
+
+    def test_portfolio_summary_scope(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        client = TestClient(api.app)
+
+        ok = client.get("/api/agent/tools/portfolio-summary",
+                        headers=self._headers("portfolio:read"))
+        assert ok.status_code == 200
+        body = ok.json()
+        assert body["tool"] == "get_portfolio_summary"
+        assert "total_value" in body["data"]
+        assert "data_status" in body["data"]
+
+        denied = client.get("/api/agent/tools/portfolio-summary",
+                            headers=self._headers("funds:read"))
+        assert denied.status_code == 403
+
+    def test_data_status_requires_health_scope(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        client = TestClient(api.app)
+
+        ok = client.get("/api/agent/tools/data-status",
+                        headers=self._headers("health:read"))
+        assert ok.status_code == 200
+        data = ok.json()["data"]
+        assert data["as_of_date_semantics"]
+        assert data["missing_nav_fund_count"] == 0
+        assert data["stale_nav_fund_count"] == 0
+        assert data["pending_t1_transaction_count"] == 0
+
+        denied = client.get("/api/agent/tools/data-status",
+                            headers=self._headers("portfolio:read"))
+        assert denied.status_code == 403
+
+    def test_positions_and_limit_validation(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        client = TestClient(api.app)
+        headers = self._headers("portfolio:read")
+
+        resp = client.get("/api/agent/tools/positions", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["positions"] == []
+        assert data["total"] == 0
+
+        assert client.get(
+            "/api/agent/tools/positions?limit=0", headers=headers
+        ).status_code == 422
+        assert client.get(
+            "/api/agent/tools/positions?limit=501", headers=headers
+        ).status_code == 422
+
+    def test_fund_detail(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        db.upsert_fund(Fund(
+            fund_code="005827", fund_name="测试基金",
+            fund_type="混合型", sector="科技"))
+        db.upsert_nav_batch([
+            NavPoint(fund_code="005827", date="2026-10-26", nav=1.2),
+            NavPoint(fund_code="005827", date="2026-10-27", nav=1.25,
+                     accumulated_nav=1.5),
+        ])
+        analysis.clear_analysis_cache()
+        client = TestClient(api.app)
+        headers = self._headers("funds:read")
+
+        resp = client.get("/api/agent/tools/funds/005827", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["fund"]["fund_code"] == "005827"
+        assert data["latest_formal_nav"]["nav"] == 1.25
+        assert len(data["recent_nav"]) == 2
+        assert data["positions"] == []
+
+        assert client.get(
+            "/api/agent/tools/funds/abc", headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/funds/000000", headers=headers).status_code == 404
+
+    def test_web_token_cannot_call_tools(self, admin_client):
+        client, headers = admin_client
+        assert client.get(
+            "/api/agent/tools/portfolio-summary", headers=headers
+        ).status_code == 401
+
+    def test_missing_token_is_401(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        assert TestClient(api.app).get(
+            "/api/agent/tools/portfolio-summary").status_code == 401
+
+    def test_auth_disabled_rejects_tools(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", False)
+        resp = TestClient(api.app).get(
+            "/api/agent/tools/portfolio-summary",
+            headers={"Authorization": "Bearer zfag_whatever"})
+        assert resp.status_code == 403
+
+    def test_unknown_tool_still_requires_token(self, temp_db, monkeypatch):
+        """结构性默认拒绝：即使路径不存在，没有有效 token 也先返回 401。"""
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        client = TestClient(api.app)
+        assert client.get("/api/agent/tools/does-not-exist").status_code == 401
+        assert client.get(
+            "/api/agent/tools/does-not-exist",
+            headers=self._headers("portfolio:read"),
+        ).status_code == 404

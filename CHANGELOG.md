@@ -8,6 +8,7 @@
 
 ### Added
 - 新增 Agent 只读访问的安全基础：独立 Agent token（高熵随机串，服务端仅存 SHA-256 摘要与元数据），与网页登录 token 物理隔离；提供 `GET/POST /api/agent/tokens` 与 `DELETE /api/agent/tokens/{id}` 供管理员签发、列出、撤销（明文仅签发时返回一次）；首期仅开放 `portfolio:read`/`funds:read`/`health:read` 三个只读 scope，新增默认拒绝的 `require_agent_scope` 鉴权依赖与按 token + 端点限流，Agent 鉴权成功/失败均写审计（仅记 token 前缀，不记明文）；未启用管理员密码认证时禁止签发与使用。新增 `tests/test_agent_tokens.py` 22 个用例，总测试 602→624
+- 新增首批 Agent 只读工具端点（`/api/agent/tools/*`，均走同一 `require_agent_scope` 默认拒绝校验）：`portfolio-summary`（组合汇总）、`data-status`（正式净值与 T+1 状态）、`positions`（按基金+渠道的持仓，含待确认与正式净值日期）、`funds/{code}`（单基金详情与近期净值）；统一响应包附带 `tool`/`generated_at`/`currency`，工具路由不经过网页登录中间件。新增 8 个工具端点用例，总测试 624→632
 - 组合总览新增「数据状态」提示——在指标区下显示一条紧凑横幅：最新正式净值日期（注明「部分基金可能更早」，避免被误解为所有持仓均已更新）、需关注净值的基金数（按基金代码去重、剔除仅待确认买入的基金）、T+1 待确认交易笔数（仅统计 `is_t1` 且 `nav` 为空的非分红交易）。两个计数均提供跳转现有净值页与交易流水页的链接，只读不触发写操作。新增 `PortfolioSummary.data_status` 字段（`GET /api/summary`，可选、向后兼容），后端按已完成 A 股交易日判断净值新鲜度，周末/法定节假日不误报过期；QDII 多容忍一个中美同时开市的交易日；日历不可用时 fail-open 只报缺失不报过期。首页系统状态行的净值标签由「净值」改为「净值日期」，避免被读作组合整体截至该日。新增 `tests/test_analysis.py` 14 个 `_build_data_status`/缓存失效单测，总测试 588→602
 
 ## [0.25.0] - 2026-10-26

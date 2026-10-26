@@ -24,7 +24,7 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -297,6 +297,10 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     path = request.url.path
+    # Agent 工具端点使用独立 Agent token，由 require_agent_scope 依赖校验；
+    # 不经过网页登录 token 中间件（仍默认拒绝：每个工具路由都挂 Agent 鉴权依赖）。
+    if path == "/api/agent/tools" or path.startswith("/api/agent/tools/"):
+        return await call_next(request)
     # 静态文件（非 /api）和公开认证端点不需要 token
     if not path.startswith("/api") or path in ("/api/auth/login", "/api/auth/status"):
         return await call_next(request)
@@ -528,9 +532,31 @@ def _check_agent_rate_limit(token_id: int, path: str) -> tuple[bool, int]:
     return True, 0
 
 
-def require_agent_scope(required_scope: str):
-    """构造 FastAPI 依赖：校验 Agent Bearer token 与 scope，默认拒绝。
+def _extract_agent_bearer(request: Request) -> str:
+    """从 Authorization: Bearer 中取明文 token；缺失时返回空串。"""
+    header = request.headers.get("Authorization", "")
+    return header[7:].strip() if header.startswith("Bearer ") else ""
 
+
+def _authenticate_agent_token(request: Request) -> agent_tokens.AgentTokenContext:
+    """校验 Agent Bearer token 本身（不含 scope）；失败写审计并抛 401/403。"""
+    plaintext = _extract_agent_bearer(request)
+    try:
+        return agent_tokens.authenticate(plaintext)
+    except agent_tokens.AgentTokenError as exc:
+        db.log_audit(
+            "agent_auth_failed", ip=_get_client_ip(request),
+            detail={"path": request.url.path, "reason": exc.reason,
+                    "token_prefix": plaintext[:agent_tokens.PREFIX_DISPLAY_LEN]},
+        )
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+def require_agent_scope(required_scope: str):
+    """构造 FastAPI 依赖：校验 Agent token 是否具备所需 scope，默认拒绝。
+
+    有效性由 ``agent_auth_middleware`` 统一校验并写入 ``request.state.agent_ctx``；
+    若依赖被用在中间件未覆盖的路由上，这里会兜底重新校验 token。
     失败语义：无/错误/过期/撤销 token → 401；有效 token 但缺 scope → 403；
     超限 → 429。审计记录 token 前缀与端点，不记录明文或响应内容。
     """
@@ -538,24 +564,25 @@ def require_agent_scope(required_scope: str):
         raise ValueError(f"未定义的 Agent scope：{required_scope}")
 
     def _dependency(request: Request) -> agent_tokens.AgentTokenContext:
-        ip = _get_client_ip(request)
-        header = request.headers.get("Authorization", "")
-        plaintext = header[7:].strip() if header.startswith("Bearer ") else ""
-        try:
-            ctx = agent_tokens.authenticate(plaintext, required_scope)
-        except agent_tokens.AgentTokenError as exc:
+        ctx = getattr(request.state, "agent_ctx", None)
+        if ctx is None:
+            ctx = _authenticate_agent_token(request)
+        if required_scope not in ctx.scopes:
             db.log_audit(
-                "agent_auth_failed", ip=ip,
+                "agent_auth_failed", ip=_get_client_ip(request),
                 detail={"path": request.url.path, "scope": required_scope,
-                        "reason": exc.reason,
-                        "token_prefix": plaintext[:agent_tokens.PREFIX_DISPLAY_LEN]},
+                        "reason": "insufficient_scope",
+                        "token_id": ctx.id, "token_prefix": ctx.prefix},
             )
-            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+            raise HTTPException(
+                status_code=403,
+                detail=f"Agent token 缺少权限：{required_scope}",
+            )
 
         allowed, retry_after = _check_agent_rate_limit(ctx.id, request.url.path)
         if not allowed:
             db.log_audit(
-                "agent_rate_limited", ip=ip,
+                "agent_rate_limited", ip=_get_client_ip(request),
                 detail={"path": request.url.path, "token_id": ctx.id,
                         "token_prefix": ctx.prefix, "retry_after": retry_after},
             )
@@ -566,13 +593,150 @@ def require_agent_scope(required_scope: str):
             )
 
         db.log_audit(
-            "agent_auth_ok", ip=ip,
+            "agent_auth_ok", ip=_get_client_ip(request),
             detail={"path": request.url.path, "token_id": ctx.id,
                     "token_prefix": ctx.prefix, "scope": required_scope},
         )
         return ctx
 
     return _dependency
+
+
+@app.middleware("http")
+async def agent_auth_middleware(request: Request, call_next):
+    """Agent 工具路由的入口校验：没有有效 Agent token 一律拒绝。
+
+    结构性默认拒绝：即使某条工具路由漏挂 scope 依赖，也无法匿名访问。
+    """
+    path = request.url.path
+    if not (path == "/api/agent/tools" or path.startswith("/api/agent/tools/")):
+        return await call_next(request)
+    if request.method == "OPTIONS":  # 交由 CORS 中间件处理预检
+        return await call_next(request)
+    try:
+        request.state.agent_ctx = _authenticate_agent_token(request)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code,
+                            content={"detail": exc.detail},
+                            headers=exc.headers)
+    return await call_next(request)
+
+
+# --- Agent 只读工具（首期 4 个）--------------------------------------------
+def _agent_tool_response(tool: str, data: dict[str, Any]) -> dict[str, Any]:
+    """统一工具响应包：版本、工具名、生成时间与币种，便于 Agent 稳定解析。"""
+    return {
+        "schema_version": 1,
+        "tool": tool,
+        "generated_at": datetime.now(config.TIMEZONE).isoformat(),
+        "currency": "CNY",
+        "data": data,
+    }
+
+
+@app.get("/api/agent/tools/portfolio-summary")
+def agent_get_portfolio_summary(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_PORTFOLIO_READ)),
+    ],
+) -> dict[str, Any]:
+    """组合市值、收益、年化与数据截至时间（只读）。
+
+    ``data.as_of_date`` 是各持仓正式净值日期的最大值，不代表所有基金均已更新；
+    数据完整性见 ``data.data_status``。
+    """
+    del ctx
+    return _agent_tool_response(
+        "get_portfolio_summary", analysis.calculate_summary().to_dict())
+
+
+@app.get("/api/agent/tools/data-status")
+def agent_get_data_status(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_HEALTH_READ)),
+    ],
+) -> dict[str, Any]:
+    """正式净值缺失/过期与 T+1 待确认交易摘要（只读）。"""
+    del ctx
+    summary = analysis.calculate_summary()
+    status = summary.data_status
+    return _agent_tool_response("get_data_status", {
+        "as_of_date": summary.as_of_date,
+        "as_of_date_semantics": (
+            "as_of_date 为各持仓正式净值日期的最大值，不代表所有基金均已更新"
+        ),
+        "missing_nav_fund_count": status.missing_nav_fund_count,
+        "stale_nav_fund_count": status.stale_nav_fund_count,
+        "pending_t1_transaction_count": status.pending_t1_transaction_count,
+    })
+
+
+@app.get("/api/agent/tools/positions")
+def agent_list_positions(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_PORTFOLIO_READ)),
+    ],
+    include_closed: bool = False,
+    limit: int = Query(200, ge=1, le=500),
+) -> dict[str, Any]:
+    """持仓列表（按市值降序，默认仅未清仓），按 (基金, 渠道) 区分。"""
+    del ctx
+    positions = analysis.calculate_positions(include_closed=include_closed)
+    total = len(positions)
+    items = [p.to_dict() for p in positions[:limit]]
+    return _agent_tool_response("list_positions", {
+        "count": len(items),
+        "total": total,
+        "limit": limit,
+        "include_closed": include_closed,
+        "valuation_basis": "latest_formal_nav",
+        "positions": items,
+    })
+
+
+@app.get("/api/agent/tools/funds/{code}")
+def agent_get_fund_detail(
+    code: str,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_FUNDS_READ)),
+    ],
+    nav_limit: int = Query(30, ge=1, le=250),
+) -> dict[str, Any]:
+    """单基金详情：基础信息、最新正式净值、年化、各渠道持仓与近期净值。"""
+    del ctx
+    if not re.fullmatch(r"\d{6}", code):
+        raise HTTPException(status_code=400, detail="基金代码必须为 6 位数字")
+    fund = db.get_fund(code)
+    if not fund:
+        raise HTTPException(status_code=404, detail=f"未找到基金 {code}")
+
+    latest = db.get_latest_nav(code)
+    positions = [
+        p for p in analysis.calculate_positions(include_closed=False)
+        if p.fund_code == code
+    ]
+    recent = db.get_nav_history(code)[-nav_limit:]
+    return _agent_tool_response("get_fund_detail", {
+        "fund": fund.to_dict(),
+        "valuation_basis": "latest_formal_nav",
+        "latest_formal_nav": ({
+            "date": latest["date"],
+            "nav": latest["nav"],
+            "accumulated_nav": latest["accumulated_nav"],
+            "source": latest["source"],
+        } if latest else None),
+        "annualized_return": analysis.calculate_fund_xirr(code),
+        "positions": [p.to_dict() for p in positions],
+        "recent_nav": [
+            {"date": row["date"], "nav": row["nav"],
+             "accumulated_nav": row["accumulated_nav"]}
+            for row in recent
+        ],
+    })
 
 
 # ---------------------------------------------------------------------------

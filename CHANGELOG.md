@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-10-26
+
 ### Added
 - 交易流水支持按渠道筛选——筛选工具栏新增「渠道」下拉（与操作类型并列），选项从交易流水中实际出现的渠道动态生成（`translateChannel` 译名），含「未标注」项筛空渠道交易；选「全部渠道」恢复。复用现有 i18n 键 `transactions.allChannels`/`common.unlabeled`，纯前端
 

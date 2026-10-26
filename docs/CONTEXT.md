@@ -25,7 +25,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.24.0`（git tag `v0.24.0`）
+- **版本**: `0.25.0`（git tag `v0.25.0`）
 - **License**: MIT
 
 ---
@@ -47,7 +47,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.24.0"
+│   ├── __init__.py          # __version__ = "0.25.0"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
@@ -170,7 +170,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.24.0")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.25.0")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
 - 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
@@ -512,6 +512,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ## 十二、当前工作状态
 
 ### [Unreleased]
+
+### [0.25.0] - 2026-10-26
 
 - fix: 定投计划卡片（`transactions?tab=auto-invest`）未显示渠道——`AutoInvestPlansPanel` 卡片漏渲染 `plan.channel`，需点编辑才见。卡片头部代码同行显示渠道：有渠道显色点（`getColorForChannel`，与详情页/持仓页一致）+ `translateChannel` 译名；空渠道仅显示代码。纯前端，复用现有 i18n 键
 - perf: 净值更新尾部「风险等级刷新」串行改 6 线程并发（`ThreadPoolExecutor` + 随机抖动，与 compare/fund_filter 一致），35 只基金耗时从 ~30s 降至 ~6s；DB 写入仍在主线程串行。单只失败不阻塞（`fetch_risk_level` 已吞异常返回空串，空值不写回）

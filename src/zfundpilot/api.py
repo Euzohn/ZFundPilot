@@ -24,9 +24,10 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Security, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.security import HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from . import __version__ as APP_VERSION
@@ -81,7 +82,24 @@ async def _lifespan(app: FastAPI):
     scheduler.shutdown_scheduler()
 
 
-app = FastAPI(title="ZFundPilot API", version="0.25.0", lifespan=_lifespan)
+app = FastAPI(
+    title="ZFundPilot API",
+    version="0.25.0",
+    lifespan=_lifespan,
+    openapi_tags=[
+        {
+            "name": "agent",
+            "description": (
+                "Agent 只读工具。需要 `Authorization: Bearer <Agent token>`，"
+                "按 scope 默认拒绝，响应含 schema_version/tool/generated_at/currency。"
+            ),
+        },
+        {
+            "name": "agent-admin",
+            "description": "Agent token 管理。需要网页登录 token，未启用密码认证时拒绝。",
+        },
+    ],
+)
 
 # ---------------------------------------------------------------------------
 # 登录速率限制（in-memory，单 uvicorn worker）
@@ -407,6 +425,30 @@ def change_username(request: Request, body: ChangeUsernameRequest) -> dict[str, 
 # ---------------------------------------------------------------------------
 # Agent 只读访问：独立 token 管理 + 默认拒绝的 scope 依赖
 # ---------------------------------------------------------------------------
+_AGENT_ERROR_RESPONSES = {
+    401: {"description": "缺少、无效、已过期或已撤销的 Agent token"},
+    403: {"description": "缺少所需 scope，或实例未启用管理员密码认证"},
+    429: {"description": "超过按 token + 端点的限流阈值，参见 Retry-After"},
+}
+_ADMIN_ERROR_RESPONSES = {
+    401: {"description": "需要有效的网页登录 token"},
+    403: {"description": "未启用管理员密码认证，禁止管理 Agent token"},
+}
+
+# 仅用于 OpenAPI 的 securitySchemes / Swagger Authorize；实际校验由中间件与
+# _require_admin_auth 完成，故 auto_error=False，避免重复拒绝。
+_agent_bearer_scheme = HTTPBearer(
+    auto_error=False,
+    scheme_name="AgentBearer",
+    description="Agent token（zfag_...），仅用于 /api/agent/tools/*",
+)
+_admin_bearer_scheme = HTTPBearer(
+    auto_error=False,
+    scheme_name="WebLoginBearer",
+    description="网页登录 token，由 /api/auth/login 获取",
+)
+
+
 class AgentTokenCreate(BaseModel):
     """签发 Agent token 的请求体。"""
     model_config = ConfigDict(extra="forbid")
@@ -452,7 +494,10 @@ def _require_admin_auth(request: Request) -> None:
         raise HTTPException(status_code=401, detail="需要管理员登录")
 
 
-@app.get("/api/agent/tokens")
+@app.get("/api/agent/tokens", tags=["agent-admin"],
+         summary="列出 Agent token 元数据",
+         responses=_ADMIN_ERROR_RESPONSES,
+         dependencies=[Security(_admin_bearer_scheme)])
 def list_agent_tokens(request: Request) -> dict[str, Any]:
     """列出 Agent token 元数据（不含明文与摘要）。"""
     _require_admin_auth(request)
@@ -462,7 +507,10 @@ def list_agent_tokens(request: Request) -> dict[str, Any]:
     return {"tokens": tokens, "scopes": sorted(agent_tokens.ALLOWED_SCOPES)}
 
 
-@app.post("/api/agent/tokens")
+@app.post("/api/agent/tokens", tags=["agent-admin"],
+          summary="签发 Agent token（明文仅返回一次）",
+          responses=_ADMIN_ERROR_RESPONSES,
+          dependencies=[Security(_admin_bearer_scheme)])
 def create_agent_token(body: AgentTokenCreate, request: Request) -> dict[str, Any]:
     """签发 Agent token；明文仅本次响应返回。"""
     _require_admin_auth(request)
@@ -487,7 +535,10 @@ def create_agent_token(body: AgentTokenCreate, request: Request) -> dict[str, An
     }
 
 
-@app.delete("/api/agent/tokens/{token_id}")
+@app.delete("/api/agent/tokens/{token_id}", tags=["agent-admin"],
+            summary="撤销 Agent token（幂等）",
+            responses=_ADMIN_ERROR_RESPONSES,
+            dependencies=[Security(_admin_bearer_scheme)])
 def revoke_agent_token(token_id: int, request: Request) -> dict[str, Any]:
     """撤销 Agent token（幂等：重复撤销返回 already_revoked）。"""
     _require_admin_auth(request)
@@ -634,7 +685,9 @@ def _agent_tool_response(tool: str, data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@app.get("/api/agent/tools/portfolio-summary")
+@app.get("/api/agent/tools/portfolio-summary", tags=["agent"],
+         summary="组合汇总（只读）", responses=_AGENT_ERROR_RESPONSES,
+         dependencies=[Security(_agent_bearer_scheme)])
 def agent_get_portfolio_summary(
     ctx: Annotated[
         agent_tokens.AgentTokenContext,
@@ -651,7 +704,9 @@ def agent_get_portfolio_summary(
         "get_portfolio_summary", analysis.calculate_summary().to_dict())
 
 
-@app.get("/api/agent/tools/data-status")
+@app.get("/api/agent/tools/data-status", tags=["agent"],
+         summary="数据状态（只读）", responses=_AGENT_ERROR_RESPONSES,
+         dependencies=[Security(_agent_bearer_scheme)])
 def agent_get_data_status(
     ctx: Annotated[
         agent_tokens.AgentTokenContext,
@@ -688,7 +743,9 @@ def _agent_health_caveats(status: DataStatus) -> list[str]:
     return caveats
 
 
-@app.get("/api/agent/tools/portfolio-health")
+@app.get("/api/agent/tools/portfolio-health", tags=["agent"],
+         summary="组合体检（只读）", responses=_AGENT_ERROR_RESPONSES,
+         dependencies=[Security(_agent_bearer_scheme)])
 def agent_get_portfolio_health(
     ctx: Annotated[
         agent_tokens.AgentTokenContext,
@@ -718,7 +775,9 @@ def agent_get_portfolio_health(
     return _agent_tool_response("get_portfolio_health", data)
 
 
-@app.get("/api/agent/tools/positions")
+@app.get("/api/agent/tools/positions", tags=["agent"],
+         summary="持仓列表（只读）", responses=_AGENT_ERROR_RESPONSES,
+         dependencies=[Security(_agent_bearer_scheme)])
 def agent_list_positions(
     ctx: Annotated[
         agent_tokens.AgentTokenContext,
@@ -742,7 +801,12 @@ def agent_list_positions(
     })
 
 
-@app.get("/api/agent/tools/funds/{code}")
+@app.get("/api/agent/tools/funds/{code}", tags=["agent"],
+         summary="单基金详情（只读）",
+         responses={**_AGENT_ERROR_RESPONSES,
+                    400: {"description": "基金代码必须为 6 位数字"},
+                    404: {"description": "基金不存在"}},
+         dependencies=[Security(_agent_bearer_scheme)])
 def agent_get_fund_detail(
     code: str,
     ctx: Annotated[

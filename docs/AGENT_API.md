@@ -123,6 +123,18 @@ Authorization: Bearer zfag_xxxxxxxx
 
 每个 token、每个端点 **120 次/分钟**。超限返回 `429`，并按 `Retry-After` 秒数重试。
 
+### OpenAPI / Swagger
+
+FastAPI 自动生成以下页面：
+
+| 路径 | 内容 |
+|---|---|
+| `/openapi.json` | 机器可读的接口描述 |
+| `/docs` | Swagger UI |
+| `/redoc` | ReDoc |
+
+这些页面默认公开，**只描述接口结构**，不包含 token、持仓或其他业务数据；所有业务 `/api/*` 仍然需要认证。Agent 工具在 OpenAPI 中归入 `agent` 分组，管理端点归入 `agent-admin` 分组，并列出 401/403/429（基金详情另含 400/404）响应说明。OpenAPI 声明了 `AgentBearer` 与 `WebLoginBearer` 两种 Bearer；Swagger 的 Authorize 一次只能发送一个 `Authorization` 头，调试时按需授权其一。如果部署环境不希望暴露接口清单，可在反向代理层屏蔽上述路径。
+
 ### 估值口径
 
 持仓与基金详情中的金额基于**最新正式净值**，并在 `data.valuation_basis` 标注 `"latest_formal_nav"`。

@@ -123,6 +123,18 @@ Standard FastAPI error shape:
 
 **120 requests per minute** per token per endpoint. Exceeding it returns `429`; retry after the `Retry-After` seconds.
 
+### OpenAPI / Swagger
+
+FastAPI generates:
+
+| Path | Content |
+|---|---|
+| `/openapi.json` | Machine-readable API description |
+| `/docs` | Swagger UI |
+| `/redoc` | ReDoc |
+
+These pages are public by default and **only describe the API structure**; they contain no tokens, holdings, or other business data. All business `/api/*` endpoints still require authentication. Agent tools are grouped under `agent` and management endpoints under `agent-admin`, with documented 401/403/429 responses (plus 400/404 for fund detail). The schema declares two Bearer schemes, `AgentBearer` and `WebLoginBearer`; Swagger UI can send only one `Authorization` header at a time, so authorize the one you need. If your deployment should not expose the endpoint list, block these paths at the reverse proxy.
+
 ### Valuation basis
 
 Amounts are based on the **latest formal NAV** and marked with `data.valuation_basis = "latest_formal_nav"`.

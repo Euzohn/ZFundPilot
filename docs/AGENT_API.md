@@ -316,9 +316,46 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-MCP 适配层尚未内置；可以用任意 HTTP 工具封装上述 5 个端点。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
+也可以用任意 HTTP 工具封装上述 5 个端点；仓库同时提供可选的 MCP 适配层（见本节末尾）。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
 
 ---
+
+### MCP 适配层（可选）
+
+仓库内置一个 stdio MCP 桥接，把上述 5 个工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
+
+```bash
+# 在 ZFundPilot 源码目录安装可选依赖
+pip install 'zfundpilot[agent]'
+
+# 手动运行（正常由 MCP 客户端拉起）
+export ZFUNDPILOT_BASE_URL=http://127.0.0.1:8000
+export ZFUNDPILOT_AGENT_TOKEN=zfag_xxx
+python -m zfundpilot.mcp_server
+```
+
+Claude Desktop 配置示例（`claude_desktop_config.json`）：
+
+```json
+{
+  "mcpServers": {
+    "zfundpilot": {
+      "command": "python",
+      "args": ["-m", "zfundpilot.mcp_server"],
+      "env": {
+        "ZFUNDPILOT_BASE_URL": "http://127.0.0.1:8000",
+        "ZFUNDPILOT_AGENT_TOKEN": "zfag_xxx"
+      }
+    }
+  }
+}
+```
+
+暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`。
+
+- `ZFUNDPILOT_BASE_URL` 默认 `http://127.0.0.1:8000`；ZFundPilot 跑在 NAS/Docker 时改成实际地址，远程访问请用 HTTPS。
+- `ZFUNDPILOT_TIMEOUT` 可选，默认 30 秒，范围 1–120。
+- token 只从环境变量读取，不写入配置仓库或提示词；泄漏后立即在设置页撤销。
 
 ## 7. 安全与运维
 

@@ -316,9 +316,46 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-An MCP adapter is not bundled yet; wrap these five endpoints with any HTTP tool. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
+You can also wrap these five endpoints with any HTTP tool; an optional MCP adapter is provided at the end of this section. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
 
 ---
+
+### MCP adapter (optional)
+
+A stdio MCP bridge is bundled to expose the five tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
+
+```bash
+# Install the optional extra from the ZFundPilot source tree
+pip install 'zfundpilot[agent]'
+
+# Run manually (normally launched by the MCP client)
+export ZFUNDPILOT_BASE_URL=http://127.0.0.1:8000
+export ZFUNDPILOT_AGENT_TOKEN=zfag_xxx
+python -m zfundpilot.mcp_server
+```
+
+Claude Desktop example (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "zfundpilot": {
+      "command": "python",
+      "args": ["-m", "zfundpilot.mcp_server"],
+      "env": {
+        "ZFUNDPILOT_BASE_URL": "http://127.0.0.1:8000",
+        "ZFUNDPILOT_AGENT_TOKEN": "zfag_xxx"
+      }
+    }
+  }
+}
+```
+
+Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`.
+
+- `ZFUNDPILOT_BASE_URL` defaults to `http://127.0.0.1:8000`; use the real NAS/Docker address for remote instances and HTTPS for remote access.
+- `ZFUNDPILOT_TIMEOUT` is optional, default 30 seconds (range 1–120).
+- The token is read only from the environment; never commit it or paste it into prompts. Revoke it in Settings if leaked.
 
 ## 7. Security and operations
 

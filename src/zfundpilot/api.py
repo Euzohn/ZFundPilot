@@ -49,7 +49,7 @@ from . import (
     risk,
     scheduler,
 )
-from .models import ACTIONS, Fund, Transaction
+from .models import ACTIONS, DataStatus, Fund, Transaction
 from .nav_update_state import nav_update_lock as _nav_update_lock
 from .nav_update_state import nav_update_state as _nav_update_state
 
@@ -671,6 +671,51 @@ def agent_get_data_status(
         "stale_nav_fund_count": status.stale_nav_fund_count,
         "pending_t1_transaction_count": status.pending_t1_transaction_count,
     })
+
+
+def _agent_health_caveats(status: DataStatus) -> list[str]:
+    """把数据状态翻译成体检结论的降级说明，避免 Agent 忽略数据缺口。"""
+    caveats: list[str] = []
+    if status.missing_nav_fund_count:
+        caveats.append(
+            f"{status.missing_nav_fund_count} 只基金缺少正式净值，市值与收益评分可能偏低")
+    if status.stale_nav_fund_count:
+        caveats.append(
+            f"{status.stale_nav_fund_count} 只基金的最新正式净值可能已过期")
+    if status.pending_t1_transaction_count:
+        caveats.append(
+            f"{status.pending_t1_transaction_count} 笔 T+1 交易待确认，尚未计入市值")
+    return caveats
+
+
+@app.get("/api/agent/tools/portfolio-health")
+def agent_get_portfolio_health(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_HEALTH_READ)),
+    ],
+) -> dict[str, Any]:
+    """组合四维体检评分、风险提示与结构建议（只读）。
+
+    复用 ``health.build_health_report()``；数据缺口不隐藏，统一放在
+    ``data.data_quality.caveats``，评分口径仍为最新正式净值。
+    """
+    del ctx
+    report = health.build_health_report()
+    status = report.summary.data_status
+    data = report.to_dict()
+    data["valuation_basis"] = "latest_formal_nav"
+    data["data_quality"] = {
+        "as_of_date": report.summary.as_of_date,
+        "as_of_date_semantics": (
+            "as_of_date 为各持仓正式净值日期的最大值，不代表所有基金均已更新"
+        ),
+        "missing_nav_fund_count": status.missing_nav_fund_count,
+        "stale_nav_fund_count": status.stale_nav_fund_count,
+        "pending_t1_transaction_count": status.pending_t1_transaction_count,
+        "caveats": _agent_health_caveats(status),
+    }
+    return _agent_tool_response("get_portfolio_health", data)
 
 
 @app.get("/api/agent/tools/positions")

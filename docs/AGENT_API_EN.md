@@ -65,7 +65,7 @@ Request body:
 |---|---|
 | `portfolio:read` | `portfolio-summary`, `positions` |
 | `funds:read` | `funds/{code}` |
-| `health:read` | `data-status` |
+| `health:read` | `data-status`, `portfolio-health` |
 
 There are no write scopes. Calling a tool without the required scope returns **403**.
 
@@ -247,6 +247,33 @@ curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
 
 ---
 
+### 5.5 `GET /api/agent/tools/portfolio-health`
+
+Four-dimension portfolio health check. Scope: `health:read`.
+
+```bash
+curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
+  http://localhost:8000/api/agent/tools/portfolio-health | jq
+```
+
+`data` fields:
+
+| Field | Description |
+|---|---|
+| `overall_score` | Overall score 0–100 |
+| `overall_tier` | Tier: `excellent` / `good` / `fair` / `attention` / `danger` |
+| `dimensions` | Four dimensions: `allocation`, `risk`, `liquidity`, `return`; each has `name`, `score`, `status`, `metrics` |
+| `stable_weight` / `volatile_weight` | Stable (bonds etc.) / volatile asset weight |
+| `risk_report` | Max drawdown, volatility, largest single weight, HHI, equity/bond/QDII weights, and risk `flags` |
+| `advice` | Structural suggestions, not trading instructions |
+| `summary` | Portfolio summary, same shape as 5.1 |
+| `valuation_basis` | Always `latest_formal_nav` |
+| `data_quality` | `as_of_date`, `as_of_date_semantics`, missing/stale NAV counts, pending T+1 count, and a `caveats` array |
+
+> Read `data_quality.caveats` before interpreting scores: missing or stale NAV can lower related dimensions, and pending T+1 transactions are not yet included in market value. A `danger` tier on an empty portfolio only means there is nothing to diagnose, not real risk.
+>
+> The health check tries to fetch a CPI baseline for the return dimension; if the network is unavailable it degrades to scoring on annualized return only and still returns normally.
+
 ## 6. Minimal integration
 
 ### Python
@@ -289,7 +316,7 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-An MCP adapter is not bundled yet; wrap these four endpoints with any HTTP tool. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
+An MCP adapter is not bundled yet; wrap these five endpoints with any HTTP tool. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
 
 ---
 
@@ -310,3 +337,4 @@ An MCP adapter is not bundled yet; wrap these four endpoints with any HTTP tool.
 | Date | Change |
 |---|---|
 | 2026-10-27 | First four read-only tools: `portfolio-summary`, `data-status`, `positions`, `funds/{code}` |
+| 2026-10-27 | Added `portfolio-health`: four-dimension health check, risk flags, structural advice, and `data_quality` caveats |

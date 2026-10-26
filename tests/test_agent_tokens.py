@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from zfundpilot import agent_tokens, analysis, api, config, db
-from zfundpilot.models import Fund, NavPoint
+from zfundpilot.models import DataStatus, Fund, NavPoint
 
 
 @pytest.fixture
@@ -302,6 +302,38 @@ class TestAgentTools:
         denied = client.get("/api/agent/tools/data-status",
                             headers=self._headers("portfolio:read"))
         assert denied.status_code == 403
+
+    def test_portfolio_health_scope_and_data_quality(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        client = TestClient(api.app)
+
+        ok = client.get("/api/agent/tools/portfolio-health",
+                        headers=self._headers("health:read"))
+        assert ok.status_code == 200
+        body = ok.json()
+        assert body["tool"] == "get_portfolio_health"
+        data = body["data"]
+        assert data["overall_score"] == 0
+        assert data["overall_tier"] == "danger"
+        assert len(data["dimensions"]) == 4
+        assert data["valuation_basis"] == "latest_formal_nav"
+        assert data["data_quality"]["as_of_date_semantics"]
+        assert data["data_quality"]["caveats"] == []
+
+        denied = client.get("/api/agent/tools/portfolio-health",
+                            headers=self._headers("portfolio:read"))
+        assert denied.status_code == 403
+
+    def test_health_caveats_cover_all_data_gaps(self):
+        caveats = api._agent_health_caveats(DataStatus(
+            missing_nav_fund_count=2,
+            stale_nav_fund_count=1,
+            pending_t1_transaction_count=3,
+        ))
+        assert len(caveats) == 3
+        assert "2" in caveats[0] and "正式净值" in caveats[0]
+        assert "1" in caveats[1]
+        assert "3" in caveats[2]
 
     def test_positions_and_limit_validation(self, temp_db, monkeypatch):
         monkeypatch.setattr(config, "AUTH_ENABLED", True)

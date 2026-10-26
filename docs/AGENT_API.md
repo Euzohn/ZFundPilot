@@ -65,7 +65,7 @@ curl -s -X POST http://localhost:8000/api/agent/tokens \
 |---|---|
 | `portfolio:read` | `portfolio-summary`、`positions` |
 | `funds:read` | `funds/{code}` |
-| `health:read` | `data-status` |
+| `health:read` | `data-status`、`portfolio-health` |
 
 没有写 scope。调用未授权工具返回 **403**。
 
@@ -247,6 +247,33 @@ curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
 
 ---
 
+### 5.5 `GET /api/agent/tools/portfolio-health`
+
+组合四维体检，scope：`health:read`。
+
+```bash
+curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
+  http://localhost:8000/api/agent/tools/portfolio-health | jq
+```
+
+`data` 字段：
+
+| 字段 | 说明 |
+|---|---|
+| `overall_score` | 综合评分 0–100 |
+| `overall_tier` | 等第：`excellent` / `good` / `fair` / `attention` / `danger` |
+| `dimensions` | 四维评分：`allocation`（配置）/`risk`（风险）/`liquidity`（流动性）/`return`（收益），各含 `name`、`score`、`status`、`metrics` |
+| `stable_weight` / `volatile_weight` | 稳定型（债券等）/ 波动型资产占比 |
+| `risk_report` | 最大回撤、波动率、最大单只权重、HHI、股/债/QDII 占比与风险提示（`flags`） |
+| `advice` | 结构建议，非交易指令 |
+| `summary` | 组合汇总，结构同 5.1 |
+| `valuation_basis` | 固定为 `latest_formal_nav` |
+| `data_quality` | `as_of_date`、`as_of_date_semantics`、缺失/过期净值数、T+1 待确认数，以及 `caveats` 降级说明数组 |
+
+> 先读 `data_quality.caveats` 再解读分数：缺净值或净值过期会拉低相关维度，T+1 待确认交易尚未计入市值。空组合的 `danger` 只表示暂无可诊断持仓，不代表真实风险。
+>
+> 体检会尝试获取 CPI 基线用于收益维度；网络不可用时自动降级为仅按年化收益率评分，接口仍会正常返回。
+
 ## 6. 最小接入示例
 
 ### Python
@@ -289,7 +316,7 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-MCP 适配层尚未内置；可以用任意 HTTP 工具封装上述 4 个端点。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
+MCP 适配层尚未内置；可以用任意 HTTP 工具封装上述 5 个端点。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
 
 ---
 
@@ -310,3 +337,4 @@ MCP 适配层尚未内置；可以用任意 HTTP 工具封装上述 4 个端点�
 | 日期 | 变更 |
 |---|---|
 | 2026-10-27 | 首批 4 个只读工具上线：`portfolio-summary`、`data-status`、`positions`、`funds/{code}` |
+| 2026-10-27 | 新增 `portfolio-health`：四维体检、风险提示、结构建议与 `data_quality` 降级说明 |

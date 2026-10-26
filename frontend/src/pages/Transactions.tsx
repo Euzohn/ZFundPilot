@@ -1017,6 +1017,7 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [searchQuery, setSearchQuery] = useState("")
   const [actionFilter, setActionFilter] = useState("")
+  const [channelFilter, setChannelFilter] = useState("")
   const [dateRange, setDateRange] = useState(() => localStorage.getItem("zfundpilot_tx_dateRange") || "30d")
   const [customStart, setCustomStart] = useState(() => localStorage.getItem("zfundpilot_tx_customStart") || "")
   const [customEnd, setCustomEnd] = useState(() => localStorage.getItem("zfundpilot_tx_customEnd") || "")
@@ -1028,7 +1029,7 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
   useEffect(() => { localStorage.setItem("zfundpilot_tx_customStart", customStart) }, [customStart])
   useEffect(() => { localStorage.setItem("zfundpilot_tx_customEnd", customEnd) }, [customEnd])
   // 切换筛选条件时重置分页
-  useEffect(() => { setVisibleCount(50) }, [searchQuery, actionFilter, dateRange, customStart, customEnd])
+  useEffect(() => { setVisibleCount(50) }, [searchQuery, actionFilter, channelFilter, dateRange, customStart, customEnd])
 
   // Load fund names
   const { data: fundsData } = useApi(() => api.getFunds(), [])
@@ -1047,6 +1048,15 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
       setSortDir("desc")
     }
   }
+
+  // 渠道筛选选项：从交易流水实际出现的渠道动态提取
+  const channelOptions = useMemo(() => {
+    if (!txs) return [] as string[]
+    const set = new Set<string>()
+    for (const tx of txs) if (tx.channel) set.add(tx.channel)
+    return [...set].sort()
+  }, [txs])
+  const hasUnlabeledTx = txs?.some((tx) => !tx.channel) ?? false
 
   const filteredTxs = useMemo(() => {
     if (!txs) return txs
@@ -1078,11 +1088,14 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
         if (!t.fund_code.toLowerCase().includes(q) && !name.includes(q)) return false
       }
       if (actionFilter && t.action !== actionFilter) return false
+      if (channelFilter === "__unlabeled__") {
+        if (t.channel) return false
+      } else if (channelFilter && t.channel !== channelFilter) return false
       if (startDate && t.date < startDate) return false
       if (endDate && t.date > endDate) return false
       return true
     })
-  }, [txs, searchQuery, actionFilter, dateRange, customStart, customEnd, funds])
+  }, [txs, searchQuery, actionFilter, channelFilter, dateRange, customStart, customEnd, funds])
 
   const sortedTxs = useMemo(() => {
     if (!filteredTxs) return filteredTxs
@@ -1170,6 +1183,13 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
               <option value="dividend">{t.transactions.dividend}</option>
               <option value="reinvest">{t.transactions.reinvest}</option>
             </Select>
+            {channelOptions.length > 0 && (
+              <Select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} className="h-8 text-xs w-28">
+                <option value="">{t.transactions.allChannels}</option>
+                {channelOptions.map((c) => <option key={c} value={c}>{translateChannel(c) || c}</option>)}
+                {hasUnlabeledTx && <option value="__unlabeled__">{t.common.unlabeled}</option>}
+              </Select>
+            )}
             <div className="flex items-center gap-1 ml-auto">
               {([["month", t.transactions.thisMonth], ["30d", t.transactions.last30Days], ["year", t.transactions.thisYear], ["all", t.common.all], ["custom", t.transactions.custom]] as const).map(([key, label]) => (
                 <Button key={key} size="sm" variant={dateRange === key ? "default" : "outline"} className="h-8 text-xs px-2.5" onClick={() => setDateRange(key)}>

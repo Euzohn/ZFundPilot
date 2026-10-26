@@ -518,6 +518,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - feat: 净值更新进度新增「阶段」状态（`nav_update_state.phase`，前端 `NavUpdateStatus.phase`）——净值抓取完成后尾部任务（回填/止盈止损/基准指数/申购状态·交易日历·风险等级）实时上报当前阶段，前端进度条不再停在 100% 静默等待，显示「刷新风险等级…」等阶段标签
 - fix: 基金筛选/对比页「规模」「基金经理」为空——`compare._get_fund_archive` 档案页解析正则失配（规模页标签为「净资产规模」而非「基金规模」；经理姓名在 `<a>` 内，旧正则只捕到 `&nbsp;`）。改为兼容双标签 + 跳过中间标签取值；经理优先「基金经理人」表格行、回退「基金经理：」概要区，提取全部 `<a>` 姓名（支持多位）。新增 5 个 `test_compare.py` 用例，总测试 583→588
 - changed: 其余页面移动端适配完善——自选列表（`Watchlist.tsx`，7 列宽表）与回测定投（`Backtest.tsx`，明细/汇总各 9 列宽表）窄屏收紧内边距并固定首列（复用持仓页 `[&_td]:px-2` + `sticky left-0` 模式）；交易流水（`Transactions.tsx`）卡片头、基金筛选（`Screener.tsx`）工具栏控件行加 `flex-wrap gap-2`；净值更新（`NavUpdate.tsx`）4 列表窄屏收紧内边距。纯前端，复用现有组件/i18n，`npm run build` 通过
+- feat: 交易流水支持按渠道筛选——`TransactionFlowPanel` 筛选工具栏新增「渠道」下拉（与操作类型并列），选项从流水中实际出现的渠道动态生成（`translateChannel` 译名）+ 「未标注」项筛空渠道交易；`filteredTxs` 加 channel 过滤条件（`__unlabeled__` 哨兵值代表空渠道）。复用现有 i18n 键 `transactions.allChannels`/`common.unlabeled`，纯前端，`npm run build` 通过
 
 ### v0.24.0 - 2026-10-16
 

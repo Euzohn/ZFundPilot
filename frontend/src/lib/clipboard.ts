@@ -16,27 +16,28 @@ export async function copyText(text: string): Promise<boolean> {
   }
 
   const textarea = document.createElement("textarea")
-  textarea.value = text
-  textarea.setAttribute("readonly", "")
-  textarea.style.position = "fixed"
-  textarea.style.top = "-9999px"
-  textarea.style.opacity = "0"
-  document.body.appendChild(textarea)
-  const selection = document.getSelection()
-  const previousRange = selection && selection.rangeCount > 0
-    ? selection.getRangeAt(0)
+  const previousFocus = document.activeElement instanceof HTMLElement
+    ? document.activeElement
     : null
   try {
+    textarea.value = text
+    textarea.setAttribute("readonly", "")
+    textarea.style.position = "fixed"
+    textarea.style.top = "0"
+    textarea.style.opacity = "0"
+    document.body.appendChild(textarea)
     textarea.select()
     textarea.setSelectionRange(0, text.length)
     return document.execCommand("copy")
   } catch {
     return false
   } finally {
-    document.body.removeChild(textarea)
-    if (previousRange && selection) {
-      selection.removeAllRanges()
-      selection.addRange(previousRange)
+    textarea.remove()
+    // 回退复制可能把焦点移到临时元素；不要让清理异常覆盖已成功的复制结果。
+    try {
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
+    } catch {
+      // 已执行的复制不能因恢复焦点失败而误报失败
     }
   }
 }

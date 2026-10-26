@@ -20,18 +20,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
 import ThemeToggle from "@/components/ThemeToggle"
 import FieldError from "@/components/FieldError"
 import { toast } from "sonner"
 import { useLang, type Lang } from "@/i18n/LanguageContext"
 import { cn } from "@/lib/utils"
 import { useTabParam } from "@/hooks/useTabParam"
-import type { AIUsageStats, AIUsageDaily, AuditLog, KeywordMaps, SchedulerStatus, TpSlConfig, VisionConfig } from "@/api/types"
+import type { AIUsageStats, AIUsageDaily, AgentTokenInfo, AgentTokenListResponse, AuditLog, KeywordMaps, SchedulerStatus, TpSlConfig, VisionConfig } from "@/api/types"
 import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
   SlidersHorizontal, LogOut, Loader2, CheckCircle2, XCircle, Zap,
-  Search, X, Palette, UserCircle, Clock, Archive, FileDown, Gift,
+  Search, X, Palette, UserCircle, Clock, Archive, FileDown, Gift, Copy,
   Bell, TrendingUp, TrendingDown, Camera, Settings as SettingsIcon,
 } from "lucide-react"
 
@@ -62,6 +63,277 @@ function Sparkline({ data }: { data: number[] }) {
         <Line type="monotone" dataKey="v" stroke="hsl(var(--primary))" strokeWidth={1.5} dot={false} />
       </LineChart>
     </ResponsiveContainer>
+  )
+}
+
+const AGENT_SCOPE_KEYS = ["portfolio:read", "funds:read", "health:read"] as const
+
+function AgentTokenPanel() {
+  const { t } = useLang()
+  const { data, loading, error, reload } = useApi<AgentTokenListResponse>(() => api.getAgentTokens(), [])
+  const [name, setName] = useState("")
+  const [scopes, setScopes] = useState<string[]>([...AGENT_SCOPE_KEYS])
+  const [expires, setExpires] = useState("90")
+  const [creating, setCreating] = useState(false)
+  const [created, setCreated] = useState<{ token: string; name: string } | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [revokeTarget, setRevokeTarget] = useState<AgentTokenInfo | null>(null)
+  const [revoking, setRevoking] = useState(false)
+
+  const scopeLabels: Record<string, string> = {
+    "portfolio:read": t.settings.agentTokenScopePortfolio,
+    "funds:read": t.settings.agentTokenScopeFunds,
+    "health:read": t.settings.agentTokenScopeHealth,
+  }
+
+  const toggleScope = (scope: string) => {
+    setScopes((prev) => prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope])
+  }
+
+  const formatTime = (value: string | null) =>
+    value ? value.slice(0, 16).replace("T", " ") : "—"
+
+  const handleCreate = async () => {
+    const trimmed = name.trim()
+    if (!trimmed || scopes.length === 0) {
+      toast.error(t.settings.agentTokenRequired)
+      return
+    }
+    let ttl: number | null = null
+    if (expires.trim() !== "") {
+      const n = Number(expires)
+      if (!Number.isInteger(n) || n < 1 || n > 3650) {
+        toast.error(t.settings.agentTokenExpiresInvalid)
+        return
+      }
+      ttl = n
+    }
+    setCreating(true)
+    try {
+      const res = await api.createAgentToken(trimmed, scopes, ttl)
+      setCreated({ token: res.token, name: res.token_info.name })
+      setCopied(false)
+      setName("")
+      await reload()
+      toast.success(t.settings.agentTokenCreated)
+    } catch (e) {
+      toast.error(`${t.common.operationFailed}: ${e}`)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const handleCopy = async () => {
+    if (!created) return
+    try {
+      await navigator.clipboard.writeText(created.token)
+      setCopied(true)
+      toast.success(t.settings.agentTokenCopied)
+    } catch {
+      toast.error(t.settings.agentTokenCopyFailed)
+    }
+  }
+
+  const handleRevoke = async () => {
+    if (!revokeTarget) return
+    setRevoking(true)
+    try {
+      await api.revokeAgentToken(revokeTarget.id)
+      toast.success(t.settings.agentTokenRevokedToast)
+      setRevokeTarget(null)
+      await reload()
+    } catch (e) {
+      toast.error(`${t.common.operationFailed}: ${e}`)
+    } finally {
+      setRevoking(false)
+    }
+  }
+
+  const renderStatus = (token: AgentTokenInfo) => {
+    if (token.revoked_at) return <Badge variant="secondary">{t.settings.agentTokenRevoked}</Badge>
+    if (token.active === false) return <Badge variant="warning">{t.settings.agentTokenExpired}</Badge>
+    return <Badge variant="success">{t.settings.agentTokenActive}</Badge>
+  }
+
+  return (
+    <Card className="mt-4">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <KeyRound className="h-5 w-5 text-primary" />
+          {t.settings.agentTokens}
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">{t.settings.agentTokensHint}</p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {created && (
+          <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-medium">
+                {t.settings.agentTokenCreated} · {created.name}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleCopy}>
+                  {copied
+                    ? <CheckCircle2 className="mr-1 h-3.5 w-3.5 text-success" />
+                    : <Copy className="mr-1 h-3.5 w-3.5" />}
+                  {t.settings.agentTokenCopy}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0"
+                  onClick={() => setCreated(null)}
+                  aria-label={t.common.close}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+            <code className="block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] leading-relaxed">
+              {created.token}
+            </code>
+            <p className="text-xs text-muted-foreground">{t.settings.agentTokenCreatedHint}</p>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <Label className="mb-1 block text-xs font-medium text-muted-foreground">{t.settings.agentTokenName}</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="h-8 text-xs"
+                placeholder={t.settings.agentTokenNamePlaceholder}
+                maxLength={64}
+              />
+            </div>
+            <div>
+              <Label className="mb-1 block text-xs font-medium text-muted-foreground">{t.settings.agentTokenExpires}</Label>
+              <Input
+                value={expires}
+                onChange={(e) => setExpires(e.target.value)}
+                className="h-8 text-xs"
+                inputMode="numeric"
+                placeholder="90"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button size="sm" onClick={handleCreate} disabled={creating}>
+                {creating
+                  ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  : <Plus className="mr-1.5 h-3.5 w-3.5" />}
+                {creating ? t.settings.agentTokenCreating : t.settings.agentTokenCreate}
+              </Button>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">{t.settings.agentTokenExpiresHint}</p>
+          <div className="flex flex-wrap items-center gap-4">
+            <span className="text-xs font-medium text-muted-foreground">{t.settings.agentTokenScopes}</span>
+            {AGENT_SCOPE_KEYS.map((scope) => (
+              <label key={scope} className="flex cursor-pointer items-center gap-1.5 text-xs">
+                <Checkbox checked={scopes.includes(scope)} onCheckedChange={() => toggleScope(scope)} />
+                {scopeLabels[scope]}
+                <span className="font-mono text-[10px] text-muted-foreground">{scope}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t pt-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">{t.settings.agentTokenDocsHint}</span>
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={reload} disabled={loading}>
+              <RefreshCw className={cn("mr-1 h-3 w-3", loading && "animate-spin")} />
+              {loading ? t.common.loading : t.common.refresh}
+            </Button>
+          </div>
+          {error ? (
+            <div className="flex items-center gap-2 py-2">
+              <span className="text-xs text-loss-600">{t.settings.agentTokenLoadFailed}</span>
+              <button onClick={reload} className="text-xs text-primary hover:underline">{t.common.retry}</button>
+            </div>
+          ) : !data ? (
+            <LoadingState size="sm" />
+          ) : data.tokens.length === 0 ? (
+            <EmptyState title={t.settings.agentTokenNone} size="sm" />
+          ) : (
+            <div className="overflow-x-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">{t.settings.agentTokenName}</TableHead>
+                    <TableHead className="text-xs">{t.settings.agentTokenPrefix}</TableHead>
+                    <TableHead className="text-xs">{t.settings.agentTokenScopesCol}</TableHead>
+                    <TableHead className="text-xs">{t.settings.agentTokenCreatedAt}</TableHead>
+                    <TableHead className="text-xs">{t.settings.agentTokenExpiresAt}</TableHead>
+                    <TableHead className="text-xs">{t.settings.agentTokenLastUsed}</TableHead>
+                    <TableHead className="text-xs">{t.settings.agentTokenStatus}</TableHead>
+                    <TableHead className="text-xs">{t.common.actions}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.tokens.map((token) => (
+                    <TableRow key={token.id}>
+                      <TableCell className="text-xs font-medium">{token.name}</TableCell>
+                      <TableCell className="font-mono text-[11px] text-muted-foreground">{token.token_prefix}…</TableCell>
+                      <TableCell className="text-xs">
+                        <div className="flex flex-wrap gap-1">
+                          {token.scopes.split(/\s+/).filter(Boolean).map((scope) => (
+                            <span key={scope} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                              {scope}
+                            </span>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">
+                        {formatTime(token.created_at)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">
+                        {token.expires_at ? formatTime(token.expires_at) : t.settings.agentTokenNeverExpires}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">
+                        {token.last_used_at ? formatTime(token.last_used_at) : t.settings.agentTokenNeverUsed}
+                      </TableCell>
+                      <TableCell>{renderStatus(token)}</TableCell>
+                      <TableCell>
+                        {token.active ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setRevokeTarget(token)}
+                          >
+                            <Trash2 className="mr-1 h-3 w-3" />
+                            {t.settings.agentTokenRevoke}
+                          </Button>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      </CardContent>
+
+      <ConfirmDialog
+        open={!!revokeTarget}
+        onOpenChange={(open) => { if (!open) setRevokeTarget(null) }}
+        title={t.settings.agentTokenRevokeTitle}
+        description={revokeTarget ? (
+          <div className="space-y-1">
+            <p className="font-mono text-xs">{revokeTarget.name}（{revokeTarget.token_prefix}…）</p>
+            <p>{t.settings.agentTokenRevokeDesc}</p>
+          </div>
+        ) : undefined}
+        confirmText={t.settings.agentTokenRevoke}
+        tone="destructive"
+        loading={revoking}
+        onConfirm={handleRevoke}
+      />
+    </Card>
   )
 }
 
@@ -719,6 +991,9 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* ── Agent 访问令牌 ── */}
+            <AgentTokenPanel />
 
             {/* ── 审计日志 ── */}
             <AuditLogPanel />

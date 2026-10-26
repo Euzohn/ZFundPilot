@@ -40,6 +40,9 @@ import type {
   ReconcileResponse,
   IndustryExposure,
   FundIndustryAllocation,
+  AgentTokenInfo,
+  AgentTokenListResponse,
+  AgentTokenCreateResponse,
 } from "./types"
 import { getToken, clearToken } from "@/lib/auth"
 import { getCurrentLang } from "@/i18n/LanguageContext"
@@ -105,6 +108,17 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ current_password: currentPassword, new_username: newUsername }),
     }),
+
+  // Agent Tokens
+  getAgentTokens: () => request<AgentTokenListResponse>("/agent/tokens"),
+  createAgentToken: (name: string, scopes: string[], expiresInDays: number | null) =>
+    request<AgentTokenCreateResponse>("/agent/tokens", {
+      method: "POST",
+      body: JSON.stringify({ name, scopes, expires_in_days: expiresInDays }),
+    }),
+  revokeAgentToken: (id: number) =>
+    request<{ ok: boolean; already_revoked: boolean; token_info: AgentTokenInfo }>(
+      `/agent/tokens/${id}`, { method: "DELETE" }),
 
   // AI Config
   getAIConfig: () =>

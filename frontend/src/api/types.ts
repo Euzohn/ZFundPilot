@@ -716,3 +716,29 @@ export interface ReconcileResponse {
   channel: string
   items: ReconcileDiffItem[]
 }
+
+// ── Agent 只读访问令牌 ──
+export interface AgentTokenInfo {
+  id: number
+  name: string
+  token_prefix: string
+  /** 空格分隔的 scope 列表，如 "funds:read portfolio:read" */
+  scopes: string
+  created_at: string
+  expires_at: string | null
+  last_used_at: string | null
+  revoked_at: string | null
+  /** 后端列表接口计算得出：未撤销且未过期；创建/撤销响应可能不带该字段 */
+  active?: boolean
+}
+
+export interface AgentTokenListResponse {
+  tokens: AgentTokenInfo[]
+  scopes: string[]
+}
+
+export interface AgentTokenCreateResponse {
+  token: string
+  token_info: AgentTokenInfo
+  message: string
+}

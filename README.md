@@ -149,7 +149,7 @@ cd frontend && npm install && npm run dev
 
 - **密码认证** — 用户名 + 密码登录，HMAC 签名 token，bcrypt 密码哈希，登录速率限制防爆破
 - **Agent 只读令牌** — 独立于网页登录的高熵 token，服务端只存 SHA-256 摘要，按 `portfolio:read`/`funds:read`/`health:read` 授权，默认拒绝，可随时撤销；无密码模式下不可签发或使用
-- **Agent 只读工具** — `/api/agent/tools/*` 提供组合汇总、数据状态、持仓与单基金详情四个只读端点，统一走 scope 鉴权，不暴露交易/设置/导出等写接口
+- **Agent 只读工具** — `/api/agent/tools/*` 提供组合汇总、数据状态、持仓与单基金详情四个只读端点，统一走 scope 鉴权，不暴露交易/设置/导出等写接口。端点、参数、示例与安全说明见 [docs/AGENT_API.md](docs/AGENT_API.md)
 - **API Key 加密存储** — AI API key 落盘自动加密（Fernet AES-128-CBC + HMAC-SHA256）
 - **审计日志** — 敏感操作记入日志，设置页可查看
 - **中英文切换** — 全站界面支持中英文切换，侧边栏一键切换，数据格式（¥/$、相对时间）自动适配

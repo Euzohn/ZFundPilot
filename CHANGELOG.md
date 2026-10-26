@@ -22,6 +22,7 @@
 ### Fixed
 - 修复 Agent 工具限流按实际请求路径分桶的绕过风险——此前 `/api/agent/tools/funds/000001` 与 `.../000002` 各自独立计数，枚举基金代码即可放大请求量；现按路由模板（`/api/agent/tools/funds/{code}`）分桶。新增 1 个回归测试，总测试 642→643
 - 设置页签发 Agent token 后若立即撤销同一条 token，一次性明文展示会同步清除，避免复制到已失效的 token
+- 修复 HTTP 局域网部署下 Agent 令牌「复制」按钮必然报错的问题——异步 Clipboard API 仅在安全上下文（HTTPS / localhost）可用，现改为自动回退 `document.execCommand("copy")`；两者都不可用时选中明文并提示按 ⌘C / Ctrl+C，不再弹出复制失败。明文改为只读输入框，点击即全选，便于手动复制
 
 ## [0.25.0] - 2026-10-26
 

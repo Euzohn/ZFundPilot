@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { LineChart, Line, ResponsiveContainer } from "recharts"
 import { getChannels, getChannelsAsync, saveChannels, getDefaultChannels } from "@/lib/channels"
 import { getChannelColors, getChannelColorsAsync, saveChannelColors, getDefaultChannelColors, getPalette } from "@/lib/channelColors"
@@ -26,6 +26,7 @@ import FieldError from "@/components/FieldError"
 import { toast } from "sonner"
 import { useLang, type Lang } from "@/i18n/LanguageContext"
 import { cn } from "@/lib/utils"
+import { copyText } from "@/lib/clipboard"
 import { useTabParam } from "@/hooks/useTabParam"
 import type { AIUsageStats, AIUsageDaily, AgentTokenInfo, AgentTokenListResponse, AuditLog, KeywordMaps, SchedulerStatus, TpSlConfig, VisionConfig } from "@/api/types"
 import {
@@ -77,6 +78,7 @@ function AgentTokenPanel() {
   const [creating, setCreating] = useState(false)
   const [created, setCreated] = useState<{ id: number; token: string; name: string } | null>(null)
   const [copied, setCopied] = useState(false)
+  const tokenInputRef = useRef<HTMLInputElement>(null)
   const [revokeTarget, setRevokeTarget] = useState<AgentTokenInfo | null>(null)
   const [revoking, setRevoking] = useState(false)
 
@@ -125,13 +127,17 @@ function AgentTokenPanel() {
 
   const handleCopy = async () => {
     if (!created) return
-    try {
-      await navigator.clipboard.writeText(created.token)
-      setCopied(true)
+    const ok = await copyText(created.token)
+    setCopied(ok)
+    if (ok) {
       toast.success(t.settings.agentTokenCopied)
-    } catch {
-      toast.error(t.settings.agentTokenCopyFailed)
+      return
     }
+    // HTTP 局域网等非安全上下文无法写剪贴板：选中明文，让用户按快捷键复制
+    const input = tokenInputRef.current
+    input?.focus()
+    input?.select()
+    toast.info(t.settings.agentTokenSelectHint)
   }
 
   const handleRevoke = async () => {
@@ -191,9 +197,15 @@ function AgentTokenPanel() {
                 </Button>
               </div>
             </div>
-            <code className="block break-all rounded bg-background px-2 py-1.5 font-mono text-[11px] leading-relaxed">
-              {created.token}
-            </code>
+            <input
+              ref={tokenInputRef}
+              readOnly
+              value={created.token}
+              onFocus={(e) => e.currentTarget.select()}
+              onClick={(e) => e.currentTarget.select()}
+              aria-label={t.settings.agentTokens}
+              className="block w-full rounded bg-background px-2 py-1.5 font-mono text-[11px] leading-relaxed outline-none focus:ring-1 focus:ring-ring"
+            />
             <p className="text-xs text-muted-foreground">{t.settings.agentTokenCreatedHint}</p>
           </div>
         )}

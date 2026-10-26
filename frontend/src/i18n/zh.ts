@@ -559,7 +559,7 @@ const zh = {
     agentTokenCreatedHint: "请立即复制保存。关闭或刷新页面后将无法再次查看明文。",
     agentTokenCopy: "复制",
     agentTokenCopied: "已复制到剪贴板",
-    agentTokenCopyFailed: "复制失败，请手动选择复制",
+    agentTokenSelectHint: "当前环境无法自动写入剪贴板，已选中令牌，请按 ⌘C / Ctrl+C 复制",
     agentTokenNone: "尚未签发任何令牌",
     agentTokenPrefix: "前缀",
     agentTokenScopesCol: "权限",

@@ -561,7 +561,7 @@ const en: typeof zh = {
     agentTokenCreatedHint: "Copy it now. The plaintext cannot be shown again after you close or refresh this page.",
     agentTokenCopy: "Copy",
     agentTokenCopied: "Copied to clipboard",
-    agentTokenCopyFailed: "Copy failed, please select and copy manually",
+    agentTokenSelectHint: "Clipboard is unavailable here. The token is selected — press ⌘C / Ctrl+C to copy",
     agentTokenNone: "No tokens issued yet",
     agentTokenPrefix: "Prefix",
     agentTokenScopesCol: "Scopes",

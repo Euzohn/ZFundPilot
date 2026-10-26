@@ -148,6 +148,7 @@ cd frontend && npm install && npm run dev
 ### 安全与自定义
 
 - **密码认证** — 用户名 + 密码登录，HMAC 签名 token，bcrypt 密码哈希，登录速率限制防爆破
+- **Agent 只读令牌** — 独立于网页登录的高熵 token，服务端只存 SHA-256 摘要，按 `portfolio:read`/`funds:read`/`health:read` 授权，默认拒绝，可随时撤销；无密码模式下不可签发或使用
 - **API Key 加密存储** — AI API key 落盘自动加密（Fernet AES-128-CBC + HMAC-SHA256）
 - **审计日志** — 敏感操作记入日志，设置页可查看
 - **中英文切换** — 全站界面支持中英文切换，侧边栏一键切换，数据格式（¥/$、相对时间）自动适配
@@ -258,11 +259,13 @@ ZFundPilot/
 | 密码哈希 | bcrypt（cost=12），兼容旧版 SHA-256，登录后自动升级 |
 | 登录限流 | 5 分钟内失败 5 次锁定 15 分钟 |
 | Token 认证 | HMAC-SHA256 签名，7 天有效期，改密后立即失效 |
+| Agent token | 独立高熵随机串，仅存 SHA-256 摘要，scope 白名单默认拒绝，可撤销/过期 |
 | 错误脱敏 | AI 上游错误不暴露给客户端 |
 | 信任代理 | `ZFUNDPILOT_TRUSTED_PROXIES` 控制，默认空（不信任任何代理） |
 
 - **纯 IP / 局域网**：设密码即可，默认配置安全
 - **域名 + HTTPS**：推荐 Caddy 自动 TLS，配置 `TRUSTED_PROXIES`
+- **Agent token**：仅通过 `Authorization: Bearer` 传递，不要放进 URL、前端持久存储或模型提示词；远程使用必须走 HTTPS
 
 </details>
 

@@ -188,6 +188,18 @@ def init_db() -> None:
                 date       TEXT PRIMARY KEY,
                 created_at TEXT DEFAULT (datetime('now','localtime'))
             );
+
+            CREATE TABLE IF NOT EXISTS agent_tokens (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                name         TEXT NOT NULL,
+                token_hash   TEXT NOT NULL UNIQUE,
+                token_prefix TEXT NOT NULL DEFAULT '',
+                scopes       TEXT NOT NULL DEFAULT '',
+                created_at   TEXT NOT NULL,
+                expires_at   TEXT,
+                last_used_at TEXT,
+                revoked_at   TEXT
+            );
             """
         )
     _migrate_add_columns()
@@ -1193,6 +1205,87 @@ def fetch_audit_logs(limit: int = 100) -> list[dict]:
             "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Agent token（服务端只存摘要，明文仅签发时返回一次）
+# ---------------------------------------------------------------------------
+_AGENT_TOKEN_PUBLIC_FIELDS = (
+    "id", "name", "token_prefix", "scopes", "created_at",
+    "expires_at", "last_used_at", "revoked_at",
+)
+
+
+def _agent_token_public(row: sqlite3.Row) -> dict:
+    """将行转为可对外返回的元数据，剔除 token_hash。"""
+    data = dict(row)
+    return {k: data.get(k) for k in _AGENT_TOKEN_PUBLIC_FIELDS}
+
+
+def create_agent_token(*, name: str, token_hash: str, token_prefix: str,
+                       scopes: str, expires_at: str | None = None) -> dict:
+    """插入一条 Agent token 摘要，返回不含摘要的元数据。"""
+    now = datetime.now(config.TIMEZONE).isoformat()
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO agent_tokens(name, token_hash, token_prefix, scopes, "
+            "created_at, expires_at) VALUES(?,?,?,?,?,?)",
+            (name, token_hash, token_prefix, scopes, now, expires_at),
+        )
+        token_id = cur.lastrowid
+        row = conn.execute(
+            "SELECT * FROM agent_tokens WHERE id = ?", (token_id,)
+        ).fetchone()
+    return _agent_token_public(row)
+
+
+def list_agent_tokens() -> list[dict]:
+    """列出全部 Agent token 元数据（不含摘要）。"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM agent_tokens ORDER BY id DESC"
+        ).fetchall()
+    return [_agent_token_public(r) for r in rows]
+
+
+def get_agent_token(token_id: int) -> dict | None:
+    """按 id 返回元数据（不含摘要）。"""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM agent_tokens WHERE id = ?", (token_id,)
+        ).fetchone()
+    return _agent_token_public(row) if row else None
+
+
+def get_agent_token_by_hash(token_hash: str) -> dict | None:
+    """按摘要查找 token（含内部字段，仅供鉴权使用，不得直接返回给客户端）。"""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM agent_tokens WHERE token_hash = ?", (token_hash,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def revoke_agent_token(token_id: int) -> bool:
+    """撤销 token；已撤销或不存在时返回 False。"""
+    now = datetime.now(config.TIMEZONE).isoformat()
+    with get_connection() as conn:
+        cur = conn.execute(
+            "UPDATE agent_tokens SET revoked_at = ? "
+            "WHERE id = ? AND revoked_at IS NULL",
+            (now, token_id),
+        )
+        return cur.rowcount > 0
+
+
+def touch_agent_token(token_id: int) -> None:
+    """更新 token 最近使用时间。"""
+    now = datetime.now(config.TIMEZONE).isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE agent_tokens SET last_used_at = ? WHERE id = ?",
+            (now, token_id),
+        )
 
 
 # ---------------------------------------------------------------------------

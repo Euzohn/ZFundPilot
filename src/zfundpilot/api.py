@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from . import __version__ as APP_VERSION
 from . import (
+    agent_tokens,
     ai,
     analysis,
     auto_invest,
@@ -178,6 +179,7 @@ _ENDPOINT_LIMITS: dict[str, tuple[int, int]] = {
     "/api/backtest/dca":       (60, 60),
     "/api/csv/import":         (30, 60),
     "/api/portfolio/industry-exposure": (60, 60),
+    "/api/agent/tokens":       (30, 60),
 }
 
 _DOMAIN_LIMITS: dict[str, tuple[int, int]] = {
@@ -396,6 +398,181 @@ def change_username(request: Request, body: ChangeUsernameRequest) -> dict[str, 
                   username=old_username,
                   detail={"old_username": old_username, "new_username": new_username})
     return {"ok": True, "message": "用户名已修改，所有设备需要重新登录"}
+
+
+# ---------------------------------------------------------------------------
+# Agent 只读访问：独立 token 管理 + 默认拒绝的 scope 依赖
+# ---------------------------------------------------------------------------
+class AgentTokenCreate(BaseModel):
+    """签发 Agent token 的请求体。"""
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=64)
+    scopes: list[str] = Field(
+        default_factory=lambda: list(agent_tokens.DEFAULT_SCOPES))
+    expires_in_days: int | None = Field(
+        default=agent_tokens.DEFAULT_TTL_DAYS,
+        ge=1, le=agent_tokens.MAX_TTL_DAYS,
+    )
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("名称不能为空")
+        return v
+
+    @field_validator("scopes")
+    @classmethod
+    def _check_scopes(cls, v: list[str]) -> list[str]:
+        try:
+            return sorted(agent_tokens.normalize_scopes(v))
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+
+def _require_admin_auth(request: Request) -> None:
+    """Agent token 管理端点要求已启用并已通过网页登录认证。
+
+    不依赖中间件顺序：即使将来为 Agent 路由放宽中间件，管理端点仍自行校验
+    HMAC 网页 token。未启用密码认证时一律拒绝，避免无密码模式匿名管理 token。
+    """
+    if not config.AUTH_ENABLED:
+        raise HTTPException(
+            status_code=403,
+            detail="需先启用管理员密码认证，Agent token 不支持无密码模式",
+        )
+    header = request.headers.get("Authorization", "")
+    if not header.startswith("Bearer ") or not _verify_token(header[7:]):
+        raise HTTPException(status_code=401, detail="需要管理员登录")
+
+
+@app.get("/api/agent/tokens")
+def list_agent_tokens(request: Request) -> dict[str, Any]:
+    """列出 Agent token 元数据（不含明文与摘要）。"""
+    _require_admin_auth(request)
+    tokens = db.list_agent_tokens()
+    for token in tokens:
+        token["active"] = agent_tokens.is_active(token)
+    return {"tokens": tokens, "scopes": sorted(agent_tokens.ALLOWED_SCOPES)}
+
+
+@app.post("/api/agent/tokens")
+def create_agent_token(body: AgentTokenCreate, request: Request) -> dict[str, Any]:
+    """签发 Agent token；明文仅本次响应返回。"""
+    _require_admin_auth(request)
+    ip = _get_client_ip(request)
+    try:
+        plaintext, info = agent_tokens.issue_token(
+            body.name, body.scopes, body.expires_in_days)
+    except agent_tokens.AgentTokenError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.log_audit(
+        "agent_token_created", ip=ip, username=config.AUTH_USERNAME,
+        detail={"token_id": info["id"], "name": info["name"],
+                "token_prefix": info["token_prefix"], "scopes": info["scopes"],
+                "expires_at": info["expires_at"]},
+    )
+    return {
+        "token": plaintext,
+        "token_info": info,
+        "message": "请立即保存该 token；服务端仅存摘要，之后无法再次查看明文",
+    }
+
+
+@app.delete("/api/agent/tokens/{token_id}")
+def revoke_agent_token(token_id: int, request: Request) -> dict[str, Any]:
+    """撤销 Agent token（幂等：重复撤销返回 already_revoked）。"""
+    _require_admin_auth(request)
+    ip = _get_client_ip(request)
+    info = db.get_agent_token(token_id)
+    if info is None:
+        raise HTTPException(status_code=404, detail="Agent token 不存在")
+    revoked = db.revoke_agent_token(token_id)
+    if revoked:
+        db.log_audit(
+            "agent_token_revoked", ip=ip, username=config.AUTH_USERNAME,
+            detail={"token_id": token_id, "name": info.get("name"),
+                    "token_prefix": info.get("token_prefix")},
+        )
+    return {"ok": True, "already_revoked": not revoked,
+            "token_info": db.get_agent_token(token_id)}
+
+
+# --- Agent 请求鉴权依赖（供后续工具端点使用）-------------------------------
+_AGENT_REQ_LOGS: dict[str, list[float]] = {}
+_AGENT_SWEEP_COUNTER = 0
+_AGENT_RATE_WINDOW = 60
+_AGENT_RATE_MAX = 120  # 每 token 每端点每分钟
+
+
+def _check_agent_rate_limit(token_id: int, path: str) -> tuple[bool, int]:
+    """按 token + 端点做轻量限流，防止单 token 拖垮服务。"""
+    global _AGENT_SWEEP_COUNTER
+    _AGENT_SWEEP_COUNTER += 1
+    now = time.time()
+    if _AGENT_SWEEP_COUNTER >= 200 or len(_AGENT_REQ_LOGS) > 10000:
+        _AGENT_SWEEP_COUNTER = 0
+        for key in [k for k, ts in _AGENT_REQ_LOGS.items()
+                    if not ts or now - ts[-1] > 2 * _AGENT_RATE_WINDOW]:
+            _AGENT_REQ_LOGS.pop(key, None)
+    key = f"{token_id}:{path}"
+    timestamps = _AGENT_REQ_LOGS.setdefault(key, [])
+    timestamps[:] = [t for t in timestamps if now - t < _AGENT_RATE_WINDOW]
+    if len(timestamps) >= _AGENT_RATE_MAX:
+        return False, int(timestamps[0] + _AGENT_RATE_WINDOW - now) + 1
+    timestamps.append(now)
+    return True, 0
+
+
+def require_agent_scope(required_scope: str):
+    """构造 FastAPI 依赖：校验 Agent Bearer token 与 scope，默认拒绝。
+
+    失败语义：无/错误/过期/撤销 token → 401；有效 token 但缺 scope → 403；
+    超限 → 429。审计记录 token 前缀与端点，不记录明文或响应内容。
+    """
+    if required_scope not in agent_tokens.ALLOWED_SCOPES:
+        raise ValueError(f"未定义的 Agent scope：{required_scope}")
+
+    def _dependency(request: Request) -> agent_tokens.AgentTokenContext:
+        ip = _get_client_ip(request)
+        header = request.headers.get("Authorization", "")
+        plaintext = header[7:].strip() if header.startswith("Bearer ") else ""
+        try:
+            ctx = agent_tokens.authenticate(plaintext, required_scope)
+        except agent_tokens.AgentTokenError as exc:
+            db.log_audit(
+                "agent_auth_failed", ip=ip,
+                detail={"path": request.url.path, "scope": required_scope,
+                        "reason": exc.reason,
+                        "token_prefix": plaintext[:agent_tokens.PREFIX_DISPLAY_LEN]},
+            )
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+        allowed, retry_after = _check_agent_rate_limit(ctx.id, request.url.path)
+        if not allowed:
+            db.log_audit(
+                "agent_rate_limited", ip=ip,
+                detail={"path": request.url.path, "token_id": ctx.id,
+                        "token_prefix": ctx.prefix, "retry_after": retry_after},
+            )
+            raise HTTPException(
+                status_code=429,
+                detail=f"请求过于频繁，请 {retry_after} 秒后再试",
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        db.log_audit(
+            "agent_auth_ok", ip=ip,
+            detail={"path": request.url.path, "token_id": ctx.id,
+                    "token_prefix": ctx.prefix, "scope": required_scope},
+        )
+        return ctx
+
+    return _dependency
 
 
 # ---------------------------------------------------------------------------

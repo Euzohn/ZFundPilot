@@ -148,6 +148,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 ### Security & Customization
 
 - **Password Auth** — Username + password login, HMAC-signed token, bcrypt password hashing, login rate limiting
+- **Agent Read-only Tokens** — High-entropy tokens independent of web login; server stores only SHA-256 digests; scoped to `portfolio:read`/`funds:read`/`health:read`, default-deny, revocable; unavailable when no admin password is configured
 - **API Key Encryption** — AI API key encrypted at rest (Fernet AES-128-CBC + HMAC-SHA256)
 - **Audit Log** — Sensitive operations logged, viewable in Settings
 - **Language Switch** — Full UI supports Chinese/English toggle, switch from sidebar, data format (¥/$) adapts automatically
@@ -258,11 +259,13 @@ ZFundPilot/
 | Password Hashing | bcrypt (cost=12), backward-compatible with SHA-256, auto-upgraded on login |
 | Login Rate Limiting | 5 failed attempts within 5 min → 15 min lockout |
 | Token Auth | HMAC-SHA256 signed tokens, 7-day expiry, invalidated on password change |
+| Agent Token | High-entropy random string, SHA-256 digest only, default-deny scope allowlist, revocable + expiring |
 | Error Sanitization | Upstream AI errors logged server-side, never exposed to client |
 | Trusted Proxy | `ZFUNDPILOT_TRUSTED_PROXIES` controls X-Forwarded-For trust. Empty by default |
 
 - **IP-only / LAN**: Set a password. Default config is safe
 - **Domain + HTTPS**: Use Caddy for automatic TLS. Configure `TRUSTED_PROXIES` for correct client IP
+- **Agent tokens**: Pass them only via `Authorization: Bearer` — never in URLs, browser storage, or model prompts; use HTTPS for any remote access
 
 </details>
 

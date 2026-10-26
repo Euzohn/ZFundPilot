@@ -128,18 +128,20 @@ function AgentTokenPanel() {
   const handleCopy = async () => {
     if (!created) return
     const token = created.token
-    const ok = await copyText(token)
-    // 异步剪贴板请求期间可能已撤销或新签发了令牌，不能更新旧令牌的 UI。
     const input = tokenInputRef.current
-    if (!input || input.value !== token) return
+    // 非安全上下文优先在可见输入框内选中复制，避免隐藏节点的兼容问题
+    const ok = await copyText(token, input?.value === token ? input : null)
+    // 异步剪贴板请求期间可能已撤销或新签发了令牌，不能更新旧令牌的 UI。
+    const current = tokenInputRef.current
+    if (!current || current.value !== token) return
     setCopied(ok)
     if (ok) {
       toast.success(t.settings.agentTokenCopied)
       return
     }
-    // HTTP 局域网等非安全上下文无法写剪贴板：选中明文，让用户按快捷键复制
-    input.focus()
-    input.select()
+    // 剪贴板不可用：选中明文，让用户手动复制
+    current.focus()
+    current.select()
     toast.info(t.settings.agentTokenSelectHint)
   }
 

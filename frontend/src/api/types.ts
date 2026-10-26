@@ -109,6 +109,12 @@ export interface Position {
   is_open: boolean
 }
 
+export interface DataStatus {
+  missing_nav_fund_count: number
+  stale_nav_fund_count: number
+  pending_t1_transaction_count: number
+}
+
 export interface PortfolioSummary {
   total_cost: number
   total_value: number
@@ -132,6 +138,7 @@ export interface PortfolioSummary {
   month_return: number
   year_pnl: number
   year_return: number
+  data_status?: DataStatus
 }
 
 export interface CurvePoint {

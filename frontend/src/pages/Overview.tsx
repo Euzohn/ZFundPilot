@@ -10,7 +10,7 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts"
-import { Wallet, Calendar, LayoutDashboard, ArrowLeftRight } from "lucide-react"
+import { Wallet, Calendar, LayoutDashboard, ArrowLeftRight, Database } from "lucide-react"
 import { CHART_COLORS } from "@/lib/chartPalette"
 import MetricCard from "@/components/MetricCard"
 import PageHeader from "@/components/PageHeader"
@@ -18,6 +18,7 @@ import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import { useLang } from "@/i18n/LanguageContext"
 import { translateFundType, translateChannel, translateRiskLevel } from "@/lib/taxonomyLabels"
+import { Link } from "react-router-dom"
 
 function HeroCard({ summary }: { summary: PortfolioSummary }) {
   const { t } = useLang()
@@ -51,6 +52,52 @@ function ChartTooltip({ active, payload, nameKey }: ChartTooltipProps) {
       <p className="text-xs font-medium text-foreground">{label ?? payload[0].name}</p>
       <p className="text-sm font-bold tabular-nums text-primary">{money(payload[0].value as number)}</p>
     </div>
+  )
+}
+
+function DataStatusBanner({ summary }: { summary: PortfolioSummary }) {
+  const { t } = useLang()
+  const ds = summary.data_status
+  const staleFunds = (ds?.missing_nav_fund_count ?? 0) + (ds?.stale_nav_fund_count ?? 0)
+  const pendingT1 = ds?.pending_t1_transaction_count ?? 0
+  const navLabel = summary.as_of_date
+    ? t.overview.latestFormalNav.replace("{date}", summary.as_of_date)
+    : t.overview.noFormalNav
+  const allClear = staleFunds === 0 && pendingT1 === 0
+  return (
+    <Card className="border-dashed">
+      <CardContent className="flex flex-col gap-2 p-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <Database className="h-3.5 w-3.5" />
+            {navLabel}
+          </span>
+          <span className={`tabular-nums ${staleFunds > 0 ? "text-warning font-medium" : "text-muted-foreground"}`}>
+            {t.overview.staleFunds} {staleFunds} {t.common.units}
+          </span>
+          <span className={`tabular-nums ${pendingT1 > 0 ? "text-warning font-medium" : "text-muted-foreground"}`}>
+            {t.overview.pendingT1} {pendingT1} {t.overview.txUnits}
+          </span>
+          {allClear && (
+            <span className="text-success">{t.overview.allClear}</span>
+          )}
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Link
+            to="/nav"
+            className="inline-flex h-7 items-center rounded-md border border-input bg-background px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+          >
+            {t.overview.viewNav}
+          </Link>
+          <Link
+            to="/transactions?tab=list"
+            className="inline-flex h-7 items-center rounded-md border border-input bg-background px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+          >
+            {t.overview.viewTransactions}
+          </Link>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -161,6 +208,9 @@ export default function Overview() {
         </Card>
         <MetricCard icon={Calendar} iconTone="warning" label={t.overview.maxSingleWeight} value={pct(summary.max_single_weight)} sub={summary.max_single_name || undefined} />
       </div>
+
+      {/* Data status banner — formal NAV freshness + T+1 pending */}
+      <DataStatusBanner summary={summary} />
 
       {/* Row 4: Charts — bar chart spans 2 cols, pies 1 col each */}
       <div className="grid grid-cols-1 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-4">

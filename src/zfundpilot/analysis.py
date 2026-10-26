@@ -26,12 +26,13 @@ from typing import Any
 
 import pandas as pd
 
-from . import config, db, fetch_fund
+from . import config, db, fetch_fund, us_calendar
 from .models import (
     ACTION_BUY,
     ACTION_DIVIDEND,
     ACTION_REINVEST,
     ACTION_SELL,
+    DataStatus,
     Fund,
     FundMissingData,
     IndustryExposureItem,
@@ -74,6 +75,93 @@ def _get_transactions_cached() -> list[Transaction]:
     txs = db.get_transactions()
     _cache_set("transactions", txs)
     return txs
+
+
+# ---------------------------------------------------------------------------
+# 组合数据状态摘要（只读，不修改任何 Position 缓存对象）
+# ---------------------------------------------------------------------------
+_NAV_REFERENCE_LOOKBACK_DAYS = 20
+
+
+def _last_trading_day_before(ref: date, lookback: int = _NAV_REFERENCE_LOOKBACK_DAYS) -> date | None:
+    """返回 ref 之前（不含 ref）最近的一个 A 股交易日。
+
+    日历不可用或回看窗口内无交易日时返回 None（fail-open，不判过期）。
+    """
+    d = ref - timedelta(days=1)
+    for _ in range(lookback):
+        if db.is_trading_day(d.isoformat()):
+            return d
+        d -= timedelta(days=1)
+    return None
+
+
+def _qdii_nav_reference(normal_ref: date | None,
+                         lookback: int = _NAV_REFERENCE_LOOKBACK_DAYS) -> date | None:
+    """QDII 净值参考日：在 normal_ref 之前再找一个中美同时开市的交易日。
+
+    QDII 净值通常 T+2 公布，且受美股休市影响，故容忍多一个交易日。
+    normal_ref 为 None 时直接返回 None。
+    """
+    if normal_ref is None:
+        return None
+    d = normal_ref - timedelta(days=1)
+    for _ in range(lookback):
+        if db.is_trading_day(d.isoformat()) and us_calendar.is_us_trading_day(d):
+            return d
+        d -= timedelta(days=1)
+    return normal_ref
+
+
+def _build_data_status(positions: list[Position]) -> DataStatus:
+    """计算组合数据状态摘要。
+
+    - 净值计数：只统计有已确认份额（held_shares > 1e-6）的持仓，按 fund_code 去重。
+      仅有待确认买入金额、没有份额的基金不计入净值口径，避免一笔新买入造成双重提示。
+    - 时间口径：以 config.TIMEZONE 当前日期之前最近的已完成 A 股交易日为参考；
+      休市日（周末/节假日）不会因日期早于今天就判过期。QDII 多容忍一个中美同时开市的交易日。
+    - 待确认交易：is_t1 且 nav 为空且非分红的交易笔数。
+    """
+    today = datetime.now(config.TIMEZONE).date()
+    normal_ref = _last_trading_day_before(today)
+    qdii_ref = _qdii_nav_reference(normal_ref)
+
+    latest_by_fund: dict[str, str | None] = {}
+    qdii_funds: set[str] = set()
+    for p in positions:
+        if p.held_shares <= 1e-6:
+            continue
+        code = p.fund_code
+        if code not in latest_by_fund:
+            latest_by_fund[code] = None
+        if p.latest_date and (
+            latest_by_fund[code] is None or p.latest_date > latest_by_fund[code]
+        ):
+            latest_by_fund[code] = p.latest_date
+        if p.fund_type == "QDII":
+            qdii_funds.add(code)
+
+    missing = 0
+    stale = 0
+    for code, latest in latest_by_fund.items():
+        if not latest:
+            missing += 1
+            continue
+        ref = qdii_ref if code in qdii_funds else normal_ref
+        if ref is None:
+            continue  # 日历不可用，fail-open 不判过期
+        if latest < ref.isoformat():
+            stale += 1
+
+    pending_t1 = sum(
+        1 for tx in db.get_transactions_without_nav()
+        if tx.is_t1 and tx.action != ACTION_DIVIDEND
+    )
+    return DataStatus(
+        missing_nav_fund_count=missing,
+        stale_nav_fund_count=stale,
+        pending_t1_transaction_count=pending_t1,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +378,9 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
         summary.max_single_name = top.fund_name
         summary.as_of_date = max(
             (p.latest_date for p in open_positions if p.latest_date), default=None)
+
+    # 数据状态摘要（只读，不修改 positions 缓存对象）
+    summary.data_status = _build_data_status(positions)
 
     # 今日收益 = 从曲线最后两个点的 Δ市值 - Δ成本 计算（与 Returns 页一致）
 

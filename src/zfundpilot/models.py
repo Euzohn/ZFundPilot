@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 # 交易方向
 ACTION_BUY = "buy"
@@ -189,6 +189,19 @@ class Position:
 
 
 @dataclass
+class DataStatus:
+    """组合数据状态摘要（只读，基于已入库的正式净值与交易流水）。
+
+    - missing_nav_fund_count: 有已确认份额但无任何正式净值的基金数（按基金代码去重）
+    - stale_nav_fund_count: 有正式净值但超过容忍期未更新的基金数（与 missing 互斥）
+    - pending_t1_transaction_count: is_t1 且 nav 未回填的非分红交易笔数
+    """
+    missing_nav_fund_count: int = 0
+    stale_nav_fund_count: int = 0
+    pending_t1_transaction_count: int = 0
+
+
+@dataclass
 class PortfolioSummary:
     """组合层面的汇总结果。"""
     total_cost: float = 0.0           # 当前持仓成本
@@ -213,6 +226,7 @@ class PortfolioSummary:
     month_return: float = 0.0       # 本月收益率
     year_pnl: float = 0.0           # 今年收益
     year_return: float = 0.0        # 今年收益率
+    data_status: DataStatus = field(default_factory=DataStatus)  # 组合数据状态摘要（只读）
 
     def to_dict(self) -> dict:
         return asdict(self)

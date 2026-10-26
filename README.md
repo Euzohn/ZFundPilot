@@ -21,7 +21,7 @@
   <p><b>首页门户</b> — 深色战术终端风格，核心指标 + 快捷导航 + 系统状态</p>
   <br>
   <img src="assets/readme/screenshots_zh/overview.webp" alt="组合总览" width="90%">
-  <p><b>组合总览</b> — 持仓成本、市值、盈亏一览 + 资产/渠道/板块分布图</p>
+  <p><b>组合总览</b> — 持仓成本、市值、盈亏一览 + 资产/渠道/板块分布图 + 数据状态提示（最新正式净值日期、需关注净值基金数、T+1 待确认交易数）</p>
   <br>
   <img src="assets/readme/screenshots_zh/positions.webp" alt="持仓明细" width="90%">
   <p><b>持仓明细</b> — 按基金合并的跨渠道持仓视图，净值日期标注新鲜度</p>

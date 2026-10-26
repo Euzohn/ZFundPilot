@@ -21,7 +21,7 @@
   <p><b>Home Portal</b> — Dark tactical terminal style, key metrics + quick navigation + system status</p>
   <br>
   <img src="assets/readme/screenshots_en/overview.webp" alt="Portfolio Overview" width="90%">
-  <p><b>Portfolio Overview</b> — Cost, market value, P&L at a glance + asset/channel/sector distribution charts</p>
+  <p><b>Portfolio Overview</b> — Cost, market value, P&L at a glance + asset/channel/sector distribution charts + data status hint (latest formal NAV date, funds with NAV to review, T+1 pending transaction count)</p>
   <br>
   <img src="assets/readme/screenshots_en/positions.webp" alt="Positions" width="90%">
   <p><b>Positions</b> — Cross-channel merged view per fund, with NAV freshness indicator</p>

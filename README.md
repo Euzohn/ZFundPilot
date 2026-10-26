@@ -82,6 +82,7 @@ ZFundPilot 是一个**自托管的中国基金组合分析工具**。记录每�
 - **中国市场专精** — 数据源来自 AkShare 和天天基金，支持中国基金的全维度分析（含实时估值、费率计算、板块分类）
 - **数据驱动分析** — 不是荐基平台，没有排行榜和营销话术，只有基于你持仓数据的量化指标
 - **AI 辅助，不是 AI 决策** — OpenAI 兼容 API 提供持仓上下文问答，建议仅供参考，决策在你自己
+- **Agent 可读，也可审计** — 独立只读 Agent token + MCP 适配层，让 Claude Desktop / Cursor 在明确的 scope、限流与审计边界内读取组合，而不是把整站 API 暴露给模型
 
 ## 快速开始
 
@@ -145,12 +146,16 @@ cd frontend && npm install && npm run dev
 - **AI 投顾对话** — 配置 OpenAI 兼容 API（智谱/Kimi/通义千问/DeepSeek），AI 自动联网搜索最新资讯 + 结合持仓数据给出调仓建议
 - **AI 录入交易** — 自然语言描述交易，AI 自动解析结构化数据并计算手续费，确认后写入
 
+### Agent 接入（API / MCP）
+
+- **独立只读令牌** — 与网页登录 token 物理隔离的高熵 Agent token，服务端只存 SHA-256 摘要；按 `portfolio:read`/`funds:read`/`health:read` 授权，默认拒绝、可撤销/过期；无密码模式下不可签发或使用
+- **5 个只读工具** — `/api/agent/tools/*` 提供组合汇总、数据状态、持仓、单基金详情与组合体检；统一响应包、正式净值口径与数据缺口说明，不暴露交易/设置/导出等写接口
+- **MCP 适配层** — 可选 stdio 桥接（`python -m zfundpilot.mcp_server`），让 Claude Desktop / Cursor 直接读取组合；鉴权、scope 与限流完全复用 HTTP 入口，不访问数据库、不另开鉴权后门
+- **可审计边界** — 鉴权成功/失败、限流、签发与撤销均写审计（仅记 token 前缀），按 token + 端点限流，远程访问要求 HTTPS。端点、示例与配置见 [docs/AGENT_API.md](docs/AGENT_API.md)
+
 ### 安全与自定义
 
 - **密码认证** — 用户名 + 密码登录，HMAC 签名 token，bcrypt 密码哈希，登录速率限制防爆破
-- **Agent 只读令牌** — 独立于网页登录的高熵 token，服务端只存 SHA-256 摘要，按 `portfolio:read`/`funds:read`/`health:read` 授权，默认拒绝，可随时撤销；无密码模式下不可签发或使用
-- **Agent 只读工具** — `/api/agent/tools/*` 提供组合汇总、数据状态、持仓、单基金详情与组合体检五个只读端点，统一走 scope 鉴权，不暴露交易/设置/导出等写接口。端点、参数、示例与安全说明见 [docs/AGENT_API.md](docs/AGENT_API.md)
-- **MCP 适配层** — 可选 stdio 桥接（`python -m zfundpilot.mcp_server`），把 5 个只读工具暴露给 Claude Desktop / Cursor；复用同一 Agent token、scope 与限流，不另开鉴权后门。安装与配置见 [docs/AGENT_API.md](docs/AGENT_API.md)
 - **API Key 加密存储** — AI API key 落盘自动加密（Fernet AES-128-CBC + HMAC-SHA256）
 - **审计日志** — 敏感操作记入日志，设置页可查看
 - **中英文切换** — 全站界面支持中英文切换，侧边栏一键切换，数据格式（¥/$、相对时间）自动适配

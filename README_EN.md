@@ -82,6 +82,7 @@ ZFundPilot is a **self-hosted Chinese mutual fund portfolio analysis tool**. Rec
 - **Built for the Chinese fund market** — Data sourced from AkShare and Tiantian Fund. Full-dimension analysis including live estimates, fee calculation, and sector classification
 - **Data-driven, not hype-driven** — No leaderboards, no marketing pitches. Just quantitative metrics based on your actual portfolio
 - **AI-assisted, not AI-decided** — OpenAI-compatible API provides context-aware answers. Recommendations are for reference only — you make the decisions
+- **Agent-readable, still auditable** — Dedicated read-only Agent tokens plus an MCP adapter let Claude Desktop / Cursor read your portfolio within explicit scopes, rate limits, and audit boundaries — not the whole API
 
 ## Quick Start
 
@@ -145,12 +146,16 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **AI Advisor Chat** — Configure any OpenAI-compatible API (Zhipu/Kimi/Qwen/DeepSeek). AI auto-searches the web for latest news + analyzes your portfolio context
 - **AI-Assisted Transactions** — Describe a trade in natural language, AI parses structured data with auto fee calculation, confirm and save
 
+### Agent Access (API / MCP)
+
+- **Dedicated read-only tokens** — High-entropy Agent tokens physically separate from web login tokens; only SHA-256 digests are stored; scoped to `portfolio:read`/`funds:read`/`health:read`, default-deny, revocable/expiring; disabled when no admin password is set
+- **Five read-only tools** — `/api/agent/tools/*` exposes portfolio summary, data status, positions, fund detail, and portfolio health; stable response envelope, formal-NAV semantics, and explicit data-quality caveats; no trading/settings/export writes
+- **MCP adapter** — Optional stdio bridge (`python -m zfundpilot.mcp_server`) for Claude Desktop / Cursor; authentication, scopes, and rate limits are identical to the HTTP entry point, with no database access or auth bypass
+- **Auditable boundary** — Auth success/failure, rate limiting, issuance, and revocation are audited (token prefix only); rate limiting is per token + endpoint, and HTTPS is required for remote access. See [docs/AGENT_API_EN.md](docs/AGENT_API_EN.md) for endpoints, examples, and setup
+
 ### Security & Customization
 
 - **Password Auth** — Username + password login, HMAC-signed token, bcrypt password hashing, login rate limiting
-- **Agent Read-only Tokens** — High-entropy tokens independent of web login; server stores only SHA-256 digests; scoped to `portfolio:read`/`funds:read`/`health:read`, default-deny, revocable; unavailable when no admin password is configured
-- **Agent Read-only Tools** — `/api/agent/tools/*` exposes portfolio summary, data status, positions, fund detail, and portfolio health as scoped read-only endpoints; no transaction/settings/export writes. See [docs/AGENT_API_EN.md](docs/AGENT_API_EN.md) for endpoints, parameters, examples, and security notes
-- **MCP Adapter** — Optional stdio bridge (`python -m zfundpilot.mcp_server`) exposing the five read-only tools to Claude Desktop / Cursor; reuses the same Agent token, scopes, and rate limits with no auth bypass. See [docs/AGENT_API_EN.md](docs/AGENT_API_EN.md) for setup
 - **API Key Encryption** — AI API key encrypted at rest (Fernet AES-128-CBC + HMAC-SHA256)
 - **Audit Log** — Sensitive operations logged, viewable in Settings
 - **Language Switch** — Full UI supports Chinese/English toggle, switch from sidebar, data format (¥/$) adapts automatically

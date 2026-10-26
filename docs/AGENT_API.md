@@ -49,6 +49,13 @@ curl -s -X POST http://localhost:8000/api/agent/tokens \
 
 响应中的 `token` 字段形如 `zfag_xxx`，即 Agent token 明文。`token_info` 只包含 `id`、名称、前缀、scope、时间等元数据。
 
+下文示例统一假设已设置环境变量：
+
+```bash
+export ZFUNDPILOT_AGENT_TOKEN=zfag_xxx   # 换成你自己的 token
+export ZFUNDPILOT_BASE_URL=http://localhost:8000
+```
+
 请求体字段：
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -121,7 +128,7 @@ Authorization: Bearer zfag_xxxxxxxx
 
 ### 限流
 
-每个 token、每个端点 **120 次/分钟**。超限返回 `429`，并按 `Retry-After` 秒数重试。
+每个 token、每个端点 **120 次/分钟**。路径参数按同一端点计（例如不同基金代码共用 `funds/{code}` 的额度），避免通过枚举代码绕过限流。超限返回 `429`，并按 `Retry-After` 秒数重试。
 
 ### OpenAPI / Swagger
 
@@ -151,8 +158,8 @@ FastAPI 自动生成以下页面：
 组合层面汇总，scope：`portfolio:read`。
 
 ```bash
-curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
-  http://localhost:8000/api/agent/tools/portfolio-summary | jq
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/portfolio-summary | jq
 ```
 
 `data` 主要字段：
@@ -177,8 +184,8 @@ curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
 正式净值与 T+1 待确认交易摘要，scope：`health:read`。
 
 ```bash
-curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
-  http://localhost:8000/api/agent/tools/data-status | jq
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/data-status | jq
 ```
 
 | 字段 | 说明 |
@@ -201,8 +208,8 @@ curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
 | `limit` | int | `200` | 1–500，超出返回 422 |
 
 ```bash
-curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
-  "http://localhost:8000/api/agent/tools/positions?limit=50" | jq
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/positions?limit=50" | jq
 ```
 
 `data` 字段：
@@ -240,8 +247,8 @@ curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
 查询参数：`nav_limit`，默认 `30`，范围 1–250。
 
 ```bash
-curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
-  "http://localhost:8000/api/agent/tools/funds/005827?nav_limit=10" | jq
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/funds/005827?nav_limit=10" | jq
 ```
 
 `data` 字段：
@@ -264,8 +271,8 @@ curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
 组合四维体检，scope：`health:read`。
 
 ```bash
-curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
-  http://localhost:8000/api/agent/tools/portfolio-health | jq
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/portfolio-health | jq
 ```
 
 `data` 字段：
@@ -292,20 +299,21 @@ curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
 
 ```python
 import os
-import requests
+import httpx
 
-BASE = os.getenv("ZFUND_BASE_URL", "http://localhost:8000")
-TOKEN = os.environ["ZFUND_AGENT_TOKEN"]  # 不要写进代码或提示词
+BASE = os.getenv("ZFUNDPILOT_BASE_URL", "http://localhost:8000")
+TOKEN = os.environ["ZFUNDPILOT_AGENT_TOKEN"]  # 不要写进代码或提示词
+
+client = httpx.Client(
+    base_url=BASE,
+    headers={"Authorization": f"Bearer {TOKEN}"},
+    timeout=30,
+)
 
 def call(tool: str, **params):
-    r = requests.get(
-        f"{BASE}/api/agent/tools/{tool}",
-        headers={"Authorization": f"Bearer {TOKEN}"},
-        params=params,
-        timeout=30,
-    )
-    r.raise_for_status()
-    return r.json()
+    response = client.get(f"/api/agent/tools/{tool}", params=params)
+    response.raise_for_status()
+    return response.json()
 
 summary = call("portfolio-summary")["data"]
 positions = call("positions", limit=20)["data"]["positions"]

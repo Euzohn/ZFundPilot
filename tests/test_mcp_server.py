@@ -49,7 +49,7 @@ def test_tools_registered():
     }
 
 
-def test_summary_sends_bearer_token(mock_api):
+def test_summary_requests_expected_path(mock_api):
     seen: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:

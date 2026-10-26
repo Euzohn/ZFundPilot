@@ -49,6 +49,13 @@ curl -s -X POST http://localhost:8000/api/agent/tokens \
 
 The `token` field in the response (format `zfag_xxx`) is the plaintext Agent token. `token_info` contains only metadata: `id`, name, prefix, scopes, and timestamps.
 
+The examples below assume these environment variables are set:
+
+```bash
+export ZFUNDPILOT_AGENT_TOKEN=zfag_xxx   # your own token
+export ZFUNDPILOT_BASE_URL=http://localhost:8000
+```
+
 Request body:
 
 | Field | Type | Required | Description |
@@ -121,7 +128,7 @@ Standard FastAPI error shape:
 
 ### Rate limiting
 
-**120 requests per minute** per token per endpoint. Exceeding it returns `429`; retry after the `Retry-After` seconds.
+**120 requests per minute** per token per endpoint. Path parameters count as the same endpoint (for example, different fund codes share the `funds/{code}` budget), so enumerating codes cannot bypass the limit. Exceeding it returns `429`; retry after the `Retry-After` seconds.
 
 ### OpenAPI / Swagger
 
@@ -151,8 +158,8 @@ Amounts are based on the **latest formal NAV** and marked with `data.valuation_b
 Portfolio-level summary. Scope: `portfolio:read`.
 
 ```bash
-curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
-  http://localhost:8000/api/agent/tools/portfolio-summary | jq
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/portfolio-summary | jq
 ```
 
 Key `data` fields:
@@ -177,8 +184,8 @@ Key `data` fields:
 Formal NAV and T+1 pending-transaction summary. Scope: `health:read`.
 
 ```bash
-curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
-  http://localhost:8000/api/agent/tools/data-status | jq
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/data-status | jq
 ```
 
 | Field | Description |
@@ -201,8 +208,8 @@ Query parameters:
 | `limit` | int | `200` | 1–500; out-of-range returns 422 |
 
 ```bash
-curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
-  "http://localhost:8000/api/agent/tools/positions?limit=50" | jq
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/positions?limit=50" | jq
 ```
 
 `data` fields:
@@ -240,8 +247,8 @@ Path parameter `code` must be 6 digits (otherwise `400`); unknown fund returns `
 Query parameter `nav_limit` defaults to `30` (range 1–250).
 
 ```bash
-curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
-  "http://localhost:8000/api/agent/tools/funds/005827?nav_limit=10" | jq
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/funds/005827?nav_limit=10" | jq
 ```
 
 `data` fields:
@@ -264,8 +271,8 @@ curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
 Four-dimension portfolio health check. Scope: `health:read`.
 
 ```bash
-curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
-  http://localhost:8000/api/agent/tools/portfolio-health | jq
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/portfolio-health | jq
 ```
 
 `data` fields:
@@ -292,20 +299,21 @@ curl -s -H "Authorization: Bearer $AGENT_TOKEN" \
 
 ```python
 import os
-import requests
+import httpx
 
-BASE = os.getenv("ZFUND_BASE_URL", "http://localhost:8000")
-TOKEN = os.environ["ZFUND_AGENT_TOKEN"]  # never hardcode or put in prompts
+BASE = os.getenv("ZFUNDPILOT_BASE_URL", "http://localhost:8000")
+TOKEN = os.environ["ZFUNDPILOT_AGENT_TOKEN"]  # never hardcode or put in prompts
+
+client = httpx.Client(
+    base_url=BASE,
+    headers={"Authorization": f"Bearer {TOKEN}"},
+    timeout=30,
+)
 
 def call(tool: str, **params):
-    r = requests.get(
-        f"{BASE}/api/agent/tools/{tool}",
-        headers={"Authorization": f"Bearer {TOKEN}"},
-        params=params,
-        timeout=30,
-    )
-    r.raise_for_status()
-    return r.json()
+    response = client.get(f"/api/agent/tools/{tool}", params=params)
+    response.raise_for_status()
+    return response.json()
 
 summary = call("portfolio-summary")["data"]
 positions = call("positions", limit=20)["data"]["positions"]

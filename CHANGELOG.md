@@ -15,6 +15,10 @@
 - 完善 Agent 相关 OpenAPI 描述：新增 `agent` / `agent-admin` 分组、`AgentBearer`/`WebLoginBearer` securitySchemes、端点摘要与 401/403/429（基金详情另含 400/404）响应说明；文档明确 `/docs`、`/redoc`、`/openapi.json` 默认公开的仅是接口结构，业务接口仍需认证，可按需在反代层屏蔽
 - 设置页新增「Agent 访问令牌」管理——位于「账户与安全」、账户卡片与审计日志之间：填写名称、勾选 `portfolio:read`/`funds:read`/`health:read`（默认全选）、设置 1–3650 天有效期（留空不过期）后签发；明文仅在签发成功时展示一次并提供复制；列表展示前缀、权限、创建/过期/最近使用时间与有效/过期/已撤销状态，支持二次确认撤销。新增 `docs/AGENT_API.md` 与英文版 `docs/AGENT_API_EN.md`，完整说明 5 个只读工具、scope、响应包、错误码、限流与接入示例，README 中英文版均补充入口链接
 
+### Changed
+- README 中英文版将 Agent 接入提升为独立功能亮点（新增「Agent 接入（API / MCP）」段与「为什么不同」差异点），从「安全与自定义」移出，避免能力被埋在安全条目里
+- 统一 `docs/AGENT_API.md` / `docs/AGENT_API_EN.md` 的接入示例：环境变量统一为 `ZFUNDPILOT_BASE_URL` / `ZFUNDPILOT_AGENT_TOKEN`，Python 示例由 `requests` 改为项目已依赖的 `httpx`
+
 ### Fixed
 - 修复 Agent 工具限流按实际请求路径分桶的绕过风险——此前 `/api/agent/tools/funds/000001` 与 `.../000002` 各自独立计数，枚举基金代码即可放大请求量；现按路由模板（`/api/agent/tools/funds/{code}`）分桶。新增 1 个回归测试，总测试 642→643
 - 设置页签发 Agent token 后若立即撤销同一条 token，一次性明文展示会同步清除，避免复制到已失效的 token

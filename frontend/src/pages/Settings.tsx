@@ -75,7 +75,7 @@ function AgentTokenPanel() {
   const [scopes, setScopes] = useState<string[]>([...AGENT_SCOPE_KEYS])
   const [expires, setExpires] = useState("90")
   const [creating, setCreating] = useState(false)
-  const [created, setCreated] = useState<{ token: string; name: string } | null>(null)
+  const [created, setCreated] = useState<{ id: number; token: string; name: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const [revokeTarget, setRevokeTarget] = useState<AgentTokenInfo | null>(null)
   const [revoking, setRevoking] = useState(false)
@@ -111,7 +111,7 @@ function AgentTokenPanel() {
     setCreating(true)
     try {
       const res = await api.createAgentToken(trimmed, scopes, ttl)
-      setCreated({ token: res.token, name: res.token_info.name })
+      setCreated({ id: res.token_info.id, token: res.token, name: res.token_info.name })
       setCopied(false)
       setName("")
       await reload()
@@ -135,11 +135,13 @@ function AgentTokenPanel() {
   }
 
   const handleRevoke = async () => {
-    if (!revokeTarget) return
+    const target = revokeTarget
+    if (!target) return
     setRevoking(true)
     try {
-      await api.revokeAgentToken(revokeTarget.id)
+      await api.revokeAgentToken(target.id)
       toast.success(t.settings.agentTokenRevokedToast)
+      setCreated((prev) => (prev?.id === target.id ? null : prev))
       setRevokeTarget(null)
       await reload()
     } catch (e) {

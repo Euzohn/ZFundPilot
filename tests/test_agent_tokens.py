@@ -380,6 +380,19 @@ class TestAgentTools:
         assert client.get(
             "/api/agent/tools/funds/000000", headers=headers).status_code == 404
 
+    def test_rate_limit_shared_across_fund_codes(self, temp_db, monkeypatch):
+        """基金代码是路径参数，不同代码必须共用同一个限流桶。"""
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        monkeypatch.setattr(api, "_AGENT_RATE_MAX", 1)
+        monkeypatch.setattr(api, "_AGENT_REQ_LOGS", {})
+        client = TestClient(api.app)
+        headers = self._headers("funds:read")
+
+        first = client.get("/api/agent/tools/funds/000001", headers=headers)
+        second = client.get("/api/agent/tools/funds/000002", headers=headers)
+        assert first.status_code == 404
+        assert second.status_code == 429
+
     def test_web_token_cannot_call_tools(self, admin_client):
         client, headers = admin_client
         assert client.get(

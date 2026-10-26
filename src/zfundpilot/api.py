@@ -564,6 +564,16 @@ _AGENT_RATE_WINDOW = 60
 _AGENT_RATE_MAX = 120  # 每 token 每端点每分钟
 
 
+def _agent_endpoint_key(request: Request) -> str:
+    """返回路由模板而非实际路径，避免路径参数分裂限流桶。
+
+    例如 ``/api/agent/tools/funds/005827`` 与 ``.../000001`` 必须共用
+    ``/api/agent/tools/funds/{code}`` 这一个桶，否则枚举基金代码可绕过限流。
+    """
+    route = request.scope.get("route")
+    return getattr(route, "path", None) or request.url.path
+
+
 def _check_agent_rate_limit(token_id: int, path: str) -> tuple[bool, int]:
     """按 token + 端点做轻量限流，防止单 token 拖垮服务。"""
     global _AGENT_SWEEP_COUNTER
@@ -630,7 +640,8 @@ def require_agent_scope(required_scope: str):
                 detail=f"Agent token 缺少权限：{required_scope}",
             )
 
-        allowed, retry_after = _check_agent_rate_limit(ctx.id, request.url.path)
+        allowed, retry_after = _check_agent_rate_limit(
+            ctx.id, _agent_endpoint_key(request))
         if not allowed:
             db.log_audit(
                 "agent_rate_limited", ip=_get_client_ip(request),

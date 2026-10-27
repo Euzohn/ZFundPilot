@@ -149,7 +149,7 @@ cd frontend && npm install && npm run dev
 ### Agent 接入（API / MCP）
 
 - **独立只读令牌** — 与网页登录 token 物理隔离的高熵 Agent token，服务端只存 SHA-256 摘要；按 `portfolio:read`/`funds:read`/`health:read` 授权，默认拒绝、可撤销/过期；无密码模式下不可签发或使用
-- **5 个只读工具** — `/api/agent/tools/*` 提供组合汇总、数据状态、持仓、单基金详情与组合体检；统一响应包、正式净值口径与数据缺口说明，不暴露交易/设置/导出等写接口
+- **7 个只读工具** — `/api/agent/tools/*` 提供组合汇总、数据状态、持仓、单基金详情、组合体检、收益视图与多基金对比；统一响应包、正式净值口径与数据缺口说明，不暴露交易/设置/导出等写接口
 - **MCP 适配层** — 可选 stdio 桥接（`python -m zfundpilot.mcp_server`），让 Claude Desktop / Cursor 直接读取组合；鉴权、scope 与限流完全复用 HTTP 入口，不访问数据库、不另开鉴权后门
 - **可审计边界** — 鉴权成功/失败、限流、签发与撤销均写审计（仅记 token 前缀），按 token + 端点限流，远程访问要求 HTTPS。端点、示例与配置见 [docs/AGENT_API.md](docs/AGENT_API.md)
 

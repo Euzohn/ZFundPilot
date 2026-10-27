@@ -46,6 +46,8 @@ def test_tools_registered():
         "list_positions",
         "get_fund_detail",
         "get_portfolio_health",
+        "get_returns",
+        "compare_funds",
     }
 
 
@@ -109,6 +111,57 @@ def test_api_error_detail_is_preserved(mock_api):
 def test_fund_code_validation_without_network():
     with pytest.raises(ToolError, match="6 digits"):
         _run(mcp_server.get_fund_detail("abc"))
+
+
+def test_returns_passes_fund_code(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"data": {"scope": "fund"}})
+
+    mock_api(handler)
+    result = _run(mcp_server.get_returns("005827"))
+
+    assert seen["path"] == "/api/agent/tools/returns"
+    assert seen["params"] == {"fund_code": "005827"}
+    assert result["data"]["scope"] == "fund"
+
+
+def test_returns_omits_fund_code_for_portfolio(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"data": {"scope": "portfolio"}})
+
+    mock_api(handler)
+    _run(mcp_server.get_returns())
+
+    assert seen["params"] == {}
+
+
+def test_compare_funds_passes_repeated_codes(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["codes"] = request.url.params.get_list("codes")
+        return httpx.Response(200, json={"data": {"count": 2}})
+
+    mock_api(handler)
+    _run(mcp_server.compare_funds(["005827", "000001"]))
+
+    assert seen["path"] == "/api/agent/tools/funds/compare"
+    assert seen["codes"] == ["005827", "000001"]
+
+
+def test_compare_funds_validation_without_network():
+    with pytest.raises(ToolError, match="6 digits"):
+        _run(mcp_server.compare_funds(["abc"]))
+    with pytest.raises(ToolError, match="At least one"):
+        _run(mcp_server.compare_funds([""]))
 
 
 def test_missing_token(monkeypatch):

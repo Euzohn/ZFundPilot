@@ -20,7 +20,7 @@ import re
 import threading
 import time
 import urllib.parse
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
@@ -50,7 +50,17 @@ from . import (
     risk,
     scheduler,
 )
-from .models import ACTIONS, DataStatus, Fund, Transaction
+from .models import (
+    ACTION_BUY,
+    ACTION_DIVIDEND,
+    ACTION_REINVEST,
+    ACTION_SELL,
+    ACTIONS,
+    DataStatus,
+    Fund,
+    PortfolioSummary,
+    Transaction,
+)
 from .nav_update_state import nav_update_lock as _nav_update_lock
 from .nav_update_state import nav_update_state as _nav_update_state
 
@@ -810,6 +820,161 @@ def agent_list_positions(
         "valuation_basis": "latest_formal_nav",
         "positions": items,
     })
+
+
+def _agent_returns_data(summary: PortfolioSummary) -> dict[str, Any]:
+    """组合级收益视图：聚焦累计/年化与分周期收益，与 portfolio-summary 互补。"""
+    return {
+        "scope": "portfolio",
+        "as_of_date": summary.as_of_date,
+        "as_of_date_semantics": (
+            "as_of_date 为各持仓正式净值日期的最大值，不代表所有基金均已更新"
+        ),
+        "valuation_basis": "latest_formal_nav",
+        "total_return": summary.total_return,
+        "annualized_return": summary.annualized_return,
+        "total_pnl": summary.total_pnl,
+        "unrealized_pnl": summary.unrealized_pnl,
+        "realized_pnl": summary.realized_pnl,
+        "daily": {"pnl": summary.daily_pnl, "return": summary.daily_return},
+        "week": {"pnl": summary.week_pnl, "return": summary.week_return},
+        "month": {"pnl": summary.month_pnl, "return": summary.month_return},
+        "year": {"pnl": summary.year_pnl, "return": summary.year_return},
+        "holding_count": summary.holding_count,
+    }
+
+
+def _agent_fund_returns_data(code: str) -> dict[str, Any]:
+    """单基金收益视图：累计/年化、现金流汇总与各渠道持仓盈亏。"""
+    fund = db.get_fund(code)
+    positions = [
+        p for p in analysis.calculate_positions(include_closed=False)
+        if p.fund_code == code
+    ]
+    if not fund and not positions:
+        raise HTTPException(status_code=404, detail=f"未找到基金 {code}")
+
+    buy_amount = sell_amount = dividend_amount = 0.0
+    transactions = db.get_transactions(fund_code=code)
+    for tx in transactions:
+        tx.normalize()
+        if not tx.amount:
+            continue
+        if tx.action == ACTION_BUY:
+            buy_amount += tx.amount
+        elif tx.action == ACTION_SELL:
+            sell_amount += tx.amount
+        elif tx.action in (ACTION_DIVIDEND, ACTION_REINVEST):
+            dividend_amount += tx.amount
+
+    total_value = sum(p.market_value for p in positions)
+    total_cost = sum(p.total_cost for p in positions)
+    unrealized = sum(p.unrealized_pnl for p in positions)
+    realized = sum(p.realized_pnl for p in positions)
+    latest_date = max(
+        (p.latest_date for p in positions if p.latest_date), default=None)
+
+    return {
+        "scope": "fund",
+        "fund_code": code,
+        "fund_name": fund.fund_name if fund else positions[0].fund_name,
+        "valuation_basis": "latest_formal_nav",
+        "as_of_date": latest_date,
+        "as_of_date_semantics": "as_of_date 为该基金最新正式净值日期",
+        "market_value": total_value,
+        "total_cost": total_cost,
+        "unrealized_pnl": unrealized,
+        "realized_pnl": realized,
+        "total_pnl": unrealized + realized,
+        "return_rate": (
+            (total_value / total_cost - 1) if total_cost > 1e-9 else None),
+        "annualized_return": analysis.calculate_fund_xirr(code),
+        "transaction_count": len(transactions),
+        "buy_amount": buy_amount,
+        "sell_amount": sell_amount,
+        "dividend_amount": dividend_amount,
+        "channels": [
+            {
+                "channel": p.channel,
+                "market_value": p.market_value,
+                "total_cost": p.total_cost,
+                "unrealized_pnl": p.unrealized_pnl,
+                "return_rate": p.return_rate,
+                "annualized_return": p.annualized_return,
+            }
+            for p in positions
+        ],
+    }
+
+
+@app.get("/api/agent/tools/returns", tags=["agent"],
+         summary="收益视图（只读）",
+         responses={**_AGENT_ERROR_RESPONSES,
+                    400: {"description": "基金代码必须为 6 位数字"},
+                    404: {"description": "基金不存在"}},
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_get_returns(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_PORTFOLIO_READ)),
+    ],
+    fund_code: str | None = Query(
+        None, description="可选：单基金代码（6 位数字），省略返回组合级"),
+) -> dict[str, Any]:
+    """收益视图：默认组合级；传 ``fund_code`` 返回单基金级（只读）。
+
+    组合级复用 ``analysis.calculate_summary()``；单基金级复用
+    ``analysis.calculate_fund_xirr()`` 与交易流水汇总。金额口径均为最新正式净值。
+    """
+    del ctx
+    if fund_code is None:
+        data = _agent_returns_data(analysis.calculate_summary())
+    else:
+        if not re.fullmatch(r"\d{6}", fund_code):
+            raise HTTPException(status_code=400, detail="基金代码必须为 6 位数字")
+        data = _agent_fund_returns_data(fund_code)
+    return _agent_tool_response("get_returns", data)
+
+
+@app.get("/api/agent/tools/funds/compare", tags=["agent"],
+         summary="基金对比（只读）",
+         responses={**_AGENT_ERROR_RESPONSES,
+                    400: {"description": "基金代码列表为空或格式非法（超过 20 只由参数校验返回 422）"}},
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_compare_funds(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_FUNDS_READ)),
+    ],
+    codes: Annotated[list[str], Query(min_length=1, max_length=20)],
+    include_nav_series: bool = False,
+) -> dict[str, Any]:
+    """对比多只基金：收益、风险、费率与相关性（只读）。
+
+    数据包含外部抓取结果，可能较慢或部分基金失败；每只基金以 ``ok``/``message``
+    标记。默认不返回 ``nav_series``（体积较大），需要时显式开启。
+    """
+    del ctx
+    cleaned = list(dict.fromkeys(
+        c.strip() for c in codes if c and c.strip()))
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="基金代码列表为空")
+    if any(not re.fullmatch(r"\d{6}", c) for c in cleaned):
+        raise HTTPException(status_code=400, detail="基金代码必须为 6 位数字")
+
+    result = compare.compare_funds(cleaned)
+    data: dict[str, Any] = {
+        "ok": result.ok,
+        "message": result.message,
+        "msg_code": result.msg_code,
+        "count": len(result.funds),
+        "funds": [asdict(fund) for fund in result.funds],
+        "correlations": result.correlations,
+        "valuation_basis": "latest_formal_nav",
+    }
+    if include_nav_series:
+        data["nav_series"] = result.nav_series
+    return _agent_tool_response("compare_funds", data)
 
 
 @app.get("/api/agent/tools/funds/{code}", tags=["agent"],

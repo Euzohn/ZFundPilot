@@ -70,8 +70,8 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 
 | Scope | 允许的工具 |
 |---|---|
-| `portfolio:read` | `portfolio-summary`、`positions` |
-| `funds:read` | `funds/{code}` |
+| `portfolio:read` | `portfolio-summary`、`positions`、`returns` |
+| `funds:read` | `funds/{code}`、`funds/compare` |
 | `health:read` | `data-status`、`portfolio-health` |
 
 没有写 scope。调用未授权工具返回 **403**。
@@ -293,6 +293,76 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 >
 > 体检会尝试获取 CPI 基线用于收益维度；网络不可用时自动降级为仅按年化收益率评分，接口仍会正常返回。
 
+### 5.6 `GET /api/agent/tools/returns`
+
+收益视图，scope：`portfolio:read`。默认组合级；传 `fund_code` 返回单基金级。
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `fund_code` | str | 无 | 可选，6 位数字；格式非法返回 `400`，基金不存在返回 `404` |
+
+```bash
+# 组合级
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/returns | jq
+
+# 单基金级
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/returns?fund_code=005827" | jq
+```
+
+`data` 公共字段：`scope`（`portfolio` / `fund`）、`valuation_basis`（固定 `latest_formal_nav`）、`as_of_date`、`as_of_date_semantics`。
+
+组合级另有：
+
+| 字段 | 说明 |
+|---|---|
+| `total_return` / `annualized_return` | 累计浮动收益率 / XIRR 年化（可能为 `null`） |
+| `total_pnl` / `unrealized_pnl` / `realized_pnl` | 总 / 浮动 / 已实现盈亏 |
+| `daily` / `week` / `month` / `year` | 各周期 `{pnl, return}` |
+| `holding_count` | 当前持仓基金数 |
+
+单基金级另有：
+
+| 字段 | 说明 |
+|---|---|
+| `fund_code` / `fund_name` | 基金标识 |
+| `market_value` / `total_cost` | 市值 / 持仓成本 |
+| `unrealized_pnl` / `realized_pnl` / `total_pnl` | 盈亏 |
+| `return_rate` / `annualized_return` | 累计收益率 / XIRR 年化 |
+| `transaction_count` | 交易笔数 |
+| `buy_amount` / `sell_amount` / `dividend_amount` | 累计买入 / 卖出 / 分红金额 |
+| `channels` | 各渠道持仓：`channel`、`market_value`、`total_cost`、`unrealized_pnl`、`return_rate`、`annualized_return` |
+
+> `annualized_return` 使用 XIRR（按实际现金流日期），分批发入时比简单收益率更可靠；数据不足时返回 `null`。
+
+### 5.7 `GET /api/agent/tools/funds/compare`
+
+多基金对比，scope：`funds:read`。一次最多 20 只。
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `codes` | str[] | 必填 | 6 位基金代码，可重复传参：`?codes=005827&codes=000001`；为空或格式非法返回 `400`，不传返回 `422` |
+| `include_nav_series` | bool | `false` | 是否返回归一化净值序列（体积较大） |
+
+```bash
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/funds/compare?codes=005827&codes=000001" | jq
+```
+
+`data` 字段：
+
+| 字段 | 说明 |
+|---|---|
+| `ok` / `message` / `msg_code` | 整体是否成功及失败原因 |
+| `count` | 返回基金数 |
+| `funds` | 每只基金：`code`、`name`、`type`、`sector`、`scale`、`manager`、费率、`returns`、`risk`、`latest_nav`、`latest_date`、`ok`、`message` |
+| `correlations` | 至少 2 只成功时的相关性矩阵；不足 2 只时为 `null` |
+| `nav_series` | 仅 `include_nav_series=true` 时返回，按基金代码给出归一化净值序列 |
+| `valuation_basis` | 固定为 `latest_formal_nav` |
+
+> 对比会实时抓取外部数据，可能较慢；单只基金失败不影响其他基金，请先检查每项的 `ok`/`message`。该接口不返回盘中估值。
+
 ## 6. 最小接入示例
 
 ### Python
@@ -317,6 +387,7 @@ def call(tool: str, **params):
 
 summary = call("portfolio-summary")["data"]
 positions = call("positions", limit=20)["data"]["positions"]
+returns = call("returns")["data"]
 ```
 
 ### Function Calling / MCP 工具定义（示意）
@@ -336,13 +407,13 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-也可以用任意 HTTP 工具封装上述 5 个端点；仓库同时提供可选的 MCP 适配层（见本节末尾）。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
+也可以用任意 HTTP 工具封装上述 7 个端点；仓库同时提供可选的 MCP 适配层（见本节末尾）。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
 
 ---
 
 ### MCP 适配层（可选）
 
-仓库内置一个 stdio MCP 桥接，把上述 5 个工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
+仓库内置一个 stdio MCP 桥接，把上述 7 个工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
 
 ```bash
 # 在 ZFundPilot 源码目录安装可选依赖
@@ -371,7 +442,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 }
 ```
 
-暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`。
+暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`。
 
 - `ZFUNDPILOT_BASE_URL` 默认 `http://127.0.0.1:8000`；ZFundPilot 跑在 NAS/Docker 时改成实际地址，远程访问请用 HTTPS。
 - `ZFUNDPILOT_TIMEOUT` 可选，默认 30 秒，范围 1–120。
@@ -395,3 +466,5 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 |---|---|
 | 2026-10-27 | 首批 4 个只读工具上线：`portfolio-summary`、`data-status`、`positions`、`funds/{code}` |
 | 2026-10-27 | 新增 `portfolio-health`：四维体检、风险提示、结构建议与 `data_quality` 降级说明 |
+| 2026-10-27 | 新增 `returns`：组合级/单基金级收益分解与 XIRR |
+| 2026-10-27 | 新增 `funds/compare`：最多 20 只基金的收益、风险、费率与相关性对比 |

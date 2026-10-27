@@ -14,6 +14,7 @@
 - 新增可选 MCP stdio 适配层（`src/zfundpilot/mcp_server.py`，安装 `pip install 'zfundpilot[agent]'`）——把 5 个只读工具暴露给 Claude Desktop / Cursor 等 MCP 客户端；仅作为带 Agent token 的 HTTP 客户端，鉴权、scope 与限流完全复用 HTTP 入口，不访问数据库、不新增鉴权后门；支持 `ZFUNDPILOT_BASE_URL`/`ZFUNDPILOT_AGENT_TOKEN`/`ZFUNDPILOT_TIMEOUT`，缺少 token、401/403/429、基金代码非法与网络错误均转为可读 `ToolError`。新增 `tests/test_mcp_server.py` 8 个用例，总测试 634→642
 - 完善 Agent 相关 OpenAPI 描述：新增 `agent` / `agent-admin` 分组、`AgentBearer`/`WebLoginBearer` securitySchemes、端点摘要与 401/403/429（基金详情另含 400/404）响应说明；文档明确 `/docs`、`/redoc`、`/openapi.json` 默认公开的仅是接口结构，业务接口仍需认证，可按需在反代层屏蔽
 - 设置页新增「Agent 访问令牌」管理——位于「账户与安全」、账户卡片与审计日志之间：填写名称、勾选 `portfolio:read`/`funds:read`/`health:read`（默认全选）、设置 1–3650 天有效期（留空不过期）后签发；明文仅在签发成功时展示一次并提供复制；列表展示前缀、权限、创建/过期/最近使用时间与有效/过期/已撤销状态，支持二次确认撤销。新增 `docs/AGENT_API.md` 与英文版 `docs/AGENT_API_EN.md`，完整说明 5 个只读工具、scope、响应包、错误码、限流与接入示例，README 中英文版均补充入口链接
+- 新增两个 Agent 只读工具：`get_returns`（`/api/agent/tools/returns`，scope `portfolio:read`，默认组合级收益分解，传 `fund_code` 返回单基金累计/年化与各渠道持仓）与 `compare_funds`（`/api/agent/tools/funds/compare`，scope `funds:read`，复用现有对比逻辑，一次最多 20 只，默认不返回体积较大的 `nav_series`）；MCP 适配层同步暴露两个工具。新增 2 个工具端点用例 + 4 个 MCP 用例，总测试 643→649
 
 ### Changed
 - README 中英文版将 Agent 接入提升为独立功能亮点（新增「Agent 接入（API / MCP）」段与「为什么不同」差异点），从「安全与自定义」移出，避免能力被埋在安全条目里

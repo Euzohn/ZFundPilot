@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from zfundpilot import agent_tokens, analysis, api, config, db
-from zfundpilot.models import DataStatus, Fund, NavPoint
+from zfundpilot.models import DataStatus, Fund, NavPoint, Transaction
 
 
 @pytest.fixture
@@ -379,6 +379,102 @@ class TestAgentTools:
             "/api/agent/tools/funds/abc", headers=headers).status_code == 400
         assert client.get(
             "/api/agent/tools/funds/000000", headers=headers).status_code == 404
+
+    def test_returns_portfolio_and_fund(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        client = TestClient(api.app)
+        headers = self._headers("portfolio:read")
+
+        portfolio = client.get("/api/agent/tools/returns", headers=headers)
+        assert portfolio.status_code == 200
+        body = portfolio.json()
+        assert body["tool"] == "get_returns"
+        data = body["data"]
+        assert data["scope"] == "portfolio"
+        assert data["valuation_basis"] == "latest_formal_nav"
+        assert set(data["daily"]) == {"pnl", "return"}
+
+        db.upsert_fund(Fund(
+            fund_code="005827", fund_name="测试基金",
+            fund_type="混合型", sector="科技"))
+        db.add_transaction(Transaction(
+            fund_code="005827", action="buy", date="2025-01-02",
+            amount=1000, shares=1000, nav=1.0))
+        db.add_transaction(Transaction(
+            fund_code="005827", action="buy", date="2025-06-02",
+            amount=1000, shares=800, nav=1.25))
+        db.upsert_nav_batch([
+            NavPoint(fund_code="005827", date="2026-10-27", nav=1.5),
+        ])
+        analysis.clear_analysis_cache()
+
+        fund = client.get(
+            "/api/agent/tools/returns?fund_code=005827", headers=headers)
+        assert fund.status_code == 200
+        fund_data = fund.json()["data"]
+        assert fund_data["scope"] == "fund"
+        assert fund_data["fund_code"] == "005827"
+        assert fund_data["fund_name"] == "测试基金"
+        assert fund_data["transaction_count"] == 2
+        assert fund_data["buy_amount"] == 2000
+        assert fund_data["market_value"] == 2700
+        assert fund_data["annualized_return"] is not None
+        assert len(fund_data["channels"]) == 1
+
+        assert client.get(
+            "/api/agent/tools/returns?fund_code=abc",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/returns?fund_code=000000",
+            headers=headers).status_code == 404
+
+        denied = client.get(
+            "/api/agent/tools/returns",
+            headers=self._headers("funds:read"))
+        assert denied.status_code == 403
+
+    def test_compare_funds_scope_and_validation(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+
+        from zfundpilot.compare import CompareResponse, FundCompareItem
+
+        def fake_compare(codes):
+            return CompareResponse(
+                funds=[FundCompareItem(code=c, name=f"基金{c}") for c in codes],
+                correlations=(
+                    [[1.0, 0.5], [0.5, 1.0]] if len(codes) == 2 else None),
+            )
+
+        monkeypatch.setattr(api.compare, "compare_funds", fake_compare)
+        client = TestClient(api.app)
+        headers = self._headers("funds:read")
+
+        resp = client.get(
+            "/api/agent/tools/funds/compare?codes=005827&codes=000001",
+            headers=headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["tool"] == "compare_funds"
+        data = body["data"]
+        assert data["count"] == 2
+        assert [f["code"] for f in data["funds"]] == ["005827", "000001"]
+        assert data["correlations"] == [[1.0, 0.5], [0.5, 1.0]]
+        assert "nav_series" not in data
+        assert data["valuation_basis"] == "latest_formal_nav"
+
+        assert client.get(
+            "/api/agent/tools/funds/compare?codes=abc",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/funds/compare?codes=",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/funds/compare", headers=headers).status_code == 422
+
+        denied = client.get(
+            "/api/agent/tools/funds/compare?codes=005827",
+            headers=self._headers("portfolio:read"))
+        assert denied.status_code == 403
 
     def test_rate_limit_shared_across_fund_codes(self, temp_db, monkeypatch):
         """基金代码是路径参数，不同代码必须共用同一个限流桶。"""

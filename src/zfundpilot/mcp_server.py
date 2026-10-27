@@ -169,6 +169,45 @@ async def get_portfolio_health() -> dict[str, Any]:
     return await _request("/api/agent/tools/portfolio-health")
 
 
+@mcp.tool()
+async def get_returns(fund_code: str | None = None) -> dict[str, Any]:
+    """Read portfolio or single-fund return breakdown.
+
+    Returns cumulative return, XIRR annualized return, and daily/week/month/year P&L.
+
+    Args:
+        fund_code: Optional six-digit fund code; omit for portfolio-level returns.
+    """
+    params: dict[str, Any] = {}
+    if fund_code:
+        if not re.fullmatch(r"\d{6}", fund_code):
+            raise ToolError("Fund code must be exactly 6 digits.")
+        params["fund_code"] = fund_code
+    return await _request("/api/agent/tools/returns", params)
+
+
+@mcp.tool()
+async def compare_funds(
+    codes: Annotated[list[str], Field(min_length=1, max_length=20)],
+    include_nav_series: bool = False,
+) -> dict[str, Any]:
+    """Compare up to 20 funds on returns, risk, fees, and correlation.
+
+    Args:
+        codes: Six-digit fund codes, e.g. ["005827", "000001"].
+        include_nav_series: Include normalized NAV series (larger response).
+    """
+    cleaned = [c.strip() for c in codes if c and c.strip()]
+    if not cleaned:
+        raise ToolError("At least one fund code is required.")
+    if any(not re.fullmatch(r"\d{6}", c) for c in cleaned):
+        raise ToolError("Fund codes must be exactly 6 digits.")
+    return await _request("/api/agent/tools/funds/compare", {
+        "codes": cleaned,
+        "include_nav_series": include_nav_series,
+    })
+
+
 def main() -> None:
     mcp.run(transport="stdio")
 

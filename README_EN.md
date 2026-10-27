@@ -149,7 +149,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 ### Agent Access (API / MCP)
 
 - **Dedicated read-only tokens** — High-entropy Agent tokens physically separate from web login tokens; only SHA-256 digests are stored; scoped to `portfolio:read`/`funds:read`/`health:read`, default-deny, revocable/expiring; disabled when no admin password is set
-- **Five read-only tools** — `/api/agent/tools/*` exposes portfolio summary, data status, positions, fund detail, and portfolio health; stable response envelope, formal-NAV semantics, and explicit data-quality caveats; no trading/settings/export writes
+- **Seven read-only tools** — `/api/agent/tools/*` exposes portfolio summary, data status, positions, fund detail, portfolio health, return breakdown, and multi-fund comparison; stable response envelope, formal-NAV semantics, and explicit data-quality caveats; no trading/settings/export writes
 - **MCP adapter** — Optional stdio bridge (`python -m zfundpilot.mcp_server`) for Claude Desktop / Cursor; authentication, scopes, and rate limits are identical to the HTTP entry point, with no database access or auth bypass
 - **Auditable boundary** — Auth success/failure, rate limiting, issuance, and revocation are audited (token prefix only); rate limiting is per token + endpoint, and HTTPS is required for remote access. See [docs/AGENT_API_EN.md](docs/AGENT_API_EN.md) for endpoints, examples, and setup
 

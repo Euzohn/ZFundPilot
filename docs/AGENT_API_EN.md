@@ -70,8 +70,8 @@ Request body:
 
 | Scope | Allowed tools |
 |---|---|
-| `portfolio:read` | `portfolio-summary`, `positions` |
-| `funds:read` | `funds/{code}` |
+| `portfolio:read` | `portfolio-summary`, `positions`, `returns` |
+| `funds:read` | `funds/{code}`, `funds/compare` |
 | `health:read` | `data-status`, `portfolio-health` |
 
 There are no write scopes. Calling a tool without the required scope returns **403**.
@@ -293,6 +293,76 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 >
 > The health check tries to fetch a CPI baseline for the return dimension; if the network is unavailable it degrades to scoring on annualized return only and still returns normally.
 
+### 5.6 `GET /api/agent/tools/returns`
+
+Return breakdown. Scope: `portfolio:read`. Portfolio-level by default; pass `fund_code` for a single fund.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `fund_code` | str | none | Optional six-digit code; malformed returns `400`, unknown fund returns `404` |
+
+```bash
+# Portfolio-level
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/returns | jq
+
+# Single fund
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/returns?fund_code=005827" | jq
+```
+
+Common `data` fields: `scope` (`portfolio` / `fund`), `valuation_basis` (always `latest_formal_nav`), `as_of_date`, and `as_of_date_semantics`.
+
+Portfolio-level additionally has:
+
+| Field | Description |
+|---|---|
+| `total_return` / `annualized_return` | Cumulative return / XIRR annualized (may be `null`) |
+| `total_pnl` / `unrealized_pnl` / `realized_pnl` | Total / unrealized / realized P&L |
+| `daily` / `week` / `month` / `year` | Period `{pnl, return}` |
+| `holding_count` | Number of funds currently held |
+
+Single-fund additionally has:
+
+| Field | Description |
+|---|---|
+| `fund_code` / `fund_name` | Fund identity |
+| `market_value` / `total_cost` | Market value / holding cost |
+| `unrealized_pnl` / `realized_pnl` / `total_pnl` | P&L |
+| `return_rate` / `annualized_return` | Cumulative return / XIRR annualized |
+| `transaction_count` | Number of transactions |
+| `buy_amount` / `sell_amount` / `dividend_amount` | Cumulative buy / sell / dividend amounts |
+| `channels` | Per-channel holdings: `channel`, `market_value`, `total_cost`, `unrealized_pnl`, `return_rate`, `annualized_return` |
+
+> `annualized_return` uses XIRR on actual cash-flow dates, which is more reliable than a simple return for staged purchases; it returns `null` when there is not enough data.
+
+### 5.7 `GET /api/agent/tools/funds/compare`
+
+Multi-fund comparison. Scope: `funds:read`. Up to 20 funds per request.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `codes` | str[] | required | Six-digit fund codes, repeated: `?codes=005827&codes=000001`; empty or malformed returns `400`, omitted returns `422` |
+| `include_nav_series` | bool | `false` | Include normalized NAV series (larger response) |
+
+```bash
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/funds/compare?codes=005827&codes=000001" | jq
+```
+
+`data` fields:
+
+| Field | Description |
+|---|---|
+| `ok` / `message` / `msg_code` | Overall success flag and failure reason |
+| `count` | Number of funds returned |
+| `funds` | Per fund: `code`, `name`, `type`, `sector`, `scale`, `manager`, fees, `returns`, `risk`, `latest_nav`, `latest_date`, `ok`, `message` |
+| `correlations` | Correlation matrix when at least two funds succeed; `null` otherwise |
+| `nav_series` | Only when `include_nav_series=true`; normalized NAV series per fund code |
+| `valuation_basis` | Always `latest_formal_nav` |
+
+> Comparison fetches external data and may be slow; one failed fund does not affect the others, so check each item's `ok`/`message`. Intraday estimates are not returned.
+
 ## 6. Minimal integration
 
 ### Python
@@ -317,6 +387,7 @@ def call(tool: str, **params):
 
 summary = call("portfolio-summary")["data"]
 positions = call("positions", limit=20)["data"]["positions"]
+returns = call("returns")["data"]
 ```
 
 ### Function calling / MCP tool definition (illustrative)
@@ -336,13 +407,13 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-You can also wrap these five endpoints with any HTTP tool; an optional MCP adapter is provided at the end of this section. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
+You can also wrap these seven endpoints with any HTTP tool; an optional MCP adapter is provided at the end of this section. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
 
 ---
 
 ### MCP adapter (optional)
 
-A stdio MCP bridge is bundled to expose the five tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
+A stdio MCP bridge is bundled to expose the seven tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
 
 ```bash
 # Install the optional extra from the ZFundPilot source tree
@@ -371,7 +442,7 @@ Claude Desktop example (`claude_desktop_config.json`):
 }
 ```
 
-Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`.
+Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`.
 
 - `ZFUNDPILOT_BASE_URL` defaults to `http://127.0.0.1:8000`; use the real NAS/Docker address for remote instances and HTTPS for remote access.
 - `ZFUNDPILOT_TIMEOUT` is optional, default 30 seconds (range 1–120).
@@ -395,3 +466,5 @@ Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`,
 |---|---|
 | 2026-10-27 | First four read-only tools: `portfolio-summary`, `data-status`, `positions`, `funds/{code}` |
 | 2026-10-27 | Added `portfolio-health`: four-dimension health check, risk flags, structural advice, and `data_quality` caveats |
+| 2026-10-27 | Added `returns`: portfolio/single-fund return breakdown and XIRR |
+| 2026-10-27 | Added `funds/compare`: compare up to 20 funds on returns, risk, fees, and correlation |

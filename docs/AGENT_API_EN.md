@@ -61,7 +61,7 @@ Request body:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | Yes | 1–64 characters, identifies the caller |
-| `scopes` | string[] | No | Defaults to all three read scopes; unknown or write scopes are rejected |
+| `scopes` | string[] | No | Defaults to `portfolio:read`, `funds:read`, and `health:read`; the data scopes added later must be selected explicitly; unknown or write scopes are rejected |
 | `expires_in_days` | int \| null | No | 1–3650 days, default 90; `null` means no expiry |
 
 ---
@@ -73,8 +73,16 @@ Request body:
 | `portfolio:read` | `portfolio-summary`, `positions`, `returns` |
 | `funds:read` | `funds/{code}`, `funds/compare` |
 | `health:read` | `data-status`, `portfolio-health` |
+| `transactions:read` | `transactions`, `transactions/{tx_id}` |
+| `watchlist:read` | `watchlist` |
+| `alerts:read` | `alerts` |
+| `plans:read` | `auto-invest-plans` |
 
 There are no write scopes. Calling a tool without the required scope returns **403**.
+
+`capabilities` only requires a valid token, not a specific scope; it returns only the tools granted to that token.
+
+> The first three scopes are checked by default on the issuance panel. `transactions:read`, `watchlist:read`, `alerts:read`, and `plans:read` are unchecked by default: opt in explicitly when an agent needs that data, so existing tokens are never silently broadened.
 
 ---
 
@@ -140,7 +148,7 @@ FastAPI generates:
 | `/docs` | Swagger UI |
 | `/redoc` | ReDoc |
 
-These pages are public by default and **only describe the API structure**; they contain no tokens, holdings, or other business data. All business `/api/*` endpoints still require authentication. Agent tools are grouped under `agent` and management endpoints under `agent-admin`, with documented 401/403/429 responses (plus 400/404 for fund detail). The schema declares two Bearer schemes, `AgentBearer` and `WebLoginBearer`; Swagger UI can send only one `Authorization` header at a time, so authorize the one you need. If your deployment should not expose the endpoint list, block these paths at the reverse proxy.
+These pages are public by default and **only describe the API structure**; they contain no tokens, holdings, or other business data. All business `/api/*` endpoints still require authentication. Agent tools are grouped under `agent` and management endpoints under `agent-admin`, with documented 401/403/429 responses; tools with parameter validation also document 400, and fund/transaction detail document 404. The schema declares two Bearer schemes, `AgentBearer` and `WebLoginBearer`; Swagger UI can send only one `Authorization` header at a time, so authorize the one you need. If your deployment should not expose the endpoint list, block these paths at the reverse proxy.
 
 ### Valuation basis
 
@@ -363,6 +371,138 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 > Comparison fetches external data and may be slow; one failed fund does not affect the others, so check each item's `ok`/`message`. Intraday estimates are not returned.
 
+### 5.8 `GET /api/agent/tools/transactions`
+
+Transaction list. Scope: `transactions:read`. Sorted by date and id descending; only stored transactions are read.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `fund_code` | str | none | Six-digit fund code; malformed returns `400` |
+| `channel` | str | none | Exact channel match (empty string included) |
+| `action` | str | none | `buy` / `sell` / `dividend` / `reinvest` |
+| `date_from` | str | none | Inclusive start date, `YYYY-MM-DD` |
+| `date_to` | str | none | Inclusive end date, `YYYY-MM-DD` |
+| `conversion_id` | str | none | Conversion link id, to fetch both legs |
+| `nav_status` | str | none | `confirmed` / `pending_t1` / `missing` |
+| `limit` | int | `50` | 1–200 |
+| `offset` | int | `0` | Zero-based |
+
+```bash
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions?fund_code=005827&limit=20" | jq
+```
+
+`data` fields:
+
+| Field | Description |
+|---|---|
+| `count` / `total` | Items on this page / matched total |
+| `pagination` | `{limit, offset, total, has_more}` |
+| `valuation_basis` | Always `latest_formal_nav` |
+| `transactions` | Transaction array, see below |
+
+Per transaction:
+
+| Field | Description |
+|---|---|
+| `id` / `fund_code` / `date` / `action` | Identity and basic fields |
+| `fund_name` | Fund name, `null` when the fund is not stored |
+| `amount` / `shares` / `nav` / `fee` | Amount / shares / NAV / fee |
+| `amount_semantics` | `gross_paid` for buys (fees included), `net_received` for sells (fees deducted), `gross` for dividends/reinvestments |
+| `channel` / `note` / `is_t1` | Channel, note, T+1 flag |
+| `nav_status` | `confirmed` (NAV backfilled) / `pending_t1` (awaiting confirmation) / `missing` (no NAV and not T+1) |
+| `conversion_role` | With `conversion_id`: `out` for the sell leg, `in` for the buy leg; otherwise empty |
+
+> The `pending_t1` vs `missing` distinction matters: the former is normal waiting, the latter usually means missing data. Cross-check with `data-status`.
+
+### 5.9 `GET /api/agent/tools/transactions/{tx_id}`
+
+Single transaction detail. Scope: `transactions:read`. Fields match one item from 5.8, plus a top-level `data.valuation_basis`; an unknown id returns `404`.
+
+```bash
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/transactions/12 | jq
+```
+
+### 5.10 `GET /api/agent/tools/watchlist`
+
+Watchlist. Scope: `watchlist:read`.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `group_name` | str | none | Exact group filter; empty string means ungrouped |
+| `limit` | int | `50` | 1–200 |
+| `offset` | int | `0` | Zero-based |
+
+`data` fields: `count`, `total`, `pagination` (same shape as 5.8), `watchlist`.
+
+Each item: `fund_code`, `note`, `group_name`, `added_at`, `fund_name`, `fund_type`, `sector`, `tracking_index` (the last four come from the fund table and are `null` when unknown).
+
+```bash
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist?group_name=core" | jq
+```
+
+### 5.11 `GET /api/agent/tools/alerts`
+
+Dividend and take-profit/stop-loss alerts. Scope: `alerts:read`.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `type` | str | none | `dividend` / `take_profit` / `stop_loss` / `tp_sl` (both TP and SL) |
+| `status` | str | none | `pending` / `confirmed` / `ignored` |
+| `limit` | int | `50` | 1–200 |
+| `offset` | int | `0` | Zero-based |
+
+`data` fields: `count`, `total`, `pagination`, `alerts`.
+
+Only whitelisted fields are returned: `id`, `alert_type`, `fund_code`, `fund_name`, `status`, `triggered_return`, `threshold`, `record_date`, `ex_date`, `pay_date`, `per_share`, `estimated_amount`, `held_shares`, `dividend_method`, `created_at`, `resolved_at`, `tx_id`.
+
+> `status` is the **business processing state**, not read/unread. ZFundPilot has no read flag for alerts, and the API does not invent one.
+
+### 5.12 `GET /api/agent/tools/auto-invest-plans`
+
+Auto-invest plans. Scope: `plans:read`.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | none | Filter by enabled state |
+| `limit` | int | `50` | 1–200 |
+| `offset` | int | `0` | Zero-based |
+
+`data` fields: `count`, `total`, `pagination`, `plans`.
+
+Each plan returns stored fields (fund code, amount, cadence, channel, note, `next_run`, `last_run`, `last_tx_id`, etc.) plus:
+
+| Field | Description |
+|---|---|
+| `fund_name` | Fund name, `null` when unknown |
+| `enabled` | Normalized boolean |
+| `status` | Derived: `paused` (disabled) / `due` (`next_run` reached) / `active` (enabled and not due) |
+
+> Skip reasons (e.g. insufficient balance, non-trading day) are **not persisted per plan**, so no speculative `skip_reason` field is returned.
+
+### 5.13 `GET /api/agent/tools/capabilities`
+
+Capability discovery. Requires only a valid Agent token, not a specific scope.
+
+`data` fields:
+
+| Field | Description |
+|---|---|
+| `server_version` | Server version |
+| `schema_version` | Capability schema version, currently `1` |
+| `granted_scopes` | Scopes granted to this token (sorted) |
+| `currency` | Always `CNY` |
+| `tools` | Callable tools: `name`, `method`, `path`, `scope`, `risk` (always `read`), `requires_confirmation` (always `false`) |
+
+```bash
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/capabilities | jq
+```
+
+> Agents should call `capabilities` at startup and use only the returned tools, avoiding repeated 403s.
+
 ## 6. Minimal integration
 
 ### Python
@@ -407,13 +547,13 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-You can also wrap these seven endpoints with any HTTP tool; an optional MCP adapter is provided at the end of this section. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
+You can also wrap these thirteen endpoints with any HTTP tool; an optional MCP adapter is provided at the end of this section. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
 
 ---
 
 ### MCP adapter (optional)
 
-A stdio MCP bridge is bundled to expose the seven tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
+A stdio MCP bridge is bundled to expose the thirteen tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
 
 ```bash
 # Install the optional extra from the ZFundPilot source tree
@@ -442,7 +582,7 @@ Claude Desktop example (`claude_desktop_config.json`):
 }
 ```
 
-Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`.
+Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_agent_capabilities`.
 
 - `ZFUNDPILOT_BASE_URL` defaults to `http://127.0.0.1:8000`; use the real NAS/Docker address for remote instances and HTTPS for remote access.
 - `ZFUNDPILOT_TIMEOUT` is optional, default 30 seconds (range 1–120).
@@ -456,7 +596,7 @@ Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`,
 - **Revocation**: Revoke from Settings at any time; it takes effect immediately. Issue one token per agent for easier tracing and cleanup.
 - **Audit**: Issuance, revocation, auth success/failure, and rate limiting are audited. Only token prefixes are recorded — never plaintext or full responses.
 - **Network**: Remote access must go through an HTTPS reverse proxy; do not expose the port directly. Revoke and reissue if a token leaks.
-- **Scope**: The initial read scopes cover portfolio, funds, and data status only. Write and export endpoints are not available to Agent tokens.
+- **Scope**: Read scopes now cover portfolio, funds, data status, transactions, watchlist, alerts, and auto-invest plans. Write and export endpoints are not available to Agent tokens.
 
 ---
 
@@ -468,3 +608,4 @@ Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`,
 | 2026-10-27 | Added `portfolio-health`: four-dimension health check, risk flags, structural advice, and `data_quality` caveats |
 | 2026-10-27 | Added `returns`: portfolio/single-fund return breakdown and XIRR |
 | 2026-10-27 | Added `funds/compare`: compare up to 20 funds on returns, risk, fees, and correlation |
+| 2026-10-27 | Added four data read scopes and six tools: `transactions`, `transactions/{tx_id}`, `watchlist`, `alerts`, `auto-invest-plans`, `capabilities`; new scopes are unchecked by default |

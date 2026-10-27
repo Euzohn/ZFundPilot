@@ -34,14 +34,28 @@ _MIN_ENTROPY_BYTES = 32  # 256-bit 随机熵
 SCOPE_PORTFOLIO_READ = "portfolio:read"
 SCOPE_FUNDS_READ = "funds:read"
 SCOPE_HEALTH_READ = "health:read"
+SCOPE_TRANSACTIONS_READ = "transactions:read"
+SCOPE_WATCHLIST_READ = "watchlist:read"
+SCOPE_ALERTS_READ = "alerts:read"
+SCOPE_PLANS_READ = "plans:read"
 
-# 首期仅开放只读 scope；写 scope 必须另行设计人类确认流程后再加入。
+# 仅开放只读 scope；写 scope 必须另行设计人类确认流程后再加入。
 ALLOWED_SCOPES = frozenset({
     SCOPE_PORTFOLIO_READ,
     SCOPE_FUNDS_READ,
     SCOPE_HEALTH_READ,
+    SCOPE_TRANSACTIONS_READ,
+    SCOPE_WATCHLIST_READ,
+    SCOPE_ALERTS_READ,
+    SCOPE_PLANS_READ,
 })
-DEFAULT_SCOPES: tuple[str, ...] = tuple(sorted(ALLOWED_SCOPES))
+
+# 新 scope 默认不勾选：签发页面需显式选择，避免存量流程静默扩权。
+DEFAULT_SCOPES: tuple[str, ...] = (
+    SCOPE_PORTFOLIO_READ,
+    SCOPE_FUNDS_READ,
+    SCOPE_HEALTH_READ,
+)
 
 
 class AgentTokenError(Exception):

@@ -623,22 +623,23 @@ def _authenticate_agent_token(request: Request) -> agent_tokens.AgentTokenContex
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
-def require_agent_scope(required_scope: str):
+def require_agent_scope(required_scope: str | None):
     """构造 FastAPI 依赖：校验 Agent token 是否具备所需 scope，默认拒绝。
 
-    有效性由 ``agent_auth_middleware`` 统一校验并写入 ``request.state.agent_ctx``；
+    ``required_scope=None`` 表示只要求一个有效 Agent token（如能力发现），
+    不额外校验 scope；有效性仍由 ``agent_auth_middleware`` 统一保证。
     若依赖被用在中间件未覆盖的路由上，这里会兜底重新校验 token。
     失败语义：无/错误/过期/撤销 token → 401；有效 token 但缺 scope → 403；
     超限 → 429。审计记录 token 前缀与端点，不记录明文或响应内容。
     """
-    if required_scope not in agent_tokens.ALLOWED_SCOPES:
+    if required_scope is not None and required_scope not in agent_tokens.ALLOWED_SCOPES:
         raise ValueError(f"未定义的 Agent scope：{required_scope}")
 
     def _dependency(request: Request) -> agent_tokens.AgentTokenContext:
         ctx = getattr(request.state, "agent_ctx", None)
         if ctx is None:
             ctx = _authenticate_agent_token(request)
-        if required_scope not in ctx.scopes:
+        if required_scope is not None and required_scope not in ctx.scopes:
             db.log_audit(
                 "agent_auth_failed", ip=_get_client_ip(request),
                 detail={"path": request.url.path, "scope": required_scope,
@@ -667,7 +668,8 @@ def require_agent_scope(required_scope: str):
         db.log_audit(
             "agent_auth_ok", ip=_get_client_ip(request),
             detail={"path": request.url.path, "token_id": ctx.id,
-                    "token_prefix": ctx.prefix, "scope": required_scope},
+                    "token_prefix": ctx.prefix,
+                    "scope": required_scope or "any"},
         )
         return ctx
 
@@ -1021,6 +1023,385 @@ def agent_get_fund_detail(
              "accumulated_nav": row["accumulated_nav"]}
             for row in recent
         ],
+    })
+
+
+# ---------------------------------------------------------------------------
+# Agent 只读查询工具（P1.5-A 第 1 批：流水/自选/提醒/计划/能力发现）
+# ---------------------------------------------------------------------------
+_AGENT_TX_ACTIONS = frozenset(ACTIONS)
+_AGENT_NAV_STATUSES = frozenset({"confirmed", "pending_t1", "missing"})
+_AGENT_ALERT_STATUSES = frozenset({"pending", "confirmed", "ignored"})
+_AGENT_ALERT_TYPES = frozenset({"dividend", "take_profit", "stop_loss", "tp_sl"})
+_AGENT_ALERT_FIELDS = (
+    "id", "alert_type", "fund_code", "fund_name", "status",
+    "triggered_return", "threshold",
+    "record_date", "ex_date", "pay_date", "per_share",
+    "estimated_amount", "held_shares", "dividend_method",
+    "created_at", "resolved_at", "tx_id",
+)
+
+
+def _agent_pagination(limit: int, offset: int, total: int,
+                      count: int) -> dict[str, Any]:
+    """统一分页块：精确 total + 当前页是否还有更多。"""
+    return {
+        "limit": limit,
+        "offset": offset,
+        "total": total,
+        "has_more": offset + count < total,
+    }
+
+
+def _agent_validate_date(value: str | None, field: str) -> str | None:
+    if value is None:
+        return None
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        raise HTTPException(
+            status_code=400, detail=f"{field} 格式必须为 YYYY-MM-DD")
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail=f"{field} 不是有效日期") from None
+    return value
+
+
+def _agent_fund_name_map() -> dict[str, str]:
+    return {f.fund_code: f.fund_name for f in db.get_funds()}
+
+
+def _agent_tx_nav_status(tx: Transaction) -> str:
+    if tx.nav is not None:
+        return "confirmed"
+    return "pending_t1" if tx.is_t1 else "missing"
+
+
+def _agent_tx_amount_semantics(action: str) -> str:
+    if action == ACTION_BUY:
+        return "gross_paid"
+    if action == ACTION_SELL:
+        return "net_received"
+    return "gross"
+
+
+def _agent_tx_conversion_role(tx: Transaction) -> str:
+    if not tx.conversion_id:
+        return ""
+    if tx.action == ACTION_SELL:
+        return "out"
+    if tx.action == ACTION_BUY:
+        return "in"
+    return ""
+
+
+def _agent_transaction_item(tx: Transaction,
+                            fund_name: str | None) -> dict[str, Any]:
+    """把 Transaction 序列化为稳定单项，并补充派生字段。"""
+    tx.normalize()
+    item = tx.to_dict()
+    item["fund_name"] = fund_name
+    item["nav_status"] = _agent_tx_nav_status(tx)
+    item["amount_semantics"] = _agent_tx_amount_semantics(tx.action)
+    item["conversion_role"] = _agent_tx_conversion_role(tx)
+    return item
+
+
+def _agent_alert_item(row: dict) -> dict[str, Any]:
+    """只返回白名单字段，避免把内部列意外透传给 Agent。"""
+    item = {field: row.get(field) for field in _AGENT_ALERT_FIELDS}
+    if item["alert_type"] is None:
+        item["alert_type"] = "dividend"
+    return item
+
+
+@app.get("/api/agent/tools/transactions", tags=["agent"],
+         summary="交易流水列表（只读）",
+         responses={**_AGENT_ERROR_RESPONSES,
+                    400: {"description": "基金代码、动作、日期或净值状态过滤非法"}},
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_list_transactions(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_READ)),
+    ],
+    fund_code: str | None = None,
+    channel: str | None = None,
+    action: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    conversion_id: str | None = None,
+    nav_status: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> dict[str, Any]:
+    """交易流水列表（按日期与 id 降序），支持多条件过滤与分页。
+
+    ``amount`` 口径：买入含手续费（``gross_paid``）、卖出扣手续费
+    （``net_received``）、分红/再投资为 ``gross``；``nav_status`` 区分
+    已确认、T+1 待确认与缺失净值。
+    """
+    del ctx
+    if fund_code is not None and not re.fullmatch(r"\d{6}", fund_code):
+        raise HTTPException(status_code=400, detail="基金代码必须为 6 位数字")
+    if action is not None and action not in _AGENT_TX_ACTIONS:
+        raise HTTPException(
+            status_code=400, detail=f"action 仅支持 {' / '.join(ACTIONS)}")
+    _agent_validate_date(date_from, "date_from")
+    _agent_validate_date(date_to, "date_to")
+    if nav_status is not None and nav_status not in _AGENT_NAV_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="nav_status 仅支持 confirmed / pending_t1 / missing")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=400, detail="date_from 不能晚于 date_to")
+
+    transactions = db.get_transactions(fund_code=fund_code)
+    matched: list[Transaction] = []
+    for tx in transactions:
+        tx.normalize()
+        if channel is not None and (tx.channel or "") != channel:
+            continue
+        if action is not None and tx.action != action:
+            continue
+        if date_from and tx.date < date_from:
+            continue
+        if date_to and tx.date > date_to:
+            continue
+        if conversion_id and tx.conversion_id != conversion_id:
+            continue
+        if nav_status is not None and _agent_tx_nav_status(tx) != nav_status:
+            continue
+        matched.append(tx)
+
+    matched.sort(key=lambda t: (t.date or "", t.id or 0), reverse=True)
+    total = len(matched)
+    page = matched[offset:offset + limit]
+    names = _agent_fund_name_map()
+    items = [_agent_transaction_item(tx, names.get(tx.fund_code))
+             for tx in page]
+    return _agent_tool_response("list_transactions", {
+        "count": len(items),
+        "total": total,
+        "pagination": _agent_pagination(limit, offset, total, len(items)),
+        "valuation_basis": "latest_formal_nav",
+        "transactions": items,
+    })
+
+
+@app.get("/api/agent/tools/transactions/{tx_id}", tags=["agent"],
+         summary="单笔交易详情（只读）",
+         responses={**_AGENT_ERROR_RESPONSES,
+                    404: {"description": "交易不存在"}},
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_get_transaction(
+    tx_id: int,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_READ)),
+    ],
+) -> dict[str, Any]:
+    """单笔交易明细，字段与流水列表单项一致。"""
+    del ctx
+    tx = db.get_transaction(tx_id)
+    if tx is None:
+        raise HTTPException(status_code=404, detail=f"未找到交易 {tx_id}")
+    fund = db.get_fund(tx.fund_code)
+    data = _agent_transaction_item(tx, fund.fund_name if fund else None)
+    data["valuation_basis"] = "latest_formal_nav"
+    return _agent_tool_response("get_transaction", data)
+
+
+@app.get("/api/agent/tools/watchlist", tags=["agent"],
+         summary="自选列表（只读）", responses=_AGENT_ERROR_RESPONSES,
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_list_watchlist(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_WATCHLIST_READ)),
+    ],
+    group_name: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> dict[str, Any]:
+    """自选关注列表（含基金元数据），可按分组过滤。"""
+    del ctx
+    rows = db.get_watchlist()
+    if group_name is not None:
+        rows = [r for r in rows if (r.get("group_name") or "") == group_name]
+    total = len(rows)
+    page = rows[offset:offset + limit]
+    return _agent_tool_response("list_watchlist", {
+        "count": len(page),
+        "total": total,
+        "pagination": _agent_pagination(limit, offset, total, len(page)),
+        "watchlist": page,
+    })
+
+
+def _agent_alert_rows(alert_type: str | None,
+                      status: str | None) -> list[dict]:
+    """按类型合并分红与止盈止损提醒，统一按 id 降序。"""
+    if alert_type == "dividend":
+        rows = db.get_dividend_alerts(status)
+    elif alert_type in ("take_profit", "stop_loss"):
+        rows = [r for r in db.get_tp_sl_alerts(status)
+                if r.get("alert_type") == alert_type]
+    elif alert_type == "tp_sl":
+        rows = db.get_tp_sl_alerts(status)
+    else:
+        rows = db.get_dividend_alerts(status) + db.get_tp_sl_alerts(status)
+    rows.sort(key=lambda r: r.get("id") or 0, reverse=True)
+    return rows
+
+
+@app.get("/api/agent/tools/alerts", tags=["agent"],
+         summary="提醒列表（只读）",
+         responses={**_AGENT_ERROR_RESPONSES,
+                    400: {"description": "提醒类型或状态非法"}},
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_list_alerts(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_ALERTS_READ)),
+    ],
+    type: str | None = None,
+    status: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> dict[str, Any]:
+    """分红与止盈止损提醒列表。
+
+    ``status`` 是业务处理状态（pending/confirmed/ignored），不是已读标记；
+    提醒「已读」尚未实现，不在此接口伪装。
+    """
+    del ctx
+    if type is not None and type not in _AGENT_ALERT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"type 仅支持 {' / '.join(sorted(_AGENT_ALERT_TYPES))}")
+    if status is not None and status not in _AGENT_ALERT_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="status 仅支持 pending / confirmed / ignored")
+    rows = _agent_alert_rows(type, status)
+    total = len(rows)
+    page = [_agent_alert_item(r) for r in rows[offset:offset + limit]]
+    return _agent_tool_response("list_alerts", {
+        "count": len(page),
+        "total": total,
+        "pagination": _agent_pagination(limit, offset, total, len(page)),
+        "alerts": page,
+    })
+
+
+@app.get("/api/agent/tools/auto-invest-plans", tags=["agent"],
+         summary="定投计划列表（只读）", responses=_AGENT_ERROR_RESPONSES,
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_list_auto_invest_plans(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_PLANS_READ)),
+    ],
+    enabled: bool | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> dict[str, Any]:
+    """定投计划列表，含派生状态；不虚构未持久化的跳过原因。"""
+    del ctx
+    rows = db.get_auto_invest_plans()
+    if enabled is not None:
+        rows = [r for r in rows if bool(r.get("enabled")) == enabled]
+    names = _agent_fund_name_map()
+    today = datetime.now(config.TIMEZONE).date().isoformat()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["enabled"] = bool(item.get("enabled"))
+        item["fund_name"] = names.get(item.get("fund_code", ""))
+        next_run = item.get("next_run")
+        if not item["enabled"]:
+            item["status"] = "paused"
+        elif next_run and next_run <= today:
+            item["status"] = "due"
+        else:
+            item["status"] = "active"
+        items.append(item)
+    total = len(items)
+    page = items[offset:offset + limit]
+    return _agent_tool_response("list_auto_invest_plans", {
+        "count": len(page),
+        "total": total,
+        "pagination": _agent_pagination(limit, offset, total, len(page)),
+        "plans": page,
+    })
+
+
+# 只读工具登记表：供能力发现；新增工具时同步维护。
+_AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
+    {"name": "get_portfolio_summary", "method": "GET",
+     "path": "/api/agent/tools/portfolio-summary",
+     "scope": agent_tokens.SCOPE_PORTFOLIO_READ},
+    {"name": "get_data_status", "method": "GET",
+     "path": "/api/agent/tools/data-status",
+     "scope": agent_tokens.SCOPE_HEALTH_READ},
+    {"name": "get_portfolio_health", "method": "GET",
+     "path": "/api/agent/tools/portfolio-health",
+     "scope": agent_tokens.SCOPE_HEALTH_READ},
+    {"name": "list_positions", "method": "GET",
+     "path": "/api/agent/tools/positions",
+     "scope": agent_tokens.SCOPE_PORTFOLIO_READ},
+    {"name": "get_returns", "method": "GET",
+     "path": "/api/agent/tools/returns",
+     "scope": agent_tokens.SCOPE_PORTFOLIO_READ},
+    {"name": "compare_funds", "method": "GET",
+     "path": "/api/agent/tools/funds/compare",
+     "scope": agent_tokens.SCOPE_FUNDS_READ},
+    {"name": "get_fund_detail", "method": "GET",
+     "path": "/api/agent/tools/funds/{code}",
+     "scope": agent_tokens.SCOPE_FUNDS_READ},
+    {"name": "list_transactions", "method": "GET",
+     "path": "/api/agent/tools/transactions",
+     "scope": agent_tokens.SCOPE_TRANSACTIONS_READ},
+    {"name": "get_transaction", "method": "GET",
+     "path": "/api/agent/tools/transactions/{tx_id}",
+     "scope": agent_tokens.SCOPE_TRANSACTIONS_READ},
+    {"name": "list_watchlist", "method": "GET",
+     "path": "/api/agent/tools/watchlist",
+     "scope": agent_tokens.SCOPE_WATCHLIST_READ},
+    {"name": "list_alerts", "method": "GET",
+     "path": "/api/agent/tools/alerts",
+     "scope": agent_tokens.SCOPE_ALERTS_READ},
+    {"name": "list_auto_invest_plans", "method": "GET",
+     "path": "/api/agent/tools/auto-invest-plans",
+     "scope": agent_tokens.SCOPE_PLANS_READ},
+    {"name": "get_agent_capabilities", "method": "GET",
+     "path": "/api/agent/tools/capabilities",
+     "scope": None},
+)
+
+
+@app.get("/api/agent/tools/capabilities", tags=["agent"],
+         summary="能力发现（只读）", responses=_AGENT_ERROR_RESPONSES,
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_get_capabilities(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(None)),
+    ],
+) -> dict[str, Any]:
+    """返回当前 token 已获授权的只读工具与元数据。"""
+    tools = [
+        {**tool, "risk": "read", "requires_confirmation": False}
+        for tool in _AGENT_TOOL_REGISTRY
+        if tool["scope"] is None or tool["scope"] in ctx.scopes
+    ]
+    return _agent_tool_response("get_agent_capabilities", {
+        "server_version": APP_VERSION,
+        "schema_version": 1,
+        "granted_scopes": sorted(ctx.scopes),
+        "currency": "CNY",
+        "tools": tools,
     })
 
 

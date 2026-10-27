@@ -67,13 +67,24 @@ function Sparkline({ data }: { data: number[] }) {
   )
 }
 
-const AGENT_SCOPE_KEYS = ["portfolio:read", "funds:read", "health:read"] as const
+const AGENT_SCOPE_KEYS = [
+  "portfolio:read",
+  "funds:read",
+  "health:read",
+  "transactions:read",
+  "watchlist:read",
+  "alerts:read",
+  "plans:read",
+] as const
+
+// 新 scope 默认不勾选，避免签发时静默扩权；需要时由用户显式勾选。
+const AGENT_DEFAULT_SCOPES = ["portfolio:read", "funds:read", "health:read"] as const
 
 function AgentTokenPanel() {
   const { t } = useLang()
   const { data, loading, error, reload } = useApi<AgentTokenListResponse>(() => api.getAgentTokens(), [])
   const [name, setName] = useState("")
-  const [scopes, setScopes] = useState<string[]>([...AGENT_SCOPE_KEYS])
+  const [scopes, setScopes] = useState<string[]>([...AGENT_DEFAULT_SCOPES])
   const [expires, setExpires] = useState("90")
   const [creating, setCreating] = useState(false)
   const [created, setCreated] = useState<{ id: number; token: string; name: string } | null>(null)
@@ -86,6 +97,10 @@ function AgentTokenPanel() {
     "portfolio:read": t.settings.agentTokenScopePortfolio,
     "funds:read": t.settings.agentTokenScopeFunds,
     "health:read": t.settings.agentTokenScopeHealth,
+    "transactions:read": t.settings.agentTokenScopeTransactions,
+    "watchlist:read": t.settings.agentTokenScopeWatchlist,
+    "alerts:read": t.settings.agentTokenScopeAlerts,
+    "plans:read": t.settings.agentTokenScopePlans,
   }
 
   const toggleScope = (scope: string) => {

@@ -836,6 +836,15 @@ def get_transactions_desc() -> list[Transaction]:
     return [Transaction.from_row(r) for r in rows]
 
 
+def get_transaction(tx_id: int) -> Transaction | None:
+    """按 id 返回单笔流水；不存在返回 None。"""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM transactions WHERE id=?", (tx_id,)
+        ).fetchone()
+    return Transaction.from_row(row) if row else None
+
+
 def get_transactions_without_nav() -> list[Transaction]:
     """返回净值缺失的交易记录（nav IS NULL），待净值更新后回填。"""
     with get_connection() as conn:

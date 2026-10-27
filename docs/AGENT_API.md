@@ -61,7 +61,7 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `name` | string | 是 | 1–64 字符，用于区分调用方 |
-| `scopes` | string[] | 否 | 默认全部三个只读 scope；未知或写 scope 会被拒绝 |
+| `scopes` | string[] | 否 | 默认 `portfolio:read` / `funds:read` / `health:read` 三个；新增的数据类 scope 需显式勾选；未知或写 scope 会被拒绝 |
 | `expires_in_days` | int \| null | 否 | 1–3650 天，默认 90；传 `null` 表示不过期 |
 
 ---
@@ -73,8 +73,16 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 | `portfolio:read` | `portfolio-summary`、`positions`、`returns` |
 | `funds:read` | `funds/{code}`、`funds/compare` |
 | `health:read` | `data-status`、`portfolio-health` |
+| `transactions:read` | `transactions`、`transactions/{tx_id}` |
+| `watchlist:read` | `watchlist` |
+| `alerts:read` | `alerts` |
+| `plans:read` | `auto-invest-plans` |
 
 没有写 scope。调用未授权工具返回 **403**。
+
+`capabilities` 只要求有效 token，不要求特定 scope；它只返回当前 token 已获授权的工具。
+
+> 前三个 scope 是签发页面的默认勾选项；`transactions:read`、`watchlist:read`、`alerts:read`、`plans:read` 默认不勾选，需要读取对应数据时请显式勾选，避免存量流程静默扩权。
 
 ---
 
@@ -140,7 +148,7 @@ FastAPI 自动生成以下页面：
 | `/docs` | Swagger UI |
 | `/redoc` | ReDoc |
 
-这些页面默认公开，**只描述接口结构**，不包含 token、持仓或其他业务数据；所有业务 `/api/*` 仍然需要认证。Agent 工具在 OpenAPI 中归入 `agent` 分组，管理端点归入 `agent-admin` 分组，并列出 401/403/429（基金详情另含 400/404）响应说明。OpenAPI 声明了 `AgentBearer` 与 `WebLoginBearer` 两种 Bearer；Swagger 的 Authorize 一次只能发送一个 `Authorization` 头，调试时按需授权其一。如果部署环境不希望暴露接口清单，可在反向代理层屏蔽上述路径。
+这些页面默认公开，**只描述接口结构**，不包含 token、持仓或其他业务数据；所有业务 `/api/*` 仍然需要认证。Agent 工具在 OpenAPI 中归入 `agent` 分组，管理端点归入 `agent-admin` 分组，并列出 401/403/429；带参数校验的工具另含 400，单基金详情与单笔交易另含 404。OpenAPI 声明了 `AgentBearer` 与 `WebLoginBearer` 两种 Bearer；Swagger 的 Authorize 一次只能发送一个 `Authorization` 头，调试时按需授权其一。如果部署环境不希望暴露接口清单，可在反向代理层屏蔽上述路径。
 
 ### 估值口径
 
@@ -363,6 +371,138 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 > 对比会实时抓取外部数据，可能较慢；单只基金失败不影响其他基金，请先检查每项的 `ok`/`message`。该接口不返回盘中估值。
 
+### 5.8 `GET /api/agent/tools/transactions`
+
+交易流水列表，scope：`transactions:read`。按日期与 id 降序，仅读取已入库流水。
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `fund_code` | str | 无 | 6 位基金代码，格式非法返回 `400` |
+| `channel` | str | 无 | 按渠道精确匹配（区分空字符串） |
+| `action` | str | 无 | `buy` / `sell` / `dividend` / `reinvest` |
+| `date_from` | str | 无 | 起始日期（含），`YYYY-MM-DD` |
+| `date_to` | str | 无 | 结束日期（含），`YYYY-MM-DD` |
+| `conversion_id` | str | 无 | 基金转换关联 ID，用于取同一转换的两条腿 |
+| `nav_status` | str | 无 | `confirmed` / `pending_t1` / `missing` |
+| `limit` | int | `50` | 1–200 |
+| `offset` | int | `0` | 从 0 开始 |
+
+```bash
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions?fund_code=005827&limit=20" | jq
+```
+
+`data` 字段：
+
+| 字段 | 说明 |
+|---|---|
+| `count` / `total` | 本页条数 / 过滤后总条数 |
+| `pagination` | `{limit, offset, total, has_more}`，`has_more` 为是否还有下一页 |
+| `valuation_basis` | 固定为 `latest_formal_nav` |
+| `transactions` | 流水数组，见下表 |
+
+单笔流水字段：
+
+| 字段 | 说明 |
+|---|---|
+| `id` / `fund_code` / `date` / `action` | 标识与基础字段 |
+| `fund_name` | 基金名称，未入库时为 `null` |
+| `amount` / `shares` / `nav` / `fee` | 成交金额 / 份额 / 净值 / 手续费 |
+| `amount_semantics` | 金额口径：买入 `gross_paid`（含手续费）、卖出 `net_received`（扣手续费）、分红/再投资 `gross` |
+| `channel` / `note` / `is_t1` | 渠道、备注、是否 T+1 |
+| `nav_status` | `confirmed`（净值已回填）/ `pending_t1`（T+1 待确认）/ `missing`（缺净值且非 T+1） |
+| `conversion_role` | 有 `conversion_id` 时：卖出腿 `out`、买入腿 `in`，否则为空串 |
+
+> `pending_t1` 与 `missing` 的区分很重要：前者是正常等待确认，后者通常意味着数据缺失，建议结合 `data-status` 判断。
+
+### 5.9 `GET /api/agent/tools/transactions/{tx_id}`
+
+单笔交易详情，scope：`transactions:read`。字段与 5.8 的单项一致，另在 `data` 顶层附带 `valuation_basis`；id 不存在返回 `404`。
+
+```bash
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/transactions/12 | jq
+```
+
+### 5.10 `GET /api/agent/tools/watchlist`
+
+自选关注列表，scope：`watchlist:read`。
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `group_name` | str | 无 | 按分组精确过滤；空串表示未分组 |
+| `limit` | int | `50` | 1–200 |
+| `offset` | int | `0` | 从 0 开始 |
+
+`data` 字段：`count`、`total`、`pagination`（结构同 5.8）、`watchlist`。
+
+每条自选字段：`fund_code`、`note`、`group_name`、`added_at`、`fund_name`、`fund_type`、`sector`、`tracking_index`（后四项来自基金库，未入库时为 `null`）。
+
+```bash
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist?group_name=核心" | jq
+```
+
+### 5.11 `GET /api/agent/tools/alerts`
+
+分红与止盈止损提醒，scope：`alerts:read`。
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `type` | str | 无 | `dividend` / `take_profit` / `stop_loss` / `tp_sl`（后两者合称） |
+| `status` | str | 无 | `pending` / `confirmed` / `ignored` |
+| `limit` | int | `50` | 1–200 |
+| `offset` | int | `0` | 从 0 开始 |
+
+`data` 字段：`count`、`total`、`pagination`、`alerts`。
+
+每条提醒只返回白名单字段：`id`、`alert_type`、`fund_code`、`fund_name`、`status`、`triggered_return`、`threshold`、`record_date`、`ex_date`、`pay_date`、`per_share`、`estimated_amount`、`held_shares`、`dividend_method`、`created_at`、`resolved_at`、`tx_id`。
+
+> 这里的 `status` 是**业务处理状态**，不是「已读/未读」。ZFundPilot 目前没有提醒已读标记，接口不会虚构该语义。
+
+### 5.12 `GET /api/agent/tools/auto-invest-plans`
+
+定投计划列表，scope：`plans:read`。
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `enabled` | bool | 无 | 按启用状态过滤 |
+| `limit` | int | `50` | 1–200 |
+| `offset` | int | `0` | 从 0 开始 |
+
+`data` 字段：`count`、`total`、`pagination`、`plans`。
+
+每个计划返回已持久化字段（基金代码、金额、周期、渠道、备注、`next_run`、`last_run`、`last_tx_id` 等），并补充：
+
+| 字段 | 说明 |
+|---|---|
+| `fund_name` | 基金名称，未入库时 `null` |
+| `enabled` | 统一为布尔值 |
+| `status` | 派生状态：`paused`（已暂停）/ `due`（`next_run` 已到期）/ `active`（启用且未到期） |
+
+> 跳过原因（例如余额不足、非交易日）**未按计划持久化**，因此不会返回 `skip_reason` 之类的推测字段。
+
+### 5.13 `GET /api/agent/tools/capabilities`
+
+能力发现，只要求有效 Agent token，不需要特定 scope。
+
+`data` 字段：
+
+| 字段 | 说明 |
+|---|---|
+| `server_version` | 服务端版本 |
+| `schema_version` | 能力描述结构版本，当前为 `1` |
+| `granted_scopes` | 当前 token 已获授权的 scope（排序） |
+| `currency` | 固定 `CNY` |
+| `tools` | 当前 token 可调用的工具数组：`name`、`method`、`path`、`scope`、`risk`（固定 `read`）、`requires_confirmation`（固定 `false`） |
+
+```bash
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/capabilities | jq
+```
+
+> 建议 Agent 启动时先调用 `capabilities`，只使用返回列表中存在的工具，避免反复触发 403。
+
 ## 6. 最小接入示例
 
 ### Python
@@ -407,13 +547,13 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-也可以用任意 HTTP 工具封装上述 7 个端点；仓库同时提供可选的 MCP 适配层（见本节末尾）。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
+也可以用任意 HTTP 工具封装上述 13 个端点；仓库同时提供可选的 MCP 适配层（见本节末尾）。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
 
 ---
 
 ### MCP 适配层（可选）
 
-仓库内置一个 stdio MCP 桥接，把上述 7 个工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
+仓库内置一个 stdio MCP 桥接，把上述 13 个工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
 
 ```bash
 # 在 ZFundPilot 源码目录安装可选依赖
@@ -442,7 +582,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 }
 ```
 
-暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`。
+暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_agent_capabilities`。
 
 - `ZFUNDPILOT_BASE_URL` 默认 `http://127.0.0.1:8000`；ZFundPilot 跑在 NAS/Docker 时改成实际地址，远程访问请用 HTTPS。
 - `ZFUNDPILOT_TIMEOUT` 可选，默认 30 秒，范围 1–120。
@@ -456,7 +596,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 - **撤销**：设置页可随时撤销；撤销立即生效。建议为每个 Agent 单独签发，便于定位和回收。
 - **审计**：签发、撤销、鉴权成功/失败、限流都会写审计日志，只记录 token 前缀，不记录明文或完整响应。
 - **网络**：远程访问必须经 HTTPS 反向代理；不要把端口直接暴露到公网。token 泄漏时先撤销再重新签发。
-- **范围**：首期只读 scope 仅覆盖组合、基金、数据状态；写操作和导出接口不会开放给 Agent token。
+- **范围**：只读 scope 覆盖组合、基金、数据状态、交易流水、自选、提醒与定投计划；写操作和导出接口不会开放给 Agent token。
 
 ---
 
@@ -468,3 +608,4 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 | 2026-10-27 | 新增 `portfolio-health`：四维体检、风险提示、结构建议与 `data_quality` 降级说明 |
 | 2026-10-27 | 新增 `returns`：组合级/单基金级收益分解与 XIRR |
 | 2026-10-27 | 新增 `funds/compare`：最多 20 只基金的收益、风险、费率与相关性对比 |
+| 2026-10-27 | 新增 4 个数据类只读 scope 与 6 个工具：`transactions`、`transactions/{tx_id}`、`watchlist`、`alerts`、`auto-invest-plans`、`capabilities`；新 scope 默认不勾选 |

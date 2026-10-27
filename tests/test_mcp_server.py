@@ -48,6 +48,12 @@ def test_tools_registered():
         "get_portfolio_health",
         "get_returns",
         "compare_funds",
+        "list_transactions",
+        "get_transaction",
+        "list_watchlist",
+        "list_alerts",
+        "list_auto_invest_plans",
+        "get_agent_capabilities",
     }
 
 
@@ -162,6 +168,151 @@ def test_compare_funds_validation_without_network():
         _run(mcp_server.compare_funds(["abc"]))
     with pytest.raises(ToolError, match="At least one"):
         _run(mcp_server.compare_funds([""]))
+
+
+def test_list_transactions_passes_filters(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"data": {"total": 1}})
+
+    mock_api(handler)
+    result = _run(mcp_server.list_transactions(
+        fund_code="005827", action="buy", date_from="2026-01-01",
+        date_to="2026-12-31", nav_status="confirmed", channel="支付宝",
+        conversion_id="conv-1", limit=10, offset=20,
+    ))
+
+    assert seen["path"] == "/api/agent/tools/transactions"
+    assert seen["params"] == {
+        "fund_code": "005827",
+        "action": "buy",
+        "date_from": "2026-01-01",
+        "date_to": "2026-12-31",
+        "nav_status": "confirmed",
+        "channel": "支付宝",
+        "conversion_id": "conv-1",
+        "limit": "10",
+        "offset": "20",
+    }
+    assert result["data"]["total"] == 1
+
+
+def test_list_transactions_omits_empty_filters(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"data": {}})
+
+    mock_api(handler)
+    _run(mcp_server.list_transactions())
+
+    assert seen["params"] == {"limit": "50", "offset": "0"}
+
+
+def test_list_transactions_validation_without_network():
+    with pytest.raises(ToolError, match="6 digits"):
+        _run(mcp_server.list_transactions(fund_code="abc"))
+    with pytest.raises(ToolError, match="Action"):
+        _run(mcp_server.list_transactions(action="trade"))
+    with pytest.raises(ToolError, match="YYYY-MM-DD"):
+        _run(mcp_server.list_transactions(date_from="2026/01/01"))
+    with pytest.raises(ToolError, match="YYYY-MM-DD"):
+        _run(mcp_server.list_transactions(date_from="2026-1-01"))
+    with pytest.raises(ToolError, match="valid date"):
+        _run(mcp_server.list_transactions(date_to="2026-02-30"))
+    with pytest.raises(ToolError, match="nav_status"):
+        _run(mcp_server.list_transactions(nav_status="ok"))
+    with pytest.raises(ToolError, match="date_from"):
+        _run(mcp_server.list_transactions(
+            date_from="2026-12-01", date_to="2026-01-01"))
+
+
+def test_get_transaction_uses_id_path(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"data": {"id": 7}})
+
+    mock_api(handler)
+    result = _run(mcp_server.get_transaction(7))
+
+    assert seen["path"] == "/api/agent/tools/transactions/7"
+    assert result["data"]["id"] == 7
+
+
+def test_list_watchlist_filters_by_group(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"data": {"total": 1}})
+
+    mock_api(handler)
+    _run(mcp_server.list_watchlist(group_name="核心", limit=5))
+
+    assert seen["path"] == "/api/agent/tools/watchlist"
+    assert seen["params"] == {
+        "group_name": "核心", "limit": "5", "offset": "0"}
+
+
+def test_list_alerts_passes_type_and_status(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"data": {"total": 0}})
+
+    mock_api(handler)
+    _run(mcp_server.list_alerts(type="dividend", status="pending"))
+
+    assert seen["path"] == "/api/agent/tools/alerts"
+    assert seen["params"] == {
+        "type": "dividend", "status": "pending",
+        "limit": "50", "offset": "0"}
+
+
+def test_list_alerts_validation_without_network():
+    with pytest.raises(ToolError, match="type"):
+        _run(mcp_server.list_alerts(type="unknown"))
+    with pytest.raises(ToolError, match="status"):
+        _run(mcp_server.list_alerts(status="done"))
+
+
+def test_list_auto_invest_plans_passes_enabled(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"data": {"total": 0}})
+
+    mock_api(handler)
+    _run(mcp_server.list_auto_invest_plans(enabled=False, limit=10))
+
+    assert seen["path"] == "/api/agent/tools/auto-invest-plans"
+    assert seen["params"] == {
+        "enabled": "false", "limit": "10", "offset": "0"}
+
+
+def test_capabilities_requests_expected_path(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"data": {"schema_version": 1}})
+
+    mock_api(handler)
+    result = _run(mcp_server.get_agent_capabilities())
+
+    assert seen["path"] == "/api/agent/tools/capabilities"
+    assert result["data"]["schema_version"] == 1
 
 
 def test_missing_token(monkeypatch):

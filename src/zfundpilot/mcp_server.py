@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime
 from typing import Annotated, Any
 
 import httpx
@@ -27,15 +28,22 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from pydantic import Field
 
+from .models import ACTIONS
+
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 DEFAULT_TIMEOUT = 30.0
 MAX_TIMEOUT = 120.0
+
+_NAV_STATUSES = frozenset({"confirmed", "pending_t1", "missing"})
+_ALERT_TYPES = frozenset({"dividend", "take_profit", "stop_loss", "tp_sl"})
+_ALERT_STATUSES = frozenset({"pending", "confirmed", "ignored"})
 
 mcp = FastMCP(
     "zfundpilot",
     instructions=(
         "Read-only portfolio analysis from ZFundPilot. "
-        "Call get_data_status before drawing conclusions from NAV-based data."
+        "Call get_data_status before drawing conclusions from NAV-based data, "
+        "and get_agent_capabilities to discover tools granted to this token."
     ),
 )
 
@@ -206,6 +214,153 @@ async def compare_funds(
         "codes": cleaned,
         "include_nav_series": include_nav_series,
     })
+
+
+@mcp.tool()
+async def list_transactions(
+    fund_code: str | None = None,
+    channel: str | None = None,
+    action: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    conversion_id: str | None = None,
+    nav_status: str | None = None,
+    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> dict[str, Any]:
+    """List recorded transactions (newest first) with filters and pagination.
+
+    Amounts: buys include fees, sells are net of fees, dividends are gross.
+
+    Args:
+        fund_code: Optional six-digit fund code.
+        channel: Optional exact purchase channel.
+        action: Optional buy/sell/dividend/reinvest.
+        date_from: Optional inclusive start date (YYYY-MM-DD).
+        date_to: Optional inclusive end date (YYYY-MM-DD).
+        conversion_id: Optional conversion link id to fetch both legs.
+        nav_status: Optional confirmed/pending_t1/missing.
+        limit: Page size (1-200).
+        offset: Page offset.
+    """
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if fund_code:
+        if not re.fullmatch(r"\d{6}", fund_code):
+            raise ToolError("Fund code must be exactly 6 digits.")
+        params["fund_code"] = fund_code
+    if channel is not None:
+        params["channel"] = channel
+    if action:
+        if action not in ACTIONS:
+            raise ToolError(f"Action must be one of: {', '.join(ACTIONS)}.")
+        params["action"] = action
+    for field, value in (("date_from", date_from), ("date_to", date_to)):
+        if value:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+                raise ToolError(f"{field} must be YYYY-MM-DD.")
+            try:
+                datetime.strptime(value, "%Y-%m-%d")
+            except ValueError as exc:
+                raise ToolError(f"{field} is not a valid date.") from exc
+            params[field] = value
+    if conversion_id:
+        params["conversion_id"] = conversion_id
+    if nav_status:
+        if nav_status not in _NAV_STATUSES:
+            raise ToolError(
+                "nav_status must be confirmed, pending_t1, or missing.")
+        params["nav_status"] = nav_status
+    if date_from and date_to and date_from > date_to:
+        raise ToolError("date_from must not be later than date_to.")
+    return await _request("/api/agent/tools/transactions", params)
+
+
+@mcp.tool()
+async def get_transaction(
+    tx_id: Annotated[int, Field(ge=1)],
+) -> dict[str, Any]:
+    """Read one transaction by id, including derived NAV and conversion fields.
+
+    Args:
+        tx_id: Transaction id.
+    """
+    return await _request(f"/api/agent/tools/transactions/{tx_id}")
+
+
+@mcp.tool()
+async def list_watchlist(
+    group_name: str | None = None,
+    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> dict[str, Any]:
+    """List watchlist funds, optionally filtered by group.
+
+    Args:
+        group_name: Optional watchlist group name.
+        limit: Page size (1-200).
+        offset: Page offset.
+    """
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if group_name is not None:
+        params["group_name"] = group_name
+    return await _request("/api/agent/tools/watchlist", params)
+
+
+@mcp.tool()
+async def list_alerts(
+    type: str | None = None,
+    status: str | None = None,
+    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> dict[str, Any]:
+    """List dividend and take-profit/stop-loss alerts.
+
+    status is a business processing state (pending/confirmed/ignored), not read/unread.
+
+    Args:
+        type: Optional dividend/take_profit/stop_loss/tp_sl.
+        status: Optional pending/confirmed/ignored.
+        limit: Page size (1-200).
+        offset: Page offset.
+    """
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if type:
+        if type not in _ALERT_TYPES:
+            raise ToolError(
+                "type must be dividend, take_profit, stop_loss, or tp_sl.")
+        params["type"] = type
+    if status:
+        if status not in _ALERT_STATUSES:
+            raise ToolError("status must be pending, confirmed, or ignored.")
+        params["status"] = status
+    return await _request("/api/agent/tools/alerts", params)
+
+
+@mcp.tool()
+async def list_auto_invest_plans(
+    enabled: bool | None = None,
+    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> dict[str, Any]:
+    """List auto-invest plans with derived status (active/paused/due).
+
+    Skip reasons are not persisted per plan, so they are not reported.
+
+    Args:
+        enabled: Optional enabled-state filter.
+        limit: Page size (1-200).
+        offset: Page offset.
+    """
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if enabled is not None:
+        params["enabled"] = enabled
+    return await _request("/api/agent/tools/auto-invest-plans", params)
+
+
+@mcp.tool()
+async def get_agent_capabilities() -> dict[str, Any]:
+    """List read-only tools granted to the current Agent token."""
+    return await _request("/api/agent/tools/capabilities")
 
 
 def main() -> None:

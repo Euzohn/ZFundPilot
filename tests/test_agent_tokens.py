@@ -59,6 +59,16 @@ class TestGenerateToken:
         with pytest.raises(ValueError):
             agent_tokens.normalize_scopes(["portfolio:read", "portfolio:write"])
 
+    def test_default_scopes_stay_conservative(self):
+        """新增数据类 scope 不应进入默认勾选，避免存量流程静默扩权。"""
+        assert set(agent_tokens.DEFAULT_SCOPES) == {
+            "portfolio:read", "funds:read", "health:read"}
+        assert set(agent_tokens.DEFAULT_SCOPES) < agent_tokens.ALLOWED_SCOPES
+        assert "transactions:read" not in agent_tokens.DEFAULT_SCOPES
+        assert "watchlist:read" not in agent_tokens.DEFAULT_SCOPES
+        assert "alerts:read" not in agent_tokens.DEFAULT_SCOPES
+        assert "plans:read" not in agent_tokens.DEFAULT_SCOPES
+
 
 # ---------------------------------------------------------------------------
 # 数据库层：只存摘要、列表不泄露摘要、撤销幂等
@@ -475,6 +485,257 @@ class TestAgentTools:
             "/api/agent/tools/funds/compare?codes=005827",
             headers=self._headers("portfolio:read"))
         assert denied.status_code == 403
+
+    def test_list_transactions_scope_and_filters(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        db.upsert_fund(Fund(fund_code="005827", fund_name="测试基金",
+                            fund_type="混合型", sector="科技"))
+        db.add_transaction(Transaction(
+            fund_code="005827", action="buy", date="2025-01-02",
+            amount=1000, shares=1000, nav=1.0, channel="支付宝"))
+        db.add_transaction(Transaction(
+            fund_code="005827", action="buy", date="2026-06-02",
+            amount=500, is_t1=True))  # nav 待确认 → pending_t1
+        db.add_transaction(Transaction(
+            fund_code="005827", action="buy", date="2026-07-02",
+            amount=300))  # nav 缺失 → missing
+        client = TestClient(api.app)
+        headers = self._headers("transactions:read")
+
+        all_tx = client.get("/api/agent/tools/transactions", headers=headers)
+        assert all_tx.status_code == 200
+        data = all_tx.json()["data"]
+        assert data["total"] == 3
+        assert data["transactions"][0]["date"] == "2026-07-02"  # 降序
+        assert data["pagination"]["has_more"] is False
+        assert data["valuation_basis"] == "latest_formal_nav"
+
+        # 派生字段
+        statuses = {t["date"]: t["nav_status"] for t in data["transactions"]}
+        assert statuses == {"2025-01-02": "confirmed",
+                            "2026-06-02": "pending_t1",
+                            "2026-07-02": "missing"}
+        named = next(t for t in data["transactions"] if t["date"] == "2025-01-02")
+        assert named["fund_name"] == "测试基金"
+        assert named["amount_semantics"] == "gross_paid"
+
+        # 过滤
+        pend = client.get("/api/agent/tools/transactions?nav_status=pending_t1",
+                          headers=headers)
+        assert pend.json()["data"]["total"] == 1
+        rng = client.get(
+            "/api/agent/tools/transactions?date_from=2026-01-01",
+            headers=headers)
+        assert rng.json()["data"]["total"] == 2
+        chan = client.get("/api/agent/tools/transactions?channel=支付宝",
+                          headers=headers)
+        assert chan.json()["data"]["total"] == 1
+
+        # 分页
+        page = client.get("/api/agent/tools/transactions?limit=1&offset=1",
+                          headers=headers)
+        pdata = page.json()["data"]
+        assert pdata["count"] == 1
+        assert pdata["pagination"]["has_more"] is True
+        assert pdata["pagination"]["total"] == 3
+
+        # 校验失败
+        assert client.get(
+            "/api/agent/tools/transactions?fund_code=abc",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/transactions?action=trade",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/transactions?date_from=2026/01/01",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/transactions?date_from=2026-1-01",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/transactions?date_from=2026-02-30",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/transactions?nav_status=ok",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/transactions?date_from=2026-12-01&date_to=2026-01-01",
+            headers=headers).status_code == 400
+
+        # scope
+        assert client.get(
+            "/api/agent/tools/transactions",
+            headers=self._headers("funds:read")).status_code == 403
+
+    def test_get_transaction_and_404(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        db.upsert_fund(Fund(fund_code="005827", fund_name="测试基金",
+                            fund_type="混合型", sector="科技"))
+        tx_id = db.add_transaction(Transaction(
+            fund_code="005827", action="sell", date="2026-06-02",
+            amount=1200, shares=900, nav=1.34, fee=6.0, channel="支付宝"))
+        client = TestClient(api.app)
+        headers = self._headers("transactions:read")
+
+        resp = client.get(f"/api/agent/tools/transactions/{tx_id}",
+                          headers=headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["tool"] == "get_transaction"
+        item = body["data"]
+        assert item["id"] == tx_id
+        assert item["fund_name"] == "测试基金"
+        assert item["nav_status"] == "confirmed"
+        assert item["amount_semantics"] == "net_received"
+        assert item["valuation_basis"] == "latest_formal_nav"
+
+        assert client.get(
+            "/api/agent/tools/transactions/999",
+            headers=headers).status_code == 404
+        assert client.get(
+            "/api/agent/tools/transactions/0",
+            headers=headers).status_code == 404
+
+    def test_list_watchlist_scope_and_group(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        db.upsert_fund(Fund(fund_code="005827", fund_name="测试基金",
+                            fund_type="混合型", sector="科技"))
+        db.add_to_watchlist("005827", "观察", "核心")
+        db.add_to_watchlist("000001", "", "其他")
+        client = TestClient(api.app)
+        headers = self._headers("watchlist:read")
+
+        resp = client.get("/api/agent/tools/watchlist", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 2
+        assert data["pagination"]["has_more"] is False
+
+        grouped = client.get(
+            "/api/agent/tools/watchlist?group_name=核心", headers=headers)
+        gdata = grouped.json()["data"]
+        assert gdata["total"] == 1
+        assert gdata["watchlist"][0]["fund_code"] == "005827"
+        assert gdata["watchlist"][0]["fund_name"] == "测试基金"
+
+        assert client.get(
+            "/api/agent/tools/watchlist",
+            headers=self._headers("plans:read")).status_code == 403
+
+    def test_list_alerts_types_and_validation(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        db.upsert_fund(Fund(fund_code="005827", fund_name="测试基金",
+                            fund_type="混合型", sector="科技"))
+        db.add_dividend_alert({
+            "fund_code": "005827", "fund_name": "测试基金",
+            "record_date": "2026-09-20", "ex_date": "2026-09-21",
+            "per_share": 0.05, "pay_date": "2026-09-25",
+            "held_shares": 1000, "estimated_amount": 50,
+            "dividend_method": "cash",
+        })
+        db.add_tp_sl_alert({
+            "fund_code": "005827", "fund_name": "测试基金",
+            "alert_type": "take_profit", "triggered_return": 0.18,
+            "threshold": 0.18,
+        })
+        client = TestClient(api.app)
+        headers = self._headers("alerts:read")
+
+        resp = client.get("/api/agent/tools/alerts", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 2
+        assert {a["alert_type"] for a in data["alerts"]} == {
+            "dividend", "take_profit"}
+
+        div = client.get("/api/agent/tools/alerts?type=dividend",
+                         headers=headers)
+        assert div.json()["data"]["total"] == 1
+        tp = client.get("/api/agent/tools/alerts?type=tp_sl",
+                        headers=headers)
+        assert tp.json()["data"]["total"] == 1
+
+        # 白名单字段：不含内部列
+        item = data["alerts"][0]
+        assert set(item) <= {
+            "id", "alert_type", "fund_code", "fund_name", "status",
+            "triggered_return", "threshold", "record_date", "ex_date",
+            "pay_date", "per_share", "estimated_amount", "held_shares",
+            "dividend_method", "created_at", "resolved_at", "tx_id"}
+
+        assert client.get(
+            "/api/agent/tools/alerts?type=xxx", headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/alerts?status=done", headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/alerts",
+            headers=self._headers("plans:read")).status_code == 403
+
+    def test_list_auto_invest_plans_status(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        db.upsert_fund(Fund(fund_code="005827", fund_name="测试基金",
+                            fund_type="混合型", sector="科技"))
+        active_id = db.add_auto_invest_plan(
+            fund_code="005827", amount=1000, cadence="month",
+            day_of_month=1, channel="支付宝", note="定投",
+            next_run="2099-12-31")
+        due_id = db.add_auto_invest_plan(
+            fund_code="005827", amount=500, cadence="week",
+            day_of_week=0, note="周定投", next_run="2020-01-01")
+        paused_id = db.add_auto_invest_plan(
+            fund_code="005827", amount=300, cadence="month",
+            day_of_month=15, note="暂停中", next_run="2099-12-31")
+        db.update_auto_invest_plan(paused_id, enabled=0)
+        client = TestClient(api.app)
+        headers = self._headers("plans:read")
+
+        resp = client.get("/api/agent/tools/auto-invest-plans", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 3
+        by_id = {p["id"]: p for p in data["plans"]}
+        assert by_id[active_id]["status"] == "active"
+        assert by_id[active_id]["enabled"] is True
+        assert by_id[active_id]["fund_name"] == "测试基金"
+        assert by_id[due_id]["status"] == "due"
+        assert by_id[paused_id]["status"] == "paused"
+
+        only_enabled = client.get(
+            "/api/agent/tools/auto-invest-plans?enabled=true", headers=headers)
+        assert only_enabled.json()["data"]["total"] == 2
+
+        assert client.get(
+            "/api/agent/tools/auto-invest-plans",
+            headers=self._headers("alerts:read")).status_code == 403
+
+    def test_agent_capabilities_filters_by_scope(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        client = TestClient(api.app)
+        headers = self._headers("portfolio:read", "transactions:read")
+
+        resp = client.get("/api/agent/tools/capabilities", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["granted_scopes"] == ["portfolio:read", "transactions:read"]
+        names = {t["name"] for t in data["tools"]}
+        assert "get_portfolio_summary" in names
+        assert "list_transactions" in names
+        assert "get_transaction" in names
+        assert "get_agent_capabilities" in names  # 无 scope 要求，始终可见
+        assert "get_data_status" not in names  # health:read 未授予
+        assert "list_alerts" not in names
+        for tool in data["tools"]:
+            assert tool["risk"] == "read"
+            assert tool["requires_confirmation"] is False
+
+        # 任意有效 token 均可调用，不需要特定 scope
+        minimal = client.get(
+            "/api/agent/tools/capabilities",
+            headers=self._headers("funds:read"))
+        assert minimal.status_code == 200
+        minimal_names = {t["name"] for t in minimal.json()["data"]["tools"]}
+        assert "compare_funds" in minimal_names
+        assert "get_portfolio_summary" not in minimal_names
 
     def test_rate_limit_shared_across_fund_codes(self, temp_db, monkeypatch):
         """基金代码是路径参数，不同代码必须共用同一个限流桶。"""

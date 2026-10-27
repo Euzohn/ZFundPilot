@@ -15,6 +15,7 @@
 - 完善 Agent 相关 OpenAPI 描述：新增 `agent` / `agent-admin` 分组、`AgentBearer`/`WebLoginBearer` securitySchemes、端点摘要与 401/403/429（基金详情另含 400/404）响应说明；文档明确 `/docs`、`/redoc`、`/openapi.json` 默认公开的仅是接口结构，业务接口仍需认证，可按需在反代层屏蔽
 - 设置页新增「Agent 访问令牌」管理——位于「账户与安全」、账户卡片与审计日志之间：填写名称、勾选 `portfolio:read`/`funds:read`/`health:read`（默认全选）、设置 1–3650 天有效期（留空不过期）后签发；明文仅在签发成功时展示一次并提供复制；列表展示前缀、权限、创建/过期/最近使用时间与有效/过期/已撤销状态，支持二次确认撤销。新增 `docs/AGENT_API.md` 与英文版 `docs/AGENT_API_EN.md`，完整说明 5 个只读工具、scope、响应包、错误码、限流与接入示例，README 中英文版均补充入口链接
 - 新增两个 Agent 只读工具：`get_returns`（`/api/agent/tools/returns`，scope `portfolio:read`，默认组合级收益分解，传 `fund_code` 返回单基金累计/年化与各渠道持仓）与 `compare_funds`（`/api/agent/tools/funds/compare`，scope `funds:read`，复用现有对比逻辑，一次最多 20 只，默认不返回体积较大的 `nav_series`）；MCP 适配层同步暴露两个工具。新增 2 个工具端点用例 + 4 个 MCP 用例，总测试 643→649
+- 新增 4 个数据类只读 scope 与 6 个 Agent 只读工具（P1.5-A 第 1 批，纯读、无网络）：`transactions:read`（`transactions` 多条件过滤+分页、`transactions/{tx_id}` 单笔详情）、`watchlist:read`（`watchlist`，可按分组过滤）、`alerts:read`（`alerts`，分红与止盈止损合并，仅返回白名单字段）、`plans:read`（`auto-invest-plans`，派生 `active`/`paused`/`due` 状态）、以及不要求特定 scope 的 `capabilities` 能力发现（只返回当前 token 已授权工具）。交易流水补充 `fund_name`、`nav_status`（`confirmed`/`pending_t1`/`missing`）、`amount_semantics`（买入含费/卖出扣费/分红毛额）与 `conversion_role` 派生字段；提醒 `status` 明确为业务处理状态而非已读，定投计划不虚构未持久化的跳过原因。新 scope 默认不勾选，避免存量 token 静默扩权；MCP 适配层同步暴露 6 个工具；中英文 Agent 文档、README 与设置页 scope 选项同步更新。新增 7 个端点/默认 scope 用例 + 9 个 MCP 用例，总测试 649→665
 
 ### Changed
 - README 中英文版将 Agent 接入提升为独立功能亮点（新增「Agent 接入（API / MCP）」段与「为什么不同」差异点），从「安全与自定义」移出，避免能力被埋在安全条目里

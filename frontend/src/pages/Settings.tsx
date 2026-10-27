@@ -396,6 +396,13 @@ function AuditLogPanel() {
     tp_sl_config_update: t.settings.auditLabels.tp_sl_config_update,
     tp_sl_alert: t.settings.auditLabels.tp_sl_alert,
     tp_sl_alert_update: t.settings.auditLabels.tp_sl_alert_update,
+    add_conversion: t.settings.auditLabels.add_conversion,
+    update_vision_config: t.settings.auditLabels.update_vision_config,
+    agent_token_created: t.settings.auditLabels.agent_token_created,
+    agent_token_revoked: t.settings.auditLabels.agent_token_revoked,
+    agent_auth_ok: t.settings.auditLabels.agent_auth_ok,
+    agent_auth_failed: t.settings.auditLabels.agent_auth_failed,
+    agent_rate_limited: t.settings.auditLabels.agent_rate_limited,
   }
 
   return (

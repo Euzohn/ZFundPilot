@@ -71,7 +71,7 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 | Scope | 允许的工具 |
 |---|---|
 | `portfolio:read` | `portfolio-summary`、`positions`、`returns`、`portfolio-curve`、`benchmark`、`industry-exposure` |
-| `funds:read` | `funds/{code}`、`funds/compare`、`search`、`screen` |
+| `funds:read` | `funds/{code}`、`funds/compare`、`search`、`screen`、`backtest/dca` |
 | `health:read` | `data-status`、`portfolio-health`、`risk-report` |
 | `transactions:read` | `transactions`、`transactions/{tx_id}` |
 | `watchlist:read` | `watchlist` |
@@ -136,7 +136,7 @@ Authorization: Bearer zfag_xxxxxxxx
 
 ### 限流
 
-每个 token、每个端点默认 **120 次/分钟**。路径参数按同一端点计（例如不同基金代码共用 `funds/{code}` 的额度），避免通过枚举代码绕过限流。较重端点使用更低限额：`search` 为 60 次/分钟，`screen`、`benchmark`、`industry-exposure` 为 20 次/分钟；筛选无论是否补指标都共用同一个桶，切换参数不能绕过。超限返回 `429`，并按 `Retry-After` 秒数重试。限流与指标增强的并发上限都是**进程内**状态，多 worker 部署时各进程独立计数。
+每个 token、每个端点默认 **120 次/分钟**。路径参数按同一端点计（例如不同基金代码共用 `funds/{code}` 的额度），避免通过枚举代码绕过限流。较重端点使用更低限额：`search` 为 60 次/分钟，`screen`、`backtest/dca`、`benchmark`、`industry-exposure` 为 20 次/分钟；筛选无论是否补指标都共用同一个桶，切换参数不能绕过。超限返回 `429`，并按 `Retry-After` 秒数重试。限流与指标增强的并发上限都是**进程内**状态，多 worker 部署时各进程独立计数。
 
 ### OpenAPI / Swagger
 
@@ -160,6 +160,8 @@ FastAPI 自动生成以下页面：
 ---
 
 ## 5. 工具列表
+
+除 5.20 使用 `POST` 外，其余工具均为 `GET`。所有工具都只读，不接受交易、设置或导出操作。
 
 ### 5.1 `GET /api/agent/tools/portfolio-summary`
 
@@ -605,6 +607,39 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 > `with_metrics=true` 会访问外部净值/档案接口，**可能较慢**，且只覆盖**当前页按代码升序的前 30 项**，不是全市场收益排名。增强并发上限为 2，满额立即返回 `429`（不排队）；超时只返回已完成项，未完成项标为 `unavailable`，后台任务结束后才释放并发额度。需要精确对比时用 `funds/compare`。未知类型/板块、超过 20 个过滤值或关键词超长返回 `400`。
 
+### 5.20 `POST /api/agent/tools/backtest/dca`
+
+在历史净值上模拟定投，可选一次性投入对照，scope：`funds:read`。这是**只读历史模拟**：不会写入正式净值表、交易、定投计划、自选或基金元数据，也不代表未来收益或配置建议。
+
+请求体（JSON；未知字段、类型错误或约束不满足返回 `422`）：
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `fund_codes` | string[] | 必填 | 1–5 个 6 位代码；重复代码去重后逐基金独立模拟 |
+| `start_date` / `end_date` | string | 必填 | 严格 `YYYY-MM-DD`；起日早于止日；止日不晚于中国时区今日 |
+| `amount_per_period` | number | 必填 | 每只基金每期金额，有限正数，≤ 1,000,000 |
+| `cadence` | string | `month` | `month` / `week` / `biweek` |
+| `include_lumpsum` | bool | `true` | 每只基金增加一个等实际总投入的一次性投入对照 |
+| `include_curve` | bool | `true` | 是否返回曲线；`false` 时曲线为空 |
+| `include_periods` | bool | `false` | 是否返回逐期买入明细（响应体更大） |
+| `max_points` | int | `365` | 曲线等距抽样上限，10–2000，保留首尾 |
+
+区间最长 10 年；月/双周/周的计划期数最多分别约为 120/261/522。非法 JSON、缺少必填字段或未知字段返回 `422`；认证与 scope 语义与其他工具一致（`401`/`403`）。
+
+`data` 字段：`ok`、`message`、`simulation_note`、`requested`、`fund_count`、`result_count`、`failed_count`、`results[]`。`failed_count` 按结果条数计（同一基金的 `dca` 与 `lumpsum` 各自计一条）。
+
+每条结果包含：
+
+- 基础：`fund_code`、`fund_name`、`strategy`（`dca`/`lumpsum`）、`status`（`ok`/`partial`/`failed`）、`code`、`message`。
+- 数据：`data_source`（`database`/`remote`/`database+remote`/`none`）、`data_start`、`data_end`、`valuation_date`、`skipped_periods`、`fee_ok`。
+- 指标：`cadence`、`amount_per_period`、`total_periods`、`invested_capital`、`total_fees`、`final_value`、`redemption_fee`、`net_final_value`、`total_return`、`annualized_return`、`max_drawdown`、`sharpe_ratio`。
+- 明细：`curve`（按 `max_points` 抽样）、`curve_points`、`periods_detail`（仅在 `include_periods=true` 时非空）、`periods_detail_count`、`caveats`。
+- `fee_ok=false` 表示费率表获取失败；即使 `fee_ok=true`，若申购或赎回档位缺失也会按 0 计并在 `caveats` 说明，不应解读为真实零费率。
+- `status="failed"` 时 `code` 为 `insufficient_nav`（有效净值少于 2 个）或 `no_periods`（没有可执行的计划扣款日），不输出看似有效的零收益指标。
+- `status="partial"` 且 `code="partial_coverage"` 表示部分计划期因净值未覆盖或与其他期落在同一净值日而跳过；`skipped_periods` 给出数量。
+
+> 计划扣款日不早于请求起日。多个计划期落到同一净值日时只执行第一期，避免把多期投入堆到同一天。期末估值、赎回费持有天数与 XIRR 终值统一使用最后一个可用净值日（`valuation_date`），而不是请求止日。净值优先读取数据库，覆盖不足时通过外部接口在内存中补齐，不写库；`data_end` 可能早于 `end_date`。费率表按每只基金一次快照使用。结果未模拟分红、拆分与红利再投资；最大回撤与夏普基于市值曲线，定投现金流会影响可比性。单次请求最多 5 只基金，耗时受外部净值/费率抓取影响，建议先查 `data-status`，并遵守 20 次/分钟的限额。回测并发上限为 2（进程内），满额立即返回 `429`，不排队；多 worker 部署时各进程独立计数。
+
 ## 6. 最小接入示例
 
 ### Python
@@ -649,13 +684,13 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-也可以用任意 HTTP 工具封装上述 19 个端点；仓库同时提供可选的 MCP 适配层（见本节末尾）。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
+也可以用任意 HTTP 工具封装上述 20 个端点；仓库同时提供可选的 MCP 适配层（见本节末尾）。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
 
 ---
 
 ### MCP 适配层（可选）
 
-仓库内置一个 stdio MCP 桥接，把上述 19 个工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
+仓库内置一个 stdio MCP 桥接，把上述 20 个工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
 
 ```bash
 # 在 ZFundPilot 源码目录安装可选依赖
@@ -684,7 +719,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 }
 ```
 
-暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`search_funds`、`screen_funds`、`get_agent_capabilities`。
+暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`search_funds`、`screen_funds`、`run_dca_backtest`、`get_agent_capabilities`。
 
 - `ZFUNDPILOT_BASE_URL` 默认 `http://127.0.0.1:8000`；ZFundPilot 跑在 NAS/Docker 时改成实际地址，远程访问请用 HTTPS。
 - `ZFUNDPILOT_TIMEOUT` 可选，默认 30 秒，范围 1–120。
@@ -713,3 +748,4 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 | 2026-10-27 | 新增 4 个数据类只读 scope 与 6 个工具：`transactions`、`transactions/{tx_id}`、`watchlist`、`alerts`、`auto-invest-plans`、`capabilities`；新 scope 默认不勾选 |
 | 2026-10-28 | 新增 4 个组合级只读工具：`portfolio-curve`、`benchmark`、`risk-report`、`industry-exposure`，复用 `portfolio:read`/`health:read`，不新增 scope |
 | 2026-10-28 | 新增 2 个基金检索工具：`search`（关键词检索）、`screen`（类型/板块/关键词筛选，可选限量指标），复用 `funds:read`；引入按路由覆盖的限流 |
+| 2026-10-28 | 新增只读定投回测工具 `backtest/dca`（`POST`，复用 `funds:read`）：数据准备与计算解耦，不写正式净值表；统一估值日与 XIRR 终值日，显式标注数据不足、部分覆盖与费率未知 |

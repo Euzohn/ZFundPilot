@@ -71,7 +71,7 @@ Request body:
 | Scope | Allowed tools |
 |---|---|
 | `portfolio:read` | `portfolio-summary`, `positions`, `returns`, `portfolio-curve`, `benchmark`, `industry-exposure` |
-| `funds:read` | `funds/{code}`, `funds/compare`, `search`, `screen` |
+| `funds:read` | `funds/{code}`, `funds/compare`, `search`, `screen`, `backtest/dca` |
 | `health:read` | `data-status`, `portfolio-health`, `risk-report` |
 | `transactions:read` | `transactions`, `transactions/{tx_id}` |
 | `watchlist:read` | `watchlist` |
@@ -136,7 +136,7 @@ Standard FastAPI error shape:
 
 ### Rate limiting
 
-**120 requests per minute** per token per endpoint by default. Path parameters count as the same endpoint (for example, different fund codes share the `funds/{code}` budget), so enumerating codes cannot bypass the limit. Heavier endpoints use lower limits: `search` is 60/min, and `screen`, `benchmark`, and `industry-exposure` are 20/min; screening shares one bucket whether or not metrics are requested, so switching parameters cannot bypass it. Exceeding a limit returns `429`; retry after the `Retry-After` seconds. Rate-limit and metric-enrichment concurrency are **in-process** state; multiple workers count independently.
+**120 requests per minute** per token per endpoint by default. Path parameters count as the same endpoint (for example, different fund codes share the `funds/{code}` budget), so enumerating codes cannot bypass the limit. Heavier endpoints use lower limits: `search` is 60/min, and `screen`, `backtest/dca`, `benchmark`, and `industry-exposure` are 20/min; screening shares one bucket whether or not metrics are requested, so switching parameters cannot bypass it. Exceeding a limit returns `429`; retry after the `Retry-After` seconds. Rate-limit and metric-enrichment concurrency are **in-process** state; multiple workers count independently.
 
 ### OpenAPI / Swagger
 
@@ -160,6 +160,8 @@ Amounts are based on the **latest formal NAV** and marked with `data.valuation_b
 ---
 
 ## 5. Tools
+
+All tools are read-only. Except for 5.20, which uses `POST`, every tool uses `GET`; none accepts trading, settings, or export operations.
 
 ### 5.1 `GET /api/agent/tools/portfolio-summary`
 
@@ -605,6 +607,39 @@ Parameters:
 
 > `with_metrics=true` calls external NAV/archive services and **may be slow**. It only covers the **first 30 funds of the current page in ascending code order**, not a market-wide return ranking. Enrichment concurrency is capped at 2; when full it returns `429` immediately instead of queueing. A timeout returns only completed items and marks the rest `unavailable`; the concurrency slot is released only after background work finishes. Use `funds/compare` for precise comparison. Unknown types/sectors, more than 20 filter values, or an over-long keyword return `400`.
 
+### 5.20 `POST /api/agent/tools/backtest/dca`
+
+Simulate a historical DCA plan, optionally with a lump-sum comparison. Scope: `funds:read`. This is a **read-only historical simulation**: it does not write the formal NAV table, transactions, auto-invest plans, watchlist, or fund metadata, and it is neither a forecast nor allocation advice.
+
+JSON body (unknown fields, type errors, or constraint violations return `422`):
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `fund_codes` | string[] | required | 1–5 six-digit codes; duplicates are removed and each fund is simulated independently |
+| `start_date` / `end_date` | string | required | Strict `YYYY-MM-DD`; start before end; end not after today in China time |
+| `amount_per_period` | number | required | Amount per fund per period; finite and positive, ≤ 1,000,000 |
+| `cadence` | string | `month` | `month`, `week`, or `biweek` |
+| `include_lumpsum` | bool | `true` | Add a lump-sum comparison per fund using the actual total invested |
+| `include_curve` | bool | `true` | Return the value curve; when false the curve is empty |
+| `include_periods` | bool | `false` | Return per-period purchase details (larger response) |
+| `max_points` | int | `365` | Curve sampling cap, 10–2000, first/last preserved |
+
+The range is limited to 10 years; monthly/biweekly/weekly plans produce at most roughly 120/261/522 periods. Invalid JSON, missing required fields, or unknown fields return `422`; authentication and scope semantics match the other tools (`401`/`403`).
+
+`data` fields: `ok`, `message`, `simulation_note`, `requested`, `fund_count`, `result_count`, `failed_count`, `results[]`. `failed_count` counts result rows (a fund's `dca` and `lumpsum` rows count separately).
+
+Each result contains:
+
+- Basics: `fund_code`, `fund_name`, `strategy` (`dca`/`lumpsum`), `status` (`ok`/`partial`/`failed`), `code`, `message`.
+- Data: `data_source` (`database`/`remote`/`database+remote`/`none`), `data_start`, `data_end`, `valuation_date`, `skipped_periods`, `fee_ok`.
+- Metrics: `cadence`, `amount_per_period`, `total_periods`, `invested_capital`, `total_fees`, `final_value`, `redemption_fee`, `net_final_value`, `total_return`, `annualized_return`, `max_drawdown`, `sharpe_ratio`.
+- Details: `curve` (sampled to `max_points`), `curve_points`, `periods_detail` (non-empty only with `include_periods=true`), `periods_detail_count`, `caveats`.
+- `fee_ok=false` means the fee table could not be fetched; even when `fee_ok=true`, a missing purchase or redemption tier is counted as 0 and explained in `caveats`, which must not be read as a true zero-fee fund.
+- `status="failed"` uses `code="insufficient_nav"` (fewer than 2 valid NAV points) or `no_periods` (no executable planned date), and does not output apparently valid zero-return metrics.
+- `status="partial"` with `code="partial_coverage"` means some planned periods were skipped because NAV data did not cover them or because multiple periods mapped to the same NAV date; `skipped_periods` gives the count.
+
+> Planned dates never precede the requested start. When multiple plans map to the same NAV date, only the first executes so that periods are not stacked onto one day. The closing valuation, redemption holding-period calculation, and XIRR terminal cash flow all use the last available NAV date (`valuation_date`), not the requested end date. NAV data is read from the database first and fetched in memory only when coverage is insufficient; nothing is written, and `data_end` may be earlier than `end_date`. Each fund's fee table is used as a single snapshot. Dividends, splits, and reinvestment are not simulated; max drawdown and Sharpe use the market-value curve, so DCA cash flows affect comparability. A request is capped at 5 funds, may be slowed by external NAV/fee fetches, should be preceded by `data-status`, and is limited to 20 requests per minute. Backtest concurrency is capped at 2 in-process; when full it returns `429` immediately instead of queueing, and multiple workers count independently.
+
 ## 6. Minimal integration
 
 ### Python
@@ -649,13 +684,13 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-You can also wrap these nineteen endpoints with any HTTP tool; an optional MCP adapter is provided at the end of this section. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
+You can also wrap these twenty endpoints with any HTTP tool; an optional MCP adapter is provided at the end of this section. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
 
 ---
 
 ### MCP adapter (optional)
 
-A stdio MCP bridge is bundled to expose the nineteen tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
+A stdio MCP bridge is bundled to expose the twenty tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
 
 ```bash
 # Install the optional extra from the ZFundPilot source tree
@@ -684,7 +719,7 @@ Claude Desktop example (`claude_desktop_config.json`):
 }
 ```
 
-Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `get_agent_capabilities`.
+Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`.
 
 - `ZFUNDPILOT_BASE_URL` defaults to `http://127.0.0.1:8000`; use the real NAS/Docker address for remote instances and HTTPS for remote access.
 - `ZFUNDPILOT_TIMEOUT` is optional, default 30 seconds (range 1–120).
@@ -713,3 +748,4 @@ Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`,
 | 2026-10-27 | Added four data read scopes and six tools: `transactions`, `transactions/{tx_id}`, `watchlist`, `alerts`, `auto-invest-plans`, `capabilities`; new scopes are unchecked by default |
 | 2026-10-28 | Added four portfolio-level read tools: `portfolio-curve`, `benchmark`, `risk-report`, `industry-exposure`, reusing `portfolio:read`/`health:read` without new scopes |
 | 2026-10-28 | Added two fund lookup tools: `search` (keyword lookup) and `screen` (type/sector/keyword screening with optional capped metrics), reusing `funds:read`; added per-route rate limits |
+| 2026-10-28 | Added the read-only DCA backtest tool `backtest/dca` (`POST`, reusing `funds:read`): separated data preparation from calculation, never writes formal NAV data; unified valuation/XIRR terminal dates and explicitly flags insufficient data, partial coverage, and unknown fees |

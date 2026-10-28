@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import re
 from datetime import datetime
@@ -97,10 +98,18 @@ def _make_client() -> httpx.AsyncClient:
     )
 
 
-async def _request(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+async def _send(
+    method: str,
+    path: str,
+    *,
+    params: dict[str, Any] | None = None,
+    json_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """发送只读请求并统一错误语义；仅由固定工具函数调用。"""
     try:
         async with _make_client() as client:
-            response = await client.get(path, params=params)
+            response = await client.request(
+                method, path, params=params, json=json_body)
     except httpx.HTTPError as exc:
         raise ToolError(
             f"Cannot reach ZFundPilot at {_base_url()}: {exc}"
@@ -134,6 +143,16 @@ async def _request(path: str, params: dict[str, Any] | None = None) -> dict[str,
         return response.json()
     except ValueError as exc:
         raise ToolError("ZFundPilot returned a non-JSON response.") from exc
+
+
+async def _request(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """GET 请求（保持既有工具的参数行为）。"""
+    return await _send("GET", path, params=params)
+
+
+async def _post(path: str, body: dict[str, Any]) -> dict[str, Any]:
+    """只读 POST 请求；路径由工具函数写死，不接受调用方传入。"""
+    return await _send("POST", path, json_body=body)
 
 
 @mcp.tool()
@@ -521,6 +540,93 @@ async def screen_funds(
             raise ToolError("keyword must be at most 100 characters.")
         params["keyword"] = value
     return await _request("/api/agent/tools/screen", params)
+
+
+@mcp.tool()
+async def run_dca_backtest(
+    fund_codes: Annotated[list[str], Field(min_length=1, max_length=5)],
+    start_date: str,
+    end_date: str,
+    amount_per_period: float,
+    cadence: str = "month",
+    include_lumpsum: bool = True,
+    include_curve: bool = True,
+    include_periods: bool = False,
+    max_points: Annotated[int, Field(ge=10, le=2000)] = 365,
+) -> dict[str, Any]:
+    """Simulate a historical DCA plan, optionally with a lump-sum comparison.
+
+    Read-only: it never writes NAV data, transactions, plans, or fund metadata.
+    Results are historical simulations, not forecasts or allocation advice.
+    Per-fund status/code/message explain insufficient NAV or partial coverage;
+    unknown fee tables are flagged instead of being reported as zero cost.
+
+    Args:
+        fund_codes: 1-5 six-digit fund codes; duplicates are removed.
+        start_date: Inclusive start date (YYYY-MM-DD), before end_date.
+        end_date: Inclusive end date (YYYY-MM-DD), not after today in China time.
+        amount_per_period: Amount per fund per period, > 0 and <= 1,000,000.
+        cadence: "month", "week", or "biweek".
+        include_lumpsum: Add a lump-sum comparison per fund.
+        include_curve: Return the sampled portfolio value curve.
+        include_periods: Return per-period purchase details (larger response).
+        max_points: Maximum curve points (10-2000, first/last preserved).
+    """
+    cleaned: list[str] = []
+    for raw in fund_codes:
+        if not isinstance(raw, str):
+            raise ToolError("fund_codes must contain strings.")
+        code = raw.strip()
+        if not re.fullmatch(r"\d{6}", code):
+            raise ToolError(f"fund_codes must contain six-digit codes, got: {raw!r}.")
+        if code not in cleaned:
+            cleaned.append(code)
+    if not cleaned:
+        raise ToolError("fund_codes must contain at least one code.")
+    if len(cleaned) > 5:
+        raise ToolError("fund_codes supports at most 5 unique codes.")
+
+    start = _validate_date(start_date, "start_date")
+    end = _validate_date(end_date, "end_date")
+    if start is None or end is None:
+        raise ToolError("start_date and end_date are required.")
+    if start >= end:
+        raise ToolError("start_date must be earlier than end_date.")
+
+    start_dt = datetime.strptime(start, "%Y-%m-%d").date()
+    end_dt = datetime.strptime(end, "%Y-%m-%d").date()
+    today = datetime.now(config.TIMEZONE).date()
+    if end_dt > today:
+        raise ToolError("end_date must not be later than today in China time.")
+    months = (end_dt.year - start_dt.year) * 12 + (end_dt.month - start_dt.month)
+    if months > 120 or (months == 120 and end_dt.day > start_dt.day):
+        raise ToolError("The backtest range must not exceed 10 years.")
+
+    if isinstance(amount_per_period, bool) or not isinstance(
+            amount_per_period, (int, float)):
+        raise ToolError("amount_per_period must be a number.")
+    if not math.isfinite(amount_per_period) or amount_per_period <= 0:
+        raise ToolError("amount_per_period must be a finite positive number.")
+    if amount_per_period > 1_000_000:
+        raise ToolError("amount_per_period must not exceed 1,000,000.")
+    if cadence not in ("month", "week", "biweek"):
+        raise ToolError("cadence must be 'month', 'week', or 'biweek'.")
+    if isinstance(max_points, bool) or not isinstance(max_points, int):
+        raise ToolError("max_points must be an integer.")
+    if not 10 <= max_points <= 2000:
+        raise ToolError("max_points must be between 10 and 2000.")
+
+    return await _post("/api/agent/tools/backtest/dca", {
+        "fund_codes": cleaned,
+        "start_date": start,
+        "end_date": end,
+        "amount_per_period": amount_per_period,
+        "cadence": cadence,
+        "include_lumpsum": include_lumpsum,
+        "include_curve": include_curve,
+        "include_periods": include_periods,
+        "max_points": max_points,
+    })
 
 
 @mcp.tool()

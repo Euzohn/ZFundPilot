@@ -1,6 +1,7 @@
 """Agent token 安全边界测试：生成/存储/校验/撤销/scope/无密码模式/管理端点。"""
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -10,6 +11,7 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from zfundpilot import agent_tokens, analysis, api, config, db
+from zfundpilot.fetch_fund import FeeRates, PurchaseTier, RedemptionTier
 from zfundpilot.models import DataStatus, Fund, NavPoint, Transaction
 
 
@@ -875,8 +877,10 @@ class TestAgentTools:
             "/api/agent/tools/capabilities",
             headers=self._headers("funds:read")).json()["data"]
         funds_names = {t["name"] for t in funds_data["tools"]}
-        assert {"search_funds", "screen_funds"} <= funds_names
+        assert {"search_funds", "screen_funds", "run_dca_backtest"} <= funds_names
         assert "get_risk_report" not in funds_names
+        methods = {t["name"]: t["method"] for t in funds_data["tools"]}
+        assert methods["run_dca_backtest"] == "POST"
 
     def test_search_funds_scope_pagination_and_validation(
             self, temp_db, monkeypatch):
@@ -1052,6 +1056,222 @@ class TestAgentTools:
             "/api/agent/tools/screen?with_metrics=true", headers=headers)
         assert limited.status_code == 429
         assert limited.headers["Retry-After"] == "60"
+
+    def _fee_rates(self, ok: bool = True) -> FeeRates:
+        return FeeRates(
+            fund_code="000001",
+            ok=ok,
+            purchase=[PurchaseTier(min_amount=0, rate=0.001)] if ok else [],
+            redemption=([RedemptionTier(min_days=0, max_days=6, rate=0.015),
+                         RedemptionTier(min_days=7, max_days=None, rate=0.005)]
+                        if ok else []),
+        )
+
+    def test_backtest_requires_post_token_scope(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        payload = {
+            "fund_codes": ["000001"],
+            "start_date": "2024-01-01",
+            "end_date": "2024-03-31",
+            "amount_per_period": 1000,
+        }
+        client = TestClient(api.app)
+
+        assert client.post(
+            "/api/agent/tools/backtest/dca", json=payload).status_code == 401
+        assert client.post(
+            "/api/agent/tools/backtest/dca", json=payload,
+            headers=self._headers("portfolio:read")).status_code == 403
+        assert client.get(
+            "/api/agent/tools/backtest/dca",
+            headers=self._headers("funds:read")).status_code == 405
+
+    def test_backtest_validation_edges(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        client = TestClient(api.app)
+        headers = self._headers("funds:read")
+        base = {
+            "fund_codes": ["000001"],
+            "start_date": "2024-01-01",
+            "end_date": "2024-03-31",
+            "amount_per_period": 1000,
+        }
+
+        def post(**overrides):
+            body = {**base, **overrides}
+            return client.post(
+                "/api/agent/tools/backtest/dca", json=body, headers=headers)
+
+        assert post(fund_codes=[]).status_code == 422
+        assert post(fund_codes=["000001"] * 6).status_code == 422
+        assert post(fund_codes=["12345"]).status_code == 422
+        assert post(start_date="2024-03-31", end_date="2024-03-01").status_code == 422
+        assert post(start_date="2024-02-30").status_code == 422
+        assert post(end_date="2999-01-01").status_code == 422
+        assert post(start_date="2014-01-01", end_date="2024-01-02").status_code == 422
+        assert post(amount_per_period=0).status_code == 422
+        assert post(amount_per_period=True).status_code == 422
+        assert post(amount_per_period=1_000_001).status_code == 422
+        assert post(cadence="daily").status_code == 422
+        assert post(max_points=9).status_code == 422
+        assert post(extra_field=True).status_code == 422
+
+    def test_backtest_success_curve_sampling_and_periods(
+            self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        rows = [
+            {"date": "2024-01-02", "nav": 1.0},
+            {"date": "2024-02-01", "nav": 1.1},
+            {"date": "2024-03-01", "nav": 1.2},
+        ]
+        monkeypatch.setattr(
+            api.backtest, "readonly_nav_rows",
+            lambda code, start, end: (rows, "database"))
+        monkeypatch.setattr(
+            api.fetch_fund, "fetch_fund_fee_rates",
+            lambda code: self._fee_rates())
+        client = TestClient(api.app)
+
+        resp = client.post(
+            "/api/agent/tools/backtest/dca",
+            json={
+                "fund_codes": ["000001", "000001"],
+                "start_date": "2024-01-01",
+                "end_date": "2024-03-31",
+                "amount_per_period": 1000,
+                "include_curve": True,
+                "include_periods": False,
+                "max_points": 10,
+            },
+            headers=self._headers("funds:read"))
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["tool"] == "run_dca_backtest"
+        data = body["data"]
+        assert data["ok"] is True
+        assert data["fund_count"] == 1
+        assert data["result_count"] == 2  # dca + lumpsum
+        dca = data["results"][0]
+        assert dca["strategy"] == "dca"
+        assert dca["status"] == "ok"
+        assert dca["data_source"] == "database"
+        assert dca["data_start"] == "2024-01-02"
+        assert dca["data_end"] == "2024-03-01"
+        assert dca["valuation_date"] == "2024-03-01"
+        assert dca["total_periods"] == 3
+        assert dca["fee_ok"] is True
+        assert dca["periods_detail"] == []
+        assert dca["periods_detail_count"] == 3
+        assert 0 < dca["curve_points"] <= 10
+        assert dca["curve"]
+        lump = data["results"][1]
+        assert lump["strategy"] == "lumpsum"
+        assert lump["invested_capital"] == dca["invested_capital"]
+
+    def test_backtest_partial_and_failed_results(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        gap_rows = [
+            {"date": "2024-01-01", "nav": 1.0},
+            {"date": "2024-02-01", "nav": 1.1},
+        ]
+
+        def provider(code, start, end):
+            if code == "000001":
+                return gap_rows, "database"
+            return [], "none"
+
+        monkeypatch.setattr(api.backtest, "readonly_nav_rows", provider)
+        monkeypatch.setattr(
+            api.fetch_fund, "fetch_fund_fee_rates",
+            lambda code: self._fee_rates())
+        client = TestClient(api.app)
+        headers = self._headers("funds:read")
+
+        resp = client.post(
+            "/api/agent/tools/backtest/dca",
+            json={
+                "fund_codes": ["000001", "000002"],
+                "start_date": "2024-01-01",
+                "end_date": "2024-02-01",
+                "amount_per_period": 100,
+                "cadence": "week",
+                "include_lumpsum": False,
+            },
+            headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["ok"] is True
+        assert data["failed_count"] == 1
+        assert "1 个回测失败" in data["message"]
+        partial = data["results"][0]
+        assert partial["status"] == "partial"
+        assert partial["code"] == "partial_coverage"
+        assert partial["skipped_periods"] > 0
+        failed = data["results"][1]
+        assert failed["status"] == "failed"
+        assert failed["code"] == "insufficient_nav"
+        assert failed["net_final_value"] == 0
+
+        all_failed = client.post(
+            "/api/agent/tools/backtest/dca",
+            json={
+                "fund_codes": ["000002"],
+                "start_date": "2024-01-01",
+                "end_date": "2024-02-01",
+                "amount_per_period": 100,
+            },
+            headers=headers)
+        body = all_failed.json()["data"]
+        assert body["ok"] is False
+        assert body["message"]
+
+    def test_backtest_zero_fee_unknown_is_explicit(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        rows = [{"date": "2024-01-02", "nav": 1.0},
+                {"date": "2024-02-01", "nav": 1.1}]
+        monkeypatch.setattr(
+            api.backtest, "readonly_nav_rows",
+            lambda code, start, end: (rows, "remote"))
+        monkeypatch.setattr(
+            api.fetch_fund, "fetch_fund_fee_rates",
+            lambda code: self._fee_rates(ok=False))
+        client = TestClient(api.app)
+
+        resp = client.post(
+            "/api/agent/tools/backtest/dca",
+            json={
+                "fund_codes": ["000001"],
+                "start_date": "2024-01-01",
+                "end_date": "2024-02-01",
+                "amount_per_period": 100,
+            },
+            headers=self._headers("funds:read"))
+        dca = resp.json()["data"]["results"][0]
+        assert dca["fee_ok"] is False
+        assert dca["total_fees"] == 0
+        assert any("费率表获取失败" in item for item in dca["caveats"])
+
+    def test_backtest_concurrency_busy_returns_429(
+            self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        gate = threading.BoundedSemaphore(1)
+        assert gate.acquire(blocking=False)
+        monkeypatch.setattr(api, "_AGENT_BACKTEST_GATE", gate)
+        client = TestClient(api.app)
+
+        resp = client.post(
+            "/api/agent/tools/backtest/dca",
+            json={
+                "fund_codes": ["000001"],
+                "start_date": "2024-01-01",
+                "end_date": "2024-03-31",
+                "amount_per_period": 1000,
+            },
+            headers=self._headers("funds:read"))
+
+        assert resp.status_code == 429
+        assert resp.headers["Retry-After"] == "60"
+        gate.release()
 
     def test_agent_capabilities_filters_by_scope(self, temp_db, monkeypatch):
         monkeypatch.setattr(config, "AUTH_ENABLED", True)

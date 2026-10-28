@@ -3,14 +3,18 @@ import datetime as dt
 
 import pandas as pd
 
+from zfundpilot import backtest
 from zfundpilot.backtest import (
     _build_curve,
     _calc_redemption_fee_simulated,
     _generate_investment_dates,
     _parse_date,
     _resolve_nav_date,
+    clean_nav_rows,
+    readonly_nav_rows,
+    run_dca_backtest,
 )
-from zfundpilot.fetch_fund import FeeRates, RedemptionTier
+from zfundpilot.fetch_fund import FeeRates, PurchaseTier, RedemptionTier
 from zfundpilot.returns import xirr
 
 
@@ -46,9 +50,10 @@ class TestGenerateInvestmentDates:
         dates = _generate_investment_dates("2025-01-01", "2025-02-28", "biweek")
         assert dates == ["2025-01-01", "2025-01-15", "2025-01-29", "2025-02-12", "2025-02-26"]
 
-    def test_monthly_generates_first_of_month(self):
+    def test_monthly_starts_at_requested_start(self):
+        # 首期不得早于请求起日，否则会把起日前的投入算进区间
         dates = _generate_investment_dates("2025-06-15", "2025-06-15", "month")
-        assert dates == ["2025-06-01"]
+        assert dates == ["2025-06-15"]
 
     def test_empty_when_start_after_end(self):
         dates = _generate_investment_dates("2025-06-01", "2025-01-01", "month")
@@ -204,3 +209,199 @@ class TestBuildCurve:
         curve = _build_curve(timeline, navs, share_delta, cost_delta)
         assert len(curve) == 1
         assert curve[0]["date"] == "2025-01-02"
+
+
+# ---------------------------------------------------------------------------
+# 数据清洗与只读数据提供
+# ---------------------------------------------------------------------------
+class TestCleanNavRows:
+    def test_rejects_invalid_and_dedupes(self):
+        rows = [
+            {"date": "2024-01-02", "nav": 1.0},
+            {"date": "2024-01-02", "nav": 1.2},
+            {"date": "2024-13-01", "nav": 1.0},
+            {"date": "2024-01-03", "nav": 0},
+            {"date": "2024-01-04", "nav": float("nan")},
+            {"date": "2024-01-05", "nav": "bad"},
+        ]
+        assert clean_nav_rows(rows) == [{"date": "2024-01-02", "nav": 1.2}]
+
+    def test_accepts_row_like_objects(self):
+        class RowLike:
+            def __init__(self, date, nav):
+                self._data = {"date": date, "nav": nav}
+
+            def __getitem__(self, key):
+                return self._data[key]
+
+        rows = [RowLike("2024-01-02", 1.0), RowLike("2024-02-02", 1.1)]
+
+        assert [r["date"] for r in clean_nav_rows(rows)] == [
+            "2024-01-02", "2024-02-02"]
+
+    def test_clips_to_requested_period(self):
+        rows = [
+            {"date": "2023-12-31", "nav": 0.9},
+            {"date": "2024-01-02", "nav": 1.0},
+            {"date": "2024-02-02", "nav": 1.1},
+        ]
+        assert [r["date"] for r in clean_nav_rows(
+            rows, "2024-01-01", "2024-01-31")] == ["2024-01-02"]
+
+
+class TestReadonlyNavRows:
+    def test_does_not_write_when_fetching(self, monkeypatch):
+        points = [
+            type("Point", (), {"date": "2024-01-02", "nav": 1.0})(),
+            type("Point", (), {"date": "2024-02-01", "nav": 1.1})(),
+        ]
+        monkeypatch.setattr(
+            backtest.db, "get_nav_history_by_period", lambda code, s, e: [])
+        monkeypatch.setattr(
+            backtest.fetch_fund, "fetch_nav_history", lambda code: points)
+
+        def _forbidden(code):  # pragma: no cover - 写库时才会被调用
+            raise AssertionError("readonly_nav_rows must not write NAV data")
+
+        monkeypatch.setattr(
+            backtest.fetch_fund, "update_fund_nav", _forbidden)
+
+        rows, source = readonly_nav_rows(
+            "000001", "2024-01-01", "2024-02-01")
+
+        assert source == "remote"
+        assert [r["date"] for r in rows] == ["2024-01-02", "2024-02-01"]
+
+    def test_prefers_database_when_covered(self, monkeypatch):
+        db_rows = [{"date": "2024-01-02", "nav": 1.0},
+                   {"date": "2024-02-01", "nav": 1.1}]
+        monkeypatch.setattr(
+            backtest.db, "get_nav_history_by_period",
+            lambda code, s, e: db_rows)
+
+        def _unexpected(code):  # pragma: no cover
+            raise AssertionError("should not fetch remote data")
+
+        monkeypatch.setattr(
+            backtest.fetch_fund, "fetch_nav_history", _unexpected)
+
+        rows, source = readonly_nav_rows(
+            "000001", "2024-01-02", "2024-02-01")
+
+        assert source == "database"
+        assert rows == db_rows
+
+    def test_start_on_non_trading_day_does_not_refetch(self, monkeypatch):
+        db_rows = [{"date": "2024-01-02", "nav": 1.0},
+                   {"date": "2024-02-01", "nav": 1.1}]
+        monkeypatch.setattr(
+            backtest.db, "get_nav_history_by_period",
+            lambda code, s, e: db_rows)
+
+        def _unexpected(code):  # pragma: no cover
+            raise AssertionError("weekend/holiday start must not refetch")
+
+        monkeypatch.setattr(backtest.fetch_fund, "fetch_nav_history", _unexpected)
+
+        rows, source = readonly_nav_rows(
+            "000001", "2024-01-01", "2024-02-01")
+
+        assert source == "database"
+        assert rows == db_rows
+
+    def test_remote_failure_keeps_database_rows(self, monkeypatch):
+        db_rows = [{"date": "2024-01-02", "nav": 1.0},
+                   {"date": "2024-02-01", "nav": 1.1}]
+        monkeypatch.setattr(
+            backtest.db, "get_nav_history_by_period",
+            lambda code, s, e: db_rows)
+
+        def _boom(code):
+            raise RuntimeError("network down")
+
+        monkeypatch.setattr(backtest.fetch_fund, "fetch_nav_history", _boom)
+
+        rows, source = readonly_nav_rows(
+            "000001", "2024-01-01", "2024-12-31")
+
+        assert source == "database"
+        assert rows == db_rows
+
+
+# ---------------------------------------------------------------------------
+# 定投口径与失败语义
+# ---------------------------------------------------------------------------
+def _rates(ok: bool = True) -> FeeRates:
+    return FeeRates(
+        fund_code="000001",
+        ok=ok,
+        purchase=[PurchaseTier(min_amount=0, rate=0.001)] if ok else [],
+        redemption=([RedemptionTier(min_days=0, max_days=6, rate=0.015),
+                     RedemptionTier(min_days=7, max_days=None, rate=0.005)]
+                    if ok else []),
+    )
+
+
+class TestDcaSemantics:
+    def test_skips_duplicate_nav_dates_and_reports_partial(self):
+        rows = [{"date": "2024-01-01", "nav": 1.0},
+                {"date": "2024-02-01", "nav": 1.1}]
+        dates = [r["date"] for r in rows]
+        navs = pd.Series({r["date"]: r["nav"] for r in rows}, index=dates)
+
+        result = backtest._run_dca(
+            "000001", "测试", dates, navs, "2024-01-01", "2024-02-01",
+            100, "week", _rates(), "database")
+
+        assert result.status == "partial"
+        assert result.code == "partial_coverage"
+        assert result.total_periods == 2
+        assert result.skipped_periods == 3
+        assert result.periods_detail[1]["actual_date"] == "2024-02-01"
+
+    def test_valuation_date_uses_last_nav_not_requested_end(self):
+        rows = [{"date": "2024-01-02", "nav": 1.0},
+                {"date": "2024-02-01", "nav": 1.1},
+                {"date": "2024-03-01", "nav": 1.2}]
+        dates = [r["date"] for r in rows]
+        navs = pd.Series({r["date"]: r["nav"] for r in rows}, index=dates)
+
+        result = backtest._run_dca(
+            "000001", "测试", dates, navs, "2024-01-01", "2024-12-31",
+            1000, "month", _rates(), "database")
+
+        assert result.status == "ok"
+        assert result.period_end == "2024-12-31"
+        assert result.valuation_date == "2024-03-01"
+        assert result.data_end == "2024-03-01"
+        assert result.periods_detail[-1]["actual_date"] == "2024-03-01"
+
+    def test_fee_unknown_is_flagged_not_silent_zero(self):
+        rows = [{"date": "2024-01-02", "nav": 1.0},
+                {"date": "2024-02-01", "nav": 1.1}]
+        dates = [r["date"] for r in rows]
+        navs = pd.Series({r["date"]: r["nav"] for r in rows}, index=dates)
+
+        result = backtest._run_dca(
+            "000001", "测试", dates, navs, "2024-01-01", "2024-02-01",
+            100, "month", _rates(ok=False), "remote")
+
+        assert result.fee_ok is False
+        assert result.total_fees == 0
+        assert any("费率表获取失败" in item for item in result.caveats)
+
+
+class TestRunDcaBacktestFailure:
+    def test_insufficient_nav_is_explicit_failure(self, monkeypatch):
+        monkeypatch.setattr(
+            backtest, "readonly_nav_rows", lambda code, s, e: ([], "none"))
+        monkeypatch.setattr(backtest.db, "get_fund", lambda code: None)
+
+        results = run_dca_backtest(
+            ["000001"], "2024-01-01", "2024-02-01", 100,
+            nav_provider=backtest.readonly_nav_rows)
+
+        assert len(results) == 2
+        assert all(r.status == "failed" for r in results)
+        assert all(r.code == "insufficient_nav" for r in results)
+        assert all(r.net_final_value == 0 for r in results)

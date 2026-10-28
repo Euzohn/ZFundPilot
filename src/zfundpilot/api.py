@@ -576,6 +576,7 @@ _AGENT_RATE_MAX = 120  # 每 token 每端点每分钟（默认）
 _AGENT_ROUTE_RATE_MAX: dict[str, int] = {
     "/api/agent/tools/search": 60,
     "/api/agent/tools/screen": 20,
+    "/api/agent/tools/backtest/dca": 20,
     "/api/agent/tools/benchmark": 20,
     "/api/agent/tools/industry-exposure": 20,
 }
@@ -1709,6 +1710,163 @@ def agent_screen_funds(
     })
 
 
+# ---------------------------------------------------------------------------
+# Agent 只读查询工具（P1.5-A 第 3 批：只读定投回测）
+# ---------------------------------------------------------------------------
+_AGENT_BACKTEST_MAX_AMOUNT = 1_000_000.0
+_AGENT_BACKTEST_MAX_YEARS = 10
+# 回测会抓取净值与费率，按进程限制同时执行数；满额快速拒绝而不是排队。
+_AGENT_BACKTEST_MAX_CONCURRENCY = 2
+_AGENT_BACKTEST_GATE = threading.BoundedSemaphore(_AGENT_BACKTEST_MAX_CONCURRENCY)
+
+
+class AgentDcaBacktestRequest(BaseModel):
+    """Agent 只读定投回测入参；未知字段拒绝，数值拒绝 NaN/Infinity。"""
+
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+
+    fund_codes: list[str] = Field(min_length=1, max_length=5)
+    start_date: str
+    end_date: str
+    amount_per_period: float = Field(gt=0, le=_AGENT_BACKTEST_MAX_AMOUNT)
+    cadence: Literal["month", "week", "biweek"] = "month"
+    include_lumpsum: bool = True
+    include_curve: bool = True
+    include_periods: bool = False
+    max_points: int = Field(default=365, ge=10, le=2000)
+
+    @field_validator("fund_codes")
+    @classmethod
+    def validate_fund_codes(cls, v: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for raw in v:
+            code = (raw or "").strip()
+            if not re.fullmatch(r"\d{6}", code):
+                raise ValueError(f"fund_code 必须为 6 位数字: {raw}")
+            if code not in cleaned:
+                cleaned.append(code)
+        if not cleaned:
+            raise ValueError("请至少选择一只基金")
+        return cleaned
+
+    @field_validator("amount_per_period", mode="before")
+    @classmethod
+    def reject_bool_amount(cls, v: object) -> object:
+        if isinstance(v, bool):
+            raise ValueError("amount_per_period 必须为数字")
+        return v
+
+    @field_validator("start_date", "end_date")
+    @classmethod
+    def validate_date(cls, v: str) -> str:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+            raise ValueError("日期格式必须为 YYYY-MM-DD")
+        try:
+            datetime.strptime(v, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError("不是有效日期") from None
+        return v
+
+    @model_validator(mode="after")
+    def validate_range(self) -> AgentDcaBacktestRequest:
+        start = datetime.strptime(self.start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(self.end_date, "%Y-%m-%d").date()
+        if start >= end:
+            raise ValueError("起始日期必须早于结束日期")
+        today = datetime.now(config.TIMEZONE).date()
+        if end > today:
+            raise ValueError("结束日期不能晚于今天")
+        months = (end.year - start.year) * 12 + (end.month - start.month)
+        if months > _AGENT_BACKTEST_MAX_YEARS * 12 or (
+            months == _AGENT_BACKTEST_MAX_YEARS * 12 and end.day > start.day
+        ):
+            raise ValueError(
+                f"回测区间不能超过 {_AGENT_BACKTEST_MAX_YEARS} 年")
+        return self
+
+
+@app.post("/api/agent/tools/backtest/dca", tags=["agent"],
+          summary="定投回测（只读）",
+          responses={**_AGENT_ERROR_RESPONSES,
+                     422: {"description": "请求体字段缺失、类型错误或含未知字段"}},
+          dependencies=[Security(_agent_bearer_scheme)])
+def agent_run_dca_backtest(
+    req: AgentDcaBacktestRequest,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_FUNDS_READ)),
+    ],
+) -> dict[str, Any]:
+    """在历史净值上模拟定投，可选附带一次性投入对照（只读）。
+
+    复用 ``backtest.run_dca_backtest()`` 的计算逻辑，但通过
+    ``readonly_nav_rows`` 只读获取净值：不调用 ``update_fund_nav()``，
+    不会写入正式净值表、交易、计划或基金元数据。数据不足或费率缺失时
+    在结果中显式标注，不把未知费用或失败项伪装成有效收益。
+    """
+    del ctx
+    if not _AGENT_BACKTEST_GATE.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="回测并发已满，请稍后再试",
+            headers={"Retry-After": str(_AGENT_RATE_WINDOW)},
+        )
+    try:
+        results = backtest.run_dca_backtest(
+            fund_codes=req.fund_codes,
+            start_date=req.start_date,
+            end_date=req.end_date,
+            amount_per_period=req.amount_per_period,
+            cadence=req.cadence,
+            include_lumpsum=req.include_lumpsum,
+            nav_provider=backtest.readonly_nav_rows,
+        )
+    finally:
+        _AGENT_BACKTEST_GATE.release()
+
+    payload: list[dict[str, Any]] = []
+    for result in results:
+        row = result.to_dict()
+        curve = row.get("curve") or []
+        periods = row.get("periods_detail") or []
+        row["curve"] = (
+            _agent_sample_points(curve, req.max_points)
+            if req.include_curve else []
+        )
+        row["periods_detail"] = periods if req.include_periods else []
+        row["curve_points"] = len(row["curve"])
+        row["periods_detail_count"] = len(periods)
+        payload.append(row)
+
+    failed = sum(1 for row in payload if row["status"] == "failed")
+    ok = failed < len(payload) and bool(payload)
+    message = ""
+    if not ok:
+        message = "所有基金回测失败，详见各结果的 status/code/message"
+    elif failed:
+        message = f"{failed} 个回测失败，详见各结果的 status/code/message"
+
+    return _agent_tool_response("run_dca_backtest", {
+        "ok": ok,
+        "message": message,
+        "simulation_note": (
+            "定投与一次性投入为历史模拟，不是组合配置建议，也不代表未来收益；"
+            "未模拟分红、拆分与红利再投资。"
+        ),
+        "requested": {
+            "start_date": req.start_date,
+            "end_date": req.end_date,
+            "cadence": req.cadence,
+            "amount_per_period": req.amount_per_period,
+            "include_lumpsum": req.include_lumpsum,
+        },
+        "fund_count": len(req.fund_codes),
+        "result_count": len(payload),
+        "failed_count": failed,
+        "results": payload,
+    })
+
+
 # 只读工具登记表：供能力发现；新增工具时同步维护。
 _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
     {"name": "get_portfolio_summary", "method": "GET",
@@ -1764,6 +1922,9 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
      "scope": agent_tokens.SCOPE_FUNDS_READ},
     {"name": "screen_funds", "method": "GET",
      "path": "/api/agent/tools/screen",
+     "scope": agent_tokens.SCOPE_FUNDS_READ},
+    {"name": "run_dca_backtest", "method": "POST",
+     "path": "/api/agent/tools/backtest/dca",
      "scope": agent_tokens.SCOPE_FUNDS_READ},
     {"name": "get_agent_capabilities", "method": "GET",
      "path": "/api/agent/tools/capabilities",

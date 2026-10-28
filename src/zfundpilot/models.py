@@ -259,12 +259,25 @@ class BacktestResult:
     sharpe_ratio: float | None = None
     curve: list[dict] = None          # type: ignore[assignment]
     periods_detail: list[dict] = None  # type: ignore[assignment]
+    # 结果状态与解释（Agent 只读回测使用；网页入口保持向后兼容的默认值）
+    status: str = "ok"               # "ok" / "partial" / "failed"
+    code: str = ""                   # 稳定机器码，如 "insufficient_nav"
+    message: str = ""
+    data_source: str = ""            # "database" / "remote" / "database+remote" / "none"
+    data_start: str = ""             # 实际参与计算的第一个净值日
+    data_end: str = ""               # 实际参与计算的最后一个净值日
+    valuation_date: str = ""         # 期末估值日（赎回费与 XIRR 终值使用的日期）
+    skipped_periods: int = 0         # 未执行或去重跳过的计划期数
+    fee_ok: bool = False             # 费率表是否成功取得
+    caveats: list[str] = None        # type: ignore[assignment]
 
     def __post_init__(self):
         if self.curve is None:
             self.curve = []
         if self.periods_detail is None:
             self.periods_detail = []
+        if self.caveats is None:
+            self.caveats = []
 
     def to_dict(self) -> dict:
         return asdict(self)

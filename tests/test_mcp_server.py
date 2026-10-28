@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -59,6 +60,7 @@ def test_tools_registered():
         "get_industry_exposure",
         "search_funds",
         "screen_funds",
+        "run_dca_backtest",
         "get_agent_capabilities",
     }
 
@@ -443,6 +445,81 @@ def test_screen_funds_validation_without_network():
         _run(mcp_server.screen_funds(types=[f"类型{i}" for i in range(21)]))
     with pytest.raises(ToolError, match="at most 100"):
         _run(mcp_server.screen_funds(keyword="基" * 101))
+
+
+def test_run_dca_backtest_posts_json(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"data": {"ok": True}})
+
+    mock_api(handler)
+    _run(mcp_server.run_dca_backtest(
+        ["000001", " 000001 ", "110011"],
+        "2024-01-01", "2024-03-31", 1000.0,
+        cadence="week", include_lumpsum=False,
+        include_curve=False, include_periods=True, max_points=20))
+
+    assert seen["method"] == "POST"
+    assert seen["path"] == "/api/agent/tools/backtest/dca"
+    assert seen["body"] == {
+        "fund_codes": ["000001", "110011"],
+        "start_date": "2024-01-01",
+        "end_date": "2024-03-31",
+        "amount_per_period": 1000.0,
+        "cadence": "week",
+        "include_lumpsum": False,
+        "include_curve": False,
+        "include_periods": True,
+        "max_points": 20,
+    }
+
+
+def test_run_dca_backtest_validation_without_network():
+    base = {
+        "start_date": "2024-01-01",
+        "end_date": "2024-03-31",
+        "amount_per_period": 1000.0,
+    }
+    with pytest.raises(ToolError, match="at least one"):
+        _run(mcp_server.run_dca_backtest([], **base))
+    with pytest.raises(ToolError, match="at most 5"):
+        _run(mcp_server.run_dca_backtest(
+            [f"00000{i}" for i in range(6)], **base))
+    with pytest.raises(ToolError, match="six-digit"):
+        _run(mcp_server.run_dca_backtest(["12345"], **base))
+    with pytest.raises(ToolError, match="must contain strings"):
+        _run(mcp_server.run_dca_backtest([123456], **base))
+    with pytest.raises(ToolError, match="earlier than end_date"):
+        _run(mcp_server.run_dca_backtest(
+            ["000001"], start_date="2024-03-31", end_date="2024-01-01",
+            amount_per_period=1000.0))
+    with pytest.raises(ToolError, match="later than today"):
+        _run(mcp_server.run_dca_backtest(
+            ["000001"], start_date="2024-01-01", end_date="2999-01-01",
+            amount_per_period=1000.0))
+    with pytest.raises(ToolError, match="must not exceed 10 years"):
+        _run(mcp_server.run_dca_backtest(
+            ["000001"], start_date="2014-01-01", end_date="2024-01-02",
+            amount_per_period=1000.0))
+    with pytest.raises(ToolError, match="positive"):
+        _run(mcp_server.run_dca_backtest(
+            ["000001"], **{**base, "amount_per_period": 0}))
+    with pytest.raises(ToolError, match="1,000,000"):
+        _run(mcp_server.run_dca_backtest(
+            ["000001"], **{**base, "amount_per_period": 1_000_001}))
+    with pytest.raises(ToolError, match="cadence"):
+        _run(mcp_server.run_dca_backtest(
+            ["000001"], **base, cadence="daily"))
+    with pytest.raises(ToolError, match="max_points"):
+        _run(mcp_server.run_dca_backtest(
+            ["000001"], **base, max_points=9))
+    with pytest.raises(ToolError, match="YYYY-MM-DD"):
+        _run(mcp_server.run_dca_backtest(
+            ["000001"], **{**base, "start_date": "2024/01/01"}))
 
 
 def test_capabilities_requests_expected_path(mock_api):

@@ -53,6 +53,10 @@ def test_tools_registered():
         "list_watchlist",
         "list_alerts",
         "list_auto_invest_plans",
+        "get_portfolio_curve",
+        "get_benchmark_comparison",
+        "get_risk_report",
+        "get_industry_exposure",
         "get_agent_capabilities",
     }
 
@@ -299,6 +303,92 @@ def test_list_auto_invest_plans_passes_enabled(mock_api):
     assert seen["path"] == "/api/agent/tools/auto-invest-plans"
     assert seen["params"] == {
         "enabled": "false", "limit": "10", "offset": "0"}
+
+
+def test_portfolio_curve_passes_dates_and_limit(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"data": {"points": []}})
+
+    mock_api(handler)
+    _run(mcp_server.get_portfolio_curve(
+        start_date="2026-01-01", end_date="2026-01-31", max_points=100))
+
+    assert seen["path"] == "/api/agent/tools/portfolio-curve"
+    assert seen["params"] == {
+        "max_points": "100",
+        "start_date": "2026-01-01",
+        "end_date": "2026-01-31",
+    }
+
+
+def test_portfolio_curve_validation_without_network():
+    with pytest.raises(ToolError, match="YYYY-MM-DD"):
+        _run(mcp_server.get_portfolio_curve(start_date="2026-1-01"))
+    with pytest.raises(ToolError, match="not a valid date"):
+        _run(mcp_server.get_portfolio_curve(end_date="2026-02-30"))
+    with pytest.raises(ToolError, match="later than"):
+        _run(mcp_server.get_portfolio_curve(
+            start_date="2026-02-01", end_date="2026-01-01"))
+
+
+def test_benchmark_comparison_passes_codes_and_dates(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        seen["codes"] = request.url.params.get_list("codes")
+        return httpx.Response(200, json={"data": {"points": []}})
+
+    mock_api(handler)
+    _run(mcp_server.get_benchmark_comparison(
+        ["000300", "CPI"], start_date="2026-01-01"))
+
+    assert seen["path"] == "/api/agent/tools/benchmark"
+    assert seen["codes"] == ["000300", "CPI"]
+    assert seen["params"]["start_date"] == "2026-01-01"
+
+
+def test_benchmark_comparison_validation_without_network():
+    with pytest.raises(ToolError, match="At least one"):
+        _run(mcp_server.get_benchmark_comparison([""]))
+    with pytest.raises(ToolError, match="Unsupported"):
+        _run(mcp_server.get_benchmark_comparison(["BAD"]))
+    with pytest.raises(ToolError, match="not a valid date"):
+        _run(mcp_server.get_benchmark_comparison(
+            ["000300"], end_date="2026-02-30"))
+
+
+def test_risk_report_requests_expected_path(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"data": {"max_drawdown": None}})
+
+    mock_api(handler)
+    result = _run(mcp_server.get_risk_report())
+
+    assert seen["path"] == "/api/agent/tools/risk-report"
+    assert result["data"]["max_drawdown"] is None
+
+
+def test_industry_exposure_requests_expected_path(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"data": {"ok": False}})
+
+    mock_api(handler)
+    result = _run(mcp_server.get_industry_exposure())
+
+    assert seen["path"] == "/api/agent/tools/industry-exposure"
+    assert result["data"]["ok"] is False
 
 
 def test_capabilities_requests_expected_path(mock_api):

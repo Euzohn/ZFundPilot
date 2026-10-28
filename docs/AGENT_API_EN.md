@@ -70,9 +70,9 @@ Request body:
 
 | Scope | Allowed tools |
 |---|---|
-| `portfolio:read` | `portfolio-summary`, `positions`, `returns` |
+| `portfolio:read` | `portfolio-summary`, `positions`, `returns`, `portfolio-curve`, `benchmark`, `industry-exposure` |
 | `funds:read` | `funds/{code}`, `funds/compare` |
-| `health:read` | `data-status`, `portfolio-health` |
+| `health:read` | `data-status`, `portfolio-health`, `risk-report` |
 | `transactions:read` | `transactions`, `transactions/{tx_id}` |
 | `watchlist:read` | `watchlist` |
 | `alerts:read` | `alerts` |
@@ -503,6 +503,71 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 > Agents should call `capabilities` at startup and use only the returned tools, avoiding repeated 403s.
 
+### 5.14 `GET /api/agent/tools/portfolio-curve`
+
+Daily portfolio value, invested cost, and cumulative return curve. Scope: `portfolio:read`.
+
+Parameters:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `start_date` / `end_date` | string | none | Optional `YYYY-MM-DD`, inclusive |
+| `max_points` | int | 365 | 10–2000; larger series are evenly sampled keeping the first and last point |
+
+`data` fields:
+
+| Field | Description |
+|---|---|
+| `as_of_date` | Max formal NAV date across holdings |
+| `as_of_date_semantics` | Explanation of the as-of date |
+| `valuation_basis` | Always `latest_formal_nav` |
+| `max_points` | Requested point cap |
+| `points_count` | Number of returned points |
+| `points[]` | `{date, total_value, invested_cost, total_return}` |
+
+> The curve is for visualization, not exact reconciliation. Pending buys use a placeholder value to avoid fake losses. Invalid dates or reversed ranges return `400`.
+
+### 5.15 `GET /api/agent/tools/benchmark`
+
+Benchmark index / macro level cumulative returns aligned to the portfolio curve. Scope: `portfolio:read`.
+
+Parameters:
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `codes` | string[] | yes | Repeated query params, e.g. `?codes=000300&codes=CPI`; whitelist `000300`/`000001`/`399006`/`CPI`/`M2` |
+| `start_date` / `end_date` | string | no | Optional, trim the returned range only |
+
+`data` fields: `as_of_date`, `as_of_date_semantics`, `valuation_basis`, `codes` (requested), `code_names` (code→name), `points_count`, `points[]` (`{date, <code>: cumulative_return}`).
+
+> Cumulative returns use the **portfolio curve start** as the baseline; date filters only trim the response and do not move the baseline. Indices are daily while CPI/M2 are monthly. Failed or missing codes do not appear in `points` and are never filled with 0. This tool may be slow (network fetch); unsupported or empty codes return `400`.
+
+### 5.16 `GET /api/agent/tools/risk-report`
+
+Portfolio risk metrics, structure weights, and risk flags. Scope: `health:read`.
+
+`data` fields:
+
+| Field | Description |
+|---|---|
+| `as_of_date` / `as_of_date_semantics` / `valuation_basis` | As-of date and NAV basis |
+| `max_drawdown` / `volatility` | Max drawdown (negative) and annualized volatility; `null` when data is insufficient |
+| `max_single_weight` / `max_single_name` | Largest single-fund weight and name |
+| `hhi` | Herfindahl concentration index |
+| `equity_weight` / `bond_weight` / `qdii_weight` | Equity / bond / QDII weights (fractions) |
+| `flags[]` | `{level, code, params, title, detail}`; `code`+`params` are for client i18n, `title`/`detail` keep Chinese fallback text |
+| `data_quality` | `{missing_nav_fund_count, stale_nav_fund_count, pending_t1_transaction_count, caveats[]}` |
+
+> Data gaps are not hidden; read `data_quality.caveats` before interpreting metrics.
+
+### 5.17 `GET /api/agent/tools/industry-exposure`
+
+Portfolio industry exposure by looking through fund allocations. Scope: `portfolio:read`.
+
+`data` fields: `ok`, `message`, `as_of_date`, `as_of_date_semantics`, `valuation_basis`, `total_market_value`, `penetrated_market_value`, `unpenetrated_market_value`, `equity_total_market_value`, `equity_penetrated_market_value`, `funds_count`, `funds_with_data`, `quarter`, `items[]`, `funds_missing[]`, `data_quality`.
+
+> Allocation data is fetched externally (one request per fund, cached) and **may be slow**. Funds without data appear in `funds_missing` (`reason`: `no_data`/`empty_allocations`/`error`) without affecting others. With no holdings, `ok=false` and `message="无持仓"`.
+
 ## 6. Minimal integration
 
 ### Python
@@ -547,13 +612,13 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-You can also wrap these thirteen endpoints with any HTTP tool; an optional MCP adapter is provided at the end of this section. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
+You can also wrap these seventeen endpoints with any HTTP tool; an optional MCP adapter is provided at the end of this section. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
 
 ---
 
 ### MCP adapter (optional)
 
-A stdio MCP bridge is bundled to expose the thirteen tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
+A stdio MCP bridge is bundled to expose the seventeen tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
 
 ```bash
 # Install the optional extra from the ZFundPilot source tree
@@ -582,7 +647,7 @@ Claude Desktop example (`claude_desktop_config.json`):
 }
 ```
 
-Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_agent_capabilities`.
+Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `get_agent_capabilities`.
 
 - `ZFUNDPILOT_BASE_URL` defaults to `http://127.0.0.1:8000`; use the real NAS/Docker address for remote instances and HTTPS for remote access.
 - `ZFUNDPILOT_TIMEOUT` is optional, default 30 seconds (range 1–120).
@@ -596,7 +661,7 @@ Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`,
 - **Revocation**: Revoke from Settings at any time; it takes effect immediately. Issue one token per agent for easier tracing and cleanup.
 - **Audit**: Issuance, revocation, auth success/failure, and rate limiting are audited. Only token prefixes are recorded — never plaintext or full responses.
 - **Network**: Remote access must go through an HTTPS reverse proxy; do not expose the port directly. Revoke and reissue if a token leaks.
-- **Scope**: Read scopes now cover portfolio, funds, data status, transactions, watchlist, alerts, and auto-invest plans. Write and export endpoints are not available to Agent tokens.
+- **Scope**: Read scopes now cover portfolio, portfolio curve, benchmark, risk, industry exposure, funds, data status, transactions, watchlist, alerts, and auto-invest plans. Write and export endpoints are not available to Agent tokens.
 
 ---
 
@@ -609,3 +674,4 @@ Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`,
 | 2026-10-27 | Added `returns`: portfolio/single-fund return breakdown and XIRR |
 | 2026-10-27 | Added `funds/compare`: compare up to 20 funds on returns, risk, fees, and correlation |
 | 2026-10-27 | Added four data read scopes and six tools: `transactions`, `transactions/{tx_id}`, `watchlist`, `alerts`, `auto-invest-plans`, `capabilities`; new scopes are unchecked by default |
+| 2026-10-28 | Added four portfolio-level read tools: `portfolio-curve`, `benchmark`, `risk-report`, `industry-exposure`, reusing `portfolio:read`/`health:read` without new scopes |

@@ -708,6 +708,169 @@ class TestAgentTools:
             "/api/agent/tools/auto-invest-plans",
             headers=self._headers("alerts:read")).status_code == 403
 
+    def test_portfolio_curve_scope_dates_and_sampling(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        db.upsert_fund(Fund(fund_code="005827", fund_name="测试基金",
+                            fund_type="混合型", sector="科技"))
+        db.add_transaction(Transaction(
+            fund_code="005827", action="buy", date="2026-01-01",
+            amount=1000, shares=1000, nav=1.0, channel="支付宝"))
+        db.upsert_nav_batch([
+            NavPoint(fund_code="005827", date=f"2026-01-{day:02d}", nav=1.0)
+            for day in range(1, 13)
+        ])
+        analysis.clear_analysis_cache()
+        client = TestClient(api.app)
+        headers = self._headers("portfolio:read")
+
+        resp = client.get("/api/agent/tools/portfolio-curve", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["tool"] == "get_portfolio_curve"
+        data = resp.json()["data"]
+        assert data["valuation_basis"] == "latest_formal_nav"
+        assert data["points_count"] == 12
+        assert data["points"][0]["date"] == "2026-01-01"
+        assert data["points"][-1]["date"] == "2026-01-12"
+        assert {"date", "total_value", "invested_cost",
+                "total_return"} <= set(data["points"][0])
+
+        sampled = client.get(
+            "/api/agent/tools/portfolio-curve?max_points=10", headers=headers)
+        sampled_data = sampled.json()["data"]
+        assert sampled_data["points_count"] == 10
+        assert sampled_data["points"][0]["date"] == "2026-01-01"
+        assert sampled_data["points"][-1]["date"] == "2026-01-12"
+
+        ranged = client.get(
+            "/api/agent/tools/portfolio-curve"
+            "?start_date=2026-01-05&end_date=2026-01-07", headers=headers)
+        assert [p["date"] for p in ranged.json()["data"]["points"]] == [
+            "2026-01-05", "2026-01-06", "2026-01-07"]
+
+        assert client.get(
+            "/api/agent/tools/portfolio-curve?start_date=2026-1-01",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/portfolio-curve?start_date=2026-02-30",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/portfolio-curve"
+            "?start_date=2026-02-01&end_date=2026-01-01",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/portfolio-curve?max_points=5",
+            headers=headers).status_code == 422
+        assert client.get(
+            "/api/agent/tools/portfolio-curve",
+            headers=self._headers("health:read")).status_code == 403
+
+    def test_benchmark_comparison_scope_and_validation(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        calls: dict[str, str] = {}
+
+        def fake_benchmark(indices: str = "") -> list[dict]:
+            calls["indices"] = indices
+            return [
+                {"date": "2026-01-01", "000300": 0.0, "CPI": 0.0},
+                {"date": "2026-01-02", "000300": 0.01, "CPI": 0.0},
+                {"date": "2026-01-03", "000300": 0.02, "CPI": 0.0},
+            ]
+
+        monkeypatch.setattr(api, "get_portfolio_benchmark", fake_benchmark)
+        client = TestClient(api.app)
+        headers = self._headers("portfolio:read")
+
+        resp = client.get(
+            "/api/agent/tools/benchmark?codes=000300&codes=CPI&codes=000300",
+            headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["tool"] == "get_benchmark_comparison"
+        data = resp.json()["data"]
+        assert data["codes"] == ["000300", "CPI"]
+        assert data["code_names"]["000300"] == "沪深300"
+        assert data["points_count"] == 3
+        assert calls["indices"] == "000300,CPI"
+
+        ranged = client.get(
+            "/api/agent/tools/benchmark?codes=000300"
+            "&start_date=2026-01-02&end_date=2026-01-03", headers=headers)
+        assert [p["date"] for p in ranged.json()["data"]["points"]] == [
+            "2026-01-02", "2026-01-03"]
+
+        assert client.get(
+            "/api/agent/tools/benchmark?codes=BAD",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/benchmark?codes=",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/benchmark", headers=headers).status_code == 422
+        assert client.get(
+            "/api/agent/tools/benchmark?codes=000300"
+            "&start_date=2026-02-01&end_date=2026-01-01",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/benchmark?codes=000300",
+            headers=self._headers("health:read")).status_code == 403
+
+    def test_risk_report_scope_and_quality(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        client = TestClient(api.app)
+        headers = self._headers("health:read")
+
+        resp = client.get("/api/agent/tools/risk-report", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["tool"] == "get_risk_report"
+        data = resp.json()["data"]
+        assert data["valuation_basis"] == "latest_formal_nav"
+        assert data["max_drawdown"] is None
+        assert data["volatility"] is None
+        assert data["data_quality"]["caveats"] == []
+        assert data["flags"]
+        for flag in data["flags"]:
+            assert set(flag) == {
+                "level", "code", "params", "title", "detail"}
+
+        assert client.get(
+            "/api/agent/tools/risk-report",
+            headers=self._headers("portfolio:read")).status_code == 403
+
+    def test_industry_exposure_scope_and_empty_portfolio(
+            self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        client = TestClient(api.app)
+        headers = self._headers("portfolio:read")
+
+        resp = client.get(
+            "/api/agent/tools/industry-exposure", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["tool"] == "get_industry_exposure"
+        data = resp.json()["data"]
+        assert data["ok"] is False
+        assert data["message"] == "无持仓"
+        assert data["items"] == []
+        assert data["funds_missing"] == []
+        assert data["valuation_basis"] == "latest_formal_nav"
+        assert "data_quality" in data
+
+        assert client.get(
+            "/api/agent/tools/industry-exposure",
+            headers=self._headers("health:read")).status_code == 403
+
+    def test_capabilities_includes_batch2_tools(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        client = TestClient(api.app)
+        headers = self._headers("portfolio:read", "health:read")
+
+        data = client.get(
+            "/api/agent/tools/capabilities", headers=headers).json()["data"]
+        names = {t["name"] for t in data["tools"]}
+        assert {"get_portfolio_curve", "get_benchmark_comparison",
+                "get_risk_report", "get_industry_exposure"} <= names
+        scopes = {t["name"]: t["scope"] for t in data["tools"]}
+        assert scopes["get_risk_report"] == "health:read"
+        assert scopes["get_industry_exposure"] == "portfolio:read"
+
     def test_agent_capabilities_filters_by_scope(self, temp_db, monkeypatch):
         monkeypatch.setattr(config, "AUTH_ENABLED", True)
         client = TestClient(api.app)

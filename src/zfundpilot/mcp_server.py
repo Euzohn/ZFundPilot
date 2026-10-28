@@ -28,6 +28,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from pydantic import Field
 
+from . import config
 from .models import ACTIONS
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
@@ -37,6 +38,22 @@ MAX_TIMEOUT = 120.0
 _NAV_STATUSES = frozenset({"confirmed", "pending_t1", "missing"})
 _ALERT_TYPES = frozenset({"dividend", "take_profit", "stop_loss", "tp_sl"})
 _ALERT_STATUSES = frozenset({"pending", "confirmed", "ignored"})
+_BENCHMARK_CODES = frozenset(
+    {**config.BENCHMARK_INDICES, **config.MACRO_INDICES})
+
+
+def _validate_date(value: str | None, field: str) -> str | None:
+    """校验可选的 YYYY-MM-DD 日期，非法时抛 ToolError。"""
+    if not value:
+        return None
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        raise ToolError(f"{field} must be YYYY-MM-DD.")
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ToolError(f"{field} is not a valid date.") from exc
+    return value
+
 
 mcp = FastMCP(
     "zfundpilot",
@@ -355,6 +372,89 @@ async def list_auto_invest_plans(
     if enabled is not None:
         params["enabled"] = enabled
     return await _request("/api/agent/tools/auto-invest-plans", params)
+
+
+@mcp.tool()
+async def get_portfolio_curve(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    max_points: Annotated[int, Field(ge=10, le=2000)] = 365,
+) -> dict[str, Any]:
+    """Read the daily portfolio value, invested cost, and cumulative return curve.
+
+    The curve is for visualization, not exact reconciliation.
+
+    Args:
+        start_date: Optional inclusive start date (YYYY-MM-DD).
+        end_date: Optional inclusive end date (YYYY-MM-DD).
+        max_points: Maximum points; larger series are evenly sampled (10-2000).
+    """
+    params: dict[str, Any] = {"max_points": max_points}
+    s = _validate_date(start_date, "start_date")
+    e = _validate_date(end_date, "end_date")
+    if s and e and s > e:
+        raise ToolError("start_date must not be later than end_date.")
+    if s:
+        params["start_date"] = s
+    if e:
+        params["end_date"] = e
+    return await _request("/api/agent/tools/portfolio-curve", params)
+
+
+@mcp.tool()
+async def get_benchmark_comparison(
+    codes: Annotated[list[str], Field(min_length=1, max_length=20)],
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict[str, Any]:
+    """Compare the portfolio curve with benchmark indices and macro levels.
+
+    Supported codes: 000300, 000001, 399006 (indices) and CPI, M2 (macro).
+    Cumulative returns are based on the portfolio curve start; date filters only
+    trim the response. Failed codes do not appear in points.
+
+    Args:
+        codes: Benchmark codes, e.g. ["000300", "CPI"].
+        start_date: Optional inclusive start date (YYYY-MM-DD).
+        end_date: Optional inclusive end date (YYYY-MM-DD).
+    """
+    cleaned = list(dict.fromkeys(
+        c.strip() for c in codes if c and c.strip()))
+    if not cleaned:
+        raise ToolError("At least one benchmark code is required.")
+    invalid = [c for c in cleaned if c not in _BENCHMARK_CODES]
+    if invalid:
+        raise ToolError(f"Unsupported benchmark codes: {', '.join(invalid)}.")
+    params: dict[str, Any] = {"codes": cleaned}
+    s = _validate_date(start_date, "start_date")
+    e = _validate_date(end_date, "end_date")
+    if s and e and s > e:
+        raise ToolError("start_date must not be later than end_date.")
+    if s:
+        params["start_date"] = s
+    if e:
+        params["end_date"] = e
+    return await _request("/api/agent/tools/benchmark", params)
+
+
+@mcp.tool()
+async def get_risk_report() -> dict[str, Any]:
+    """Read drawdown, volatility, concentration, structure weights, and risk flags.
+
+    Check data_quality.caveats before interpreting metrics; missing or stale NAV
+    data can distort them.
+    """
+    return await _request("/api/agent/tools/risk-report")
+
+
+@mcp.tool()
+async def get_industry_exposure() -> dict[str, Any]:
+    """Read portfolio industry exposure by looking through fund allocations.
+
+    May be slow because it fetches external allocation data. Funds without data
+    appear in funds_missing with a reason and do not affect other funds.
+    """
+    return await _request("/api/agent/tools/industry-exposure")
 
 
 @mcp.tool()

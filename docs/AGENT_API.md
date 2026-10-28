@@ -70,9 +70,9 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 
 | Scope | 允许的工具 |
 |---|---|
-| `portfolio:read` | `portfolio-summary`、`positions`、`returns` |
+| `portfolio:read` | `portfolio-summary`、`positions`、`returns`、`portfolio-curve`、`benchmark`、`industry-exposure` |
 | `funds:read` | `funds/{code}`、`funds/compare` |
-| `health:read` | `data-status`、`portfolio-health` |
+| `health:read` | `data-status`、`portfolio-health`、`risk-report` |
 | `transactions:read` | `transactions`、`transactions/{tx_id}` |
 | `watchlist:read` | `watchlist` |
 | `alerts:read` | `alerts` |
@@ -503,6 +503,71 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 > 建议 Agent 启动时先调用 `capabilities`，只使用返回列表中存在的工具，避免反复触发 403。
 
+### 5.14 `GET /api/agent/tools/portfolio-curve`
+
+组合每日市值、投入成本与累计收益率曲线，scope：`portfolio:read`。
+
+参数：
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `start_date` / `end_date` | string | 无 | 可选，`YYYY-MM-DD`，含当日 |
+| `max_points` | int | 365 | 10–2000；超出时等距抽样并保留首尾 |
+
+`data` 字段：
+
+| 字段 | 说明 |
+|---|---|
+| `as_of_date` | 各持仓正式净值日期的最大值 |
+| `as_of_date_semantics` | 截至日期语义说明 |
+| `valuation_basis` | 固定 `latest_formal_nav` |
+| `max_points` | 本次请求的点数上限 |
+| `points_count` | 实际返回点数 |
+| `points[]` | `{date, total_value, invested_cost, total_return}` |
+
+> 曲线用于可视化，不用于精确对账；待确认买入以占位市值计入，避免虚假亏损。日期格式非法或起止顺序颠倒返回 `400`。
+
+### 5.15 `GET /api/agent/tools/benchmark`
+
+基准指数/宏观水位与组合曲线对齐的累计收益率，scope：`portfolio:read`。
+
+参数：
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `codes` | string[] | 是 | 重复传参，如 `?codes=000300&codes=CPI`；仅支持白名单 `000300`/`000001`/`399006`/`CPI`/`M2` |
+| `start_date` / `end_date` | string | 否 | 可选，只截取返回区间 |
+
+`data` 字段：`as_of_date`、`as_of_date_semantics`、`valuation_basis`、`codes`（请求值）、`code_names`（代码→名称）、`points_count`、`points[]`（`{date, <code>: 累计收益率}`）。
+
+> 累计收益率基期为**组合曲线起点**，`start_date`/`end_date` 只截断响应，不改变基期。指数为日频、CPI/M2 为月度数据；失败或无数据的代码不出现在 `points`，不会填成 0。该工具可能较慢（联网拉取），不支持或为空的代码返回 `400`。
+
+### 5.16 `GET /api/agent/tools/risk-report`
+
+组合风险指标、结构占比与风险提示，scope：`health:read`。
+
+`data` 字段：
+
+| 字段 | 说明 |
+|---|---|
+| `as_of_date` / `as_of_date_semantics` / `valuation_basis` | 截至日期与净值口径 |
+| `max_drawdown` / `volatility` | 最大回撤（负数）与年化波动率；数据不足为 `null` |
+| `max_single_weight` / `max_single_name` | 最大单基金占比与名称 |
+| `hhi` | 赫芬达尔集中度指数 |
+| `equity_weight` / `bond_weight` / `qdii_weight` | 权益 / 债券 / QDII 占比（小数） |
+| `flags[]` | `{level, code, params, title, detail}`；`code`+`params` 供客户端本地化，`title`/`detail` 为中文兼容文案 |
+| `data_quality` | `{missing_nav_fund_count, stale_nav_fund_count, pending_t1_transaction_count, caveats[]}` |
+
+> 数据缺口不隐藏；解读指标前先看 `data_quality.caveats`。
+
+### 5.17 `GET /api/agent/tools/industry-exposure`
+
+组合行业穿透敞口，scope：`portfolio:read`。
+
+`data` 字段：`ok`、`message`、`as_of_date`、`as_of_date_semantics`、`valuation_basis`、`total_market_value`、`penetrated_market_value`、`unpenetrated_market_value`、`equity_total_market_value`、`equity_penetrated_market_value`、`funds_count`、`funds_with_data`、`quarter`、`items[]`、`funds_missing[]`、`data_quality`。
+
+> 行业配置来自外部抓取（每基金一次请求，带缓存），**可能较慢**；失败基金进入 `funds_missing`（`reason` 区分 `no_data`/`empty_allocations`/`error`），不影响其他基金。无持仓时 `ok=false`、`message="无持仓"`。
+
 ## 6. 最小接入示例
 
 ### Python
@@ -547,13 +612,13 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-也可以用任意 HTTP 工具封装上述 13 个端点；仓库同时提供可选的 MCP 适配层（见本节末尾）。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
+也可以用任意 HTTP 工具封装上述 17 个端点；仓库同时提供可选的 MCP 适配层（见本节末尾）。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
 
 ---
 
 ### MCP 适配层（可选）
 
-仓库内置一个 stdio MCP 桥接，把上述 13 个工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
+仓库内置一个 stdio MCP 桥接，把上述 17 个工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
 
 ```bash
 # 在 ZFundPilot 源码目录安装可选依赖
@@ -582,7 +647,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 }
 ```
 
-暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_agent_capabilities`。
+暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`get_agent_capabilities`。
 
 - `ZFUNDPILOT_BASE_URL` 默认 `http://127.0.0.1:8000`；ZFundPilot 跑在 NAS/Docker 时改成实际地址，远程访问请用 HTTPS。
 - `ZFUNDPILOT_TIMEOUT` 可选，默认 30 秒，范围 1–120。
@@ -596,7 +661,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 - **撤销**：设置页可随时撤销；撤销立即生效。建议为每个 Agent 单独签发，便于定位和回收。
 - **审计**：签发、撤销、鉴权成功/失败、限流都会写审计日志，只记录 token 前缀，不记录明文或完整响应。
 - **网络**：远程访问必须经 HTTPS 反向代理；不要把端口直接暴露到公网。token 泄漏时先撤销再重新签发。
-- **范围**：只读 scope 覆盖组合、基金、数据状态、交易流水、自选、提醒与定投计划；写操作和导出接口不会开放给 Agent token。
+- **范围**：只读 scope 覆盖组合、组合曲线、基准、风险、行业敞口、基金、数据状态、交易流水、自选、提醒与定投计划；写操作和导出接口不会开放给 Agent token。
 
 ---
 
@@ -609,3 +674,4 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 | 2026-10-27 | 新增 `returns`：组合级/单基金级收益分解与 XIRR |
 | 2026-10-27 | 新增 `funds/compare`：最多 20 只基金的收益、风险、费率与相关性对比 |
 | 2026-10-27 | 新增 4 个数据类只读 scope 与 6 个工具：`transactions`、`transactions/{tx_id}`、`watchlist`、`alerts`、`auto-invest-plans`、`capabilities`；新 scope 默认不勾选 |
+| 2026-10-28 | 新增 4 个组合级只读工具：`portfolio-curve`、`benchmark`、`risk-report`、`industry-exposure`，复用 `portfolio:read`/`health:read`，不新增 scope |

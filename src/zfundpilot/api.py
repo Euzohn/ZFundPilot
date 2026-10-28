@@ -1337,6 +1337,196 @@ def agent_list_auto_invest_plans(
     })
 
 
+# ---------------------------------------------------------------------------
+# Agent 只读查询工具（P1.5-A 第 2 批：组合曲线/基准/风险/行业敞口）
+# ---------------------------------------------------------------------------
+_AGENT_AS_OF_SEMANTICS = (
+    "as_of_date 为各持仓正式净值日期的最大值，不代表所有基金均已更新"
+)
+
+
+def _agent_data_quality(status: DataStatus) -> dict[str, Any]:
+    """统一数据质量块：缺口计数 + 降级说明，避免新工具隐藏数据问题。"""
+    return {
+        "missing_nav_fund_count": status.missing_nav_fund_count,
+        "stale_nav_fund_count": status.stale_nav_fund_count,
+        "pending_t1_transaction_count": status.pending_t1_transaction_count,
+        "caveats": _agent_health_caveats(status),
+    }
+
+
+def _agent_sample_points(points: list[dict[str, Any]],
+                         max_points: int) -> list[dict[str, Any]]:
+    """等距抽样并保留首尾，控制大响应；点数未超限时原样返回。"""
+    total = len(points)
+    if total <= max_points:
+        return points
+    step = (total - 1) / (max_points - 1)
+    indices = sorted({int(round(i * step)) for i in range(max_points)})
+    return [points[i] for i in indices]
+
+
+@app.get("/api/agent/tools/portfolio-curve", tags=["agent"],
+         summary="组合收益曲线（只读）",
+         responses={**_AGENT_ERROR_RESPONSES,
+                    400: {"description": "日期格式非法或起止顺序颠倒"}},
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_get_portfolio_curve(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_PORTFOLIO_READ)),
+    ],
+    start_date: str | None = None,
+    end_date: str | None = None,
+    max_points: int = Query(365, ge=10, le=2000),
+) -> dict[str, Any]:
+    """组合每日市值/投入/累计收益率曲线（只读）。
+
+    复用 ``analysis.build_portfolio_curve()``；``max_points`` 超限时按等距
+    抽样保留首尾。曲线为可视化口径，不用于精确对账。
+    """
+    del ctx
+    _agent_validate_date(start_date, "start_date")
+    _agent_validate_date(end_date, "end_date")
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=400, detail="start_date 不能晚于 end_date")
+
+    curve = analysis.build_portfolio_curve()
+    points: list[dict[str, Any]] = []
+    if not curve.empty:
+        if start_date:
+            curve = curve[curve["date"] >= start_date]
+        if end_date:
+            curve = curve[curve["date"] <= end_date]
+        points = _agent_sample_points(
+            curve.to_dict(orient="records"), max_points)
+
+    summary = analysis.calculate_summary()
+    return _agent_tool_response("get_portfolio_curve", {
+        "as_of_date": summary.as_of_date,
+        "as_of_date_semantics": _AGENT_AS_OF_SEMANTICS,
+        "valuation_basis": "latest_formal_nav",
+        "max_points": max_points,
+        "points_count": len(points),
+        "points": points,
+    })
+
+
+@app.get("/api/agent/tools/benchmark", tags=["agent"],
+         summary="基准对比（只读）",
+         responses={**_AGENT_ERROR_RESPONSES,
+                    400: {"description": "日期格式非法、起止顺序颠倒或基准代码不受支持"}},
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_get_benchmark_comparison(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_PORTFOLIO_READ)),
+    ],
+    codes: Annotated[list[str], Query(min_length=1, max_length=20)],
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict[str, Any]:
+    """基准指数/宏观水位与组合曲线对齐的累计收益率（只读）。
+
+    仅支持 ``COMPARABLE_CODES`` 白名单；累计收益率基期为组合曲线起点，
+    ``start_date``/``end_date`` 只截取返回区间。失败代码不出现在 ``points``。
+    """
+    del ctx
+    _agent_validate_date(start_date, "start_date")
+    _agent_validate_date(end_date, "end_date")
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=400, detail="start_date 不能晚于 end_date")
+
+    cleaned = list(dict.fromkeys(
+        c.strip() for c in codes if c and c.strip()))
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="基准代码列表为空")
+    invalid = [c for c in cleaned if c not in COMPARABLE_CODES]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的基准代码：{', '.join(invalid)}")
+
+    rows = get_portfolio_benchmark(indices=",".join(cleaned))
+    if start_date:
+        rows = [row for row in rows if row.get("date", "") >= start_date]
+    if end_date:
+        rows = [row for row in rows if row.get("date", "") <= end_date]
+
+    summary = analysis.calculate_summary()
+    return _agent_tool_response("get_benchmark_comparison", {
+        "as_of_date": summary.as_of_date,
+        "as_of_date_semantics": _AGENT_AS_OF_SEMANTICS,
+        "valuation_basis": "latest_formal_nav",
+        "codes": cleaned,
+        "code_names": {c: COMPARABLE_CODES[c] for c in cleaned},
+        "points_count": len(rows),
+        "points": rows,
+    })
+
+
+@app.get("/api/agent/tools/risk-report", tags=["agent"],
+         summary="风险报告（只读）", responses=_AGENT_ERROR_RESPONSES,
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_get_risk_report(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_HEALTH_READ)),
+    ],
+) -> dict[str, Any]:
+    """组合风险指标、结构占比与风险提示（只读）。
+
+    复用 ``risk.build_risk_report()``；``flags`` 同时返回稳定
+    ``code``+``params``（供客户端 i18n）与中文 ``title``/``detail``。
+    数据缺口统一放在 ``data_quality.caveats``，不隐藏。
+    """
+    del ctx
+    report = risk.build_risk_report()
+    summary = analysis.calculate_summary()
+    return _agent_tool_response("get_risk_report", {
+        "as_of_date": summary.as_of_date,
+        "as_of_date_semantics": _AGENT_AS_OF_SEMANTICS,
+        "valuation_basis": "latest_formal_nav",
+        "max_drawdown": report.max_drawdown,
+        "volatility": report.volatility,
+        "max_single_weight": report.max_single_weight,
+        "max_single_name": report.max_single_name,
+        "hhi": report.hhi,
+        "equity_weight": report.equity_weight,
+        "bond_weight": report.bond_weight,
+        "qdii_weight": report.qdii_weight,
+        "flags": [asdict(flag) for flag in report.flags],
+        "data_quality": _agent_data_quality(summary.data_status),
+    })
+
+
+@app.get("/api/agent/tools/industry-exposure", tags=["agent"],
+         summary="行业敞口（只读）", responses=_AGENT_ERROR_RESPONSES,
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_get_industry_exposure(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_PORTFOLIO_READ)),
+    ],
+) -> dict[str, Any]:
+    """组合行业穿透敞口（只读）。
+
+    复用 ``analysis.aggregate_industry_exposure()``；行业配置来自外部抓取，
+    可能较慢。失败基金进入 ``funds_missing`` 并说明原因，不影响其他基金。
+    """
+    del ctx
+    result = analysis.aggregate_industry_exposure()
+    summary = analysis.calculate_summary()
+    data = result.to_dict()
+    data["as_of_date"] = summary.as_of_date
+    data["as_of_date_semantics"] = _AGENT_AS_OF_SEMANTICS
+    data["valuation_basis"] = "latest_formal_nav"
+    data["data_quality"] = _agent_data_quality(summary.data_status)
+    return _agent_tool_response("get_industry_exposure", data)
+
+
 # 只读工具登记表：供能力发现；新增工具时同步维护。
 _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
     {"name": "get_portfolio_summary", "method": "GET",
@@ -1375,6 +1565,18 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
     {"name": "list_auto_invest_plans", "method": "GET",
      "path": "/api/agent/tools/auto-invest-plans",
      "scope": agent_tokens.SCOPE_PLANS_READ},
+    {"name": "get_portfolio_curve", "method": "GET",
+     "path": "/api/agent/tools/portfolio-curve",
+     "scope": agent_tokens.SCOPE_PORTFOLIO_READ},
+    {"name": "get_benchmark_comparison", "method": "GET",
+     "path": "/api/agent/tools/benchmark",
+     "scope": agent_tokens.SCOPE_PORTFOLIO_READ},
+    {"name": "get_risk_report", "method": "GET",
+     "path": "/api/agent/tools/risk-report",
+     "scope": agent_tokens.SCOPE_HEALTH_READ},
+    {"name": "get_industry_exposure", "method": "GET",
+     "path": "/api/agent/tools/industry-exposure",
+     "scope": agent_tokens.SCOPE_PORTFOLIO_READ},
     {"name": "get_agent_capabilities", "method": "GET",
      "path": "/api/agent/tools/capabilities",
      "scope": None},

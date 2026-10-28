@@ -572,6 +572,8 @@ async def run_dca_backtest(
         include_periods: Return per-period purchase details (larger response).
         max_points: Maximum curve points (10-2000, first/last preserved).
     """
+    if len(fund_codes) > 5:
+        raise ToolError("fund_codes supports at most 5 items.")
     cleaned: list[str] = []
     for raw in fund_codes:
         if not isinstance(raw, str):
@@ -583,8 +585,6 @@ async def run_dca_backtest(
             cleaned.append(code)
     if not cleaned:
         raise ToolError("fund_codes must contain at least one code.")
-    if len(cleaned) > 5:
-        raise ToolError("fund_codes supports at most 5 unique codes.")
 
     start = _validate_date(start_date, "start_date")
     end = _validate_date(end_date, "end_date")

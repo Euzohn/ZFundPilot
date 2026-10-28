@@ -489,6 +489,8 @@ def test_run_dca_backtest_validation_without_network():
     with pytest.raises(ToolError, match="at most 5"):
         _run(mcp_server.run_dca_backtest(
             [f"00000{i}" for i in range(6)], **base))
+    with pytest.raises(ToolError, match="at most 5"):
+        _run(mcp_server.run_dca_backtest(["000001"] * 6, **base))
     with pytest.raises(ToolError, match="six-digit"):
         _run(mcp_server.run_dca_backtest(["12345"], **base))
     with pytest.raises(ToolError, match="must contain strings"):

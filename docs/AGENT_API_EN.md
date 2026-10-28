@@ -535,7 +535,7 @@ Parameters:
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `codes` | string[] | yes | Repeated query params, e.g. `?codes=000300&codes=CPI`; whitelist `000300`/`000001`/`399006`/`CPI`/`M2` |
+| `codes` | string[] | yes | Repeated query params, up to 20, e.g. `?codes=000300&codes=CPI`; whitelist `000300`/`000001`/`399006`/`CPI`/`M2` |
 | `start_date` / `end_date` | string | no | Optional, trim the returned range only |
 
 `data` fields: `as_of_date`, `as_of_date_semantics`, `valuation_basis`, `codes` (requested), `code_names` (code→name), `points_count`, `points[]` (`{date, <code>: cumulative_return}`).
@@ -566,7 +566,7 @@ Portfolio industry exposure by looking through fund allocations. Scope: `portfol
 
 `data` fields: `ok`, `message`, `as_of_date`, `as_of_date_semantics`, `valuation_basis`, `total_market_value`, `penetrated_market_value`, `unpenetrated_market_value`, `equity_total_market_value`, `equity_penetrated_market_value`, `funds_count`, `funds_with_data`, `quarter`, `items[]`, `funds_missing[]`, `data_quality`.
 
-> Allocation data is fetched externally (one request per fund, cached) and **may be slow**. Funds without data appear in `funds_missing` (`reason`: `no_data`/`empty_allocations`/`error`) without affecting others. With no holdings, `ok=false` and `message="无持仓"`.
+> Allocation data is fetched externally (one request per fund, cached) and **may be slow**. Funds without data appear in `funds_missing` (`reason`: `no_data`/`parse_error`/`fetch_error`/`empty_allocations`) without affecting others. With no holdings, `ok=false` and `message="无持仓"`.
 
 ## 6. Minimal integration
 

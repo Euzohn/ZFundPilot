@@ -535,7 +535,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `codes` | string[] | 是 | 重复传参，如 `?codes=000300&codes=CPI`；仅支持白名单 `000300`/`000001`/`399006`/`CPI`/`M2` |
+| `codes` | string[] | 是 | 重复传参，最多 20 个，如 `?codes=000300&codes=CPI`；仅支持白名单 `000300`/`000001`/`399006`/`CPI`/`M2` |
 | `start_date` / `end_date` | string | 否 | 可选，只截取返回区间 |
 
 `data` 字段：`as_of_date`、`as_of_date_semantics`、`valuation_basis`、`codes`（请求值）、`code_names`（代码→名称）、`points_count`、`points[]`（`{date, <code>: 累计收益率}`）。
@@ -566,7 +566,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 `data` 字段：`ok`、`message`、`as_of_date`、`as_of_date_semantics`、`valuation_basis`、`total_market_value`、`penetrated_market_value`、`unpenetrated_market_value`、`equity_total_market_value`、`equity_penetrated_market_value`、`funds_count`、`funds_with_data`、`quarter`、`items[]`、`funds_missing[]`、`data_quality`。
 
-> 行业配置来自外部抓取（每基金一次请求，带缓存），**可能较慢**；失败基金进入 `funds_missing`（`reason` 区分 `no_data`/`empty_allocations`/`error`），不影响其他基金。无持仓时 `ok=false`、`message="无持仓"`。
+> 行业配置来自外部抓取（每基金一次请求，带缓存），**可能较慢**；失败基金进入 `funds_missing`（`reason` 为 `no_data`/`parse_error`/`fetch_error`/`empty_allocations`），不影响其他基金。无持仓时 `ok=false`、`message="无持仓"`。
 
 ## 6. 最小接入示例
 

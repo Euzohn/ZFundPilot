@@ -385,7 +385,13 @@ class TestDcaSemantics:
             "000001", "测试", dates, navs, "2024-01-01", "2024-12-31",
             1000, "month", _rates(), "database")
 
-        assert result.status == "ok"
+        # 请求止日（2024-12-31）远超数据末尾（2024-03-01）：按文档契约，
+        # 4–12 月的计划期未被净值覆盖，计入 skipped_periods 并标记 partial；
+        # 估值日与 XIRR 终值日仍取最后一个可用净值日，而非请求止日。
+        assert result.status == "partial"
+        assert result.code == "partial_coverage"
+        assert result.skipped_periods == 9
+        assert result.total_periods == 3
         assert result.period_end == "2024-12-31"
         assert result.valuation_date == "2024-03-01"
         assert result.data_end == "2024-03-01"

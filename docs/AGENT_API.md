@@ -636,7 +636,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 - 明细：`curve`（按 `max_points` 抽样）、`curve_points`、`periods_detail`（仅在 `include_periods=true` 时非空）、`periods_detail_count`、`caveats`。
 - `fee_ok=false` 表示费率表获取失败；即使 `fee_ok=true`，若申购或赎回档位缺失也会按 0 计并在 `caveats` 说明，不应解读为真实零费率。
 - `status="failed"` 时 `code` 为 `insufficient_nav`（有效净值少于 2 个）或 `no_periods`（没有可执行的计划扣款日），不输出看似有效的零收益指标。
-- `status="partial"` 且 `code="partial_coverage"` 表示部分计划期因净值未覆盖或与其他期落在同一净值日而跳过；`skipped_periods` 给出数量。
+- `status="partial"` 且 `code="partial_coverage"` 表示部分计划期因净值未覆盖或与其他期落在同一净值日而跳过；`skipped_periods` 给出数量。请求止日晚于最后一个可用净值日时，末期未被覆盖的计划期即属于此情形——回测仍按可用数据计算，`valuation_date`/`data_end` 反映实际覆盖范围。
 
 > 计划扣款日不早于请求起日。多个计划期落到同一净值日时只执行第一期，避免把多期投入堆到同一天。期末估值、赎回费持有天数与 XIRR 终值统一使用最后一个可用净值日（`valuation_date`），而不是请求止日。净值优先读取数据库，覆盖不足时通过外部接口在内存中补齐，不写库；`data_end` 可能早于 `end_date`。费率表按每只基金一次快照使用。结果未模拟分红、拆分与红利再投资；最大回撤与夏普基于市值曲线，定投现金流会影响可比性。单次请求最多 5 只基金，耗时受外部净值/费率抓取影响，建议先查 `data-status`，并遵守 20 次/分钟的限额。回测并发上限为 2（进程内），满额立即返回 `429`，不排队；多 worker 部署时各进程独立计数。
 

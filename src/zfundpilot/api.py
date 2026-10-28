@@ -289,10 +289,19 @@ def _create_token() -> str:
 
 
 def _verify_token(token: str) -> bool:
-    """校验 token 签名与有效期。"""
+    """校验 token 签名与有效期。
+
+    签名固定 32 字节（SHA-256），因此按长度切分，而不是按 "." 分割：
+    签名内容可能恰好含 "." 字节，用 rsplit 会把签名截断成误判为无效。
+    """
     try:
         decoded = base64.urlsafe_b64decode(token.encode())
-        payload_bytes, sig = decoded.rsplit(b".", 1)
+        if len(decoded) <= 32:
+            return False
+        sig = decoded[-32:]
+        payload_bytes = decoded[:-32]
+        if payload_bytes.endswith(b"."):
+            payload_bytes = payload_bytes[:-1]
         expected = hmac.new(config.AUTH_SECRET.encode(), payload_bytes, hashlib.sha256).digest()
         if not hmac.compare_digest(sig, expected):
             return False

@@ -1,7 +1,12 @@
 """Agent token 安全边界测试：生成/存储/校验/撤销/scope/无密码模式/管理端点。"""
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
 import threading
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -70,6 +75,45 @@ class TestGenerateToken:
         assert "watchlist:read" not in agent_tokens.DEFAULT_SCOPES
         assert "alerts:read" not in agent_tokens.DEFAULT_SCOPES
         assert "plans:read" not in agent_tokens.DEFAULT_SCOPES
+
+
+# ---------------------------------------------------------------------------
+# 网页登录 token 校验（回归：签名可能包含分隔符字节）
+# ---------------------------------------------------------------------------
+class TestWebTokenVerify:
+    def test_accepts_signature_containing_dot_byte(self, monkeypatch):
+        exp = int(time.time()) + 3600
+        payload_bytes = json.dumps({"exp": exp}).encode()
+        secret = ""
+        sig = b""
+        for i in range(10000):
+            candidate = f"dot-secret-{i}"
+            digest = hmac.new(
+                candidate.encode(), payload_bytes, hashlib.sha256).digest()
+            if b"." in digest:
+                secret, sig = candidate, digest
+                break
+        assert secret, "未找到签名含点号的测试密钥"
+        monkeypatch.setattr(config, "AUTH_SECRET", secret)
+
+        token = base64.urlsafe_b64encode(payload_bytes + b"." + sig).decode()
+
+        assert api._verify_token(token) is True
+
+    def test_rejects_tampered_signature_and_expired_token(self, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_SECRET", "verify-secret")
+        assert api._verify_token(api._create_token()) is True
+
+        forged_payload = json.dumps({"exp": int(time.time()) + 3600}).encode()
+        forged = base64.urlsafe_b64encode(forged_payload + b"\x00" * 32).decode()
+        assert api._verify_token(forged) is False
+
+        expired_payload = json.dumps({"exp": int(time.time()) - 10}).encode()
+        expired_sig = hmac.new(
+            b"verify-secret", expired_payload, hashlib.sha256).digest()
+        expired = base64.urlsafe_b64encode(
+            expired_payload + b"." + expired_sig).decode()
+        assert api._verify_token(expired) is False
 
 
 # ---------------------------------------------------------------------------

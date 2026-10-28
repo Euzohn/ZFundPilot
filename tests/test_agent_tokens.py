@@ -871,6 +871,188 @@ class TestAgentTools:
         assert scopes["get_risk_report"] == "health:read"
         assert scopes["get_industry_exposure"] == "portfolio:read"
 
+        funds_data = client.get(
+            "/api/agent/tools/capabilities",
+            headers=self._headers("funds:read")).json()["data"]
+        funds_names = {t["name"] for t in funds_data["tools"]}
+        assert {"search_funds", "screen_funds"} <= funds_names
+        assert "get_risk_report" not in funds_names
+
+    def test_search_funds_scope_pagination_and_validation(
+            self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        universe = [
+            {"code": "005827", "name": "易方达蓝筹精选混合",
+             "type": "混合型", "sector": "消费"},
+            {"code": "000001", "name": "华夏成长混合",
+             "type": "混合型", "sector": "科技"},
+            {"code": "110011", "name": "易方达中小盘混合",
+             "type": "混合型", "sector": "科技"},
+        ]
+        monkeypatch.setattr(
+            api.fund_filter, "load_fund_universe",
+            lambda force_refresh=False: universe)
+        client = TestClient(api.app)
+        headers = self._headers("funds:read")
+
+        resp = client.get(
+            "/api/agent/tools/search?keyword=易方达&limit=1", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["tool"] == "search_funds"
+        data = resp.json()["data"]
+        assert data["ok"] is True
+        assert data["total"] == 2
+        assert data["count"] == 1
+        assert data["pagination"] == {
+            "limit": 1, "offset": 0, "total": 2, "has_more": True}
+        assert set(data["funds"][0]) == {"code", "name", "type", "sector"}
+        assert data["funds"][0]["code"] == "005827"
+
+        page2 = client.get(
+            "/api/agent/tools/search?keyword=易方达&limit=1&offset=1",
+            headers=headers)
+        page2_data = page2.json()["data"]
+        assert page2_data["funds"][0]["code"] == "110011"
+        assert page2_data["pagination"]["has_more"] is False
+
+        assert client.get(
+            "/api/agent/tools/search?keyword=%20%20",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/search?keyword=" + "基" * 101,
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/search?keyword=易方达&limit=0",
+            headers=headers).status_code == 422
+        assert client.get(
+            "/api/agent/tools/search?keyword=易方达",
+            headers=self._headers("portfolio:read")).status_code == 403
+
+    def test_search_funds_universe_failure_keeps_200(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        monkeypatch.setattr(
+            api.fund_filter, "load_fund_universe",
+            lambda force_refresh=False: [])
+        client = TestClient(api.app)
+
+        resp = client.get(
+            "/api/agent/tools/search?keyword=易方达",
+            headers=self._headers("funds:read"))
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["ok"] is False
+        assert data["code"] == "universe_failed"
+        assert data["funds"] == []
+        assert data["total"] == 0
+
+    def test_screen_funds_filters_and_base_metrics(
+            self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        universe = [
+            {"code": "005827", "name": "易方达蓝筹精选混合",
+             "type": "混合型", "sector": "消费"},
+            {"code": "000001", "name": "华夏成长混合",
+             "type": "混合型", "sector": "科技"},
+            {"code": "110011", "name": "易方达中小盘混合",
+             "type": "混合型", "sector": "科技"},
+        ]
+        monkeypatch.setattr(
+            api.fund_filter, "load_fund_universe",
+            lambda force_refresh=False: universe)
+        monkeypatch.setattr(
+            api.fund_filter, "get_available_types",
+            lambda: ["混合型", "债券型"])
+        monkeypatch.setattr(
+            api.fund_filter, "get_available_sectors",
+            lambda: ["科技", "消费"])
+        client = TestClient(api.app)
+        headers = self._headers("funds:read")
+
+        resp = client.get(
+            "/api/agent/tools/screen?types=混合型&types=混合型&sectors=科技",
+            headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["tool"] == "screen_funds"
+        data = resp.json()["data"]
+        assert [f["code"] for f in data["funds"]] == ["000001", "110011"]
+        assert data["total"] == 2
+        assert data["with_metrics"] is False
+        assert data["metrics"] == {
+            "requested": False, "limit": 30, "attempted": 0,
+            "succeeded": 0, "failed": 0, "timed_out": 0, "complete": True}
+        assert data["funds"][0]["metrics_status"] == "not_requested"
+        assert data["funds"][0]["returns"] is None
+        assert data["funds"][0]["risk"] is None
+
+        assert client.get(
+            "/api/agent/tools/screen?types=股票型",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/screen?sectors=未知板块",
+            headers=headers).status_code == 400
+        many = "&".join(f"types=类型{i}" for i in range(21))
+        assert client.get(
+            f"/api/agent/tools/screen?{many}",
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/screen?keyword=" + "基" * 101,
+            headers=headers).status_code == 400
+        assert client.get(
+            "/api/agent/tools/screen",
+            headers=self._headers("health:read")).status_code == 403
+
+    def test_screen_funds_metrics_partial_and_busy(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        universe = [
+            {"code": "000001", "name": "华夏成长混合",
+             "type": "混合型", "sector": "科技"},
+            {"code": "110011", "name": "易方达中小盘混合",
+             "type": "混合型", "sector": "科技"},
+        ]
+        monkeypatch.setattr(
+            api.fund_filter, "load_fund_universe",
+            lambda force_refresh=False: universe)
+        client = TestClient(api.app)
+        headers = self._headers("funds:read")
+
+        def fake_enrich(items, timeout=20.0):
+            stats = api.fund_filter.MetricsEnrichment(attempted=len(items))
+            snapshots = {
+                items[0].code: {
+                    "scale": 100.0, "manager": "经理",
+                    "inception_date": "2018-01-01",
+                    "returns": {"1y": 0.1}, "risk": {"volatility": 0.2},
+                },
+            }
+            stats.succeeded = 1
+            stats.failed = len(items) - 1
+            stats.complete = True
+            return snapshots, stats
+
+        monkeypatch.setattr(
+            api.fund_filter, "enrich_page_metrics", fake_enrich)
+        resp = client.get(
+            "/api/agent/tools/screen?with_metrics=true", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["with_metrics"] is True
+        assert data["metrics"]["succeeded"] == 1
+        assert data["metrics"]["failed"] == 1
+        assert data["funds"][0]["metrics_status"] == "ok"
+        assert data["funds"][0]["returns"] == {"1y": 0.1}
+        assert data["funds"][1]["metrics_status"] == "unavailable"
+        assert data["funds"][1]["returns"] is None
+
+        def busy(items, timeout=20.0):
+            raise api.fund_filter.EnrichmentBusy("指标增强并发已满")
+
+        monkeypatch.setattr(
+            api.fund_filter, "enrich_page_metrics", busy)
+        limited = client.get(
+            "/api/agent/tools/screen?with_metrics=true", headers=headers)
+        assert limited.status_code == 429
+        assert limited.headers["Retry-After"] == "60"
+
     def test_agent_capabilities_filters_by_scope(self, temp_db, monkeypatch):
         monkeypatch.setattr(config, "AUTH_ENABLED", True)
         client = TestClient(api.app)
@@ -912,6 +1094,29 @@ class TestAgentTools:
         second = client.get("/api/agent/tools/funds/000002", headers=headers)
         assert first.status_code == 404
         assert second.status_code == 429
+
+    def test_route_specific_rate_limit_override(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        monkeypatch.setattr(api, "_AGENT_REQ_LOGS", {})
+        monkeypatch.setitem(
+            api._AGENT_ROUTE_RATE_MAX, "/api/agent/tools/screen", 1)
+        monkeypatch.setattr(
+            api.fund_filter, "load_fund_universe",
+            lambda force_refresh=False: [
+                {"code": "000001", "name": "华夏成长混合",
+                 "type": "混合型", "sector": "科技"}])
+        client = TestClient(api.app)
+        headers = self._headers("funds:read")
+
+        # 搜索与筛选使用不同限流桶，搜索的额度不影响筛选
+        assert client.get(
+            "/api/agent/tools/search?keyword=华夏",
+            headers=headers).status_code == 200
+        first = client.get("/api/agent/tools/screen", headers=headers)
+        second = client.get("/api/agent/tools/screen", headers=headers)
+        assert first.status_code == 200
+        assert second.status_code == 429
+        assert second.headers["Retry-After"]
 
     def test_web_token_cannot_call_tools(self, admin_client):
         client, headers = admin_client

@@ -571,7 +571,19 @@ def revoke_agent_token(token_id: int, request: Request) -> dict[str, Any]:
 _AGENT_REQ_LOGS: dict[str, list[float]] = {}
 _AGENT_SWEEP_COUNTER = 0
 _AGENT_RATE_WINDOW = 60
-_AGENT_RATE_MAX = 120  # 每 token 每端点每分钟
+_AGENT_RATE_MAX = 120  # 每 token 每端点每分钟（默认）
+# 较重端点使用更低限额；键为路由模板，与 _agent_endpoint_key 一致。
+_AGENT_ROUTE_RATE_MAX: dict[str, int] = {
+    "/api/agent/tools/search": 60,
+    "/api/agent/tools/screen": 20,
+    "/api/agent/tools/benchmark": 20,
+    "/api/agent/tools/industry-exposure": 20,
+}
+
+
+def _agent_rate_max_for(path: str) -> int:
+    """返回指定端点的每分钟限额；未单独配置时用默认值。"""
+    return _AGENT_ROUTE_RATE_MAX.get(path, _AGENT_RATE_MAX)
 
 
 def _agent_endpoint_key(request: Request) -> str:
@@ -597,7 +609,7 @@ def _check_agent_rate_limit(token_id: int, path: str) -> tuple[bool, int]:
     key = f"{token_id}:{path}"
     timestamps = _AGENT_REQ_LOGS.setdefault(key, [])
     timestamps[:] = [t for t in timestamps if now - t < _AGENT_RATE_WINDOW]
-    if len(timestamps) >= _AGENT_RATE_MAX:
+    if len(timestamps) >= _agent_rate_max_for(path):
         return False, int(timestamps[0] + _AGENT_RATE_WINDOW - now) + 1
     timestamps.append(now)
     return True, 0
@@ -1527,6 +1539,176 @@ def agent_get_industry_exposure(
     return _agent_tool_response("get_industry_exposure", data)
 
 
+# ---------------------------------------------------------------------------
+# Agent 只读查询工具（P1.5-A 第 3 批：基金检索与筛选）
+# ---------------------------------------------------------------------------
+_AGENT_FUND_KEYWORD_MAX = 100
+_AGENT_FUND_FILTER_MAX = 20
+
+
+def _agent_fund_keyword(value: str | None, *, required: bool) -> str:
+    """清洗检索关键词：去首尾空白、限长；必填时拒绝空值。"""
+    keyword = (value or "").strip()
+    if not keyword:
+        if required:
+            raise HTTPException(status_code=400, detail="keyword 不能为空")
+        return ""
+    if len(keyword) > _AGENT_FUND_KEYWORD_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"keyword 不能超过 {_AGENT_FUND_KEYWORD_MAX} 个字符")
+    return keyword
+
+
+def _agent_fund_filters(values: list[str] | None, allowed: list[str],
+                        field: str) -> list[str] | None:
+    """去重并校验类型/板块过滤值，拒绝未知值和空值。"""
+    if not values:
+        return None
+    cleaned = list(dict.fromkeys(v.strip() for v in values if v and v.strip()))
+    if not cleaned:
+        return None
+    if len(cleaned) > _AGENT_FUND_FILTER_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field} 最多 {_AGENT_FUND_FILTER_MAX} 个")
+    invalid = [v for v in cleaned if v not in allowed]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的 {field}：{', '.join(invalid)}")
+    return cleaned
+
+
+def _agent_fund_brief(item: fund_filter.FundFilterItem) -> dict[str, Any]:
+    """检索结果的最小字段集，不触发任何外部指标抓取。"""
+    return {"code": item.code, "name": item.name,
+            "type": item.type, "sector": item.sector}
+
+
+def _agent_fund_full(item: fund_filter.FundFilterItem,
+                     snapshot: dict | None, status: str) -> dict[str, Any]:
+    """筛选结果：基础字段 + 可选指标快照；缺失不补零。"""
+    data = _agent_fund_brief(item)
+    if snapshot is None:
+        data.update({
+            "scale": None, "manager": "", "inception_date": "",
+            "returns": None, "risk": None, "metrics_status": status,
+        })
+        return data
+    data.update({
+        "scale": snapshot.get("scale"),
+        "manager": snapshot.get("manager", ""),
+        "inception_date": snapshot.get("inception_date", ""),
+        "returns": snapshot.get("returns") or {},
+        "risk": snapshot.get("risk") or {},
+        "metrics_status": status,
+    })
+    return data
+
+
+@app.get("/api/agent/tools/search", tags=["agent"],
+         summary="基金检索（只读）",
+         responses={**_AGENT_ERROR_RESPONSES,
+                    400: {"description": "keyword 为空或超长"}},
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_search_funds(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_FUNDS_READ)),
+    ],
+    keyword: Annotated[str, Query(min_length=1)],
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> dict[str, Any]:
+    """按名称或代码子串检索基金池（只读，不补指标）。"""
+    del ctx
+    value = _agent_fund_keyword(keyword, required=True)
+    result = fund_filter.filter_funds(
+        keyword=value, limit=limit, offset=offset, with_metrics=False)
+    funds = [_agent_fund_brief(f) for f in result.funds]
+    return _agent_tool_response("search_funds", {
+        "ok": result.ok,
+        "code": result.code,
+        "message": result.message,
+        "count": len(funds),
+        "total": result.total,
+        "pagination": _agent_pagination(limit, offset, result.total, len(funds)),
+        "funds": funds,
+    })
+
+
+@app.get("/api/agent/tools/screen", tags=["agent"],
+         summary="基金筛选（只读）",
+         responses={**_AGENT_ERROR_RESPONSES,
+                    400: {"description": "类型/板块/关键词非法或超限"}},
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_screen_funds(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_FUNDS_READ)),
+    ],
+    types: Annotated[list[str] | None, Query()] = None,
+    sectors: Annotated[list[str] | None, Query()] = None,
+    keyword: str | None = None,
+    with_metrics: bool = False,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> dict[str, Any]:
+    """按类型/板块/关键词筛选基金池（只读）。
+
+    ``with_metrics=true`` 只对当前页按代码升序的前 30 项补指标，且受进程内
+    并发额度限制；超限返回 429，不排队。
+    """
+    del ctx
+    cleaned_types = _agent_fund_filters(
+        types, fund_filter.get_available_types(), "types")
+    cleaned_sectors = _agent_fund_filters(
+        sectors, fund_filter.get_available_sectors(), "sectors")
+    value = _agent_fund_keyword(keyword, required=False)
+
+    result = fund_filter.filter_funds(
+        types=cleaned_types, sectors=cleaned_sectors, keyword=value,
+        limit=limit, offset=offset, with_metrics=False)
+
+    snapshots: dict[str, dict] = {}
+    metrics = fund_filter.MetricsEnrichment(requested=with_metrics)
+    if with_metrics and result.ok and result.funds:
+        try:
+            snapshots, metrics = fund_filter.enrich_page_metrics(result.funds)
+        except fund_filter.EnrichmentBusy as exc:
+            raise HTTPException(
+                status_code=429, detail=str(exc),
+                headers={"Retry-After": str(_AGENT_RATE_WINDOW)}) from exc
+    elif not result.funds or not with_metrics:
+        metrics.complete = True
+
+    fund_rows: list[dict[str, Any]] = []
+    for index, item in enumerate(result.funds):
+        if not with_metrics:
+            status = "not_requested"
+        elif index >= metrics.limit:
+            status = "over_limit"
+        elif item.code in snapshots:
+            status = "ok"
+        else:
+            status = "unavailable"
+        fund_rows.append(_agent_fund_full(item, snapshots.get(item.code), status))
+
+    return _agent_tool_response("screen_funds", {
+        "ok": result.ok,
+        "code": result.code,
+        "message": result.message,
+        "count": len(fund_rows),
+        "total": result.total,
+        "pagination": _agent_pagination(
+            limit, offset, result.total, len(fund_rows)),
+        "with_metrics": with_metrics,
+        "metrics": metrics.to_dict(),
+        "funds": fund_rows,
+    })
+
+
 # 只读工具登记表：供能力发现；新增工具时同步维护。
 _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
     {"name": "get_portfolio_summary", "method": "GET",
@@ -1577,6 +1759,12 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
     {"name": "get_industry_exposure", "method": "GET",
      "path": "/api/agent/tools/industry-exposure",
      "scope": agent_tokens.SCOPE_PORTFOLIO_READ},
+    {"name": "search_funds", "method": "GET",
+     "path": "/api/agent/tools/search",
+     "scope": agent_tokens.SCOPE_FUNDS_READ},
+    {"name": "screen_funds", "method": "GET",
+     "path": "/api/agent/tools/screen",
+     "scope": agent_tokens.SCOPE_FUNDS_READ},
     {"name": "get_agent_capabilities", "method": "GET",
      "path": "/api/agent/tools/capabilities",
      "scope": None},

@@ -57,6 +57,8 @@ def test_tools_registered():
         "get_benchmark_comparison",
         "get_risk_report",
         "get_industry_exposure",
+        "search_funds",
+        "screen_funds",
         "get_agent_capabilities",
     }
 
@@ -389,6 +391,58 @@ def test_industry_exposure_requests_expected_path(mock_api):
 
     assert seen["path"] == "/api/agent/tools/industry-exposure"
     assert result["data"]["ok"] is False
+
+
+def test_search_funds_passes_keyword_and_paging(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"data": {"funds": []}})
+
+    mock_api(handler)
+    _run(mcp_server.search_funds("易方达", limit=10, offset=20))
+
+    assert seen["path"] == "/api/agent/tools/search"
+    assert seen["params"] == {"keyword": "易方达", "limit": "10", "offset": "20"}
+
+
+def test_search_funds_validation_without_network():
+    with pytest.raises(ToolError, match="must not be empty"):
+        _run(mcp_server.search_funds("   "))
+    with pytest.raises(ToolError, match="at most 100"):
+        _run(mcp_server.search_funds("基" * 101))
+
+
+def test_screen_funds_passes_filters_and_metrics(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        seen["types"] = request.url.params.get_list("types")
+        seen["sectors"] = request.url.params.get_list("sectors")
+        return httpx.Response(200, json={"data": {"funds": []}})
+
+    mock_api(handler)
+    _run(mcp_server.screen_funds(
+        types=["混合型", "混合型", "债券型"], sectors=["科技"],
+        keyword="  易方达  ", with_metrics=True, limit=20, offset=0))
+
+    assert seen["path"] == "/api/agent/tools/screen"
+    assert seen["types"] == ["混合型", "债券型"]
+    assert seen["sectors"] == ["科技"]
+    assert seen["params"]["keyword"] == "易方达"
+    assert seen["params"]["with_metrics"] == "true"
+    assert seen["params"]["limit"] == "20"
+
+
+def test_screen_funds_validation_without_network():
+    with pytest.raises(ToolError, match="at most 20"):
+        _run(mcp_server.screen_funds(types=[f"类型{i}" for i in range(21)]))
+    with pytest.raises(ToolError, match="at most 100"):
+        _run(mcp_server.screen_funds(keyword="基" * 101))
 
 
 def test_capabilities_requests_expected_path(mock_api):

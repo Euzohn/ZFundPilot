@@ -71,7 +71,7 @@ Request body:
 | Scope | Allowed tools |
 |---|---|
 | `portfolio:read` | `portfolio-summary`, `positions`, `returns`, `portfolio-curve`, `benchmark`, `industry-exposure` |
-| `funds:read` | `funds/{code}`, `funds/compare` |
+| `funds:read` | `funds/{code}`, `funds/compare`, `search`, `screen` |
 | `health:read` | `data-status`, `portfolio-health`, `risk-report` |
 | `transactions:read` | `transactions`, `transactions/{tx_id}` |
 | `watchlist:read` | `watchlist` |
@@ -136,7 +136,7 @@ Standard FastAPI error shape:
 
 ### Rate limiting
 
-**120 requests per minute** per token per endpoint. Path parameters count as the same endpoint (for example, different fund codes share the `funds/{code}` budget), so enumerating codes cannot bypass the limit. Exceeding it returns `429`; retry after the `Retry-After` seconds.
+**120 requests per minute** per token per endpoint by default. Path parameters count as the same endpoint (for example, different fund codes share the `funds/{code}` budget), so enumerating codes cannot bypass the limit. Heavier endpoints use lower limits: `search` is 60/min, and `screen`, `benchmark`, and `industry-exposure` are 20/min; screening shares one bucket whether or not metrics are requested, so switching parameters cannot bypass it. Exceeding a limit returns `429`; retry after the `Retry-After` seconds. Rate-limit and metric-enrichment concurrency are **in-process** state; multiple workers count independently.
 
 ### OpenAPI / Swagger
 
@@ -568,6 +568,43 @@ Portfolio industry exposure by looking through fund allocations. Scope: `portfol
 
 > Allocation data is fetched externally (one request per fund, cached) and **may be slow**. Funds without data appear in `funds_missing` (`reason`: `no_data`/`parse_error`/`fetch_error`/`empty_allocations`) without affecting others. With no holdings, `ok=false` and `message="无持仓"`.
 
+### 5.18 `GET /api/agent/tools/search`
+
+Search the fund universe by name or code substring. Scope: `funds:read`. Metrics are not enriched, so this is the fast lookup path.
+
+Parameters:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `keyword` | string | required | 1–100 characters after trimming; blank returns `400`; missing or `keyword=` returns `422` |
+| `limit` / `offset` | int | 50 / 0 | `limit` 1–200, `offset` ≥ 0 |
+
+`data` fields: `ok`, `code`, `message`, `count`, `total`, `pagination`, `funds[]`; each item is `{code, name, type, sector}`.
+
+> Matching is literal substring only; regex and arbitrary query expressions are not accepted. Results are sorted by fund code ascending. The universe cache is refreshed over the network when missing and is valid for 24 hours. A valid query with no matches returns `ok=true` and `funds=[]`. If the universe fails to load, HTTP stays 200 but `ok=false` and `code="universe_failed"`, so callers must check `ok` first. Type and sector are inferred from names and are for candidate lookup only.
+
+### 5.19 `GET /api/agent/tools/screen`
+
+Screen the fund universe by asset type, sector, and keyword. Scope: `funds:read`.
+
+Parameters:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `types` | string[] | none | Repeated params; must be known server-side types, at most 20 |
+| `sectors` | string[] | none | Repeated params; must be known sectors (including custom), at most 20 |
+| `keyword` | string | none | Optional name/code substring, at most 100 characters |
+| `with_metrics` | bool | `false` | Enrich the first 30 funds of the current page with return/risk metrics |
+| `limit` / `offset` | int | 50 / 0 | `limit` 1–200, `offset` ≥ 0 |
+
+`data` fields: `ok`, `code`, `message`, `count`, `total`, `pagination`, `with_metrics`, `metrics`, `funds[]`.
+
+- `metrics`: `{requested, limit=30, attempted, succeeded, failed, timed_out, complete}`.
+- Each fund: `{code, name, type, sector, scale, manager, inception_date, returns, risk, metrics_status}`.
+- `metrics_status`: `not_requested`, `over_limit` (beyond the first 30), `ok`, or `unavailable` (failed or timed out). `null` means missing, never zero-filled.
+
+> `with_metrics=true` calls external NAV/archive services and **may be slow**. It only covers the **first 30 funds of the current page in ascending code order**, not a market-wide return ranking. Enrichment concurrency is capped at 2; when full it returns `429` immediately instead of queueing. A timeout returns only completed items and marks the rest `unavailable`; the concurrency slot is released only after background work finishes. Use `funds/compare` for precise comparison. Unknown types/sectors, more than 20 filter values, or an over-long keyword return `400`.
+
 ## 6. Minimal integration
 
 ### Python
@@ -612,13 +649,13 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-You can also wrap these seventeen endpoints with any HTTP tool; an optional MCP adapter is provided at the end of this section. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
+You can also wrap these nineteen endpoints with any HTTP tool; an optional MCP adapter is provided at the end of this section. Agents should call `data-status` before analysis to avoid drawing conclusions from stale NAV data.
 
 ---
 
 ### MCP adapter (optional)
 
-A stdio MCP bridge is bundled to expose the seventeen tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
+A stdio MCP bridge is bundled to expose the nineteen tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
 
 ```bash
 # Install the optional extra from the ZFundPilot source tree
@@ -647,7 +684,7 @@ Claude Desktop example (`claude_desktop_config.json`):
 }
 ```
 
-Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `get_agent_capabilities`.
+Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `get_agent_capabilities`.
 
 - `ZFUNDPILOT_BASE_URL` defaults to `http://127.0.0.1:8000`; use the real NAS/Docker address for remote instances and HTTPS for remote access.
 - `ZFUNDPILOT_TIMEOUT` is optional, default 30 seconds (range 1–120).
@@ -675,3 +712,4 @@ Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`,
 | 2026-10-27 | Added `funds/compare`: compare up to 20 funds on returns, risk, fees, and correlation |
 | 2026-10-27 | Added four data read scopes and six tools: `transactions`, `transactions/{tx_id}`, `watchlist`, `alerts`, `auto-invest-plans`, `capabilities`; new scopes are unchecked by default |
 | 2026-10-28 | Added four portfolio-level read tools: `portfolio-curve`, `benchmark`, `risk-report`, `industry-exposure`, reusing `portfolio:read`/`health:read` without new scopes |
+| 2026-10-28 | Added two fund lookup tools: `search` (keyword lookup) and `screen` (type/sector/keyword screening with optional capped metrics), reusing `funds:read`; added per-route rate limits |

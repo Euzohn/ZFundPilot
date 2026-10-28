@@ -458,6 +458,72 @@ async def get_industry_exposure() -> dict[str, Any]:
 
 
 @mcp.tool()
+async def search_funds(
+    keyword: str,
+    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> dict[str, Any]:
+    """Search the fund universe by name or six-digit code substring.
+
+    Returns basic metadata only and does not enrich metrics, so this is the fast
+    lookup path. An empty result is a successful query, not an error.
+
+    Args:
+        keyword: Name or code substring, 1-100 characters after trimming.
+        limit: Page size (1-200).
+        offset: Page offset.
+    """
+    value = keyword.strip()
+    if not value:
+        raise ToolError("keyword must not be empty.")
+    if len(value) > 100:
+        raise ToolError("keyword must be at most 100 characters.")
+    return await _request("/api/agent/tools/search", {
+        "keyword": value, "limit": limit, "offset": offset})
+
+
+@mcp.tool()
+async def screen_funds(
+    types: Annotated[list[str] | None, Field(max_length=20)] = None,
+    sectors: Annotated[list[str] | None, Field(max_length=20)] = None,
+    keyword: str | None = None,
+    with_metrics: bool = False,
+    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> dict[str, Any]:
+    """Screen the fund universe by asset type, sector, and code/name substring.
+
+    When with_metrics is true, only the first 30 funds of the current page (in
+    ascending code order) are enriched; this can be slow and is concurrency
+    limited. Missing metrics are reported as unavailable, never as zero.
+
+    Args:
+        types: Optional asset types, e.g. ["混合型", "指数型"].
+        sectors: Optional sectors, e.g. ["科技"].
+        keyword: Optional name or code substring, at most 100 characters.
+        with_metrics: Enrich up to 30 funds with return and risk metrics.
+        limit: Page size (1-200).
+        offset: Page offset.
+    """
+    params: dict[str, Any] = {"with_metrics": with_metrics,
+                              "limit": limit, "offset": offset}
+    for field, values in (("types", types), ("sectors", sectors)):
+        if values:
+            cleaned = list(dict.fromkeys(
+                v.strip() for v in values if v and v.strip()))
+            if len(cleaned) > 20:
+                raise ToolError(f"{field} supports at most 20 values.")
+            if cleaned:
+                params[field] = cleaned
+    if keyword is not None and keyword.strip():
+        value = keyword.strip()
+        if len(value) > 100:
+            raise ToolError("keyword must be at most 100 characters.")
+        params["keyword"] = value
+    return await _request("/api/agent/tools/screen", params)
+
+
+@mcp.tool()
 async def get_agent_capabilities() -> dict[str, Any]:
     """List read-only tools granted to the current Agent token."""
     return await _request("/api/agent/tools/capabilities")

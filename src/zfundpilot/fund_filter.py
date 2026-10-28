@@ -10,8 +10,9 @@ import json
 import logging
 import os
 import re
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 
 from . import compare as _compare
@@ -27,6 +28,16 @@ _UNIVERSE_TTL = 86400
 _EXECUTOR = ThreadPoolExecutor(max_workers=6)
 
 _MAX_METRICS_FUNDS = 30
+
+# 指标增强会访问外部接口。Agent 侧限制同时进行的增强请求数，
+# 避免慢请求无限堆积；额度在后台任务真正结束后才释放。
+_ENRICH_MAX_CONCURRENCY = 2
+_ENRICH_TIMEOUT = 20.0
+_ENRICH_GATE = threading.BoundedSemaphore(_ENRICH_MAX_CONCURRENCY)
+
+
+class EnrichmentBusy(RuntimeError):
+    """指标增强并发已满，调用方应快速拒绝而不是排队。"""
 
 
 @dataclass
@@ -49,6 +60,30 @@ class FilterResponse:
     ok: bool = True
     message: str = ""
     code: str = ""
+
+
+@dataclass
+class MetricsEnrichment:
+    """一次指标增强的结果统计（供 Agent 解释覆盖范围）。"""
+
+    requested: bool = True
+    limit: int = _MAX_METRICS_FUNDS
+    attempted: int = 0
+    succeeded: int = 0
+    failed: int = 0
+    timed_out: int = 0
+    complete: bool = False
+
+    def to_dict(self) -> dict:
+        return {
+            "requested": self.requested,
+            "limit": self.limit,
+            "attempted": self.attempted,
+            "succeeded": self.succeeded,
+            "failed": self.failed,
+            "timed_out": self.timed_out,
+            "complete": self.complete,
+        }
 
 
 def _fetch_universe_from_web() -> list[dict]:
@@ -107,38 +142,55 @@ def load_fund_universe(force_refresh: bool = False) -> list[dict]:
     return data
 
 
+def _enrich_snapshot(item: FundFilterItem) -> dict:
+    """采集单只基金的档案与指标快照，不修改入参对象。
+
+    可能抛异常；调用方决定降级为失败还是忽略。
+    """
+    nav = _compare._get_cached_nav(item.code)
+    archive = _compare._get_fund_archive(item.code)
+    snapshot: dict = {
+        "scale": archive.get("scale"),
+        "manager": archive.get("manager", ""),
+        "inception_date": archive.get("inception", ""),
+        "returns": {},
+        "risk": {},
+    }
+    if nav.empty:
+        return snapshot
+
+    snapshot["returns"] = {
+        "1w": _compare._calculate_period_return(nav, 5),
+        "1m": _compare._calculate_period_return(nav, 22),
+        "3m": _compare._calculate_period_return(nav, 66),
+        "6m": _compare._calculate_period_return(nav, 132),
+        "1y": _compare._calculate_period_return(nav, 252),
+        "ytd": _compare._calculate_period_return(nav, _compare._ytd_trading_days(nav)),
+        "since": (nav.iloc[-1] - nav.iloc[0]) / nav.iloc[0] if len(nav) > 1 else None,
+    }
+    snapshot["risk"] = {
+        "max_drawdown": _compare._calculate_max_drawdown(nav),
+        "volatility": _compare._calculate_volatility(nav),
+        "sharpe": _compare._calculate_sharpe(nav),
+    }
+    return snapshot
+
+
 def _enrich_one(item: FundFilterItem) -> None:
     """为单个 FundFilterItem 补充规模/经理/成立日期/收益/风险指标。"""
     try:
-        nav = _compare._get_cached_nav(item.code)
-        archive = _compare._get_fund_archive(item.code)
-        item.scale = archive.get("scale")
-        item.manager = archive.get("manager", "")
-        item.inception_date = archive.get("inception", "")
-
-        if nav.empty:
-            item.returns = {}
-            item.risk = {}
-            return
-
-        item.returns = {
-            "1w": _compare._calculate_period_return(nav, 5),
-            "1m": _compare._calculate_period_return(nav, 22),
-            "3m": _compare._calculate_period_return(nav, 66),
-            "6m": _compare._calculate_period_return(nav, 132),
-            "1y": _compare._calculate_period_return(nav, 252),
-            "ytd": _compare._calculate_period_return(nav, _compare._ytd_trading_days(nav)),
-            "since": (nav.iloc[-1] - nav.iloc[0]) / nav.iloc[0] if len(nav) > 1 else None,
-        }
-        item.risk = {
-            "max_drawdown": _compare._calculate_max_drawdown(nav),
-            "volatility": _compare._calculate_volatility(nav),
-            "sharpe": _compare._calculate_sharpe(nav),
-        }
-    except Exception as exc:
+        snapshot = _enrich_snapshot(item)
+    except Exception as exc:  # noqa: BLE001
         logger.warning("指标补充失败 %s: %s", item.code, exc)
         item.returns = {}
         item.risk = {}
+        return
+
+    item.scale = snapshot["scale"]
+    item.manager = snapshot["manager"]
+    item.inception_date = snapshot["inception_date"]
+    item.returns = snapshot["returns"]
+    item.risk = snapshot["risk"]
 
 
 def _enrich_with_metrics(items: list[FundFilterItem]) -> None:
@@ -150,6 +202,80 @@ def _enrich_with_metrics(items: list[FundFilterItem]) -> None:
             f.result(timeout=60)
         except Exception as exc:
             logger.warning("指标补充超时或失败: %s", exc)
+
+
+def enrich_page_metrics(
+    items: list[FundFilterItem], timeout: float = _ENRICH_TIMEOUT
+) -> tuple[dict[str, dict], MetricsEnrichment]:
+    """有界地对当前页前 N 项补指标，返回 {基金代码: 快照} 与统计。
+
+    与 ``_enrich_with_metrics`` 的区别：
+    - 并发额度满了立即抛 ``EnrichmentBusy``，不排队；
+    - 超时只返回已完成项，未完成项不写入结果，避免序列化时被后台线程改写；
+    - 额度在后台任务全部结束后释放，超时不会提前放行。
+
+    仅修改快照字典，不修改 ``items``。
+    """
+    targets = items[:_MAX_METRICS_FUNDS]
+    stats = MetricsEnrichment(attempted=len(targets))
+    if not targets:
+        stats.complete = True
+        return {}, stats
+
+    if not _ENRICH_GATE.acquire(blocking=False):
+        raise EnrichmentBusy("指标增强并发已满，请稍后再试")
+
+    futures: dict[Future, FundFilterItem] = {}
+    submit_error: Exception | None = None
+    try:
+        for item in targets:
+            futures[_EXECUTOR.submit(_enrich_snapshot, item)] = item
+    except Exception as exc:  # noqa: BLE001
+        submit_error = exc
+
+    if not futures:
+        if submit_error is not None:
+            _ENRICH_GATE.release()
+            raise submit_error
+        _ENRICH_GATE.release()
+        stats.complete = True
+        return {}, stats
+
+    lock = threading.Lock()
+    pending: set[Future] = set(futures)
+    released = False
+
+    def _release_when_done(fut: Future) -> None:
+        nonlocal released
+        with lock:
+            pending.discard(fut)
+            if not pending and not released:
+                released = True
+                _ENRICH_GATE.release()
+
+    for fut in futures:
+        fut.add_done_callback(_release_when_done)
+
+    if submit_error is not None:
+        # 已提交的任务仍会通过回调释放额度；这里直接报告提交失败。
+        raise submit_error
+
+    wait(set(futures), timeout=timeout)
+
+    snapshots: dict[str, dict] = {}
+    for fut, item in futures.items():
+        if not fut.done():
+            stats.timed_out += 1
+            continue
+        try:
+            snapshots[item.code] = fut.result()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("指标补充失败 %s: %s", item.code, exc)
+            stats.failed += 1
+
+    stats.succeeded = len(snapshots)
+    stats.complete = stats.succeeded + stats.failed == stats.attempted
+    return snapshots, stats
 
 
 def filter_funds(

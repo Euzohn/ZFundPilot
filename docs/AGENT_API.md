@@ -71,7 +71,7 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 | Scope | 允许的工具 |
 |---|---|
 | `portfolio:read` | `portfolio-summary`、`positions`、`returns`、`portfolio-curve`、`benchmark`、`industry-exposure` |
-| `funds:read` | `funds/{code}`、`funds/compare` |
+| `funds:read` | `funds/{code}`、`funds/compare`、`search`、`screen` |
 | `health:read` | `data-status`、`portfolio-health`、`risk-report` |
 | `transactions:read` | `transactions`、`transactions/{tx_id}` |
 | `watchlist:read` | `watchlist` |
@@ -136,7 +136,7 @@ Authorization: Bearer zfag_xxxxxxxx
 
 ### 限流
 
-每个 token、每个端点 **120 次/分钟**。路径参数按同一端点计（例如不同基金代码共用 `funds/{code}` 的额度），避免通过枚举代码绕过限流。超限返回 `429`，并按 `Retry-After` 秒数重试。
+每个 token、每个端点默认 **120 次/分钟**。路径参数按同一端点计（例如不同基金代码共用 `funds/{code}` 的额度），避免通过枚举代码绕过限流。较重端点使用更低限额：`search` 为 60 次/分钟，`screen`、`benchmark`、`industry-exposure` 为 20 次/分钟；筛选无论是否补指标都共用同一个桶，切换参数不能绕过。超限返回 `429`，并按 `Retry-After` 秒数重试。限流与指标增强的并发上限都是**进程内**状态，多 worker 部署时各进程独立计数。
 
 ### OpenAPI / Swagger
 
@@ -568,6 +568,43 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 > 行业配置来自外部抓取（每基金一次请求，带缓存），**可能较慢**；失败基金进入 `funds_missing`（`reason` 为 `no_data`/`parse_error`/`fetch_error`/`empty_allocations`），不影响其他基金。无持仓时 `ok=false`、`message="无持仓"`。
 
+### 5.18 `GET /api/agent/tools/search`
+
+按名称或代码子串检索基金池，scope：`funds:read`。不补收益/风险指标，是快速查找路径。
+
+参数：
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `keyword` | string | 必填 | 去首尾空白后 1–100 字符；空值返回 `400`，不传或 `keyword=` 返回 `422` |
+| `limit` / `offset` | int | 50 / 0 | `limit` 1–200，`offset` ≥ 0 |
+
+`data` 字段：`ok`、`code`、`message`、`count`、`total`、`pagination`、`funds[]`；每项为 `{code, name, type, sector}`。
+
+> 匹配是字面子串，不支持正则或任意查询表达式；结果按基金代码升序。基金池缓存未命中时会联网刷新，文件缓存有效期为 24 小时。有效查询无匹配时 `ok=true` 且 `funds=[]`；基金池加载失败时仍返回 HTTP 200，但 `ok=false`、`code="universe_failed"`，调用方必须先检查 `ok`。类型与板块来自名称推断，仅用于候选检索。
+
+### 5.19 `GET /api/agent/tools/screen`
+
+按资产类型、板块与关键词筛选基金池，scope：`funds:read`。
+
+参数：
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `types` | string[] | 无 | 重复传参；必须是服务端已知类型，最多 20 个 |
+| `sectors` | string[] | 无 | 重复传参；必须是服务端已知板块（含自定义），最多 20 个 |
+| `keyword` | string | 无 | 可选名称/代码子串，最多 100 字符 |
+| `with_metrics` | bool | `false` | 是否为当前页前 30 项补收益/风险指标 |
+| `limit` / `offset` | int | 50 / 0 | `limit` 1–200，`offset` ≥ 0 |
+
+`data` 字段：`ok`、`code`、`message`、`count`、`total`、`pagination`、`with_metrics`、`metrics`、`funds[]`。
+
+- `metrics`：`{requested, limit=30, attempted, succeeded, failed, timed_out, complete}`。
+- 每只基金：`{code, name, type, sector, scale, manager, inception_date, returns, risk, metrics_status}`。
+- `metrics_status`：`not_requested`（未请求）、`over_limit`（超出前 30 项）、`ok`（已补）、`unavailable`（失败或超时）；值为 `null` 表示未取到，不补零。
+
+> `with_metrics=true` 会访问外部净值/档案接口，**可能较慢**，且只覆盖**当前页按代码升序的前 30 项**，不是全市场收益排名。增强并发上限为 2，满额立即返回 `429`（不排队）；超时只返回已完成项，未完成项标为 `unavailable`，后台任务结束后才释放并发额度。需要精确对比时用 `funds/compare`。未知类型/板块、超过 20 个过滤值或关键词超长返回 `400`。
+
 ## 6. 最小接入示例
 
 ### Python
@@ -612,13 +649,13 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-也可以用任意 HTTP 工具封装上述 17 个端点；仓库同时提供可选的 MCP 适配层（见本节末尾）。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
+也可以用任意 HTTP 工具封装上述 19 个端点；仓库同时提供可选的 MCP 适配层（见本节末尾）。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
 
 ---
 
 ### MCP 适配层（可选）
 
-仓库内置一个 stdio MCP 桥接，把上述 17 个工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
+仓库内置一个 stdio MCP 桥接，把上述 19 个工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
 
 ```bash
 # 在 ZFundPilot 源码目录安装可选依赖
@@ -647,7 +684,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 }
 ```
 
-暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`get_agent_capabilities`。
+暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`search_funds`、`screen_funds`、`get_agent_capabilities`。
 
 - `ZFUNDPILOT_BASE_URL` 默认 `http://127.0.0.1:8000`；ZFundPilot 跑在 NAS/Docker 时改成实际地址，远程访问请用 HTTPS。
 - `ZFUNDPILOT_TIMEOUT` 可选，默认 30 秒，范围 1–120。
@@ -675,3 +712,4 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 | 2026-10-27 | 新增 `funds/compare`：最多 20 只基金的收益、风险、费率与相关性对比 |
 | 2026-10-27 | 新增 4 个数据类只读 scope 与 6 个工具：`transactions`、`transactions/{tx_id}`、`watchlist`、`alerts`、`auto-invest-plans`、`capabilities`；新 scope 默认不勾选 |
 | 2026-10-28 | 新增 4 个组合级只读工具：`portfolio-curve`、`benchmark`、`risk-report`、`industry-exposure`，复用 `portfolio:read`/`health:read`，不新增 scope |
+| 2026-10-28 | 新增 2 个基金检索工具：`search`（关键词检索）、`screen`（类型/板块/关键词筛选，可选限量指标），复用 `funds:read`；引入按路由覆盖的限流 |

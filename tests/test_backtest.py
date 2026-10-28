@@ -309,6 +309,21 @@ class TestReadonlyNavRows:
         assert source == "database"
         assert rows == db_rows
 
+    def test_invalid_database_rows_use_remote_label(self, monkeypatch):
+        monkeypatch.setattr(
+            backtest.db, "get_nav_history_by_period",
+            lambda code, s, e: [{"date": "2024-01-02", "nav": 0}])
+        points = [{"date": "2024-01-02", "nav": 1.0},
+                  {"date": "2024-02-01", "nav": 1.1}]
+        monkeypatch.setattr(
+            backtest.fetch_fund, "fetch_nav_history", lambda code: points)
+
+        rows, source = readonly_nav_rows(
+            "000001", "2024-01-01", "2024-02-01")
+
+        assert source == "remote"
+        assert [r["date"] for r in rows] == ["2024-01-02", "2024-02-01"]
+
     def test_remote_failure_keeps_database_rows(self, monkeypatch):
         db_rows = [{"date": "2024-01-02", "nav": 1.0},
                    {"date": "2024-02-01", "nav": 1.1}]
@@ -405,3 +420,20 @@ class TestRunDcaBacktestFailure:
         assert all(r.status == "failed" for r in results)
         assert all(r.code == "insufficient_nav" for r in results)
         assert all(r.net_final_value == 0 for r in results)
+
+    def test_single_nav_row_still_reports_data_bounds(self, monkeypatch):
+        rows = [{"date": "2024-01-02", "nav": 1.0}]
+        monkeypatch.setattr(
+            backtest, "readonly_nav_rows", lambda code, s, e: (rows, "database"))
+        monkeypatch.setattr(backtest.db, "get_fund", lambda code: None)
+
+        results = run_dca_backtest(
+            ["000001"], "2024-01-01", "2024-02-01", 100,
+            nav_provider=backtest.readonly_nav_rows)
+
+        assert len(results) == 2
+        assert all(r.data_start == "2024-01-02" for r in results)
+        assert all(r.data_end == "2024-01-02" for r in results)
+        assert all(r.fee_ok is False for r in results)
+        assert all(
+            any("未计算费用" in item for item in r.caveats) for r in results)

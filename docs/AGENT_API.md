@@ -615,7 +615,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `fund_codes` | string[] | 必填 | 1–5 个 6 位代码；重复代码去重后逐基金独立模拟 |
+| `fund_codes` | string[] | 必填 | 列表最多 5 项；6 位代码，重复代码去重后逐基金独立模拟 |
 | `start_date` / `end_date` | string | 必填 | 严格 `YYYY-MM-DD`；起日早于止日；止日不晚于中国时区今日 |
 | `amount_per_period` | number | 必填 | 每只基金每期金额，有限正数，≤ 1,000,000 |
 | `cadence` | string | `month` | `month` / `week` / `biweek` |
@@ -626,12 +626,12 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 区间最长 10 年；月/双周/周的计划期数最多分别约为 120/261/522。非法 JSON、缺少必填字段或未知字段返回 `422`；认证与 scope 语义与其他工具一致（`401`/`403`）。
 
-`data` 字段：`ok`、`message`、`simulation_note`、`requested`、`fund_count`、`result_count`、`failed_count`、`results[]`。`failed_count` 按结果条数计（同一基金的 `dca` 与 `lumpsum` 各自计一条）。
+`data` 字段：`ok`、`message`、`simulation_note`、`requested`、`fund_count`、`result_count`、`failed_count`、`results[]`。`failed_count` 按结果条数计（同一基金的 `dca` 与 `lumpsum` 各自计一条）；`ok` 仅在全部结果失败时为 `false`，部分失败仍为 `true`，由 `message` 与各结果的 `status` 说明。
 
 每条结果包含：
 
 - 基础：`fund_code`、`fund_name`、`strategy`（`dca`/`lumpsum`）、`status`（`ok`/`partial`/`failed`）、`code`、`message`。
-- 数据：`data_source`（`database`/`remote`/`database+remote`/`none`）、`data_start`、`data_end`、`valuation_date`、`skipped_periods`、`fee_ok`。
+- 数据：`data_source`（`database`/`remote`/`database+remote`/`none`）、`data_start`、`data_end`、`valuation_date`、`skipped_periods`、`fee_ok`。`data_start`/`data_end` 是实际可用净值区间；没有任何有效净值时为空字符串。
 - 指标：`cadence`、`amount_per_period`、`total_periods`、`invested_capital`、`total_fees`、`final_value`、`redemption_fee`、`net_final_value`、`total_return`、`annualized_return`、`max_drawdown`、`sharpe_ratio`。
 - 明细：`curve`（按 `max_points` 抽样）、`curve_points`、`periods_detail`（仅在 `include_periods=true` 时非空）、`periods_detail_count`、`caveats`。
 - `fee_ok=false` 表示费率表获取失败；即使 `fee_ok=true`，若申购或赎回档位缺失也会按 0 计并在 `caveats` 说明，不应解读为真实零费率。

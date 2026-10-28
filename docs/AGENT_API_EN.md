@@ -615,7 +615,7 @@ JSON body (unknown fields, type errors, or constraint violations return `422`):
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `fund_codes` | string[] | required | 1–5 six-digit codes; duplicates are removed and each fund is simulated independently |
+| `fund_codes` | string[] | required | At most 5 list items; six-digit codes, duplicates are removed and each fund is simulated independently |
 | `start_date` / `end_date` | string | required | Strict `YYYY-MM-DD`; start before end; end not after today in China time |
 | `amount_per_period` | number | required | Amount per fund per period; finite and positive, ≤ 1,000,000 |
 | `cadence` | string | `month` | `month`, `week`, or `biweek` |
@@ -626,12 +626,12 @@ JSON body (unknown fields, type errors, or constraint violations return `422`):
 
 The range is limited to 10 years; monthly/biweekly/weekly plans produce at most roughly 120/261/522 periods. Invalid JSON, missing required fields, or unknown fields return `422`; authentication and scope semantics match the other tools (`401`/`403`).
 
-`data` fields: `ok`, `message`, `simulation_note`, `requested`, `fund_count`, `result_count`, `failed_count`, `results[]`. `failed_count` counts result rows (a fund's `dca` and `lumpsum` rows count separately).
+`data` fields: `ok`, `message`, `simulation_note`, `requested`, `fund_count`, `result_count`, `failed_count`, `results[]`. `failed_count` counts result rows (a fund's `dca` and `lumpsum` rows count separately); `ok` is `false` only when every result failed. Partial failures keep `ok=true`; use `message` and each result's `status` for details.
 
 Each result contains:
 
 - Basics: `fund_code`, `fund_name`, `strategy` (`dca`/`lumpsum`), `status` (`ok`/`partial`/`failed`), `code`, `message`.
-- Data: `data_source` (`database`/`remote`/`database+remote`/`none`), `data_start`, `data_end`, `valuation_date`, `skipped_periods`, `fee_ok`.
+- Data: `data_source` (`database`/`remote`/`database+remote`/`none`), `data_start`, `data_end`, `valuation_date`, `skipped_periods`, `fee_ok`. `data_start`/`data_end` are the actual available NAV range and are empty strings when no valid NAV exists.
 - Metrics: `cadence`, `amount_per_period`, `total_periods`, `invested_capital`, `total_fees`, `final_value`, `redemption_fee`, `net_final_value`, `total_return`, `annualized_return`, `max_drawdown`, `sharpe_ratio`.
 - Details: `curve` (sampled to `max_points`), `curve_points`, `periods_detail` (non-empty only with `include_periods=true`), `periods_detail_count`, `caveats`.
 - `fee_ok=false` means the fee table could not be fetched; even when `fee_ok=true`, a missing purchase or redemption tier is counted as 0 and explained in `caveats`, which must not be read as a true zero-fee fund.

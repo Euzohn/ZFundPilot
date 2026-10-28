@@ -609,7 +609,8 @@ def readonly_nav_rows(
 
     fetched = clean_nav_rows(points, start_date, end_date)
     if _coverage_better(fetched, rows):
-        return fetched, ("database+remote" if db_rows else "remote")
+        # 只有数据库确有可用行时才标记为混合来源；无效行不算贡献
+        return fetched, ("database+remote" if rows else "remote")
     return rows, source
 
 
@@ -657,19 +658,23 @@ def run_dca_backtest(
         fund_name = fund.fund_name if fund else code
 
         if len(rows) < 2:
+            data_start = rows[0]["date"] if rows else ""
+            data_end = rows[-1]["date"] if rows else ""
             caveats = [
-                "净值数据不足，未生成收益指标。",
+                "净值数据不足，未生成收益指标，也未计算费用。",
                 "定投与一次性投入均为历史模拟，不代表未来收益，也不构成配置建议。",
             ]
             results.append(_failed_result(
                 code, fund_name, "dca", start_date, end_date,
                 amount_per_period, cadence, "insufficient_nav",
-                "请求区间内有效净值少于 2 个", data_source, caveats))
+                "请求区间内有效净值少于 2 个", data_source, caveats,
+                data_start=data_start, data_end=data_end))
             if include_lumpsum:
                 results.append(_failed_result(
                     code, fund_name, "lumpsum", start_date, end_date,
                     amount_per_period, "", "insufficient_nav",
-                    "请求区间内有效净值少于 2 个", data_source, caveats))
+                    "请求区间内有效净值少于 2 个", data_source, caveats,
+                    data_start=data_start, data_end=data_end))
             continue
 
         nav_dates = [r["date"] for r in rows]

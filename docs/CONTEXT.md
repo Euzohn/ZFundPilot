@@ -198,12 +198,12 @@ ZFundPilot/
 
 ### backtest.py — 定投策略回测
 
-- `run_dca_backtest(fund_codes, start, end, amount, cadence, include_lumpsum)`: 对每只基金模拟定投 + 一次性投入
-- 定投频率：月（每月1号）/ 双周（每14天）/ 周（每7天），扣款日遇非交易日跳到下一个有净值的交易日
-- 计入申购费（`fetch_fund.calc_purchase_fee`）和赎回费（FIFO 按持有期匹配费率档）
-- 指标：XIRR 年化（`returns.xirr` 二分法）、最大回撤（复用 `risk.calculate_max_drawdown`）、夏普比率（无风险利率 3%）
-- 净值数据不足时自动调 `fetch_fund.update_fund_nav` 拉取
-- `BacktestResult` dataclass 含曲线（`curve`）和每期明细（`periods_detail`）
+- `run_dca_backtest(fund_codes, start, end, amount, cadence, include_lumpsum, nav_provider=None)`: 对每只基金模拟定投 + 一次性投入；`nav_provider` 缺省为网页入口（自动补数并写净值库），Agent 入口传 `readonly_nav_rows`（只读，不写库）
+- 定投频率：月（首期不早于请求起日，其后每月 1 号）/ 双周（每 14 天）/ 周（每 7 天），扣款日遇非交易日跳到下一个有净值的交易日；多个计划期落到同一净值日时只执行第一期，其余计入 `skipped_periods`
+- 申购费使用每只基金一次费率快照（`_purchase_fee_from_rates`），赎回费 FIFO 按持有期匹配费率档；费率未知时 `fee_ok=false` 并写入 `caveats`
+- 指标：XIRR 年化（`returns.xirr` 二分法）、最大回撤（复用 `risk.calculate_max_drawdown`）、夏普比率（无风险利率 3%）；期末估值、赎回费持有天数与 XIRR 终值统一使用最后一个可用净值日
+- 净值数据不足、部分覆盖与费率未知通过 `status`/`code`/`message`/`caveats` 显式返回，不输出看似有效的零收益指标
+- `BacktestResult` dataclass 含曲线（`curve`）、每期明细（`periods_detail`）与数据来源/区间字段
 
 ### auto_invest.py — 定投计划自动执行
 

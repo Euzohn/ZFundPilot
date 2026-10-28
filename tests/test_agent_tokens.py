@@ -1008,10 +1008,10 @@ class TestAgentTools:
             api.fund_filter, "load_fund_universe",
             lambda force_refresh=False: universe)
         monkeypatch.setattr(
-            api.fund_filter, "get_available_types",
+            api.fetch_fund, "get_available_types",
             lambda: ["混合型", "债券型"])
         monkeypatch.setattr(
-            api.fund_filter, "get_available_sectors",
+            api.fetch_fund, "get_available_sectors",
             lambda: ["科技", "消费"])
         client = TestClient(api.app)
         headers = self._headers("funds:read")

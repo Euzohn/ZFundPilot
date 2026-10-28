@@ -25,6 +25,7 @@
 - 统一 `docs/AGENT_API.md` / `docs/AGENT_API_EN.md` 的接入示例：环境变量统一为 `ZFUNDPILOT_BASE_URL` / `ZFUNDPILOT_AGENT_TOKEN`，Python 示例由 `requests` 改为项目已依赖的 `httpx`
 
 ### Fixed
+- 修复 Agent 基金筛选工具 `GET /api/agent/tools/screen` 自上线起必然返回 500——端点误从 `fund_filter` 模块调用 `get_available_types()`/`get_available_sectors()`，这两个函数实际位于 `fetch_fund`；现改为正确引用，未提供筛选参数时同样可达。此前未被 CI 发现，是因为更早的网页 token 用例失败（`-x` 首败即停）挡住了该用例；同批的 `search` 工具不受影响
 - 修复网页登录 token 偶发被误判为无效——token 的 HMAC 签名固定 32 字节，但随机内容可能恰好包含 `.` 字节；此前按最后一个 `.` 切分会把签名截断，导致约 12% 的签发时刻（同一秒内所有 token）校验失败、管理端点返回 401。现改为按签名长度切分并兼容旧格式。新增 2 个回归测试（签名含点号、篡改/过期），总测试 708→710
 - 修正只读定投回测的数据标注：数据库行存在但全部无效时 `data_source` 不再误标为 `database+remote`；有效净值不足 2 个时，失败结果仍返回实际可用的 `data_start`/`data_end`，并在 `caveats` 说明未计算费用。新增 2 个回归测试，总测试 710→712
 - 修复 Agent 工具限流按实际请求路径分桶的绕过风险——此前 `/api/agent/tools/funds/000001` 与 `.../000002` 各自独立计数，枚举基金代码即可放大请求量；现按路由模板（`/api/agent/tools/funds/{code}`）分桶。新增 1 个回归测试，总测试 642→643

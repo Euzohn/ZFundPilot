@@ -1672,9 +1672,9 @@ def agent_screen_funds(
     """
     del ctx
     cleaned_types = _agent_fund_filters(
-        types, fund_filter.get_available_types(), "types")
+        types, fetch_fund.get_available_types(), "types")
     cleaned_sectors = _agent_fund_filters(
-        sectors, fund_filter.get_available_sectors(), "sectors")
+        sectors, fetch_fund.get_available_sectors(), "sectors")
     value = _agent_fund_keyword(keyword, required=False)
 
     result = fund_filter.filter_funds(

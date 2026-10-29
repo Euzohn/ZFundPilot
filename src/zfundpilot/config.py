@@ -301,6 +301,13 @@ AUTH_ENABLED = bool(AUTH_PASSWORD_HASH)
 # token 有效期（秒），默认 7 天
 AUTH_TOKEN_MAX_AGE = 7 * 24 * 3600
 
+# Agent 写能力总开关：默认关闭，需显式设置 ZFUNDPILOT_AGENT_WRITE_ENABLED=1。
+# 即使 token 具备 watchlist:write，也必须同时打开该开关；用于服务器验收前
+# 保持写能力不可用，而不是只依赖签发页面不勾选。
+AGENT_WRITE_ENABLED = os.environ.get(
+    "ZFUNDPILOT_AGENT_WRITE_ENABLED", ""
+).strip().lower() in {"1", "true", "yes", "on"}
+
 # 信任代理网段（用于登录限流时安全读取 X-Forwarded-For 头）
 # 逗号分隔 CIDR，默认空 = 不信任任何代理
 TRUSTED_PROXIES: list[ipaddress.IPv4Network] = []

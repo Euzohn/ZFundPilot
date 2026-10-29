@@ -27,11 +27,19 @@ from .models import Fund, NavPoint, Transaction
 # 连接管理
 # ---------------------------------------------------------------------------
 @contextmanager
-def get_connection() -> Iterator[sqlite3.Connection]:
+def get_connection(write: bool = False) -> Iterator[sqlite3.Connection]:
+    """打开数据库连接；``write=True`` 时立即取得写锁。
+
+    写事务需要先读后写（幂等检查、版本校验），若使用默认的延迟事务，
+    并发时可能读到旧快照后在升级写锁阶段直接失败。``BEGIN IMMEDIATE``
+    让写操作按 SQLite 写锁串行化，配合 ``busy_timeout`` 等待而非报错。
+    """
     conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 5000")
+    if write:
+        conn.execute("BEGIN IMMEDIATE")
     try:
         yield conn
         conn.commit()
@@ -151,8 +159,37 @@ def init_db() -> None:
                 fund_code  TEXT PRIMARY KEY,
                 note      TEXT DEFAULT '',
                 group_name TEXT DEFAULT '',
-                added_at  TEXT DEFAULT (datetime('now','localtime'))
+                added_at  TEXT DEFAULT (datetime('now','localtime')),
+                revision  INTEGER NOT NULL DEFAULT 1
             );
+
+            -- 自选墓碑：删除后保留前值与单调版本，防止旧请求或重建对象复用版本。
+            CREATE TABLE IF NOT EXISTS watchlist_tombstones (
+                fund_code   TEXT PRIMARY KEY,
+                revision    INTEGER NOT NULL,
+                note        TEXT DEFAULT '',
+                group_name  TEXT DEFAULT '',
+                added_at    TEXT,
+                deleted_at  TEXT NOT NULL
+            );
+
+            -- 写操作幂等记录：同主体同键只执行一次，结果可重放以便重试。
+            CREATE TABLE IF NOT EXISTS agent_operations (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                principal_type TEXT NOT NULL,
+                principal_id   TEXT NOT NULL,
+                key_hash       TEXT NOT NULL,
+                operation      TEXT NOT NULL,
+                params_digest  TEXT NOT NULL,
+                status         TEXT NOT NULL,
+                result_json    TEXT,
+                audit_id       INTEGER,
+                created_at     TEXT NOT NULL,
+                expires_at     TEXT,
+                UNIQUE(principal_type, principal_id, key_hash)
+            );
+            CREATE INDEX IF NOT EXISTS idx_agent_ops_created
+                ON agent_operations(created_at);
 
             CREATE TABLE IF NOT EXISTS dividend_alerts (
                 id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -213,6 +250,7 @@ def init_db() -> None:
     _migrate_add_conversion_id()
     _migrate_add_purchase_status()
     _migrate_add_risk_level()
+    _migrate_watchlist_revision()
 
 
 def _migrate_add_risk_level() -> None:
@@ -224,6 +262,23 @@ def _migrate_add_risk_level() -> None:
             conn.execute(
                 "ALTER TABLE funds ADD COLUMN risk_level TEXT DEFAULT ''"
             )
+
+
+def _migrate_watchlist_revision() -> None:
+    """为 watchlist 补充 revision 列并回填版本 1。幂等。
+
+    旧库没有版本概念，全部按 1 处理；此后任何写入都会递增，删除后版本
+    留在墓碑表，避免重建对象复用旧版本触发 ABA 覆盖。
+    """
+    with get_connection() as conn:
+        cols = {r["name"] for r in
+                conn.execute("PRAGMA table_info(watchlist)").fetchall()}
+        if not cols or "revision" in cols:
+            return
+        conn.execute(
+            "ALTER TABLE watchlist ADD COLUMN revision INTEGER NOT NULL DEFAULT 1"
+        )
+        conn.execute("UPDATE watchlist SET revision=1")
 
 
 def _migrate_add_columns() -> None:
@@ -1197,14 +1252,23 @@ def get_all_preferences() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 def log_audit(action: str, ip: str | None = None,
               username: str | None = None,
-              detail: dict | None = None) -> None:
-    """写入审计日志。"""
-    with get_connection() as conn:
-        conn.execute(
-            "INSERT INTO audit_log(ts, ip, username, action, detail) VALUES(?,?,?,?,?)",
-            (datetime.now(config.TIMEZONE).isoformat(), ip, username, action,
-             json.dumps(detail, ensure_ascii=False) if detail else None),
-        )
+              detail: dict | None = None,
+              *,
+              conn: sqlite3.Connection | None = None) -> int | None:
+    """写入审计日志。
+
+    传入 ``conn`` 时复用调用方事务（业务写入与审计同提交/同回滚），并返回
+    审计行 id；不传时使用独立连接，行为与旧版一致。
+    """
+    sql = "INSERT INTO audit_log(ts, ip, username, action, detail) VALUES(?,?,?,?,?)"
+    params = (
+        datetime.now(config.TIMEZONE).isoformat(), ip, username, action,
+        json.dumps(detail, ensure_ascii=False) if detail else None,
+    )
+    if conn is not None:
+        return conn.execute(sql, params).lastrowid
+    with get_connection() as own_conn:
+        return own_conn.execute(sql, params).lastrowid
 
 
 def fetch_audit_logs(limit: int = 100) -> list[dict]:
@@ -1385,10 +1449,12 @@ def get_due_auto_invest_plans(today: str) -> list[dict]:
 # 自选关注列表
 # ---------------------------------------------------------------------------
 def add_to_watchlist(fund_code: str, note: str = "", group_name: str = "") -> None:
+    """旧版直接写入（不做幂等/版本校验）；新增代码应走 watchlist_service。"""
     with get_connection() as conn:
         conn.execute(
             "INSERT INTO watchlist(fund_code, note, group_name) VALUES(?,?,?) "
-            "ON CONFLICT(fund_code) DO UPDATE SET note=excluded.note, group_name=excluded.group_name",
+            "ON CONFLICT(fund_code) DO UPDATE SET note=excluded.note, "
+            "group_name=excluded.group_name, revision=watchlist.revision+1",
             (fund_code.strip(), note, group_name),
         )
 
@@ -1401,7 +1467,8 @@ def remove_from_watchlist(fund_code: str) -> None:
 def update_watchlist_group(fund_code: str, group_name: str) -> None:
     with get_connection() as conn:
         conn.execute(
-            "UPDATE watchlist SET group_name=? WHERE fund_code=?",
+            "UPDATE watchlist SET group_name=?, revision=revision+1 "
+            "WHERE fund_code=?",
             (group_name, fund_code),
         )
 
@@ -1409,12 +1476,118 @@ def update_watchlist_group(fund_code: str, group_name: str) -> None:
 def get_watchlist() -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT w.fund_code, w.note, w.group_name, w.added_at, "
+            "SELECT w.fund_code, w.note, w.group_name, w.added_at, w.revision, "
             "f.fund_name, f.fund_type, f.sector, f.tracking_index "
             "FROM watchlist w LEFT JOIN funds f ON w.fund_code=f.fund_code "
             "ORDER BY w.group_name, w.added_at DESC"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# --- 自选受控写入（由 watchlist_service 在单一事务内调用）------------------
+def fund_exists(conn: sqlite3.Connection, fund_code: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM funds WHERE fund_code=?", (fund_code,)
+    ).fetchone()
+    return row is not None
+
+
+def get_watchlist_item(conn: sqlite3.Connection,
+                       fund_code: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT fund_code, note, group_name, added_at, revision "
+        "FROM watchlist WHERE fund_code=?",
+        (fund_code,),
+    ).fetchone()
+
+
+def insert_watchlist_item(conn: sqlite3.Connection, fund_code: str, note: str,
+                          group_name: str, revision: int) -> None:
+    conn.execute(
+        "INSERT INTO watchlist(fund_code, note, group_name, revision) "
+        "VALUES(?,?,?,?)",
+        (fund_code, note, group_name, revision),
+    )
+
+
+def update_watchlist_item(conn: sqlite3.Connection, fund_code: str, note: str,
+                          group_name: str, revision: int) -> None:
+    conn.execute(
+        "UPDATE watchlist SET note=?, group_name=?, revision=? "
+        "WHERE fund_code=?",
+        (note, group_name, revision, fund_code),
+    )
+
+
+def delete_watchlist_item(conn: sqlite3.Connection, fund_code: str) -> None:
+    conn.execute("DELETE FROM watchlist WHERE fund_code=?", (fund_code,))
+
+
+def get_watchlist_tombstone(conn: sqlite3.Connection,
+                            fund_code: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT fund_code, revision, note, group_name, added_at, deleted_at "
+        "FROM watchlist_tombstones WHERE fund_code=?",
+        (fund_code,),
+    ).fetchone()
+
+
+def upsert_watchlist_tombstone(conn: sqlite3.Connection, fund_code: str,
+                               revision: int, note: str, group_name: str,
+                               added_at: str | None, deleted_at: str) -> None:
+    conn.execute(
+        "INSERT INTO watchlist_tombstones"
+        "(fund_code, revision, note, group_name, added_at, deleted_at) "
+        "VALUES(?,?,?,?,?,?) "
+        "ON CONFLICT(fund_code) DO UPDATE SET revision=excluded.revision, "
+        "note=excluded.note, group_name=excluded.group_name, "
+        "added_at=excluded.added_at, deleted_at=excluded.deleted_at",
+        (fund_code, revision, note, group_name, added_at, deleted_at),
+    )
+
+
+def delete_watchlist_tombstone(conn: sqlite3.Connection, fund_code: str) -> None:
+    conn.execute(
+        "DELETE FROM watchlist_tombstones WHERE fund_code=?", (fund_code,)
+    )
+
+
+def get_watchlist_tombstones() -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT t.fund_code, t.revision, t.note, t.group_name, "
+            "t.added_at, t.deleted_at, f.fund_name "
+            "FROM watchlist_tombstones t "
+            "LEFT JOIN funds f ON t.fund_code=f.fund_code "
+            "ORDER BY t.deleted_at DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# --- 写操作幂等记录 --------------------------------------------------------
+def get_operation(conn: sqlite3.Connection, principal_type: str,
+                  principal_id: str, key_hash: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM agent_operations "
+        "WHERE principal_type=? AND principal_id=? AND key_hash=?",
+        (principal_type, principal_id, key_hash),
+    ).fetchone()
+
+
+def insert_operation(conn: sqlite3.Connection, *, principal_type: str,
+                     principal_id: str, key_hash: str, operation: str,
+                     params_digest: str, status: str, result_json: str,
+                     audit_id: int | None, created_at: str,
+                     expires_at: str | None) -> int:
+    cur = conn.execute(
+        "INSERT INTO agent_operations"
+        "(principal_type, principal_id, key_hash, operation, params_digest, "
+        "status, result_json, audit_id, created_at, expires_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?)",
+        (principal_type, principal_id, key_hash, operation, params_digest,
+         status, result_json, audit_id, created_at, expires_at),
+    )
+    return int(cur.lastrowid)
 
 
 # ---------------------------------------------------------------------------

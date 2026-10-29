@@ -38,8 +38,10 @@ SCOPE_TRANSACTIONS_READ = "transactions:read"
 SCOPE_WATCHLIST_READ = "watchlist:read"
 SCOPE_ALERTS_READ = "alerts:read"
 SCOPE_PLANS_READ = "plans:read"
+SCOPE_WATCHLIST_WRITE = "watchlist:write"
 
-# 仅开放只读 scope；写 scope 必须另行设计人类确认流程后再加入。
+# 写 scope 仅开放低风险自选维护；仍受 config.AGENT_WRITE_ENABLED 总开关约束。
+# 交易、计划、提醒处理等 L2 写能力须先完成网页审批机制再单独加入。
 ALLOWED_SCOPES = frozenset({
     SCOPE_PORTFOLIO_READ,
     SCOPE_FUNDS_READ,
@@ -48,7 +50,11 @@ ALLOWED_SCOPES = frozenset({
     SCOPE_WATCHLIST_READ,
     SCOPE_ALERTS_READ,
     SCOPE_PLANS_READ,
+    SCOPE_WATCHLIST_WRITE,
 })
+
+# 写 scope 集合：用于能力发现、审计与前端风险提示，避免把写权限当只读展示。
+WRITE_SCOPES = frozenset({SCOPE_WATCHLIST_WRITE})
 
 # 新 scope 默认不勾选：签发页面需显式选择，避免存量流程静默扩权。
 DEFAULT_SCOPES: tuple[str, ...] = (

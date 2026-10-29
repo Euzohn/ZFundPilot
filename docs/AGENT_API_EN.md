@@ -61,7 +61,7 @@ Request body:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | Yes | 1–64 characters, identifies the caller |
-| `scopes` | string[] | No | Defaults to `portfolio:read`, `funds:read`, and `health:read`; the data scopes added later must be selected explicitly; unknown or write scopes are rejected |
+| `scopes` | string[] | No | Defaults to `portfolio:read`, `funds:read`, and `health:read`; data and write scopes added later must be selected explicitly; unknown scopes are rejected |
 | `expires_in_days` | int \| null | No | 1–3650 days, default 90; `null` means no expiry |
 
 ---
@@ -77,12 +77,13 @@ Request body:
 | `watchlist:read` | `watchlist` |
 | `alerts:read` | `alerts` |
 | `plans:read` | `auto-invest-plans` |
+| `watchlist:write` | `watchlist` (add/update/remove; requires the server write switch) |
 
-There are no write scopes. Calling a tool without the required scope returns **403**.
+The only write scope is `watchlist:write`, unchecked by default and gated by `ZFUNDPILOT_AGENT_WRITE_ENABLED` (off by default). Calling a tool without the required scope returns **403**.
 
-`capabilities` only requires a valid token, not a specific scope; it returns only the tools granted to that token.
+`capabilities` only requires a valid token, not a specific scope; it returns only the tools granted to that token, marking write tools with `risk="write"` and `enabled`.
 
-> The first three scopes are checked by default on the issuance panel. `transactions:read`, `watchlist:read`, `alerts:read`, and `plans:read` are unchecked by default: opt in explicitly when an agent needs that data, so existing tokens are never silently broadened.
+> The first three scopes are checked by default on the issuance panel. `transactions:read`, `watchlist:read`, `alerts:read`, `plans:read`, and `watchlist:write` are unchecked by default: opt in explicitly when needed, so existing tokens are never silently broadened.
 
 ---
 
@@ -128,15 +129,17 @@ Standard FastAPI error shape:
 |---|---|
 | `400` | Invalid parameter (e.g. fund code is not 6 digits) |
 | `401` | Missing, invalid, expired, or revoked token |
-| `403` | Valid token but missing required scope, or password auth not enabled |
+| `403` | Valid token but missing required scope, write switch off, or password auth not enabled |
 | `404` | Unknown tool or fund (only with a valid token) |
+| `409` | Watchlist revision conflict, missing/existing object, unregistered fund, or idempotency conflict |
+| `422` | Invalid body/parameters, or missing a valid `Idempotency-Key` |
 | `429` | Rate limit exceeded; see `Retry-After` |
 
 > `/api/agent/tools/*` is protected by a dedicated Agent auth middleware. Even a nonexistent tool path returns `401` without a valid token, so route existence is not leaked.
 
 ### Rate limiting
 
-**120 requests per minute** per token per endpoint by default. Path parameters count as the same endpoint (for example, different fund codes share the `funds/{code}` budget), so enumerating codes cannot bypass the limit. Heavier endpoints use lower limits: `search` is 60/min, and `screen`, `backtest/dca`, `benchmark`, and `industry-exposure` are 20/min; screening shares one bucket whether or not metrics are requested, so switching parameters cannot bypass it. Exceeding a limit returns `429`; retry after the `Retry-After` seconds. Rate-limit and metric-enrichment concurrency are **in-process** state; multiple workers count independently.
+**120 requests per minute** per token per endpoint by default. Path parameters count as the same endpoint (for example, different fund codes share the `funds/{code}` budget), so enumerating codes cannot bypass the limit. Heavier endpoints use lower limits: `search` is 60/min; `screen`, `backtest/dca`, `benchmark`, and `industry-exposure` are 20/min; watchlist writes (`POST`/`PATCH`/`DELETE`) are 30/min and count separately from `GET` on the same path. Screening shares one bucket whether or not metrics are requested, so switching parameters cannot bypass it. Exceeding a limit returns `429`; retry after the `Retry-After` seconds. Rate-limit and metric-enrichment concurrency are **in-process** state; multiple workers count independently.
 
 ### OpenAPI / Swagger
 
@@ -688,6 +691,31 @@ You can also wrap these twenty endpoints with any HTTP tool; an optional MCP ada
 
 ---
 
+### 5.21 Watchlist maintenance (write, disabled by default)
+
+The three write tools share `watchlist:write` and are also gated by `ZFUNDPILOT_AGENT_WRITE_ENABLED` (off by default; when off, even a token with the scope gets `403 write_disabled`). They only change watchlist membership, notes, and groups — **never transactions, auto-invest plans, NAV data, or fund metadata**.
+
+| MCP tool | HTTP | Behavior |
+|---|---|---|
+| `add_watchlist_item` | `POST /api/agent/tools/watchlist` | Add; only registered funds; conflicts instead of overwriting notes/groups |
+| `update_watchlist_item` | `PATCH /api/agent/tools/watchlist/{code}` | Update with `expected_revision`; only explicitly provided fields change; an empty string clears a field |
+| `remove_watchlist_item` | `DELETE /api/agent/tools/watchlist/{code}?expected_revision=N` | Delete by revision, keeping a recoverable previous value |
+
+```bash
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f50" \
+  -d '{"fund_code":"005827","note":"watch","group_name":"core"}'
+```
+
+- Every write request must send `Idempotency-Key` (16–128 safe ASCII characters). Same key and parameters replay the original result with `replayed=true`; same key with different parameters or a different operation returns `409 idempotency_conflict`; expired keys return `409 idempotency_expired`. Records are kept for 90 days.
+- `expected_revision` comes from `list_watchlist`. A mismatch returns `409 revision_conflict` and never overwrites concurrent web or agent changes.
+- Adding an existing item returns `409 already_exists`; updating/removing a missing item returns `404 not_found`; an unregistered fund returns `409 fund_not_registered`.
+- Successful `data` includes `ok`, `code`, `message`, `changed`, `replayed`, `fund_code`, `revision`, `operation_id`, `audit_id`, and `before`/`after`.
+- Deleted values are recoverable only by the web administrator via `POST /api/watchlist/{code}/restore`, which also checks the tombstone revision and cannot overwrite a later rebuild or edit.
+- Watchlist writes are limited to 30 requests/minute per token. The business result audit is committed in the same transaction as the write; a successful auth audit does not mean the business operation succeeded.
+
 ### MCP adapter (optional)
 
 A stdio MCP bridge is bundled to expose the twenty tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
@@ -719,7 +747,8 @@ Claude Desktop example (`claude_desktop_config.json`):
 }
 ```
 
-Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`.
+Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`, `add_watchlist_item`, `update_watchlist_item`, `remove_watchlist_item`.
+Write tools require an `idempotency_key` argument, mapped to the HTTP `Idempotency-Key` header. The MCP client only passes parameters; server-side auth, scope, and the write switch remain authoritative.
 
 - `ZFUNDPILOT_BASE_URL` defaults to `http://127.0.0.1:8000`; use the real NAS/Docker address for remote instances and HTTPS for remote access.
 - `ZFUNDPILOT_TIMEOUT` is optional, default 30 seconds (range 1–120).

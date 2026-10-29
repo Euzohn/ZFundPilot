@@ -62,6 +62,9 @@ def test_tools_registered():
         "screen_funds",
         "run_dca_backtest",
         "get_agent_capabilities",
+        "add_watchlist_item",
+        "update_watchlist_item",
+        "remove_watchlist_item",
     }
 
 
@@ -542,3 +545,80 @@ def test_missing_token(monkeypatch):
     monkeypatch.delenv("ZFUNDPILOT_AGENT_TOKEN", raising=False)
     with pytest.raises(ToolError, match="ZFUNDPILOT_AGENT_TOKEN"):
         _run(mcp_server.get_portfolio_summary())
+
+
+KEY = "test-key-aaaaaaaaaaaa"
+
+
+def test_add_watchlist_item_maps_header_and_body(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        seen["key"] = request.headers.get("Idempotency-Key")
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"tool": "add_watchlist_item",
+                                         "data": {"ok": True}})
+
+    mock_api(handler)
+    _run(mcp_server.add_watchlist_item(
+        "005827", KEY, note="\u89c2\u5bdf", group_name="\u6838\u5fc3"))
+
+    assert seen["method"] == "POST"
+    assert seen["path"] == "/api/agent/tools/watchlist"
+    assert seen["key"] == KEY
+    assert seen["body"] == {"fund_code": "005827", "note": "\u89c2\u5bdf",
+                            "group_name": "\u6838\u5fc3"}
+
+
+def test_update_watchlist_item_only_sends_provided_fields(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"tool": "update_watchlist_item",
+                                         "data": {"ok": True}})
+
+    mock_api(handler)
+    _run(mcp_server.update_watchlist_item(
+        "005827", 3, KEY, note="\u65b0\u5907\u6ce8"))
+
+    assert seen["method"] == "PATCH"
+    assert seen["path"] == "/api/agent/tools/watchlist/005827"
+    assert seen["body"] == {"expected_revision": 3, "note": "\u65b0\u5907\u6ce8"}
+
+
+def test_remove_watchlist_item_uses_query_and_header(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        seen["revision"] = request.url.params.get("expected_revision")
+        seen["key"] = request.headers.get("Idempotency-Key")
+        return httpx.Response(200, json={"tool": "remove_watchlist_item",
+                                         "data": {"ok": True}})
+
+    mock_api(handler)
+    _run(mcp_server.remove_watchlist_item("005827", 2, KEY))
+
+    assert seen["method"] == "DELETE"
+    assert seen["path"] == "/api/agent/tools/watchlist/005827"
+    assert seen["revision"] == "2"
+    assert seen["key"] == KEY
+
+
+def test_write_tools_validate_input_before_http(mock_api):
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("HTTP must not be called")
+
+    mock_api(handler)
+    with pytest.raises(ToolError):
+        _run(mcp_server.add_watchlist_item("12345", KEY))
+    with pytest.raises(ToolError):
+        _run(mcp_server.add_watchlist_item("005827", "short"))
+    with pytest.raises(ToolError):
+        _run(mcp_server.remove_watchlist_item("005827", 0, KEY))

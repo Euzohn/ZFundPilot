@@ -23,6 +23,8 @@ import type {
   ConversionCreate,
   CSVParseResult,
   WatchlistItem,
+  DeletedWatchlistItem,
+  WatchlistWriteResult,
   AIUsageStats,
   AIUsageDaily,
   FeeRatesResponse,
@@ -51,6 +53,12 @@ const BASE = "/api"
 
 const ERR_401 = { zh: "未登录或登录已过期", en: "Not authenticated or session expired" }
 
+// 每次用户动作生成一个幂等键；同一次操作的网络重试应复用同一个键。
+function newIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID()
+  return `web-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const token = getToken()
   const headers: Record<string, string> = { "Content-Type": "application/json" }
@@ -69,8 +77,21 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
     let msg = text || `${res.status}`
-    try { const j = JSON.parse(text); if (j.detail) msg = j.detail } catch { /* not json */ }
-    throw new Error(msg)
+    let code: string | undefined
+    try {
+      const j = JSON.parse(text)
+      const detail = j?.detail
+      if (detail) {
+        if (typeof detail === "string") msg = detail
+        else if (typeof detail.message === "string") msg = detail.message
+        else msg = JSON.stringify(detail)
+      }
+      if (typeof detail?.code === "string") code = detail.code
+      else if (typeof j?.code === "string") code = j.code
+    } catch { /* not json */ }
+    const err = new Error(msg) as Error & { code?: string }
+    err.code = code
+    throw err
   }
   return res.json()
 }
@@ -464,19 +485,39 @@ export const api = {
 
   // Watchlist
   getWatchlist: () => request<WatchlistItem[]>("/watchlist"),
+  getDeletedWatchlist: () => request<{ items: DeletedWatchlistItem[] }>("/watchlist/deleted"),
   addToWatchlist: (code: string, note?: string, groupName?: string) =>
-    request<{ ok: boolean; code: string }>("/watchlist", {
+    request<WatchlistWriteResult>("/watchlist", {
       method: "POST",
+      headers: { "Idempotency-Key": newIdempotencyKey() },
       body: JSON.stringify({ code, note: note ?? "", group_name: groupName ?? "" }),
     }),
-  updateWatchlistGroup: (code: string, groupName: string) =>
-    request<{ ok: boolean; code: string }>(`/watchlist/${encodeURIComponent(code)}/group`, {
-      method: "PUT",
-      body: JSON.stringify({ group_name: groupName }),
+  updateWatchlistItem: (
+    code: string,
+    expectedRevision: number,
+    patch: { note?: string; group_name?: string },
+  ) =>
+    request<WatchlistWriteResult>(`/watchlist/${encodeURIComponent(code)}`, {
+      method: "PATCH",
+      headers: { "Idempotency-Key": newIdempotencyKey() },
+      body: JSON.stringify({ expected_revision: expectedRevision, ...patch }),
     }),
-  removeFromWatchlist: (code: string) =>
-    request<{ ok: boolean; code: string }>(`/watchlist/${encodeURIComponent(code)}`, {
-      method: "DELETE",
+  updateWatchlistGroup: (code: string, groupName: string, expectedRevision: number) =>
+    request<WatchlistWriteResult>(`/watchlist/${encodeURIComponent(code)}/group`, {
+      method: "PUT",
+      headers: { "Idempotency-Key": newIdempotencyKey() },
+      body: JSON.stringify({ group_name: groupName, expected_revision: expectedRevision }),
+    }),
+  removeFromWatchlist: (code: string, expectedRevision: number) =>
+    request<WatchlistWriteResult>(
+      `/watchlist/${encodeURIComponent(code)}?expected_revision=${expectedRevision}`,
+      { method: "DELETE", headers: { "Idempotency-Key": newIdempotencyKey() } },
+    ),
+  restoreWatchlistItem: (code: string, expectedRevision: number) =>
+    request<WatchlistWriteResult>(`/watchlist/${encodeURIComponent(code)}/restore`, {
+      method: "POST",
+      headers: { "Idempotency-Key": newIdempotencyKey() },
+      body: JSON.stringify({ expected_revision: expectedRevision }),
     }),
 
   // Dividend

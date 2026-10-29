@@ -569,10 +569,33 @@ export interface WatchlistItem {
   note: string
   group_name: string
   added_at: string
+  revision: number
   fund_name: string
   fund_type: string
   sector: string
   tracking_index: string
+}
+
+export interface DeletedWatchlistItem {
+  fund_code: string
+  revision: number
+  note: string
+  group_name: string
+  added_at: string | null
+  deleted_at: string
+  fund_name: string | null
+}
+
+export interface WatchlistWriteResult {
+  ok: boolean
+  code: string
+  message: string
+  replayed: boolean
+  fund_code: string
+  revision: number
+  changed: boolean
+  operation_id: number
+  audit_id: number
 }
 
 // ── 定投回测 ──

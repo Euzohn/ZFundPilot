@@ -49,6 +49,7 @@ from . import (
     rebalance,
     risk,
     scheduler,
+    watchlist_service,
 )
 from .models import (
     ACTION_BUY,
@@ -588,22 +589,34 @@ _AGENT_ROUTE_RATE_MAX: dict[str, int] = {
     "/api/agent/tools/backtest/dca": 20,
     "/api/agent/tools/benchmark": 20,
     "/api/agent/tools/industry-exposure": 20,
+    # 写端点独立计数，避免与同路径的 GET 读取共用额度。
+    "POST /api/agent/tools/watchlist": 30,
+    "PATCH /api/agent/tools/watchlist/{code}": 30,
+    "DELETE /api/agent/tools/watchlist/{code}": 30,
 }
 
 
-def _agent_rate_max_for(path: str) -> int:
-    """返回指定端点的每分钟限额；未单独配置时用默认值。"""
+def _agent_rate_max_for(endpoint_key: str) -> int:
+    """返回指定端点的每分钟限额；未单独配置时用默认值。
+
+    键可以是 ``METHOD 路由模板``，也兼容旧的无方法路径。
+    """
+    if endpoint_key in _AGENT_ROUTE_RATE_MAX:
+        return _AGENT_ROUTE_RATE_MAX[endpoint_key]
+    path = endpoint_key.split(" ", 1)[-1]
     return _AGENT_ROUTE_RATE_MAX.get(path, _AGENT_RATE_MAX)
 
 
 def _agent_endpoint_key(request: Request) -> str:
-    """返回路由模板而非实际路径，避免路径参数分裂限流桶。
+    """返回 ``方法 + 路由模板``，避免路径参数或读写方法分裂/混用限流桶。
 
     例如 ``/api/agent/tools/funds/005827`` 与 ``.../000001`` 必须共用
-    ``/api/agent/tools/funds/{code}`` 这一个桶，否则枚举基金代码可绕过限流。
+    ``/api/agent/tools/funds/{code}`` 这一个桶，否则枚举基金代码可绕过限流；
+    同一路径的 GET 与写方法也各自计数，防止列表读取吃掉写入额度。
     """
     route = request.scope.get("route")
-    return getattr(route, "path", None) or request.url.path
+    path = getattr(route, "path", None) or request.url.path
+    return f"{request.method} {path}"
 
 
 def _check_agent_rate_limit(token_id: int, path: str) -> tuple[bool, int]:
@@ -1234,6 +1247,87 @@ def agent_get_transaction(
     return _agent_tool_response("get_transaction", data)
 
 
+class AgentWatchlistAddRequest(BaseModel):
+    """Agent 新增自选请求；不接受名称代替代码，也不接受未知字段。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fund_code: str
+    note: str = ""
+    group_name: str = ""
+
+
+class AgentWatchlistUpdateRequest(BaseModel):
+    """Agent 更新自选请求；只修改显式提供的字段。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int
+    note: str = ""
+    group_name: str = ""
+
+
+_AGENT_WRITE_ERROR_RESPONSES = {
+    **_AGENT_ERROR_RESPONSES,
+    409: {"description": "版本冲突、对象不存在/已存在或幂等键冲突"},
+    422: {"description": "参数非法或缺少 Idempotency-Key"},
+}
+
+
+def _agent_write_principal(
+    ctx: agent_tokens.AgentTokenContext,
+) -> watchlist_service.Principal:
+    return watchlist_service.Principal(
+        "agent_token", str(ctx.id), f"agent:{ctx.prefix}")
+
+
+def _idempotency_key_header(request: Request) -> str:
+    return request.headers.get("Idempotency-Key", "")
+
+
+def _watchlist_validation_error(
+    exc: watchlist_service.WatchlistValidationError,
+) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={"code": "validation_error", "field": exc.field,
+                "message": exc.message},
+    )
+
+
+def _watchlist_result_data(result: watchlist_service.WatchlistResult) -> dict:
+    """成功结果展开；失败结果映射为 HTTPException。"""
+    if not result.ok:
+        raise HTTPException(
+            status_code=result.http_status,
+            detail={"code": result.code, "message": result.message},
+        )
+    return {
+        "ok": True,
+        "code": result.code,
+        "message": result.message,
+        "replayed": result.replayed,
+        **result.data,
+    }
+
+
+def _require_agent_write_enabled(
+    request: Request, ctx: agent_tokens.AgentTokenContext) -> None:
+    """写能力总开关；关闭时连具备 scope 的 token 也不能写入。"""
+    if config.AGENT_WRITE_ENABLED:
+        return
+    db.log_audit(
+        "watchlist_write_rejected", ip=_get_client_ip(request),
+        detail={"reason": "write_disabled", "token_id": ctx.id,
+                "token_prefix": ctx.prefix, "path": request.url.path},
+    )
+    raise HTTPException(
+        status_code=403,
+        detail={"code": "write_disabled",
+                "message": "Agent 写能力未启用，请联系管理员开启"},
+    )
+
+
 @app.get("/api/agent/tools/watchlist", tags=["agent"],
          summary="自选列表（只读）", responses=_AGENT_ERROR_RESPONSES,
          dependencies=[Security(_agent_bearer_scheme)])
@@ -1259,6 +1353,99 @@ def agent_list_watchlist(
         "pagination": _agent_pagination(limit, offset, total, len(page)),
         "watchlist": page,
     })
+
+
+@app.post("/api/agent/tools/watchlist", tags=["agent"],
+          summary="新增自选（受控写入）",
+          responses=_AGENT_WRITE_ERROR_RESPONSES,
+          dependencies=[Security(_agent_bearer_scheme)])
+def agent_add_watchlist_item(
+    request: Request,
+    body: AgentWatchlistAddRequest,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_WATCHLIST_WRITE)),
+    ],
+) -> dict[str, Any]:
+    """新增自选关系；已存在时返回冲突，不覆盖备注与分组。"""
+    _require_agent_write_enabled(request, ctx)
+    try:
+        result = watchlist_service.add_item(
+            _agent_write_principal(ctx),
+            fund_code=body.fund_code,
+            note=body.note,
+            group_name=body.group_name,
+            idempotency_key=_idempotency_key_header(request),
+            ip=_get_client_ip(request),
+        )
+    except watchlist_service.WatchlistValidationError as exc:
+        raise _watchlist_validation_error(exc) from exc
+    return _agent_tool_response(
+        "add_watchlist_item", _watchlist_result_data(result))
+
+
+@app.patch("/api/agent/tools/watchlist/{code}", tags=["agent"],
+           summary="更新自选（受控写入）",
+           responses=_AGENT_WRITE_ERROR_RESPONSES,
+           dependencies=[Security(_agent_bearer_scheme)])
+def agent_update_watchlist_item(
+    request: Request,
+    code: str,
+    body: AgentWatchlistUpdateRequest,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_WATCHLIST_WRITE)),
+    ],
+) -> dict[str, Any]:
+    """按 revision 更新备注/分组；只修改请求中显式出现的字段。"""
+    _require_agent_write_enabled(request, ctx)
+    provided = body.model_fields_set
+    try:
+        result = watchlist_service.update_item(
+            _agent_write_principal(ctx),
+            fund_code=code,
+            expected_revision=body.expected_revision,
+            note=body.note if "note" in provided else watchlist_service.UNSET,
+            group_name=(
+                body.group_name if "group_name" in provided
+                else watchlist_service.UNSET
+            ),
+            idempotency_key=_idempotency_key_header(request),
+            ip=_get_client_ip(request),
+        )
+    except watchlist_service.WatchlistValidationError as exc:
+        raise _watchlist_validation_error(exc) from exc
+    return _agent_tool_response(
+        "update_watchlist_item", _watchlist_result_data(result))
+
+
+@app.delete("/api/agent/tools/watchlist/{code}", tags=["agent"],
+            summary="移除自选（受控写入）",
+            responses=_AGENT_WRITE_ERROR_RESPONSES,
+            dependencies=[Security(_agent_bearer_scheme)])
+def agent_remove_watchlist_item(
+    request: Request,
+    code: str,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_WATCHLIST_WRITE)),
+    ],
+    expected_revision: int = Query(..., ge=1),
+) -> dict[str, Any]:
+    """按 revision 删除自选；删除保留可恢复前值。"""
+    _require_agent_write_enabled(request, ctx)
+    try:
+        result = watchlist_service.remove_item(
+            _agent_write_principal(ctx),
+            fund_code=code,
+            expected_revision=expected_revision,
+            idempotency_key=_idempotency_key_header(request),
+            ip=_get_client_ip(request),
+        )
+    except watchlist_service.WatchlistValidationError as exc:
+        raise _watchlist_validation_error(exc) from exc
+    return _agent_tool_response(
+        "remove_watchlist_item", _watchlist_result_data(result))
 
 
 def _agent_alert_rows(alert_type: str | None,
@@ -1938,6 +2125,18 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
     {"name": "get_agent_capabilities", "method": "GET",
      "path": "/api/agent/tools/capabilities",
      "scope": None},
+    {"name": "add_watchlist_item", "method": "POST",
+     "path": "/api/agent/tools/watchlist",
+     "scope": agent_tokens.SCOPE_WATCHLIST_WRITE,
+     "risk": "write", "requires_confirmation": False},
+    {"name": "update_watchlist_item", "method": "PATCH",
+     "path": "/api/agent/tools/watchlist/{code}",
+     "scope": agent_tokens.SCOPE_WATCHLIST_WRITE,
+     "risk": "write", "requires_confirmation": False},
+    {"name": "remove_watchlist_item", "method": "DELETE",
+     "path": "/api/agent/tools/watchlist/{code}",
+     "scope": agent_tokens.SCOPE_WATCHLIST_WRITE,
+     "risk": "write", "requires_confirmation": False},
 )
 
 
@@ -1950,9 +2149,17 @@ def agent_get_capabilities(
         Depends(require_agent_scope(None)),
     ],
 ) -> dict[str, Any]:
-    """返回当前 token 已获授权的只读工具与元数据。"""
+    """返回当前 token 已获授权的工具与元数据。"""
     tools = [
-        {**tool, "risk": "read", "requires_confirmation": False}
+        {
+            **tool,
+            "risk": tool.get("risk", "read"),
+            "requires_confirmation": tool.get("requires_confirmation", False),
+            "enabled": (
+                config.AGENT_WRITE_ENABLED
+                if tool.get("risk") == "write" else True
+            ),
+        }
         for tool in _AGENT_TOOL_REGISTRY
         if tool["scope"] is None or tool["scope"] in ctx.scopes
     ]
@@ -1960,6 +2167,7 @@ def agent_get_capabilities(
         "server_version": APP_VERSION,
         "schema_version": 1,
         "granted_scopes": sorted(ctx.scopes),
+        "write_enabled": config.AGENT_WRITE_ENABLED,
         "currency": "CNY",
         "tools": tools,
     })
@@ -2615,28 +2823,74 @@ def compare_funds(body: CompareRequest) -> dict[str, Any]:
 
 
 class WatchlistRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     code: str
     note: str = ""
     group_name: str = ""
 
 
 class WatchlistGroupRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     group_name: str = ""
+    expected_revision: int
+
+
+class WatchlistUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int
+    note: str = ""
+    group_name: str = ""
+
+
+class WatchlistRestoreRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int
+
+
+def _web_write_principal() -> watchlist_service.Principal:
+    name = config.AUTH_USERNAME or "admin"
+    return watchlist_service.Principal("web", name, name)
+
+
+def _ensure_fund_registered(code: str) -> None:
+    """网页新增自选时保留原有“按代码收录基金”的能力。
+
+    Agent 写入口不调用此函数：Agent 只能操作已收录基金，避免写路径隐式
+    联网抓取与覆盖分类映射。
+    """
+    if db.get_fund(code) is not None:
+        return
+    meta = fetch_fund.fetch_fund_meta(code)
+    if not meta.ok:
+        raise HTTPException(400, meta.message or f"基金 {code} 不存在")
+    db.upsert_fund(Fund(code, meta.fund_name, meta.fund_type,
+                        meta.sector, meta.tracking_index))
+    fetch_fund.save_sector_mapping(code, meta.sector)
 
 
 @app.post("/api/watchlist")
 def add_to_watchlist(request: Request, body: WatchlistRequest) -> dict[str, Any]:
-    code = body.code.strip()
-    if not code:
-        raise HTTPException(400, "基金代码不能为空")
-    meta = fetch_fund.fetch_fund_meta(code)
-    if not meta.ok:
-        raise HTTPException(400, meta.message or f"基金 {code} 不存在")
-    db.upsert_fund(Fund(code, meta.fund_name, meta.fund_type, meta.sector, meta.tracking_index))
-    fetch_fund.save_sector_mapping(code, meta.sector)
-    db.add_to_watchlist(code, body.note, body.group_name)
-    db.log_audit("watchlist_add", ip=_get_client_ip(request), detail={"code": code, "group_name": body.group_name})
-    return {"ok": True, "code": code}
+    try:
+        code = watchlist_service.validate_fund_code(body.code)
+    except watchlist_service.WatchlistValidationError as exc:
+        raise _watchlist_validation_error(exc) from exc
+    _ensure_fund_registered(code)
+    try:
+        result = watchlist_service.add_item(
+            _web_write_principal(),
+            fund_code=code,
+            note=body.note,
+            group_name=body.group_name,
+            idempotency_key=_idempotency_key_header(request),
+            ip=_get_client_ip(request),
+        )
+    except watchlist_service.WatchlistValidationError as exc:
+        raise _watchlist_validation_error(exc) from exc
+    return _watchlist_result_data(result)
 
 
 @app.get("/api/watchlist")
@@ -2644,18 +2898,85 @@ def get_watchlist() -> list[dict]:
     return db.get_watchlist()
 
 
+@app.get("/api/watchlist/deleted")
+def get_deleted_watchlist() -> dict[str, Any]:
+    """列出可恢复的删除记录（含前值与删除版本）。"""
+    return {"items": watchlist_service.list_deleted()}
+
+
+@app.patch("/api/watchlist/{code}")
+def update_watchlist_item(request: Request, code: str,
+                          body: WatchlistUpdateRequest) -> dict[str, Any]:
+    provided = body.model_fields_set
+    try:
+        result = watchlist_service.update_item(
+            _web_write_principal(),
+            fund_code=code,
+            expected_revision=body.expected_revision,
+            note=body.note if "note" in provided else watchlist_service.UNSET,
+            group_name=(
+                body.group_name if "group_name" in provided
+                else watchlist_service.UNSET
+            ),
+            idempotency_key=_idempotency_key_header(request),
+            ip=_get_client_ip(request),
+        )
+    except watchlist_service.WatchlistValidationError as exc:
+        raise _watchlist_validation_error(exc) from exc
+    return _watchlist_result_data(result)
+
+
 @app.put("/api/watchlist/{code}/group")
-def update_watchlist_group(request: Request, code: str, body: WatchlistGroupRequest) -> dict[str, Any]:
-    db.update_watchlist_group(code, body.group_name)
-    db.log_audit("watchlist_group", ip=_get_client_ip(request), detail={"code": code, "group_name": body.group_name})
-    return {"ok": True, "code": code}
+def update_watchlist_group(request: Request, code: str,
+                           body: WatchlistGroupRequest) -> dict[str, Any]:
+    try:
+        result = watchlist_service.update_item(
+            _web_write_principal(),
+            fund_code=code,
+            expected_revision=body.expected_revision,
+            group_name=body.group_name,
+            idempotency_key=_idempotency_key_header(request),
+            ip=_get_client_ip(request),
+        )
+    except watchlist_service.WatchlistValidationError as exc:
+        raise _watchlist_validation_error(exc) from exc
+    return _watchlist_result_data(result)
 
 
 @app.delete("/api/watchlist/{code}")
-def remove_from_watchlist(request: Request, code: str) -> dict[str, Any]:
-    db.remove_from_watchlist(code)
-    db.log_audit("watchlist_remove", ip=_get_client_ip(request), detail={"code": code})
-    return {"ok": True, "code": code}
+def remove_from_watchlist(
+    request: Request,
+    code: str,
+    expected_revision: int = Query(..., ge=1),
+) -> dict[str, Any]:
+    try:
+        result = watchlist_service.remove_item(
+            _web_write_principal(),
+            fund_code=code,
+            expected_revision=expected_revision,
+            idempotency_key=_idempotency_key_header(request),
+            ip=_get_client_ip(request),
+        )
+    except watchlist_service.WatchlistValidationError as exc:
+        raise _watchlist_validation_error(exc) from exc
+    return _watchlist_result_data(result)
+
+
+@app.post("/api/watchlist/{code}/restore")
+def restore_watchlist_item(request: Request, code: str,
+                           body: WatchlistRestoreRequest) -> dict[str, Any]:
+    """恢复已删除自选；仅网页管理员可用，且不得覆盖后续修改。"""
+    try:
+        result = watchlist_service.restore_item(
+            _web_write_principal(),
+            fund_code=code,
+            expected_revision=body.expected_revision,
+            idempotency_key=_idempotency_key_header(request),
+            ip=_get_client_ip(request),
+        )
+    except watchlist_service.WatchlistValidationError as exc:
+        raise _watchlist_validation_error(exc) from exc
+    return _watchlist_result_data(result)
 
 
 @app.get("/api/funds/{code}")

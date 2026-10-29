@@ -148,8 +148,9 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 
 ### Agent Access (API / MCP)
 
-- **Dedicated read-only tokens** — High-entropy Agent tokens physically separate from web login tokens; only SHA-256 digests are stored; scoped to `portfolio:read`/`funds:read`/`health:read`/`transactions:read`/`watchlist:read`/`alerts:read`/`plans:read`, default-deny, revocable/expiring; disabled when no admin password is set
+- **Dedicated Agent tokens** — High-entropy Agent tokens physically separate from web login tokens; only SHA-256 digests are stored; scoped to `portfolio:read`/`funds:read`/`health:read`/`transactions:read`/`watchlist:read`/`alerts:read`/`plans:read` plus optional `watchlist:write`, default-deny, revocable/expiring; disabled when no admin password is set
 - **Twenty read-only tools** — `/api/agent/tools/*` exposes portfolio summary, data status, positions, fund detail, portfolio health, return breakdown, multi-fund comparison, transactions, watchlist, alerts, auto-invest plans, portfolio curve, benchmark comparison, risk report, industry exposure, fund search, fund screening, read-only DCA backtesting, and capability discovery; stable response envelope, formal-NAV semantics, and explicit data-quality caveats; no trading/settings/export writes
+- **Optional watchlist writes** — Three watchlist maintenance tools (add/update/remove) use a separate `watchlist:write` scope, unchecked by default and gated by a server write switch; they change only watchlist membership, notes, and groups, never transactions or plans; idempotency keys, revision conflict checks, recoverable deletes, and business-result audits commit atomically
 - **MCP adapter** — Optional stdio bridge (`python -m zfundpilot.mcp_server`) for Claude Desktop / Cursor; authentication, scopes, and rate limits are identical to the HTTP entry point, with no database access or auth bypass
 - **Auditable boundary** — Auth success/failure, rate limiting, issuance, and revocation are audited (token prefix only); rate limiting is per token + endpoint, and HTTPS is required for remote access. See [docs/AGENT_API_EN.md](docs/AGENT_API_EN.md) for endpoints, examples, and setup
 

@@ -35,7 +35,8 @@ export default function FundDetail() {
   const navigate = useNavigate()
   const { addCode, hasCode, removeCode } = useCompare()
   const { data: watchlist, reload: reloadWatchlist } = useApi(() => api.getWatchlist(), [])
-  const inWatchlist = watchlist?.some(w => w.fund_code === code) ?? false
+  const watchlistItem = watchlist?.find(w => w.fund_code === code)
+  const inWatchlist = Boolean(watchlistItem)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [viewingTx, setViewingTx] = useState<Transaction | null>(null)
   const [navRange, setNavRange] = useState<"1m" | "3m" | "6m" | "1y" | "hold" | "tx" | "custom">("1y")
@@ -304,8 +305,8 @@ const handleDelete = async (txId: number) => {
               onClick={async () => {
                 if (!code) return
                 try {
-                  if (inWatchlist) {
-                    await api.removeFromWatchlist(code)
+                  if (inWatchlist && watchlistItem) {
+                    await api.removeFromWatchlist(code, watchlistItem.revision)
                     reloadWatchlist()
                     toast.success(t.watchlist.removed)
                   } else {

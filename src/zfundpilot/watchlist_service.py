@@ -31,6 +31,8 @@ FUND_CODE_RE = re.compile(r"^[0-9]{6}$")
 IDEMPOTENCY_KEY_RE = re.compile(r"^[A-Za-z0-9._~+/=-]+$")
 
 _UNSET = object()
+# 对调用方公开的哨兵：表示“本次不修改该字段”。
+UNSET = _UNSET
 
 
 class WatchlistValidationError(ValueError):

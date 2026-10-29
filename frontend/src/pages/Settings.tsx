@@ -75,6 +75,7 @@ const AGENT_SCOPE_KEYS = [
   "watchlist:read",
   "alerts:read",
   "plans:read",
+  "watchlist:write",
 ] as const
 
 // 新 scope 默认不勾选，避免签发时静默扩权；需要时由用户显式勾选。
@@ -101,6 +102,7 @@ function AgentTokenPanel() {
     "watchlist:read": t.settings.agentTokenScopeWatchlist,
     "alerts:read": t.settings.agentTokenScopeAlerts,
     "plans:read": t.settings.agentTokenScopePlans,
+    "watchlist:write": t.settings.agentTokenScopeWatchlistWrite,
   }
 
   const toggleScope = (scope: string) => {
@@ -274,6 +276,9 @@ function AgentTokenPanel() {
               </label>
             ))}
           </div>
+          {scopes.includes("watchlist:write") && (
+            <p className="text-xs text-warning">{t.settings.agentTokenWriteHint}</p>
+          )}
         </div>
 
         <div className="border-t pt-3">
@@ -401,6 +406,9 @@ function AuditLogPanel() {
     watchlist_add: t.settings.auditLabels.watchlist_add,
     watchlist_group: t.settings.auditLabels.watchlist_group,
     watchlist_remove: t.settings.auditLabels.watchlist_remove,
+    watchlist_update: t.settings.auditLabels.watchlist_update,
+    watchlist_restore: t.settings.auditLabels.watchlist_restore,
+    watchlist_write_rejected: t.settings.auditLabels.watchlist_write_rejected,
     export_backup: t.settings.auditLabels.export_backup,
     update_dividend_method: t.settings.auditLabels.update_dividend_method,
     dividend_check: t.settings.auditLabels.dividend_check,

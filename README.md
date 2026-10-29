@@ -148,8 +148,9 @@ cd frontend && npm install && npm run dev
 
 ### Agent 接入（API / MCP）
 
-- **独立只读令牌** — 与网页登录 token 物理隔离的高熵 Agent token，服务端只存 SHA-256 摘要；按 `portfolio:read`/`funds:read`/`health:read`/`transactions:read`/`watchlist:read`/`alerts:read`/`plans:read` 授权，默认拒绝、可撤销/过期；无密码模式下不可签发或使用
+- **独立 Agent 令牌** — 与网页登录 token 物理隔离的高熵 Agent token，服务端只存 SHA-256 摘要；按 `portfolio:read`/`funds:read`/`health:read`/`transactions:read`/`watchlist:read`/`alerts:read`/`plans:read` 及可选的 `watchlist:write` 授权，默认拒绝、可撤销/过期；无密码模式下不可签发或使用
 - **20 个只读工具** — `/api/agent/tools/*` 提供组合汇总、数据状态、持仓、单基金详情、组合体检、收益视图、多基金对比、交易流水、自选、提醒、定投计划、组合曲线、基准对比、风险报告、行业敞口、基金检索、基金筛选、只读定投回测与能力发现；统一响应包、正式净值口径与数据缺口说明，不暴露交易/设置/导出等写接口
+- **可选自选写入** — 3 个自选维护工具（新增/更新/删除）使用独立的 `watchlist:write`，默认不勾选，并受服务端写开关约束；只改自选关系与备注/分组，不创建交易或计划；幂等键、revision 冲突保护、删除前值恢复与业务结果审计同事务提交
 - **MCP 适配层** — 可选 stdio 桥接（`python -m zfundpilot.mcp_server`），让 Claude Desktop / Cursor 直接读取组合；鉴权、scope 与限流完全复用 HTTP 入口，不访问数据库、不另开鉴权后门
 - **可审计边界** — 鉴权成功/失败、限流、签发与撤销均写审计（仅记 token 前缀），按 token + 端点限流，远程访问要求 HTTPS。端点、示例与配置见 [docs/AGENT_API.md](docs/AGENT_API.md)
 

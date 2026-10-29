@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { WatchlistItem } from "@/api/types"
+import type { WatchlistItem, DeletedWatchlistItem } from "@/api/types"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,7 +13,7 @@ import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
 import ErrorState from "@/components/ErrorState"
 import ConfirmDialog from "@/components/ConfirmDialog"
-import { Star, Trash2, GitCompare, ArrowLeftRight, ExternalLink, Plus } from "lucide-react"
+import { Star, Trash2, GitCompare, ArrowLeftRight, ExternalLink, Plus, RotateCcw } from "lucide-react"
 import { useLang } from "@/i18n/LanguageContext"
 import { useCompare } from "@/contexts/CompareContext"
 import { toast } from "sonner"
@@ -32,6 +32,10 @@ export default function Watchlist() {
   const [addError, setAddError] = useState("")
   const [removingCode, setRemovingCode] = useState<string | null>(null)
   const [activeGroup, setActiveGroup] = useState("")
+  const [showDeleted, setShowDeleted] = useState(false)
+  const [deleted, setDeleted] = useState<DeletedWatchlistItem[]>([])
+  const [deletedLoading, setDeletedLoading] = useState(false)
+  const [restoringCode, setRestoringCode] = useState<string | null>(null)
 
   const fetcher = useCallback(() => api.getWatchlist(), [])
   const { data: items, loading, error, reload } = useApi(fetcher)
@@ -115,21 +119,70 @@ export default function Watchlist() {
   }
 
   const handleRemove = async (c: string) => {
+    const item = items?.find((it) => it.fund_code === c)
+    if (!item) return
     try {
-      await api.removeFromWatchlist(c)
+      await api.removeFromWatchlist(c, item.revision)
       reload()
       toast.success(t.watchlist.removed)
-    } catch {
-      toast.error(t.watchlist.removeFailed)
+    } catch (e: unknown) {
+      if ((e as { code?: string }).code === "revision_conflict") {
+        reload()
+        toast.error(t.watchlist.conflictRetry)
+      } else {
+        toast.error(t.watchlist.removeFailed)
+      }
     }
   }
 
-  const handleGroupChange = async (code: string, value: string) => {
+  const handleGroupChange = async (code: string, value: string, revision: number) => {
     try {
-      await api.updateWatchlistGroup(code, value.trim())
+      await api.updateWatchlistGroup(code, value.trim(), revision)
       reload()
+    } catch (e: unknown) {
+      if ((e as { code?: string }).code === "revision_conflict") {
+        reload()
+        toast.error(t.watchlist.conflictRetry)
+      } else {
+        toast.error(t.watchlist.groupUpdateFailed)
+      }
+    }
+  }
+
+  const loadDeleted = async () => {
+    setDeletedLoading(true)
+    try {
+      const data = await api.getDeletedWatchlist()
+      setDeleted(data.items)
     } catch {
-      toast.error(t.watchlist.groupUpdateFailed)
+      toast.error(t.watchlist.restoreFailed)
+    } finally {
+      setDeletedLoading(false)
+    }
+  }
+
+  const toggleDeleted = () => {
+    const next = !showDeleted
+    setShowDeleted(next)
+    if (next) loadDeleted()
+  }
+
+  const handleRestore = async (item: DeletedWatchlistItem) => {
+    setRestoringCode(item.fund_code)
+    try {
+      await api.restoreWatchlistItem(item.fund_code, item.revision)
+      toast.success(t.watchlist.restored)
+      await loadDeleted()
+      reload()
+    } catch (e: unknown) {
+      if ((e as { code?: string }).code === "revision_conflict") {
+        await loadDeleted()
+        toast.error(t.watchlist.conflictRetry)
+      } else {
+        toast.error(t.watchlist.restoreFailed)
+      }
+    } finally {
+      setRestoringCode(null)
     }
   }
 
@@ -275,7 +328,7 @@ export default function Watchlist() {
                         defaultValue={item.group_name}
                         onBlur={(e) => {
                           const v = e.target.value.trim()
-                          if (v !== item.group_name) handleGroupChange(item.fund_code, v)
+                          if (v !== item.group_name) handleGroupChange(item.fund_code, v, item.revision)
                         }}
                         onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur() }}
                         placeholder={t.watchlist.groupPlaceholder}
@@ -310,6 +363,46 @@ export default function Watchlist() {
           </div>
         </>
       )}
+      <div className="space-y-2">
+        <Button variant="ghost" size="sm" onClick={toggleDeleted}>
+          <RotateCcw className="mr-1 h-3.5 w-3.5" />
+          {t.watchlist.recentlyDeleted}
+        </Button>
+        {showDeleted && (
+          <Card>
+            <CardContent className="p-3">
+              {deletedLoading ? (
+                <p className="text-xs text-muted-foreground">{t.common.loading}</p>
+              ) : deleted.length === 0 ? (
+                <p className="text-xs text-muted-foreground">{t.watchlist.nothingDeleted}</p>
+              ) : (
+                <ul className="divide-y divide-border/50">
+                  {deleted.map((item) => (
+                    <li key={item.fund_code} className="flex flex-wrap items-center gap-2 py-2 text-xs">
+                      <span className="font-mono">{item.fund_code}</span>
+                      <span className="truncate">{item.fund_name || "—"}</span>
+                      {item.group_name && <Badge variant="outline">{item.group_name}</Badge>}
+                      <span className="text-muted-foreground">
+                        {t.watchlist.deletedAt}: {item.deleted_at.slice(0, 10)}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="ml-auto h-7"
+                        disabled={restoringCode === item.fund_code}
+                        onClick={() => handleRestore(item)}
+                      >
+                        {t.watchlist.restore}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
       <ConfirmDialog
         open={removingCode !== null}
         onOpenChange={(open) => { if (!open) setRemovingCode(null) }}

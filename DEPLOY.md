@@ -86,6 +86,7 @@ nohup uvicorn zfundpilot.api:app --host 0.0.0.0 --port 8000 > zfundpilot.log 2>&
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式（工作日 21:00）。可在设置页面暂停/启用 |
 | `ZFUNDPILOT_TIMEZONE` | `Asia/Shanghai` | 系统时区（IANA 名称），影响定时任务触发时间、交易日期、日志时间戳。需重启应用生效 |
 | `ZFUNDPILOT_TRUSTED_PROXIES` | 空 | 反向代理信任网段，逗号分隔 CIDR（如 `127.0.0.1/32,10.0.0.0/8`）。仅在 Nginx/Caddy 等反代后需配置，用于登录限流正确读取客户端 IP。公网直连不要设置 |
+| `ZFUNDPILOT_AGENT_WRITE_ENABLED` | 关闭 | Agent 写能力总开关（`1`/`true`/`yes`/`on` 开启）。开启后具备 `watchlist:write` 的 token 才能维护自选；默认关闭时写端点返回 `403 write_disabled`。建议先在隔离实例验收再开启 |
 
 ```bash
 # 示例：设置用户名 + 访问密码 + 自定义数据目录

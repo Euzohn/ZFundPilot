@@ -104,12 +104,14 @@ async def _send(
     *,
     params: dict[str, Any] | None = None,
     json_body: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """发送只读请求并统一错误语义；仅由固定工具函数调用。"""
+    """发送请求并统一错误语义；仅由固定工具函数调用。"""
     try:
         async with _make_client() as client:
             response = await client.request(
-                method, path, params=params, json=json_body)
+                method, path, params=params, json=json_body,
+                headers=headers)
     except httpx.HTTPError as exc:
         raise ToolError(
             f"Cannot reach ZFundPilot at {_base_url()}: {exc}"
@@ -150,9 +152,16 @@ async def _request(path: str, params: dict[str, Any] | None = None) -> dict[str,
     return await _send("GET", path, params=params)
 
 
-async def _post(path: str, body: dict[str, Any]) -> dict[str, Any]:
-    """只读 POST 请求；路径由工具函数写死，不接受调用方传入。"""
-    return await _send("POST", path, json_body=body)
+async def _post(path: str, body: dict[str, Any],
+                headers: dict[str, str] | None = None) -> dict[str, Any]:
+    """POST 请求；路径由工具函数写死，不接受调用方传入。"""
+    return await _send("POST", path, json_body=body, headers=headers)
+
+
+async def _delete(path: str, params: dict[str, Any] | None = None,
+                  headers: dict[str, str] | None = None) -> dict[str, Any]:
+    """DELETE 请求；路径与参数由工具函数按契约构造。"""
+    return await _send("DELETE", path, params=params, headers=headers)
 
 
 @mcp.tool()
@@ -340,6 +349,108 @@ async def list_watchlist(
     if group_name is not None:
         params["group_name"] = group_name
     return await _request("/api/agent/tools/watchlist", params)
+
+def _validate_write_key(value: str) -> str:
+    """校验幂等键，尽早给出可读错误；服务端仍会再次校验。"""
+    if not (16 <= len(value or "") <= 128):
+        raise ToolError("idempotency_key must be 16-128 characters.")
+    if not re.fullmatch(r"[A-Za-z0-9._~+/=-]+", value):
+        raise ToolError("idempotency_key contains unsupported characters.")
+    return value
+
+
+@mcp.tool()
+async def add_watchlist_item(
+    fund_code: str,
+    idempotency_key: str,
+    note: str = "",
+    group_name: str = "",
+) -> dict[str, Any]:
+    """Add a fund to the watchlist. This is a write operation.
+
+    The fund must already be registered in ZFundPilot; this tool never creates
+    transactions, plans, or fund metadata.
+
+    Args:
+        fund_code: Six-digit fund code, e.g. "005827".
+        idempotency_key: Unique retry key (16-128 chars); reuse it only for the
+            exact same request.
+        note: Optional note (max 500 chars).
+        group_name: Optional watchlist group (max 50 chars).
+    """
+    if not re.fullmatch(r"\d{6}", fund_code or ""):
+        raise ToolError("fund_code must be exactly 6 digits.")
+    _validate_write_key(idempotency_key)
+    return await _send(
+        "POST", "/api/agent/tools/watchlist",
+        json_body={"fund_code": fund_code, "note": note,
+                   "group_name": group_name},
+        headers={"Idempotency-Key": idempotency_key},
+    )
+
+
+@mcp.tool()
+async def update_watchlist_item(
+    fund_code: str,
+    expected_revision: int,
+    idempotency_key: str,
+    note: str | None = None,
+    group_name: str | None = None,
+) -> dict[str, Any]:
+    """Update a watchlist note or group. This is a write operation.
+
+    Read list_watchlist first to get the item's current revision. Omitted
+    fields are left unchanged; an empty string clears the field.
+
+    Args:
+        fund_code: Six-digit fund code.
+        expected_revision: Revision returned by list_watchlist.
+        idempotency_key: Unique retry key (16-128 chars).
+        note: New note; omit to keep the current value.
+        group_name: New group; omit to keep the current value.
+    """
+    if not re.fullmatch(r"\d{6}", fund_code or ""):
+        raise ToolError("fund_code must be exactly 6 digits.")
+    _validate_write_key(idempotency_key)
+    if expected_revision < 1:
+        raise ToolError("expected_revision must be a positive integer.")
+    body: dict[str, Any] = {"expected_revision": expected_revision}
+    if note is not None:
+        body["note"] = note
+    if group_name is not None:
+        body["group_name"] = group_name
+    return await _send(
+        "PATCH", f"/api/agent/tools/watchlist/{fund_code}",
+        json_body=body,
+        headers={"Idempotency-Key": idempotency_key},
+    )
+
+
+@mcp.tool()
+async def remove_watchlist_item(
+    fund_code: str,
+    expected_revision: int,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Remove a fund from the watchlist. This is a write operation.
+
+    Deletion keeps a recoverable previous value for the web administrator.
+
+    Args:
+        fund_code: Six-digit fund code.
+        expected_revision: Revision returned by list_watchlist.
+        idempotency_key: Unique retry key (16-128 chars).
+    """
+    if not re.fullmatch(r"\d{6}", fund_code or ""):
+        raise ToolError("fund_code must be exactly 6 digits.")
+    _validate_write_key(idempotency_key)
+    if expected_revision < 1:
+        raise ToolError("expected_revision must be a positive integer.")
+    return await _delete(
+        f"/api/agent/tools/watchlist/{fund_code}",
+        params={"expected_revision": expected_revision},
+        headers={"Idempotency-Key": idempotency_key},
+    )
 
 
 @mcp.tool()

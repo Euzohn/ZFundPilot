@@ -76,6 +76,7 @@ const AGENT_SCOPE_KEYS = [
   "alerts:read",
   "plans:read",
   "watchlist:write",
+  "data:refresh",
 ] as const
 
 // 新 scope 默认不勾选，避免签发时静默扩权；需要时由用户显式勾选。
@@ -103,6 +104,7 @@ function AgentTokenPanel() {
     "alerts:read": t.settings.agentTokenScopeAlerts,
     "plans:read": t.settings.agentTokenScopePlans,
     "watchlist:write": t.settings.agentTokenScopeWatchlistWrite,
+    "data:refresh": t.settings.agentTokenScopeDataRefresh,
   }
 
   const toggleScope = (scope: string) => {
@@ -276,7 +278,7 @@ function AgentTokenPanel() {
               </label>
             ))}
           </div>
-          {scopes.includes("watchlist:write") && (
+          {(scopes.includes("watchlist:write") || scopes.includes("data:refresh")) && (
             <p className="text-xs text-warning">{t.settings.agentTokenWriteHint}</p>
           )}
         </div>
@@ -409,6 +411,11 @@ function AuditLogPanel() {
     watchlist_update: t.settings.auditLabels.watchlist_update,
     watchlist_restore: t.settings.auditLabels.watchlist_restore,
     watchlist_write_rejected: t.settings.auditLabels.watchlist_write_rejected,
+    data_refresh_started: t.settings.auditLabels.data_refresh_started,
+    data_refresh_succeeded: t.settings.auditLabels.data_refresh_succeeded,
+    data_refresh_failed: t.settings.auditLabels.data_refresh_failed,
+    data_refresh_busy: t.settings.auditLabels.data_refresh_busy,
+    data_refresh_rejected: t.settings.auditLabels.data_refresh_rejected,
     export_backup: t.settings.auditLabels.export_backup,
     update_dividend_method: t.settings.auditLabels.update_dividend_method,
     dividend_check: t.settings.auditLabels.dividend_check,

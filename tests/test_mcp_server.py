@@ -65,6 +65,8 @@ def test_tools_registered():
         "add_watchlist_item",
         "update_watchlist_item",
         "remove_watchlist_item",
+        "start_data_refresh",
+        "get_job_status",
     }
 
 
@@ -622,3 +624,52 @@ def test_write_tools_validate_input_before_http(mock_api):
         _run(mcp_server.add_watchlist_item("005827", "short"))
     with pytest.raises(ToolError):
         _run(mcp_server.remove_watchlist_item("005827", 0, KEY))
+
+
+def test_start_data_refresh_posts_with_key(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        seen["key"] = request.headers.get("Idempotency-Key")
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(202, json={"tool": "start_data_refresh",
+                                         "data": {"job_id": 7, "status": "queued"}})
+
+    mock_api(handler)
+    _run(mcp_server.start_data_refresh(KEY, fund_codes=["005827"]))
+
+    assert seen["method"] == "POST"
+    assert seen["path"] == "/api/agent/tools/refresh"
+    assert seen["key"] == KEY
+    assert seen["body"] == {"fund_codes": ["005827"]}
+
+
+def test_get_job_status_requests_path(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"tool": "get_job_status",
+                                         "data": {"status": "succeeded"}})
+
+    mock_api(handler)
+    _run(mcp_server.get_job_status(7))
+
+    assert seen["method"] == "GET"
+    assert seen["path"] == "/api/agent/tools/refresh/7"
+
+
+def test_refresh_tools_validate_before_http(mock_api):
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("HTTP must not be called")
+
+    mock_api(handler)
+    with pytest.raises(ToolError):
+        _run(mcp_server.start_data_refresh("short"))
+    with pytest.raises(ToolError):
+        _run(mcp_server.start_data_refresh(KEY, fund_codes=["123"]))
+    with pytest.raises(ToolError):
+        _run(mcp_server.get_job_status(0))

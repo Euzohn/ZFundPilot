@@ -78,12 +78,13 @@ Request body:
 | `alerts:read` | `alerts` |
 | `plans:read` | `auto-invest-plans` |
 | `watchlist:write` | `watchlist` (add/update/remove; requires the server write switch) |
+| `data:refresh` | `refresh` (start/query task-based data refresh; NAV/metadata only; requires the server write switch) |
 
-The only write scope is `watchlist:write`, unchecked by default and gated by `ZFUNDPILOT_AGENT_WRITE_ENABLED` (off by default). Calling a tool without the required scope returns **403**.
+The write scopes are `watchlist:write` and `data:refresh`, both unchecked by default and gated by `ZFUNDPILOT_AGENT_WRITE_ENABLED` (off by default). Calling a tool without the required scope returns **403**.
 
 `capabilities` only requires a valid token, not a specific scope; it returns only the tools granted to that token, marking write tools with `risk="write"` and `enabled`.
 
-> The first three scopes are checked by default on the issuance panel. `transactions:read`, `watchlist:read`, `alerts:read`, `plans:read`, and `watchlist:write` are unchecked by default: opt in explicitly when needed, so existing tokens are never silently broadened.
+> The first three scopes are checked by default on the issuance panel. `transactions:read`, `watchlist:read`, `alerts:read`, `plans:read`, `watchlist:write`, and `data:refresh` are unchecked by default: opt in explicitly when needed, so existing tokens are never silently broadened.
 
 ---
 
@@ -139,7 +140,7 @@ Standard FastAPI error shape:
 
 ### Rate limiting
 
-**120 requests per minute** per token per endpoint by default. Path parameters count as the same endpoint (for example, different fund codes share the `funds/{code}` budget), so enumerating codes cannot bypass the limit. Heavier endpoints use lower limits: `search` is 60/min; `screen`, `backtest/dca`, `benchmark`, and `industry-exposure` are 20/min; watchlist writes (`POST`/`PATCH`/`DELETE`) are 30/min and count separately from `GET` on the same path. Screening shares one bucket whether or not metrics are requested, so switching parameters cannot bypass it. Exceeding a limit returns `429`; retry after the `Retry-After` seconds. Rate-limit and metric-enrichment concurrency are **in-process** state; multiple workers count independently.
+**120 requests per minute** per token per endpoint by default. Path parameters count as the same endpoint (for example, different fund codes share the `funds/{code}` budget), so enumerating codes cannot bypass the limit. Heavier endpoints use lower limits: `search` is 60/min; `screen`, `backtest/dca`, `benchmark`, and `industry-exposure` are 20/min; watchlist writes (`POST`/`PATCH`/`DELETE`) are 30/min and count separately from `GET` on the same path; `POST refresh` is 10/min (network-fetching, so avoid high-frequency triggers). Screening shares one bucket whether or not metrics are requested, so switching parameters cannot bypass it. Exceeding a limit returns `429`; retry after the `Retry-After` seconds. Rate-limit and metric-enrichment concurrency are **in-process** state; multiple workers count independently.
 
 ### OpenAPI / Swagger
 
@@ -724,6 +725,35 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist" \
 - Deleted values are recoverable only by the web administrator via `POST /api/watchlist/{code}/restore`, which also checks the tombstone revision and cannot overwrite a later rebuild or edit.
 - Watchlist writes are limited to 30 requests/minute per token. The business result audit is committed in the same transaction as the write; a successful auth audit does not mean the business operation succeeded.
 
+### 5.22 Data refresh (write, disabled by default)
+
+Start a **NAV/metadata-only** refresh job. Scope: `data:refresh`, also gated by `ZFUNDPILOT_AGENT_WRITE_ENABLED` (off by default). It does **not** backfill transaction NAVs, does **not** execute auto-invest plans, and never creates transactions or plans — the key difference from the web `POST /api/nav/update`.
+
+| MCP tool | HTTP | Behavior |
+|---|---|---|
+| `start_data_refresh` | `POST /api/agent/tools/refresh` | Create a job; returns `202` + `job_id` |
+| `get_job_status` | `GET /api/agent/tools/refresh/{job_id}` | Query progress/result; only the creating token can read |
+
+```bash
+# Start (default: current open holdings; or pass fund_codes, max 50)
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/refresh" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f51" \
+  -d '{}' | jq
+
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/refresh/7" | jq
+```
+
+- Must send `Idempotency-Key` (16–128 safe ASCII chars). Same key and parameters replay the original `job_id` (`replayed=true`); same key with different parameters returns `409 idempotency_conflict`; expired keys return `409 idempotency_expired`.
+- Jobs persist in `refresh_jobs`: `status ∈ {queued,running,succeeded,failed,interrupted}`; a restart marks leftover `queued/running` as `interrupted`, never falsely reporting success. Jobs are queryable for 7 days; records are kept another 30 days before cleanup.
+- If a refresh is already running, return `409 refresh_busy`; when a refresh job holds the lock, `detail.current_job_id` gives its ID for polling with `get_job_status` (it may be `null` when a manual web refresh is running). No queueing, avoiding stale jobs.
+- `can_cancel` is always `false`: cancellation is not supported in this phase, and no misleading empty cancel API is provided.
+- Jobs share the nav-update mutex with the web `/api/nav/update` and the scheduler, running serially. Progress (`done/total/current/phase`) is written to the job row and mirrored to the shared run state for the web UI.
+- Error codes: `write_disabled`, `validation_error`, `refresh_busy`, `not_found`, `idempotency_conflict`, `idempotency_expired`. Audits `data_refresh_started/succeeded/failed/busy/rejected` record only counts and the token prefix.
+- Max 50 funds per job; `POST refresh` is limited to 10 requests/minute (`GET refresh/{job_id}` uses the default 120/min).
+
 ### MCP adapter (optional)
 
 A stdio MCP bridge is bundled to expose the twenty tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
@@ -755,7 +785,7 @@ Claude Desktop example (`claude_desktop_config.json`):
 }
 ```
 
-Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`, `add_watchlist_item`, `update_watchlist_item`, `remove_watchlist_item`.
+Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`, `add_watchlist_item`, `update_watchlist_item`, `remove_watchlist_item`, `start_data_refresh`, `get_job_status`.
 Write tools require an `idempotency_key` argument, mapped to the HTTP `Idempotency-Key` header. The MCP client only passes parameters; server-side auth, scope, and the write switch remain authoritative.
 
 - `ZFUNDPILOT_BASE_URL` defaults to `http://127.0.0.1:8000`; use the real NAS/Docker address for remote instances and HTTPS for remote access.

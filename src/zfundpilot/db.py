@@ -18,6 +18,7 @@ import uuid
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime
+from typing import Any
 
 from . import config
 from .models import Fund, NavPoint, Transaction
@@ -190,6 +191,29 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_agent_ops_created
                 ON agent_operations(created_at);
+
+            -- 持久化刷新任务：服务重启把遗留 queued/running 标记 interrupted。
+            CREATE TABLE IF NOT EXISTS refresh_jobs (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                principal_type TEXT NOT NULL,
+                principal_id   TEXT NOT NULL,
+                job_type       TEXT NOT NULL DEFAULT 'data_refresh',
+                params_digest  TEXT NOT NULL,
+                status         TEXT NOT NULL,
+                total          INTEGER NOT NULL DEFAULT 0,
+                done           INTEGER NOT NULL DEFAULT 0,
+                current        TEXT DEFAULT '',
+                phase          TEXT DEFAULT '',
+                result_json    TEXT,
+                error          TEXT,
+                created_at     TEXT NOT NULL,
+                updated_at     TEXT NOT NULL,
+                expires_at     TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_refresh_jobs_owner
+                ON refresh_jobs(principal_type, principal_id);
+            CREATE INDEX IF NOT EXISTS idx_refresh_jobs_status
+                ON refresh_jobs(status);
 
             CREATE TABLE IF NOT EXISTS dividend_alerts (
                 id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1588,6 +1612,87 @@ def insert_operation(conn: sqlite3.Connection, *, principal_type: str,
          status, result_json, audit_id, created_at, expires_at),
     )
     return int(cur.lastrowid)
+
+
+# ---------------------------------------------------------------------------
+# 刷新任务 (refresh_jobs)
+# ---------------------------------------------------------------------------
+def insert_refresh_job(conn: sqlite3.Connection, *, principal_type: str,
+                       principal_id: str, job_type: str, params_digest: str,
+                       status: str, created_at: str, updated_at: str,
+                       expires_at: str | None) -> int:
+    cur = conn.execute(
+        "INSERT INTO refresh_jobs"
+        "(principal_type, principal_id, job_type, params_digest, status, "
+        "created_at, updated_at, expires_at) VALUES(?,?,?,?,?,?,?,?)",
+        (principal_type, principal_id, job_type, params_digest, status,
+         created_at, updated_at, expires_at),
+    )
+    return int(cur.lastrowid)
+
+
+def get_refresh_job(conn: sqlite3.Connection, job_id: int,
+                    principal_type: str, principal_id: str) -> sqlite3.Row | None:
+    """按归属读取任务；他人任务返回 None（查询层据此 404，不泄漏存在性）。"""
+    return conn.execute(
+        "SELECT * FROM refresh_jobs WHERE id=? AND principal_type=? "
+        "AND principal_id=?",
+        (job_id, principal_type, principal_id),
+    ).fetchone()
+
+
+def update_refresh_job(conn: sqlite3.Connection, job_id: int, *,
+                       status: str | None = None, total: int | None = None,
+                       done: int | None = None, current: str | None = None,
+                       phase: str | None = None, result_json: str | None = None,
+                       error: str | None = None, updated_at: str) -> None:
+    sets: list[str] = ["updated_at=?"]
+    params: list[Any] = [updated_at]
+    if status is not None:
+        sets.append("status=?")
+        params.append(status)
+    if total is not None:
+        sets.append("total=?")
+        params.append(total)
+    if done is not None:
+        sets.append("done=?")
+        params.append(done)
+    if current is not None:
+        sets.append("current=?")
+        params.append(current)
+    if phase is not None:
+        sets.append("phase=?")
+        params.append(phase)
+    if result_json is not None:
+        sets.append("result_json=?")
+        params.append(result_json)
+    if error is not None:
+        sets.append("error=?")
+        params.append(error)
+    params.append(job_id)
+    conn.execute(f"UPDATE refresh_jobs SET {', '.join(sets)} WHERE id=?", params)
+
+
+def mark_interrupted_refresh_jobs(now: str) -> int:
+    """启动时把遗留 queued/running 标记为 interrupted，避免永久 running。"""
+    with get_connection() as conn:
+        cur = conn.execute(
+            "UPDATE refresh_jobs SET status='interrupted', updated_at=? "
+            "WHERE status IN ('queued','running')",
+            (now,),
+        )
+        return int(cur.rowcount)
+
+
+def purge_refresh_jobs(cutoff: str) -> int:
+    """清理过期较久的任务记录，避免表无限增长。"""
+    with get_connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM refresh_jobs WHERE expires_at IS NOT NULL "
+            "AND expires_at < ?",
+            (cutoff,),
+        )
+        return int(cur.rowcount)
 
 
 # ---------------------------------------------------------------------------

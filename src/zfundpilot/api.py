@@ -47,6 +47,7 @@ from . import (
     fund_filter,
     health,
     rebalance,
+    refresh_service,
     risk,
     scheduler,
     watchlist_service,
@@ -89,6 +90,10 @@ async def _lifespan(app: FastAPI):
             logger.info("修复了 %d 笔 T+1 交易的净值回填", len(fixed))
         db.upsert_preference("t1_nav_fix_done", "1")
     scheduler.init_scheduler()
+    # 启动时把遗留 queued/running 刷新任务标记 interrupted，避免永久 running。
+    interrupted = refresh_service.mark_interrupted_on_startup()
+    if interrupted:
+        logger.warning("标记 %d 个中断的刷新任务为 interrupted", interrupted)
     yield
     scheduler.shutdown_scheduler()
 
@@ -593,6 +598,8 @@ _AGENT_ROUTE_RATE_MAX: dict[str, int] = {
     "POST /api/agent/tools/watchlist": 30,
     "PATCH /api/agent/tools/watchlist/{code}": 30,
     "DELETE /api/agent/tools/watchlist/{code}": 30,
+    # 刷新创建较重（联网抓取），任务状态查询轻量走默认额度。
+    "POST /api/agent/tools/refresh": 10,
 }
 
 
@@ -1522,6 +1529,99 @@ def agent_remove_watchlist_item(
         "remove_watchlist_item", _watchlist_result_data(result))
 
 
+# ---------------------------------------------------------------------------
+# Agent 任务化数据刷新（D：仅净值/元数据，不触碰交易与计划）
+# ---------------------------------------------------------------------------
+class AgentRefreshRequest(BaseModel):
+    """Agent 刷新请求；缺省基金代码时使用当前开仓持仓。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fund_codes: list[str] | None = None
+
+
+def _refresh_validation_error(
+    exc: refresh_service.RefreshValidationError,
+) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={"code": "validation_error", "field": exc.field,
+                "message": exc.message},
+    )
+
+
+def _agent_refresh_principal(
+    ctx: agent_tokens.AgentTokenContext,
+) -> refresh_service.Principal:
+    return refresh_service.Principal(
+        "agent_token", str(ctx.id), f"agent:{ctx.prefix}")
+
+
+def _refresh_result_data(result: refresh_service.RefreshResult) -> dict:
+    if not result.ok:
+        detail: dict[str, Any] = {
+            "code": result.code, "message": result.message}
+        # 保留 busy 时的 current_job_id 等可操作信息，便于客户端轮询。
+        detail.update(result.data)
+        raise HTTPException(status_code=result.http_status, detail=detail)
+    return {
+        "ok": True,
+        "code": result.code,
+        "message": result.message,
+        "replayed": result.replayed,
+        **result.data,
+    }
+
+
+@app.post("/api/agent/tools/refresh", tags=["agent"],
+          summary="启动数据刷新任务（受控写入）",
+          responses={**_AGENT_WRITE_ERROR_RESPONSES,
+                     202: {"description": "任务已创建，返回 job_id"}},
+          status_code=202,
+          dependencies=[Security(_agent_bearer_scheme)])
+def agent_start_data_refresh(
+    request: Request,
+    body: AgentRefreshRequest,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_DATA_REFRESH)),
+    ],
+) -> dict[str, Any]:
+    """启动仅净值/元数据刷新；不回填交易净值，不执行定投。"""
+    _require_agent_write_enabled(request, ctx)
+    try:
+        result = refresh_service.start_refresh(
+            _agent_refresh_principal(ctx),
+            fund_codes=body.fund_codes,
+            idempotency_key=_idempotency_key_header(request),
+            ip=_get_client_ip(request),
+        )
+    except refresh_service.RefreshValidationError as exc:
+        raise _refresh_validation_error(exc) from exc
+    return _agent_tool_response("start_data_refresh", _refresh_result_data(result))
+
+
+@app.get("/api/agent/tools/refresh/{job_id}", tags=["agent"],
+         summary="查询数据刷新任务状态（只读）",
+         responses={**_AGENT_ERROR_RESPONSES,
+                    404: {"description": "任务不存在或不属于当前 token"}},
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_get_refresh_job(
+    job_id: int,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_DATA_REFRESH)),
+    ],
+) -> dict[str, Any]:
+    """返回任务进度与结果；仅创建者 token 可读。"""
+    try:
+        result = refresh_service.get_job_status(
+            _agent_refresh_principal(ctx), job_id)
+    except refresh_service.RefreshValidationError as exc:
+        raise _refresh_validation_error(exc) from exc
+    return _agent_tool_response("get_job_status", _refresh_result_data(result))
+
+
 def _agent_alert_rows(alert_type: str | None,
                       status: str | None) -> list[dict]:
     """按类型合并分红与止盈止损提醒，统一按 id 降序。"""
@@ -2211,6 +2311,13 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
      "path": "/api/agent/tools/watchlist/{code}",
      "scope": agent_tokens.SCOPE_WATCHLIST_WRITE,
      "risk": "write", "requires_confirmation": False},
+    {"name": "start_data_refresh", "method": "POST",
+     "path": "/api/agent/tools/refresh",
+     "scope": agent_tokens.SCOPE_DATA_REFRESH,
+     "risk": "write", "requires_confirmation": False},
+    {"name": "get_job_status", "method": "GET",
+     "path": "/api/agent/tools/refresh/{job_id}",
+     "scope": agent_tokens.SCOPE_DATA_REFRESH},
 )
 
 

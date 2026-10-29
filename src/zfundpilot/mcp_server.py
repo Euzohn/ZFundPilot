@@ -454,6 +454,51 @@ async def remove_watchlist_item(
 
 
 @mcp.tool()
+async def start_data_refresh(
+    idempotency_key: str,
+    fund_codes: list[str] | None = None,
+) -> dict[str, Any]:
+    """Start a NAV/metadata refresh job. This is a write operation.
+
+    Only NAV history and fund metadata are refreshed. It never backfills
+    transaction NAVs and never executes auto-invest plans. Poll with
+    get_job_status using the returned job_id.
+
+    Args:
+        idempotency_key: Unique retry key (16-128 chars); same key+params
+            returns the same job_id.
+        fund_codes: Up to 50 six-digit codes; omit to refresh current open
+            holdings.
+    """
+    _validate_write_key(idempotency_key)
+    if fund_codes is not None:
+        if not isinstance(fund_codes, list) or not fund_codes:
+            raise ToolError("fund_codes must be a non-empty list.")
+        if len(fund_codes) > 50:
+            raise ToolError("fund_codes must have at most 50 entries.")
+        for code in fund_codes:
+            if not isinstance(code, str) or not re.fullmatch(r"\d{6}", code):
+                raise ToolError("fund_codes must be six-digit codes.")
+    return await _post(
+        "/api/agent/tools/refresh",
+        {"fund_codes": fund_codes},
+        headers={"Idempotency-Key": idempotency_key},
+    )
+
+
+@mcp.tool()
+async def get_job_status(job_id: int) -> dict[str, Any]:
+    """Get the status of a data refresh job started with start_data_refresh.
+
+    Args:
+        job_id: The job_id returned by start_data_refresh.
+    """
+    if not isinstance(job_id, int) or job_id <= 0:
+        raise ToolError("job_id must be a positive integer.")
+    return await _request(f"/api/agent/tools/refresh/{job_id}")
+
+
+@mcp.tool()
 async def list_alerts(
     type: str | None = None,
     status: str | None = None,

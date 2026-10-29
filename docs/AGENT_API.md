@@ -78,12 +78,13 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 | `alerts:read` | `alerts` |
 | `plans:read` | `auto-invest-plans` |
 | `watchlist:write` | `watchlist`（新增/更新/删除自选，需同时开启服务端写开关） |
+| `data:refresh` | `refresh`（启动/查询任务化数据刷新，仅净值/元数据，需开启写开关） |
 
-写 scope 目前只有 `watchlist:write`，默认不勾选，且受 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 总开关约束（默认关闭）。调用未授权工具返回 **403**。
+写 scope 目前有 `watchlist:write` 与 `data:refresh`，均默认不勾选，且受 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 总开关约束（默认关闭）。调用未授权工具返回 **403**。
 
 `capabilities` 只要求有效 token，不要求特定 scope；它只返回当前 token 已获授权的工具，写工具会标注 `risk="write"` 与 `enabled`。
 
-> 前三个 scope 是签发页面的默认勾选项；`transactions:read`、`watchlist:read`、`alerts:read`、`plans:read`、`watchlist:write` 默认不勾选，需要读取或写入对应数据时请显式勾选，避免存量流程静默扩权。
+> 前三个 scope 是签发页面的默认勾选项；`transactions:read`、`watchlist:read`、`alerts:read`、`plans:read`、`watchlist:write`、`data:refresh` 默认不勾选，需要读取或写入对应数据时请显式勾选，避免存量流程静默扩权。
 
 ---
 
@@ -139,7 +140,7 @@ Authorization: Bearer zfag_xxxxxxxx
 
 ### 限流
 
-每个 token、每个端点默认 **120 次/分钟**。路径参数按同一端点计（例如不同基金代码共用 `funds/{code}` 的额度），避免通过枚举代码绕过限流。较重端点使用更低限额：`search` 为 60 次/分钟，`screen`、`backtest/dca`、`benchmark`、`industry-exposure` 为 20 次/分钟；自选写端点（`POST`/`PATCH`/`DELETE watchlist`）为 30 次/分钟，且与同路径的 `GET` 分开计数。筛选无论是否补指标都共用同一个桶，切换参数不能绕过。超限返回 `429`，并按 `Retry-After` 秒数重试。限流与指标增强的并发上限都是**进程内**状态，多 worker 部署时各进程独立计数。
+每个 token、每个端点默认 **120 次/分钟**。路径参数按同一端点计（例如不同基金代码共用 `funds/{code}` 的额度），避免通过枚举代码绕过限流。较重端点使用更低限额：`search` 为 60 次/分钟，`screen`、`backtest/dca`、`benchmark`、`industry-exposure` 为 20 次/分钟；自选写端点（`POST`/`PATCH`/`DELETE watchlist`）为 30 次/分钟且与同路径的 `GET` 分开计数，`POST refresh` 为 10 次/分钟（联网抓取，避免高频触发）。筛选无论是否补指标都共用同一个桶，切换参数不能绕过。超限返回 `429`，并按 `Retry-After` 秒数重试。限流与指标增强的并发上限都是**进程内**状态，多 worker 部署时各进程独立计数。
 
 ### OpenAPI / Swagger
 
@@ -726,6 +727,37 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist" \
 - 删除前值只供网页管理员通过 `POST /api/watchlist/{code}/restore` 恢复；恢复同样校验墓碑版本，不能覆盖删除后的重建或修改。
 - 每个 token 的写端点为 30 次/分钟；写操作与业务结果审计在同一事务提交，鉴权成功不等于业务成功。
 
+### 5.22 数据刷新（写入，默认关闭）
+
+启动一次**仅净值/元数据**的刷新任务，scope：`data:refresh`，同样受 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 总开关约束。它**不**调用交易净值回填、**不**执行定投，也不会创建交易或计划——这是与网页 `POST /api/nav/update` 的关键区别。
+
+| MCP 工具 | HTTP | 说明 |
+|---|---|---|
+| `start_data_refresh` | `POST /api/agent/tools/refresh` | 创建任务，返回 `202` + `job_id` |
+| `get_job_status` | `GET /api/agent/tools/refresh/{job_id}` | 查询进度与结果，仅创建者 token 可读 |
+
+```bash
+# 启动（缺省刷新当前开仓持仓；也可显式传 fund_codes，最多 50 只）
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/refresh" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f51" \
+  -d '{}' | jq
+# {"tool":"start_data_refresh","data":{"job_id":7,"status":"queued","fund_count":3,...}}
+
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/refresh/7" | jq
+# {"tool":"get_job_status","data":{"status":"succeeded","progress":{"done":3,"total":3,"phase":"risk_levels"},"result":{"ok":true,"updated":3,"failed":0,"errors":[]},"can_cancel":false}}
+```
+
+- 必须带 `Idempotency-Key`（16–128 安全 ASCII）；同键同参数重放返回原 `job_id`（`replayed=true`），同键异参数/过期返回 `409 idempotency_conflict` / `idempotency_expired`。
+- 任务持久化在 `refresh_jobs` 表：`status ∈ {queued,running,succeeded,failed,interrupted}`，服务重启把遗留 `queued/running` 标记为 `interrupted`，不会误报成功。任务 7 天内可查询，记录额外保留 30 天后清理。
+- 已有刷新在运行时返回 `409 refresh_busy`；若占用者是刷新任务，`detail.current_job_id` 给出任务 ID，可配合 `get_job_status` 轮询（网页手动刷新占用时该字段可能为 `null`）。不排队，避免陈旧任务。
+- `can_cancel` 恒为 `false`：本期不支持取消，也不提供会误导的空取消接口。
+- 任务间与网页 `/api/nav/update`、调度器共用互斥锁串行执行；进度（`done/total/current/phase`）写入任务记录，并镜像到共享运行状态供网页展示。
+- 错误码：`write_disabled`、`validation_error`、`refresh_busy`、`not_found`、`idempotency_conflict`、`idempotency_expired`。审计记录 `data_refresh_started/succeeded/failed/busy/rejected`，仅记计数与 token 前缀。
+- 单任务基金数上限 50，`POST refresh` 限流 10 次/分钟（`GET refresh/{job_id}` 走默认 120 次/分钟）。
+
 ### MCP 适配层（可选）
 
 仓库内置一个 stdio MCP 桥接，把上述 20 个工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
@@ -757,7 +789,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 }
 ```
 
-暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`search_funds`、`screen_funds`、`run_dca_backtest`、`get_agent_capabilities`、`add_watchlist_item`、`update_watchlist_item`、`remove_watchlist_item`。
+暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`search_funds`、`screen_funds`、`run_dca_backtest`、`get_agent_capabilities`、`add_watchlist_item`、`update_watchlist_item`、`remove_watchlist_item`、`start_data_refresh`、`get_job_status`。
 写工具需要在客户端同时提供 `idempotency_key`，并映射到 HTTP 的 `Idempotency-Key`；MCP 客户端只负责传参，不能替代服务端鉴权、scope 与写开关。
 
 - `ZFUNDPILOT_BASE_URL` 默认 `http://127.0.0.1:8000`；ZFundPilot 跑在 NAS/Docker 时改成实际地址，远程访问请用 HTTPS。

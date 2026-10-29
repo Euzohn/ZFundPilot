@@ -859,8 +859,21 @@ def agent_list_positions(
     })
 
 
+_RETURN_BASIS_NOTE = (
+    "total_return/return_rate 与各周期 return 只基于当前开仓成本与最新正式净值，"
+    "不是历史累计收益；已清仓基金的历史已实现盈亏只计入 realized_pnl 与 XIRR。"
+)
+
+
+def _position_counts(positions: list[Any]) -> tuple[int, int]:
+    open_count = sum(1 for p in positions if p.is_open)
+    return open_count, len(positions) - open_count
+
+
 def _agent_returns_data(summary: PortfolioSummary) -> dict[str, Any]:
     """组合级收益视图：聚焦累计/年化与分周期收益，与 portfolio-summary 互补。"""
+    positions = analysis.calculate_positions(include_closed=True)
+    open_count, closed_count = _position_counts(positions)
     return {
         "scope": "portfolio",
         "as_of_date": summary.as_of_date,
@@ -868,7 +881,15 @@ def _agent_returns_data(summary: PortfolioSummary) -> dict[str, Any]:
             "as_of_date 为各持仓正式净值日期的最大值，不代表所有基金均已更新"
         ),
         "valuation_basis": "latest_formal_nav",
-        "total_return": summary.total_return,
+        "return_basis": "open_positions_floating",
+        "return_basis_note": _RETURN_BASIS_NOTE,
+        "realized_pnl_scope": "all_history_including_closed",
+        "total_pnl_scope": "unrealized_open_plus_realized_all_history",
+        "total_cost": summary.total_cost,
+        "total_value": summary.total_value,
+        # 完全清仓时没有开仓成本，浮动收益率无定义，返回 null 而不是 0。
+        "total_return": (
+            summary.total_return if summary.total_cost > 1e-9 else None),
         "annualized_return": summary.annualized_return,
         "total_pnl": summary.total_pnl,
         "unrealized_pnl": summary.unrealized_pnl,
@@ -878,23 +899,33 @@ def _agent_returns_data(summary: PortfolioSummary) -> dict[str, Any]:
         "month": {"pnl": summary.month_pnl, "return": summary.month_return},
         "year": {"pnl": summary.year_pnl, "return": summary.year_return},
         "holding_count": summary.holding_count,
+        "open_position_count": open_count,
+        "closed_position_count": closed_count,
+        "data_quality": _agent_data_quality(summary.data_status),
     }
 
 
 def _agent_fund_returns_data(code: str) -> dict[str, Any]:
-    """单基金收益视图：累计/年化、现金流汇总与各渠道持仓盈亏。"""
+    """单基金收益视图：累计/年化、现金流汇总与各渠道持仓盈亏。
+
+    已实现盈亏与 XIRR 覆盖该基金全部历史流水（含已清仓渠道）；
+    ``return_rate`` 只基于当前开仓成本，不能读作历史累计收益。
+    """
     fund = db.get_fund(code)
     positions = [
-        p for p in analysis.calculate_positions(include_closed=False)
+        p for p in analysis.calculate_positions(include_closed=True)
         if p.fund_code == code
     ]
     if not fund and not positions:
         raise HTTPException(status_code=404, detail=f"未找到基金 {code}")
 
     buy_amount = sell_amount = dividend_amount = 0.0
+    pending_t1 = 0
     transactions = db.get_transactions(fund_code=code)
     for tx in transactions:
         tx.normalize()
+        if tx.is_t1 and not tx.nav and tx.action != ACTION_DIVIDEND:
+            pending_t1 += 1
         if not tx.amount:
             continue
         if tx.action == ACTION_BUY:
@@ -904,43 +935,86 @@ def _agent_fund_returns_data(code: str) -> dict[str, Any]:
         elif tx.action in (ACTION_DIVIDEND, ACTION_REINVEST):
             dividend_amount += tx.amount
 
-    total_value = sum(p.market_value for p in positions)
-    total_cost = sum(p.total_cost for p in positions)
-    unrealized = sum(p.unrealized_pnl for p in positions)
+    open_positions = [p for p in positions if p.is_open]
+    closed_positions = [p for p in positions if not p.is_open]
+    total_value = sum(p.market_value for p in open_positions)
+    total_cost = sum(p.total_cost for p in open_positions)
+    unrealized = sum(p.unrealized_pnl for p in open_positions)
+    # 已清仓渠道的已实现收益也要计入，否则完全清仓后 realized_pnl 会错误归零。
     realized = sum(p.realized_pnl for p in positions)
+    closed_realized = sum(p.realized_pnl for p in closed_positions)
     latest_date = max(
-        (p.latest_date for p in positions if p.latest_date), default=None)
+        (p.latest_date for p in open_positions if p.latest_date), default=None)
+
+    missing_nav_channels = [
+        p for p in open_positions
+        if p.held_shares > 1e-6 and p.latest_nav is None
+    ]
+    caveats: list[str] = []
+    if missing_nav_channels:
+        caveats.append(
+            f"{len(missing_nav_channels)} 个持仓渠道缺少正式净值，"
+            "市值、浮动收益率与 XIRR 暂不可用")
+    if pending_t1:
+        caveats.append(f"{pending_t1} 笔 T+1 交易待确认，尚未计入市值")
 
     return {
         "scope": "fund",
         "fund_code": code,
         "fund_name": fund.fund_name if fund else positions[0].fund_name,
         "valuation_basis": "latest_formal_nav",
+        "return_basis": "open_positions_floating",
+        "return_basis_note": _RETURN_BASIS_NOTE,
+        "realized_pnl_scope": "all_history_including_closed",
+        "total_pnl_scope": "unrealized_open_plus_realized_all_history",
         "as_of_date": latest_date,
-        "as_of_date_semantics": "as_of_date 为该基金最新正式净值日期",
+        "as_of_date_semantics": "as_of_date 为该基金当前开仓的最新正式净值日期",
         "market_value": total_value,
         "total_cost": total_cost,
         "unrealized_pnl": unrealized,
         "realized_pnl": realized,
+        "closed_realized_pnl": closed_realized,
         "total_pnl": unrealized + realized,
+        # 缺净值时市值按 0 计，直接相除会得到 -100% 的假亏损，故返回 null。
         "return_rate": (
-            (total_value / total_cost - 1) if total_cost > 1e-9 else None),
-        "annualized_return": analysis.calculate_fund_xirr(code),
+            (total_value / total_cost - 1)
+            if total_cost > 1e-9 and not missing_nav_channels else None),
+        "annualized_return": (
+            None if missing_nav_channels
+            else analysis.calculate_fund_xirr(code)),
         "transaction_count": len(transactions),
         "buy_amount": buy_amount,
         "sell_amount": sell_amount,
         "dividend_amount": dividend_amount,
+        "open_position_count": len(open_positions),
+        "closed_position_count": len(closed_positions),
+        "data_quality": {
+            "missing_nav_channel_count": len(missing_nav_channels),
+            "pending_t1_transaction_count": pending_t1,
+            "caveats": caveats,
+        },
         "channels": [
-            {
-                "channel": p.channel,
-                "market_value": p.market_value,
-                "total_cost": p.total_cost,
-                "unrealized_pnl": p.unrealized_pnl,
-                "return_rate": p.return_rate,
-                "annualized_return": p.annualized_return,
-            }
-            for p in positions
+            _agent_fund_channel_item(p) for p in positions
         ],
+    }
+
+
+def _agent_fund_channel_item(position: Any) -> dict[str, Any]:
+    """单基金渠道明细；已清仓渠道保留，避免历史已实现收益静默消失。"""
+    nav_missing = position.held_shares > 1e-6 and position.latest_nav is None
+    return {
+        "channel": position.channel,
+        "is_open": position.is_open,
+        "market_value": position.market_value,
+        "total_cost": position.total_cost,
+        "unrealized_pnl": position.unrealized_pnl,
+        "realized_pnl": position.realized_pnl,
+        "return_rate": (
+            None if nav_missing or not position.is_open
+            else position.return_rate),
+        "annualized_return": position.annualized_return,
+        "latest_date": position.latest_date,
+        "nav_missing": nav_missing,
     }
 
 

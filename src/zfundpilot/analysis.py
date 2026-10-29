@@ -367,8 +367,9 @@ def calculate_summary(positions: list[Position] | None = None) -> PortfolioSumma
         holding_count=len(set(p.fund_code for p in open_positions)),
     )
 
-    # 组合级 XIRR（从全量交易流水计算）
-    if len(all_txs) >= 2 and summary.total_value > 0:
+    # 组合级 XIRR（从全量交易流水计算）。不要求当前仍有市值：
+    # 完全清仓的组合仍可用买卖流水计算历史年化，缺解时 xirr 返回 None。
+    if len(all_txs) >= 2:
         cashflows = _build_xirr_cashflows(all_txs, summary.total_value, date.today())
         summary.annualized_return = xirr(cashflows)
 

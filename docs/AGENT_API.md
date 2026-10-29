@@ -324,30 +324,38 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
   "$ZFUNDPILOT_BASE_URL/api/agent/tools/returns?fund_code=005827" | jq
 ```
 
-`data` 公共字段：`scope`（`portfolio` / `fund`）、`valuation_basis`（固定 `latest_formal_nav`）、`as_of_date`、`as_of_date_semantics`。
+`data` 公共字段：`scope`（`portfolio` / `fund`）、`valuation_basis`（固定 `latest_formal_nav`）、`return_basis`（固定 `open_positions_floating`）、`return_basis_note`、`realized_pnl_scope`（`all_history_including_closed`）、`total_pnl_scope`、`as_of_date`、`as_of_date_semantics`。
+
+> **口径**：`total_return`/`return_rate` 只是**当前开仓**的浮动收益率（市值 ÷ 当前持仓成本 − 1），不是历史累计收益；已清仓基金的历史盈亏只体现在 `realized_pnl` 与 XIRR 中。`total_return` 不是“总收益 ÷ 总投入”，不能与累计买卖金额相除。完全清仓时当前成本为 0，`total_return`/`return_rate` 返回 `null`。
 
 组合级另有：
 
 | 字段 | 说明 |
 |---|---|
-| `total_return` / `annualized_return` | 累计浮动收益率 / XIRR 年化（可能为 `null`） |
-| `total_pnl` / `unrealized_pnl` / `realized_pnl` | 总 / 浮动 / 已实现盈亏 |
+| `total_return` / `annualized_return` | 当前开仓浮动收益率 / XIRR 年化（可能为 `null`） |
+| `total_pnl` / `unrealized_pnl` / `realized_pnl` | 总 / 浮动 / 已实现盈亏；`realized_pnl` 含已清仓历史 |
+| `total_cost` / `total_value` | 当前开仓成本 / 市值 |
 | `daily` / `week` / `month` / `year` | 各周期 `{pnl, return}` |
-| `holding_count` | 当前持仓基金数 |
+| `holding_count` | 当前持仓基金数（按基金去重） |
+| `open_position_count` / `closed_position_count` | 开仓 / 已清仓的（基金, 渠道）行数 |
+| `data_quality` | 缺失/过期净值、T+1 待确认计数与 `caveats` |
 
 单基金级另有：
 
 | 字段 | 说明 |
 |---|---|
 | `fund_code` / `fund_name` | 基金标识 |
-| `market_value` / `total_cost` | 市值 / 持仓成本 |
-| `unrealized_pnl` / `realized_pnl` / `total_pnl` | 盈亏 |
-| `return_rate` / `annualized_return` | 累计收益率 / XIRR 年化 |
-| `transaction_count` | 交易笔数 |
-| `buy_amount` / `sell_amount` / `dividend_amount` | 累计买入 / 卖出 / 分红金额 |
-| `channels` | 各渠道持仓：`channel`、`market_value`、`total_cost`、`unrealized_pnl`、`return_rate`、`annualized_return` |
+| `market_value` / `total_cost` | 当前开仓市值 / 持仓成本（已清仓渠道为 0） |
+| `unrealized_pnl` / `realized_pnl` / `total_pnl` | 浮动 / 已实现 / 总盈亏；`realized_pnl` 含已清仓渠道 |
+| `closed_realized_pnl` | 已清仓渠道贡献的已实现盈亏 |
+| `return_rate` / `annualized_return` | 当前开仓浮动收益率 / 全历史 XIRR（可能为 `null`） |
+| `transaction_count` | 交易笔数（含已清仓历史） |
+| `buy_amount` / `sell_amount` / `dividend_amount` | 累计买入 / 卖出 / 分红金额；`dividend_amount` 含红利再投资金额 |
+| `open_position_count` / `closed_position_count` | 开仓 / 已清仓渠道数 |
+| `data_quality` | `missing_nav_channel_count`、`pending_t1_transaction_count`、`caveats` |
+| `channels` | 全部渠道（含已清仓）：`channel`、`is_open`、`market_value`、`total_cost`、`unrealized_pnl`、`realized_pnl`、`return_rate`、`annualized_return`、`latest_date`、`nav_missing` |
 
-> `annualized_return` 使用 XIRR（按实际现金流日期），分批发入时比简单收益率更可靠；数据不足时返回 `null`。
+> `annualized_return` 使用 XIRR（按实际现金流日期），分批发入时比简单收益率更可靠；数据不足时返回 `null`。现金分红计为流入，红利再投资按现金中性跳过（不重复计入收益）。有份额但缺少正式净值时，`return_rate` 与 `annualized_return` 返回 `null` 并给出 `caveats`，不会把缺失市值显示成 `-100%` 亏损。T+1 待确认买入的金额未计入市值与成本。
 
 ### 5.7 `GET /api/agent/tools/funds/compare`
 

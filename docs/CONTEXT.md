@@ -276,7 +276,7 @@ ZFundPilot/
 ### analysis.py — 收益计算
 
 - `calculate_positions()`: 从 transactions 汇总持仓（待确认买入金额计入 `pending_buy_cost`，不参与市值/盈亏/收益率计算）。按 (基金, 渠道) 分组交易构建现金流，调 `returns.xirr` 计算每只持仓的 `annualized_return`（已清仓不加终端值）
-- `calculate_summary()`: 组合层面汇总（`total_cost` 不含 `pending_buy_cost`）。从全量交易流水构建组合级 XIRR 现金流，设 `summary.annualized_return`
+- `calculate_summary()`: 组合层面汇总（`total_cost` 不含 `pending_buy_cost`，`realized_pnl` 含已清仓历史）。从全量交易流水构建组合级 XIRR 现金流，设 `summary.annualized_return`；不要求当前仍有市值，已清仓组合也可计算历史年化
 - `calculate_fund_xirr(fund_code)`: 单基金 XIRR（跨渠道合并交易流水 + 开仓终端市值），供 API `/api/funds/{code}/xirr` 调用。`db.get_transactions(fund_code=...)` 取该基金全量交易、`calculate_positions()` 取开仓市值，复用 `_build_xirr_cashflows` + `xirr`
 - `build_portfolio_curve()`: 组合收益曲线（待确认买入用 `pending_value_delta` 占位市值，避免虚假亏损）
 - `build_channel_daily_pnl()`: 按渠道拆分的每日收益（堆叠柱状图）

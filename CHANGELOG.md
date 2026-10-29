@@ -26,6 +26,7 @@
 - 统一 `docs/AGENT_API.md` / `docs/AGENT_API_EN.md` 的接入示例：环境变量统一为 `ZFUNDPILOT_BASE_URL` / `ZFUNDPILOT_AGENT_TOKEN`，Python 示例由 `requests` 改为项目已依赖的 `httpx`
 
 ### Fixed
+- 收紧 Agent 收益工具口径（A 收尾复核）：单基金收益改为包含已清仓渠道，完全清仓后 `realized_pnl`、`closed_realized_pnl` 与历史 XIRR 不再归零；组合级 XIRR 不再要求当前仍有市值，已清仓组合也能计算历史年化。有份额但缺少正式净值时，`return_rate`/`annualized_return` 返回 `null` 并给出 `data_quality.caveats`，不再把缺失市值显示成 `-100%` 亏损。新增 `return_basis`/`return_basis_note`/`realized_pnl_scope`/`total_pnl_scope`、开仓与已清仓计数、`closed_realized_pnl` 与渠道 `is_open`/`nav_missing` 字段，明确 `total_return`/`return_rate` 只是当前开仓浮动收益率，不是历史累计收益；中英文 Agent 文档同步说明现金分红、红利再投资与 T+1 待确认口径
 - 校正只读定投回测的一个测试断言：请求止日晚于最后一个可用净值日时，末期未被覆盖的计划期应计入 `skipped_periods` 并标记 `partial`（与文档契约一致），而非 `ok`；`valuation_date`/`data_end` 仍取实际覆盖范围。实现未变，补充中英文文档对该情形的明确说明
 - 修复 Agent 基金筛选工具 `GET /api/agent/tools/screen` 自上线起必然返回 500——端点误从 `fund_filter` 模块调用 `get_available_types()`/`get_available_sectors()`，这两个函数实际位于 `fetch_fund`；现改为正确引用，未提供筛选参数时同样可达。此前未被 CI 发现，是因为更早的网页 token 用例失败（`-x` 首败即停）挡住了该用例；同批的 `search` 工具不受影响
 - 修复网页登录 token 偶发被误判为无效——token 的 HMAC 签名固定 32 字节，但随机内容可能恰好包含 `.` 字节；此前按最后一个 `.` 切分会把签名截断，导致约 12% 的签发时刻（同一秒内所有 token）校验失败、管理端点返回 401。现改为按签名长度切分并兼容旧格式。新增 2 个回归测试（签名含点号、篡改/过期），总测试 708→710

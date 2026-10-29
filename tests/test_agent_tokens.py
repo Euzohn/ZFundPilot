@@ -489,6 +489,66 @@ class TestAgentTools:
             headers=self._headers("funds:read"))
         assert denied.status_code == 403
 
+    def test_returns_keep_closed_position_history(self, temp_db, monkeypatch):
+        """完全清仓后，已实现收益与历史 XIRR 不能被丢弃或误报为 -100%。"""
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        db.upsert_fund(Fund(
+            fund_code="005827", fund_name="已清仓基金",
+            fund_type="混合型", sector="科技"))
+        db.add_transaction(Transaction(
+            fund_code="005827", action="buy", date="2025-01-02",
+            amount=1000, shares=1000, nav=1.0))
+        db.add_transaction(Transaction(
+            fund_code="005827", action="sell", date="2025-06-02",
+            amount=1100, shares=1000, nav=1.1))
+        analysis.clear_analysis_cache()
+        client = TestClient(api.app)
+        headers = self._headers("portfolio:read")
+
+        fund = client.get(
+            "/api/agent/tools/returns?fund_code=005827", headers=headers)
+        assert fund.status_code == 200
+        data = fund.json()["data"]
+        assert data["realized_pnl"] == pytest.approx(100)
+        assert data["closed_realized_pnl"] == pytest.approx(100)
+        assert data["market_value"] == 0
+        assert data["total_cost"] == 0
+        assert data["return_rate"] is None
+        assert data["open_position_count"] == 0
+        assert data["closed_position_count"] == 1
+        assert data["channels"][0]["is_open"] is False
+        assert data["channels"][0]["realized_pnl"] == pytest.approx(100)
+
+        portfolio = client.get(
+            "/api/agent/tools/returns", headers=headers).json()["data"]
+        assert portfolio["realized_pnl"] == pytest.approx(100)
+        assert portfolio["closed_position_count"] == 1
+        assert portfolio["total_return"] is None
+        assert portfolio["annualized_return"] is not None
+        assert portfolio["return_basis"] == "open_positions_floating"
+
+    def test_fund_returns_missing_nav_is_null_not_fake_loss(
+            self, temp_db, monkeypatch):
+        """有份额但无正式净值时，不把缺失市值当成 -100% 亏损。"""
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        db.upsert_fund(Fund(
+            fund_code="005827", fund_name="缺净值基金",
+            fund_type="混合型", sector="科技"))
+        db.add_transaction(Transaction(
+            fund_code="005827", action="buy", date="2025-01-02",
+            amount=1000, shares=1000, nav=1.0))
+        analysis.clear_analysis_cache()
+        client = TestClient(api.app)
+
+        data = client.get(
+            "/api/agent/tools/returns?fund_code=005827",
+            headers=self._headers("portfolio:read")).json()["data"]
+        assert data["return_rate"] is None
+        assert data["annualized_return"] is None
+        assert data["data_quality"]["missing_nav_channel_count"] == 1
+        assert data["data_quality"]["caveats"]
+        assert data["channels"][0]["nav_missing"] is True
+
     def test_compare_funds_scope_and_validation(self, temp_db, monkeypatch):
         monkeypatch.setattr(config, "AUTH_ENABLED", True)
 

@@ -324,30 +324,38 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
   "$ZFUNDPILOT_BASE_URL/api/agent/tools/returns?fund_code=005827" | jq
 ```
 
-Common `data` fields: `scope` (`portfolio` / `fund`), `valuation_basis` (always `latest_formal_nav`), `as_of_date`, and `as_of_date_semantics`.
+Common `data` fields: `scope` (`portfolio` / `fund`), `valuation_basis` (always `latest_formal_nav`), `return_basis` (always `open_positions_floating`), `return_basis_note`, `realized_pnl_scope` (`all_history_including_closed`), `total_pnl_scope`, `as_of_date`, and `as_of_date_semantics`.
+
+> **Semantics**: `total_return`/`return_rate` is the **current open-position** floating return (market value ÷ current holding cost − 1), not a historical cumulative return. P&L from fully closed funds appears only in `realized_pnl` and XIRR. Do not divide `total_return` by cumulative buy/sell amounts. When everything is closed, current cost is zero and `total_return`/`return_rate` is `null`.
 
 Portfolio-level additionally has:
 
 | Field | Description |
 |---|---|
-| `total_return` / `annualized_return` | Cumulative return / XIRR annualized (may be `null`) |
-| `total_pnl` / `unrealized_pnl` / `realized_pnl` | Total / unrealized / realized P&L |
+| `total_return` / `annualized_return` | Current open-position floating return / XIRR annualized (may be `null`) |
+| `total_pnl` / `unrealized_pnl` / `realized_pnl` | Total / unrealized / realized P&L; `realized_pnl` includes closed history |
+| `total_cost` / `total_value` | Current open-position cost / market value |
 | `daily` / `week` / `month` / `year` | Period `{pnl, return}` |
-| `holding_count` | Number of funds currently held |
+| `holding_count` | Number of funds currently held (deduplicated by fund) |
+| `open_position_count` / `closed_position_count` | Open / closed (fund, channel) rows |
+| `data_quality` | Missing/stale NAV and pending T+1 counts plus `caveats` |
 
 Single-fund additionally has:
 
 | Field | Description |
 |---|---|
 | `fund_code` / `fund_name` | Fund identity |
-| `market_value` / `total_cost` | Market value / holding cost |
-| `unrealized_pnl` / `realized_pnl` / `total_pnl` | P&L |
-| `return_rate` / `annualized_return` | Cumulative return / XIRR annualized |
-| `transaction_count` | Number of transactions |
-| `buy_amount` / `sell_amount` / `dividend_amount` | Cumulative buy / sell / dividend amounts |
-| `channels` | Per-channel holdings: `channel`, `market_value`, `total_cost`, `unrealized_pnl`, `return_rate`, `annualized_return` |
+| `market_value` / `total_cost` | Current open market value / holding cost (closed channels contribute zero) |
+| `unrealized_pnl` / `realized_pnl` / `total_pnl` | Unrealized / realized / total P&L; `realized_pnl` includes closed channels |
+| `closed_realized_pnl` | Realized P&L contributed by closed channels |
+| `return_rate` / `annualized_return` | Current open-position floating return / all-history XIRR (may be `null`) |
+| `transaction_count` | Transaction count, including closed history |
+| `buy_amount` / `sell_amount` / `dividend_amount` | Cumulative buy / sell / dividend amounts; `dividend_amount` includes reinvested dividends |
+| `open_position_count` / `closed_position_count` | Open / closed channel count |
+| `data_quality` | `missing_nav_channel_count`, `pending_t1_transaction_count`, `caveats` |
+| `channels` | All channels, including closed: `channel`, `is_open`, `market_value`, `total_cost`, `unrealized_pnl`, `realized_pnl`, `return_rate`, `annualized_return`, `latest_date`, `nav_missing` |
 
-> `annualized_return` uses XIRR on actual cash-flow dates, which is more reliable than a simple return for staged purchases; it returns `null` when there is not enough data.
+> `annualized_return` uses XIRR on actual cash-flow dates, which is more reliable than a simple return for staged purchases; it returns `null` when there is not enough data. Cash dividends are inflows; reinvested dividends are skipped as cash-neutral so they are not double-counted. If a held channel has no formal NAV, `return_rate` and `annualized_return` return `null` with `caveats`, instead of reporting a fake `-100%` loss. Pending T+1 buys are excluded from market value and cost.
 
 ### 5.7 `GET /api/agent/tools/funds/compare`
 

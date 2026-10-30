@@ -1,8 +1,8 @@
-# ZFundPilot Agent Read-only API
+# ZFundPilot Agent API (read-only + controlled proposals)
 
-This document is for users who want AI agents (Claude Desktop, Cursor, custom MCP servers, scripts, etc.) to read portfolio data from ZFundPilot.
+This document is for users who want AI agents (Claude Desktop, Cursor, custom MCP servers, scripts, etc.) to read portfolio data from ZFundPilot and submit controlled operations within explicit boundaries.
 
-The Agent API is strictly read-only. It **does not expose trading, settings, import/export, or any fund-moving operations**. It uses Agent tokens that are independent of web login tokens, scoped, default-deny, and revocable.
+The Agent API is read-only by default. Write access is off by default and layered: watchlist maintenance and data refresh are low-risk direct writes; ledger changes can only be submitted as **pending proposals**, which a web administrator must approve before the server executes them. Settings, import/export, and fund-moving operations are not exposed, and an Agent token can never bypass web approval to write the ledger. Agent tokens are independent of web login tokens, scoped, default-deny, and revocable.
 
 > 中文版本：[AGENT_API.md](./AGENT_API.md)
 
@@ -79,12 +79,13 @@ Request body:
 | `plans:read` | `auto-invest-plans` |
 | `watchlist:write` | `watchlist` (add/update/remove; requires the server write switch) |
 | `data:refresh` | `refresh` (start/query task-based data refresh; NAV/metadata only; requires the server write switch) |
+| `transactions:propose` | `proposals` (create/list/cancel your pending ledger proposals; requires the server write switch; execution belongs to the web administrator) |
 
-The write scopes are `watchlist:write` and `data:refresh`, both unchecked by default and gated by `ZFUNDPILOT_AGENT_WRITE_ENABLED` (off by default). Calling a tool without the required scope returns **403**.
+The write scopes are `watchlist:write`, `data:refresh`, and `transactions:propose`, all unchecked by default and gated by `ZFUNDPILOT_AGENT_WRITE_ENABLED` (off by default). Calling a tool without the required scope returns **403**. The first two are low-risk direct writes; `transactions:propose` only submits proposals and **cannot write the ledger directly**.
 
-`capabilities` only requires a valid token, not a specific scope; it returns only the tools granted to that token, marking write tools with `risk="write"` and `enabled`.
+`capabilities` only requires a valid token, not a specific scope; it returns only the tools granted to that token, marking write tools with `risk="write"`, proposal tools with `risk="propose"`, and `enabled` reflecting the server write switch.
 
-> The first three scopes are checked by default on the issuance panel. `transactions:read`, `watchlist:read`, `alerts:read`, `plans:read`, `watchlist:write`, and `data:refresh` are unchecked by default: opt in explicitly when needed, so existing tokens are never silently broadened.
+> The first three scopes are checked by default on the issuance panel. `transactions:read`, `watchlist:read`, `alerts:read`, `plans:read`, `watchlist:write`, `data:refresh`, and `transactions:propose` are unchecked by default: opt in explicitly when needed, so existing tokens are never silently broadened.
 
 ---
 
@@ -132,7 +133,7 @@ Standard FastAPI error shape:
 | `401` | Missing, invalid, expired, or revoked token |
 | `403` | Valid token but missing required scope, write switch off, or password auth not enabled |
 | `404` | Unknown tool or fund (only with a valid token) |
-| `409` | Watchlist revision conflict, missing/existing object, unregistered fund, or idempotency conflict |
+| `409` | Watchlist revision conflict, missing/existing object, unregistered fund, non-pending/expired proposal, or idempotency conflict |
 | `422` | Invalid body/parameters, or missing a valid `Idempotency-Key` |
 | `429` | Rate limit exceeded; see `Retry-After` |
 
@@ -165,7 +166,7 @@ Amounts are based on the **latest formal NAV** and marked with `data.valuation_b
 
 ## 5. Tools
 
-All tools are read-only. Except for 5.20, which uses `POST`, every tool uses `GET`; none accepts trading, settings, or export operations.
+Sections 5.1–5.20 are read-only or read-only simulations (5.20 uses `POST`); 5.21–5.23 are controlled writes, all off by default. No tool accepts settings, import/export, or fund-moving operations, and ledger writes happen only after a web administrator approves a proposal.
 
 ### 5.1 `GET /api/agent/tools/portfolio-summary`
 
@@ -754,9 +755,49 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 - Error codes: `write_disabled`, `validation_error`, `refresh_busy`, `not_found`, `idempotency_conflict`, `idempotency_expired`. Audits `data_refresh_started/succeeded/failed/busy/rejected` record only counts and the token prefix.
 - Max 50 funds per job; `POST refresh` is limited to 10 requests/minute (`GET refresh/{job_id}` uses the default 120/min).
 
+### 5.23 Ledger proposals (write, requires web approval; off by default)
+
+Agents can only submit **pending proposals**; they never write the ledger directly. Scope: `transactions:propose`, also gated by `ZFUNDPILOT_AGENT_WRITE_ENABLED`. This phase supports only `operation_type="add_transaction"`. Approval, rejection, execution, and state transitions happen server-side on the web, and the execution path performs no network access.
+
+| MCP tool | HTTP | Description |
+|---|---|---|
+| `create_operation_proposal` | `POST /api/agent/tools/proposals` | Create a proposal; returns `201` + `proposal_id`; does not write the ledger |
+| `list_operation_proposals` | `GET /api/agent/tools/proposals` | List only proposals created by the current token |
+| `get_operation_proposal` | `GET /api/agent/tools/proposals/{proposal_id}` | Readable only by the creator; others get `404` |
+| `cancel_operation_proposal` | `DELETE /api/agent/tools/proposals/{proposal_id}` | Cancel your own proposal while it is still `pending` |
+
+```bash
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f52" \
+  -d '{
+    "operation_type": "add_transaction",
+    "params": {
+      "fund_code": "005827",
+      "action": "buy",
+      "date": "2026-10-30",
+      "amount": 1000,
+      "fee": 1,
+      "channel": "Alipay"
+    }
+  }' | jq
+# {"tool":"create_operation_proposal","data":{"proposal_id":1,"status":"pending","expires_at":"...","summary":{...}}}
+```
+
+- `params` accepts only the `add_transaction` whitelist: `fund_code` (six digits, must already be registered), `action` (`buy`/`sell`/`dividend`/`reinvest`), `date` (`YYYY-MM-DD`), `amount`/`shares`/`nav` (buy/sell need enough fields to derive the rest; sell requires shares; dividend requires an amount), `fee`, `channel`, `note`, `is_t1`. Unknown fields return `422 validation_error`.
+- Must send `Idempotency-Key` (16–128 safe ASCII chars). Same key and parameters replay the original proposal (`200` + `replayed=true`); same key with different parameters/operation returns `409 idempotency_conflict`; expired keys return `409 idempotency_expired`.
+- Proposals expire after 7 days and can then no longer be approved or cancelled. Each token may keep at most 20 `pending` proposals; beyond that returns `409 too_many_pending`.
+- A fund that is not yet registered returns `409 fund_not_registered`, so the approval path never fetches data over the network.
+- State machine: `pending → succeeded / failed / conflict / rejected / cancelled / expired`. `failed` means the creator token was revoked, expired, or lost the scope; `conflict` means the fund/parameters became invalid at approval time. Environment-level blocks (`auth_disabled`, `write_disabled`) return `403` and leave the proposal `pending` so it can be retried after the fix.
+- After a web administrator approves, the server re-checks instance authentication, the write switch, the creator token, and business rules in the same SQLite transaction, writes the transaction, and records both `proposal_approved` and `add_transaction` audits. Concurrent approvals succeed only once; a repeat returns `409 not_pending`.
+- Web approval endpoints accept web login identities only: `GET /api/proposals/count`, `GET /api/proposals`, `GET /api/proposals/{id}`, `POST /api/proposals/{id}/approve`, `POST /api/proposals/{id}/reject`. An Agent token calling these returns `401`.
+- Error codes: `write_disabled`, `validation_error`, `fund_not_registered`, `too_many_pending`, `not_pending`, `expired`, `not_found`, `idempotency_conflict`, `idempotency_expired`. Audits `proposal_created`, `proposal_create_rejected`, `proposal_cancelled`, `proposal_expired`, `proposal_approved`, `proposal_rejected`, `proposal_failed`, and `proposal_conflict` record only the token prefix and proposal summary.
+- Creation/cancellation share the global write switch with watchlist writes. Proposals are not included in backup archives; restoring a backup clears stale proposals so they cannot point at replaced ledger data.
+
 ### MCP adapter (optional)
 
-A stdio MCP bridge is bundled to expose the twenty tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
+A stdio MCP bridge is bundled to expose the tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
 
 ```bash
 # Install the optional extra from the ZFundPilot source tree
@@ -785,7 +826,7 @@ Claude Desktop example (`claude_desktop_config.json`):
 }
 ```
 
-Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`, `add_watchlist_item`, `update_watchlist_item`, `remove_watchlist_item`, `start_data_refresh`, `get_job_status`.
+Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`, `add_watchlist_item`, `update_watchlist_item`, `remove_watchlist_item`, `start_data_refresh`, `get_job_status`, `create_operation_proposal`, `list_operation_proposals`, `get_operation_proposal`, `cancel_operation_proposal`.
 Write tools require an `idempotency_key` argument, mapped to the HTTP `Idempotency-Key` header. The MCP client only passes parameters; server-side auth, scope, and the write switch remain authoritative.
 
 - `ZFUNDPILOT_BASE_URL` defaults to `http://127.0.0.1:8000`; use the real NAS/Docker address for remote instances and HTTPS for remote access.
@@ -800,7 +841,7 @@ Write tools require an `idempotency_key` argument, mapped to the HTTP `Idempoten
 - **Revocation**: Revoke from Settings at any time; it takes effect immediately. Issue one token per agent for easier tracing and cleanup.
 - **Audit**: Issuance, revocation, auth success/failure, and rate limiting are audited. Only token prefixes are recorded — never plaintext or full responses.
 - **Network**: Remote access must go through an HTTPS reverse proxy; do not expose the port directly. Revoke and reissue if a token leaks.
-- **Scope**: Read scopes now cover portfolio, portfolio curve, benchmark, risk, industry exposure, funds, data status, transactions, watchlist, alerts, and auto-invest plans. Write and export endpoints are not available to Agent tokens.
+- **Scope**: Read scopes cover portfolio, portfolio curve, benchmark, risk, industry exposure, funds, data status, transactions, watchlist, alerts, and auto-invest plans. Write scopes are limited to watchlist maintenance, task-based data refresh, and ledger proposals. Proposals require web administrator approval; Agent tokens cannot write the ledger directly, and settings/import/export/fund-moving endpoints are never available to them.
 
 ---
 
@@ -816,3 +857,4 @@ Write tools require an `idempotency_key` argument, mapped to the HTTP `Idempoten
 | 2026-10-28 | Added four portfolio-level read tools: `portfolio-curve`, `benchmark`, `risk-report`, `industry-exposure`, reusing `portfolio:read`/`health:read` without new scopes |
 | 2026-10-28 | Added two fund lookup tools: `search` (keyword lookup) and `screen` (type/sector/keyword screening with optional capped metrics), reusing `funds:read`; added per-route rate limits |
 | 2026-10-28 | Added the read-only DCA backtest tool `backtest/dca` (`POST`, reusing `funds:read`): separated data preparation from calculation, never writes formal NAV data; unified valuation/XIRR terminal dates and explicitly flags insufficient data, partial coverage, and unknown fees |
+| 2026-10-30 | Added the `transactions:propose` scope and four ledger proposal tools: agents can only submit pending proposals; after web administrator approval the server writes the ledger and audits in one transaction. This phase supports only `add_transaction`; proposals expire after 7 days, are idempotent, and are isolated per token |

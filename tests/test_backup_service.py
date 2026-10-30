@@ -150,6 +150,25 @@ class TestRestore:
         safety = Path(config.DATA_DIR) / "backups" / result.safety_backup
         assert safety.is_file()
 
+    def test_restore_clears_stale_proposals(self, temp_env):
+        """恢复后旧提案必须清空，避免指向已被替换的账本数据。"""
+        payload = bs.export_backup_zip()
+        with db.get_connection(write=True) as conn:
+            db.insert_proposal(
+                conn, principal_type="agent_token", principal_id="1",
+                token_prefix="zfag_test", operation_type="add_transaction",
+                status="pending", params_json="{}",
+                params_digest="x" * 64, summary_json="{}",
+                risk_level="medium", created_at="2026-01-01T00:00:00+08:00",
+                expires_at="2099-01-01T00:00:00+08:00")
+        with db.get_connection() as conn:
+            assert db.count_proposals(conn) == 1
+
+        bs.restore_backup(payload, username="tester")
+
+        with db.get_connection() as conn:
+            assert db.count_proposals(conn) == 0
+
     def test_failure_rolls_back(self, temp_env, monkeypatch):
         payload = bs.export_backup_zip()
         db.add_transaction(Transaction(

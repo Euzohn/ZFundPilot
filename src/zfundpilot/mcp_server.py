@@ -59,9 +59,12 @@ def _validate_date(value: str | None, field: str) -> str | None:
 mcp = FastMCP(
     "zfundpilot",
     instructions=(
-        "Read-only portfolio analysis from ZFundPilot. "
+        "Portfolio analysis and controlled tools for ZFundPilot. "
         "Call get_data_status before drawing conclusions from NAV-based data, "
-        "and get_agent_capabilities to discover tools granted to this token."
+        "and get_agent_capabilities to discover tools granted to this token. "
+        "Watchlist writes and data refresh are direct low-risk writes. "
+        "Ledger changes are proposal-only: create_operation_proposal never "
+        "writes the ledger; an administrator must approve it in the web UI."
     ),
 )
 
@@ -496,6 +499,83 @@ async def get_job_status(job_id: int) -> dict[str, Any]:
     if not isinstance(job_id, int) or job_id <= 0:
         raise ToolError("job_id must be a positive integer.")
     return await _request(f"/api/agent/tools/refresh/{job_id}")
+
+
+@mcp.tool()
+async def create_operation_proposal(
+    operation_type: str,
+    params: dict[str, Any],
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Create a ledger proposal for a human to approve in the web UI.
+
+    This does NOT write the ledger. It only creates a pending proposal; the
+    administrator must approve it in ZFundPilot Settings > Proposals, and the
+    server then executes it. Currently only operation_type="add_transaction"
+    is supported.
+
+    Args:
+        operation_type: Currently only "add_transaction".
+        params: For add_transaction: fund_code, action (buy/sell/dividend/
+            reinvest), date (YYYY-MM-DD), amount/shares/nav (any two for
+            buy/sell), fee, channel, note, is_t1.
+        idempotency_key: Unique retry key (16-128 chars); same key+params
+            returns the same proposal.
+    """
+    _validate_write_key(idempotency_key)
+    if operation_type != "add_transaction":
+        raise ToolError('operation_type must be "add_transaction".')
+    if not isinstance(params, dict):
+        raise ToolError("params must be an object.")
+    return await _post(
+        "/api/agent/tools/proposals",
+        {"operation_type": operation_type, "params": params},
+        headers={"Idempotency-Key": idempotency_key},
+    )
+
+
+@mcp.tool()
+async def list_operation_proposals(
+    status: str | None = None,
+    limit: Annotated[int, Field(ge=1, le=200)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
+) -> dict[str, Any]:
+    """List proposals created by the current token (newest first).
+
+    Args:
+        status: Optional pending/succeeded/failed/conflict/rejected/
+            cancelled/expired.
+        limit: Page size (1-200).
+        offset: Page offset.
+    """
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if status:
+        params["status"] = status
+    return await _request("/api/agent/tools/proposals", params)
+
+
+@mcp.tool()
+async def get_operation_proposal(proposal_id: int) -> dict[str, Any]:
+    """Get one proposal created by the current token.
+
+    Args:
+        proposal_id: Proposal id returned by create_operation_proposal.
+    """
+    if not isinstance(proposal_id, int) or proposal_id <= 0:
+        raise ToolError("proposal_id must be a positive integer.")
+    return await _request(f"/api/agent/tools/proposals/{proposal_id}")
+
+
+@mcp.tool()
+async def cancel_operation_proposal(proposal_id: int) -> dict[str, Any]:
+    """Cancel one of your pending proposals. Approved/rejected ones cannot cancel.
+
+    Args:
+        proposal_id: Proposal id returned by create_operation_proposal.
+    """
+    if not isinstance(proposal_id, int) or proposal_id <= 0:
+        raise ToolError("proposal_id must be a positive integer.")
+    return await _delete(f"/api/agent/tools/proposals/{proposal_id}")
 
 
 @mcp.tool()

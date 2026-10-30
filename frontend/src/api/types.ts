@@ -766,6 +766,91 @@ export interface AgentTokenCreateResponse {
   message: string
 }
 
+// ── Agent 账本提案（网页审批） ──
+export type ProposalStatus =
+  | "pending"
+  | "succeeded"
+  | "failed"
+  | "conflict"
+  | "rejected"
+  | "cancelled"
+  | "expired"
+
+export interface ProposalSummary {
+  operation_type: string
+  operation_label: string
+  title: string
+  fund_code: string
+  fund_name: string
+  action: string
+  action_label: string
+  date: string
+  amount: number | null
+  shares: number | null
+  nav: number | null
+  fee: number | null
+  channel: string
+  is_t1: boolean
+  note: string
+  warnings: string[]
+}
+
+export interface ProposalExecution {
+  ok: boolean
+  tx_id?: number
+  reason?: string
+  message?: string
+  fund_code?: string
+  action?: string
+  date?: string
+  amount?: number | null
+  shares?: number | null
+  nav?: number | null
+  fee?: number | null
+  channel?: string
+}
+
+export interface OperationProposal {
+  proposal_id: number
+  operation_type: string
+  operation_label: string
+  status: ProposalStatus
+  risk_level: string
+  created_at: string
+  expires_at: string
+  reviewed_by: string | null
+  reviewed_at: string | null
+  rejection_reason: string
+  execution_result: ProposalExecution | null
+  audit_id: number | null
+  completed_at: string | null
+  summary: ProposalSummary
+  params: Record<string, unknown>
+  can_cancel: boolean
+  can_approve: boolean
+}
+
+export interface ProposalListResponse {
+  ok: boolean
+  code: string
+  message: string
+  count: number
+  total: number
+  pending_count: number
+  items: OperationProposal[]
+  pagination: { limit: number; offset: number; total: number }
+}
+
+export interface ProposalCountResponse {
+  pending: number
+}
+
+export interface ProposalActionResult extends OperationProposal {
+  ok: boolean
+  code: string
+  message: string
+}
+
 // ── 备份 v2 预检/恢复 ──
 export interface BackupTablePreview {
   rows: number

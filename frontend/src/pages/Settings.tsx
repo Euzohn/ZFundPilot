@@ -77,6 +77,7 @@ const AGENT_SCOPE_KEYS = [
   "plans:read",
   "watchlist:write",
   "data:refresh",
+  "transactions:propose",
 ] as const
 
 // 新 scope 默认不勾选，避免签发时静默扩权；需要时由用户显式勾选。
@@ -105,6 +106,7 @@ function AgentTokenPanel() {
     "plans:read": t.settings.agentTokenScopePlans,
     "watchlist:write": t.settings.agentTokenScopeWatchlistWrite,
     "data:refresh": t.settings.agentTokenScopeDataRefresh,
+    "transactions:propose": t.settings.agentTokenScopeTransactionsPropose,
   }
 
   const toggleScope = (scope: string) => {
@@ -278,7 +280,7 @@ function AgentTokenPanel() {
               </label>
             ))}
           </div>
-          {(scopes.includes("watchlist:write") || scopes.includes("data:refresh")) && (
+          {(scopes.includes("watchlist:write") || scopes.includes("data:refresh") || scopes.includes("transactions:propose")) && (
             <p className="text-xs text-warning">{t.settings.agentTokenWriteHint}</p>
           )}
         </div>
@@ -411,6 +413,15 @@ function AuditLogPanel() {
     watchlist_update: t.settings.auditLabels.watchlist_update,
     watchlist_restore: t.settings.auditLabels.watchlist_restore,
     watchlist_write_rejected: t.settings.auditLabels.watchlist_write_rejected,
+    agent_write_rejected: t.settings.auditLabels.agent_write_rejected,
+    proposal_created: t.settings.auditLabels.proposal_created,
+    proposal_create_rejected: t.settings.auditLabels.proposal_create_rejected,
+    proposal_cancelled: t.settings.auditLabels.proposal_cancelled,
+    proposal_expired: t.settings.auditLabels.proposal_expired,
+    proposal_approved: t.settings.auditLabels.proposal_approved,
+    proposal_rejected: t.settings.auditLabels.proposal_rejected,
+    proposal_failed: t.settings.auditLabels.proposal_failed,
+    proposal_conflict: t.settings.auditLabels.proposal_conflict,
     data_refresh_started: t.settings.auditLabels.data_refresh_started,
     data_refresh_succeeded: t.settings.auditLabels.data_refresh_succeeded,
     data_refresh_failed: t.settings.auditLabels.data_refresh_failed,

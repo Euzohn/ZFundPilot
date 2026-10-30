@@ -40,9 +40,12 @@ SCOPE_ALERTS_READ = "alerts:read"
 SCOPE_PLANS_READ = "plans:read"
 SCOPE_WATCHLIST_WRITE = "watchlist:write"
 SCOPE_DATA_REFRESH = "data:refresh"
+# 提案 scope：只允许创建/查看/取消自己的待审批提案，不能直写账本。
+SCOPE_TRANSACTIONS_PROPOSE = "transactions:propose"
 
-# 写 scope 仅开放低风险自选维护与任务化数据刷新；仍受 config.AGENT_WRITE_ENABLED
-# 总开关约束。交易、计划、提醒处理等 L2 写能力须先完成网页审批机制再单独加入。
+# 写 scope 仅开放低风险自选维护、任务化数据刷新与账本提案；均受
+# config.AGENT_WRITE_ENABLED 总开关约束。提案必须由网页管理员确认后由服务端
+# 执行，Agent token 不能绕过确认直接写账本。
 ALLOWED_SCOPES = frozenset({
     SCOPE_PORTFOLIO_READ,
     SCOPE_FUNDS_READ,
@@ -53,10 +56,18 @@ ALLOWED_SCOPES = frozenset({
     SCOPE_PLANS_READ,
     SCOPE_WATCHLIST_WRITE,
     SCOPE_DATA_REFRESH,
+    SCOPE_TRANSACTIONS_PROPOSE,
 })
 
 # 写 scope 集合：用于能力发现、审计与前端风险提示，避免把写权限当只读展示。
-WRITE_SCOPES = frozenset({SCOPE_WATCHLIST_WRITE, SCOPE_DATA_REFRESH})
+WRITE_SCOPES = frozenset({
+    SCOPE_WATCHLIST_WRITE,
+    SCOPE_DATA_REFRESH,
+    SCOPE_TRANSACTIONS_PROPOSE,
+})
+
+# 提案 scope 集合：仅可提交待审批提案，执行权限只属于网页管理员。
+PROPOSE_SCOPES = frozenset({SCOPE_TRANSACTIONS_PROPOSE})
 
 # 新 scope 默认不勾选：签发页面需显式选择，避免存量流程静默扩权。
 DEFAULT_SCOPES: tuple[str, ...] = (

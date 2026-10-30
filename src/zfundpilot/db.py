@@ -215,6 +215,35 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_refresh_jobs_status
                 ON refresh_jobs(status);
 
+            -- 账本操作提案：Agent 只提交待审批提案，网页管理员确认后由服务端执行。
+            -- 提案内容可能含账本隐私，访问按创建者隔离；执行结果与业务写入同事务。
+            CREATE TABLE IF NOT EXISTS operation_proposals (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                principal_type        TEXT NOT NULL,
+                principal_id          TEXT NOT NULL,
+                token_prefix          TEXT DEFAULT '',
+                operation_type        TEXT NOT NULL,
+                status                TEXT NOT NULL,
+                params_json           TEXT NOT NULL,
+                params_digest         TEXT NOT NULL,
+                summary_json          TEXT,
+                risk_level            TEXT DEFAULT 'medium',
+                created_at            TEXT NOT NULL,
+                expires_at            TEXT NOT NULL,
+                reviewed_by           TEXT,
+                reviewed_at           TEXT,
+                rejection_reason      TEXT,
+                execution_result_json TEXT,
+                audit_id              INTEGER,
+                completed_at          TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_proposals_status
+                ON operation_proposals(status);
+            CREATE INDEX IF NOT EXISTS idx_proposals_owner
+                ON operation_proposals(principal_type, principal_id);
+            CREATE INDEX IF NOT EXISTS idx_proposals_created
+                ON operation_proposals(created_at);
+
             CREATE TABLE IF NOT EXISTS dividend_alerts (
                 id               INTEGER PRIMARY KEY AUTOINCREMENT,
                 fund_code        TEXT NOT NULL,
@@ -783,19 +812,24 @@ def update_fund_risk_level(fund_code: str, risk_level: str) -> None:
 # ---------------------------------------------------------------------------
 # transactions 流水 CRUD
 # ---------------------------------------------------------------------------
+def insert_transaction(conn: sqlite3.Connection, tx: Transaction) -> int:
+    """在调用方事务内插入一笔流水，返回 id；调用方负责 normalize 与提交。"""
+    cur = conn.execute(
+        """
+        INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note,is_t1,conversion_id)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (tx.fund_code.strip(), tx.action, tx.date, tx.amount, tx.shares,
+         tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1), tx.conversion_id),
+    )
+    return int(cur.lastrowid)
+
+
 def add_transaction(tx: Transaction) -> int:
     """新增一笔流水，返回 id。会自动 normalize 补全字段。"""
     tx.normalize()
     with get_connection() as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note,is_t1,conversion_id)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?)
-            """,
-            (tx.fund_code.strip(), tx.action, tx.date, tx.amount, tx.shares,
-             tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1), tx.conversion_id),
-        )
-        return int(cur.lastrowid)
+        return insert_transaction(conn, tx)
 
 
 def update_transaction(tx: Transaction) -> None:
@@ -1354,6 +1388,14 @@ def get_agent_token(token_id: int) -> dict | None:
     return _agent_token_public(row) if row else None
 
 
+def get_agent_token_conn(conn: sqlite3.Connection,
+                         token_id: int) -> sqlite3.Row | None:
+    """在调用方事务内按 id 读取 token 原始行（审批执行时复核权限用）。"""
+    return conn.execute(
+        "SELECT * FROM agent_tokens WHERE id = ?", (token_id,)
+    ).fetchone()
+
+
 def get_agent_token_by_hash(token_hash: str) -> dict | None:
     """按摘要查找 token（含内部字段，仅供鉴权使用，不得直接返回给客户端）。"""
     with get_connection() as conn:
@@ -1690,6 +1732,115 @@ def purge_refresh_jobs(cutoff: str) -> int:
         cur = conn.execute(
             "DELETE FROM refresh_jobs WHERE expires_at IS NOT NULL "
             "AND expires_at < ?",
+            (cutoff,),
+        )
+        return int(cur.rowcount)
+
+
+# ---------------------------------------------------------------------------
+# 账本操作提案 (operation_proposals)
+# ---------------------------------------------------------------------------
+def insert_proposal(conn: sqlite3.Connection, *, principal_type: str,
+                    principal_id: str, token_prefix: str, operation_type: str,
+                    status: str, params_json: str, params_digest: str,
+                    summary_json: str, risk_level: str, created_at: str,
+                    expires_at: str) -> int:
+    cur = conn.execute(
+        "INSERT INTO operation_proposals"
+        "(principal_type, principal_id, token_prefix, operation_type, status, "
+        "params_json, params_digest, summary_json, risk_level, created_at, "
+        "expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        (principal_type, principal_id, token_prefix, operation_type, status,
+         params_json, params_digest, summary_json, risk_level, created_at,
+         expires_at),
+    )
+    return int(cur.lastrowid)
+
+
+def get_proposal(conn: sqlite3.Connection, proposal_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM operation_proposals WHERE id=?", (proposal_id,)
+    ).fetchone()
+
+
+def get_proposal_for_owner(conn: sqlite3.Connection, proposal_id: int,
+                           principal_type: str,
+                           principal_id: str) -> sqlite3.Row | None:
+    """按归属读取提案；他人提案返回 None（查询层据此 404，不泄漏存在性）。"""
+    return conn.execute(
+        "SELECT * FROM operation_proposals WHERE id=? AND principal_type=? "
+        "AND principal_id=?",
+        (proposal_id, principal_type, principal_id),
+    ).fetchone()
+
+
+def list_proposals(conn: sqlite3.Connection, *, status: str | None = None,
+                   limit: int = 50, offset: int = 0) -> list[sqlite3.Row]:
+    sql = "SELECT * FROM operation_proposals"
+    params: list[Any] = []
+    if status:
+        sql += " WHERE status=?"
+        params.append(status)
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    return conn.execute(sql, params).fetchall()
+
+
+def count_proposals(conn: sqlite3.Connection, status: str | None = None) -> int:
+    sql = "SELECT COUNT(*) FROM operation_proposals"
+    params: list[Any] = []
+    if status:
+        sql += " WHERE status=?"
+        params.append(status)
+    return int(conn.execute(sql, params).fetchone()[0])
+
+
+def update_proposal(conn: sqlite3.Connection, proposal_id: int, *,
+                    status: str | None = None, reviewed_by: str | None = None,
+                    reviewed_at: str | None = None,
+                    rejection_reason: str | None = None,
+                    execution_result_json: str | None = None,
+                    audit_id: int | None = None,
+                    completed_at: str | None = None) -> None:
+    sets: list[str] = []
+    params: list[Any] = []
+    for column, value in (
+        ("status", status),
+        ("reviewed_by", reviewed_by),
+        ("reviewed_at", reviewed_at),
+        ("rejection_reason", rejection_reason),
+        ("execution_result_json", execution_result_json),
+        ("audit_id", audit_id),
+        ("completed_at", completed_at),
+    ):
+        if value is not None:
+            sets.append(f"{column}=?")
+            params.append(value)
+    if not sets:
+        return
+    params.append(proposal_id)
+    conn.execute(
+        f"UPDATE operation_proposals SET {', '.join(sets)} WHERE id=?", params)
+
+
+def expire_pending_proposals(now: str) -> int:
+    """把已过期但仍 pending 的提案标记 expired；只影响未审批提案。"""
+    with get_connection(write=True) as conn:
+        cur = conn.execute(
+            "UPDATE operation_proposals SET status='expired', completed_at=? "
+            "WHERE status='pending' AND expires_at <= ?",
+            (now, now),
+        )
+        return int(cur.rowcount)
+
+
+def purge_proposals(cutoff: str) -> int:
+    """清理过期较久的已结束提案记录，避免表无限增长。"""
+    with get_connection(write=True) as conn:
+        cur = conn.execute(
+            "DELETE FROM operation_proposals WHERE status IN "
+            "('succeeded','failed','conflict','rejected','cancelled','expired') "
+            "AND completed_at IS NOT NULL AND completed_at < ?",
             (cutoff,),
         )
         return int(cur.rowcount)

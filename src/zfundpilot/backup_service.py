@@ -533,9 +533,11 @@ def restore_backup(data: bytes, *, ip: str | None = None,
                     )
                 inserted[table] = len(rows)
 
-            # 恢复后旧幂等记录/刷新任务已失去意义，清掉避免重放陈旧结果。
+            # 恢复后旧幂等记录/刷新任务/待审批提案已失去意义，清掉避免重放或
+            # 让旧提案指向已被替换的账本数据。
             conn.execute("DELETE FROM agent_operations")
             conn.execute("DELETE FROM refresh_jobs")
+            conn.execute("DELETE FROM operation_proposals")
 
             db.log_audit(
                 "restore_backup", ip=ip, username=username,

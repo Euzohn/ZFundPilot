@@ -57,6 +57,7 @@ from . import (
     fetch_macro,
     fund_filter,
     health,
+    proposal_service,
     rebalance,
     refresh_service,
     risk,
@@ -105,6 +106,9 @@ async def _lifespan(app: FastAPI):
     interrupted = refresh_service.mark_interrupted_on_startup()
     if interrupted:
         logger.warning("标记 %d 个中断的刷新任务为 interrupted", interrupted)
+    expired = proposal_service.mark_stale_on_startup()
+    if expired:
+        logger.info("标记 %d 个过期提案为 expired", expired)
     yield
     scheduler.shutdown_scheduler()
 
@@ -1409,7 +1413,7 @@ def _require_agent_write_enabled(
     if config.AGENT_WRITE_ENABLED:
         return
     db.log_audit(
-        "watchlist_write_rejected", ip=_get_client_ip(request),
+        "agent_write_rejected", ip=_get_client_ip(request),
         detail={"reason": "write_disabled", "token_id": ctx.id,
                 "token_prefix": ctx.prefix, "path": request.url.path},
     )
@@ -1631,6 +1635,154 @@ def agent_get_refresh_job(
     except refresh_service.RefreshValidationError as exc:
         raise _refresh_validation_error(exc) from exc
     return _agent_tool_response("get_job_status", _refresh_result_data(result))
+
+
+# ---------------------------------------------------------------------------
+# Agent 账本提案（E：只能提案，执行权在网页管理员）
+# ---------------------------------------------------------------------------
+class AgentProposalCreateRequest(BaseModel):
+    """创建提案的请求体；params 结构与 operation_type 由服务层校验。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    operation_type: str
+    params: dict[str, Any]
+
+
+def _proposal_principal(
+    ctx: agent_tokens.AgentTokenContext,
+) -> proposal_service.Principal:
+    return proposal_service.Principal(
+        "agent_token", str(ctx.id), f"agent:{ctx.prefix}")
+
+
+def _proposal_validation_error(
+    exc: proposal_service.ProposalValidationError,
+) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={"code": "validation_error", "field": exc.field,
+                "message": exc.message},
+    )
+
+
+def _proposal_result_data(
+    result: proposal_service.ProposalResult) -> dict[str, Any]:
+    """成功结果展开；失败结果映射为 HTTPException。"""
+    if not result.ok:
+        detail: dict[str, Any] = {
+            "code": result.code, "message": result.message}
+        detail.update(result.data)
+        raise HTTPException(status_code=result.http_status, detail=detail)
+    return {
+        "ok": True,
+        "code": result.code,
+        "message": result.message,
+        "replayed": result.replayed,
+        **result.data,
+    }
+
+
+@app.post("/api/agent/tools/proposals", tags=["agent"], status_code=201,
+          summary="创建账本操作提案（需网页确认）",
+          responses={**_AGENT_WRITE_ERROR_RESPONSES,
+                     201: {"description": "提案已创建，等待网页管理员确认"}},
+          dependencies=[Security(_agent_bearer_scheme)])
+def agent_create_proposal(
+    request: Request,
+    body: AgentProposalCreateRequest,
+    response: Response,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_PROPOSE)),
+    ],
+) -> dict[str, Any]:
+    """创建待审批提案；不写账本，管理员确认后才由服务端执行。"""
+    _require_agent_write_enabled(request, ctx)
+    try:
+        result = proposal_service.create_proposal(
+            _proposal_principal(ctx),
+            operation_type=body.operation_type,
+            params=body.params,
+            idempotency_key=_idempotency_key_header(request),
+            ip=_get_client_ip(request),
+        )
+    except proposal_service.ProposalValidationError as exc:
+        raise _proposal_validation_error(exc) from exc
+    response.status_code = result.http_status
+    return _agent_tool_response(
+        "create_operation_proposal", _proposal_result_data(result))
+
+
+@app.get("/api/agent/tools/proposals", tags=["agent"],
+         summary="我的提案列表（只读）",
+         responses=_AGENT_ERROR_RESPONSES,
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_list_proposals(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_PROPOSE)),
+    ],
+    status: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> dict[str, Any]:
+    """仅返回当前 token 创建的提案，不泄漏其他主体的提案。"""
+    try:
+        result = proposal_service.list_own_proposals(
+            _proposal_principal(ctx), status=status,
+            limit=limit, offset=offset)
+    except proposal_service.ProposalValidationError as exc:
+        raise _proposal_validation_error(exc) from exc
+    return _agent_tool_response(
+        "list_operation_proposals", _proposal_result_data(result))
+
+
+@app.get("/api/agent/tools/proposals/{proposal_id}", tags=["agent"],
+         summary="提案详情（只读）",
+         responses={**_AGENT_ERROR_RESPONSES,
+                    404: {"description": "提案不存在或不属于当前 token"}},
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_get_proposal(
+    proposal_id: int,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_PROPOSE)),
+    ],
+) -> dict[str, Any]:
+    """仅创建者 token 可读；他人提案返回 404。"""
+    try:
+        result = proposal_service.get_proposal(
+            _proposal_principal(ctx), proposal_id)
+    except proposal_service.ProposalValidationError as exc:
+        raise _proposal_validation_error(exc) from exc
+    return _agent_tool_response(
+        "get_operation_proposal", _proposal_result_data(result))
+
+
+@app.delete("/api/agent/tools/proposals/{proposal_id}", tags=["agent"],
+            summary="取消自己的待审批提案",
+            responses={**_AGENT_WRITE_ERROR_RESPONSES,
+                       404: {"description": "提案不存在或不属于当前 token"}},
+            dependencies=[Security(_agent_bearer_scheme)])
+def agent_cancel_proposal(
+    request: Request,
+    proposal_id: int,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_PROPOSE)),
+    ],
+) -> dict[str, Any]:
+    """只能取消自己未处理的提案；已批准/拒绝/过期不可取消。"""
+    _require_agent_write_enabled(request, ctx)
+    try:
+        result = proposal_service.cancel_proposal(
+            _proposal_principal(ctx), proposal_id,
+            ip=_get_client_ip(request))
+    except proposal_service.ProposalValidationError as exc:
+        raise _proposal_validation_error(exc) from exc
+    return _agent_tool_response(
+        "cancel_operation_proposal", _proposal_result_data(result))
 
 
 def _agent_alert_rows(alert_type: str | None,
@@ -2329,6 +2481,20 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
     {"name": "get_job_status", "method": "GET",
      "path": "/api/agent/tools/refresh/{job_id}",
      "scope": agent_tokens.SCOPE_DATA_REFRESH},
+    {"name": "create_operation_proposal", "method": "POST",
+     "path": "/api/agent/tools/proposals",
+     "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+     "risk": "propose", "requires_confirmation": True},
+    {"name": "list_operation_proposals", "method": "GET",
+     "path": "/api/agent/tools/proposals",
+     "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE},
+    {"name": "get_operation_proposal", "method": "GET",
+     "path": "/api/agent/tools/proposals/{proposal_id}",
+     "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE},
+    {"name": "cancel_operation_proposal", "method": "DELETE",
+     "path": "/api/agent/tools/proposals/{proposal_id}",
+     "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+     "risk": "write", "requires_confirmation": False},
 )
 
 
@@ -2349,7 +2515,7 @@ def agent_get_capabilities(
             "requires_confirmation": tool.get("requires_confirmation", False),
             "enabled": (
                 config.AGENT_WRITE_ENABLED
-                if tool.get("risk") == "write" else True
+                if tool.get("risk") in ("write", "propose") else True
             ),
         }
         for tool in _AGENT_TOOL_REGISTRY
@@ -2970,6 +3136,80 @@ def add_conversion(request: Request, body: ConversionCreate) -> dict[str, Any]:
     return {"from_id": from_id, "to_id": to_id,
             "from": {"id": from_id, **from_tx.to_dict()},
             "to": {"id": to_id, **to_tx.to_dict()}}
+
+
+# ---------------------------------------------------------------------------
+# 账本提案审批（仅网页管理员；Agent token 不能调用这些路径）
+# ---------------------------------------------------------------------------
+class ProposalRejectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = ""
+
+
+def _web_actor() -> str:
+    return config.AUTH_USERNAME if config.AUTH_ENABLED else "local"
+
+
+@app.get("/api/proposals/count", tags=["proposals"],
+         summary="待处理提案数量")
+def get_proposal_count() -> dict[str, int]:
+    return {"pending": proposal_service.count_pending()}
+
+
+@app.get("/api/proposals", tags=["proposals"],
+         summary="账本提案列表（网页管理员）")
+def get_proposals(
+    status: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> dict[str, Any]:
+    """列出 Agent 提交的提案，默认按 id 倒序。"""
+    try:
+        result = proposal_service.list_proposals(
+            status=status, limit=limit, offset=offset)
+    except proposal_service.ProposalValidationError as exc:
+        raise _proposal_validation_error(exc) from exc
+    return _proposal_result_data(result)
+
+
+@app.get("/api/proposals/{proposal_id}", tags=["proposals"],
+         summary="账本提案详情（网页管理员）")
+def get_proposal(proposal_id: int) -> dict[str, Any]:
+    try:
+        result = proposal_service.get_proposal_admin(proposal_id)
+    except proposal_service.ProposalValidationError as exc:
+        raise _proposal_validation_error(exc) from exc
+    return _proposal_result_data(result)
+
+
+@app.post("/api/proposals/{proposal_id}/approve", tags=["proposals"],
+          summary="批准并执行提案（网页管理员）")
+def approve_proposal(request: Request, proposal_id: int) -> dict[str, Any]:
+    """批准后由服务端在同一事务内写入账本；Agent 无法调用此路径。"""
+    try:
+        result = proposal_service.approve_proposal(
+            proposal_id, reviewer=_web_actor(),
+            ip=_get_client_ip(request))
+    except proposal_service.ProposalValidationError as exc:
+        raise _proposal_validation_error(exc) from exc
+    return _proposal_result_data(result)
+
+
+@app.post("/api/proposals/{proposal_id}/reject", tags=["proposals"],
+          summary="拒绝提案（网页管理员）")
+def reject_proposal(
+    request: Request,
+    proposal_id: int,
+    body: ProposalRejectRequest,
+) -> dict[str, Any]:
+    try:
+        result = proposal_service.reject_proposal(
+            proposal_id, reviewer=_web_actor(), reason=body.reason,
+            ip=_get_client_ip(request))
+    except proposal_service.ProposalValidationError as exc:
+        raise _proposal_validation_error(exc) from exc
+    return _proposal_result_data(result)
 
 
 # ---------------------------------------------------------------------------

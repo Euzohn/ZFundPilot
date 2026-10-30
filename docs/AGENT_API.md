@@ -1,8 +1,8 @@
-# ZFundPilot Agent 只读 API
+# ZFundPilot Agent API（只读 + 受控提案）
 
-本文档面向想让 AI Agent（Claude Desktop、Cursor、自建 MCP Server、脚本等）读取 ZFundPilot 组合数据的用户。
+本文档面向想让 AI Agent（Claude Desktop、Cursor、自建 MCP Server、脚本等）读取 ZFundPilot 组合数据、并在明确边界内提交受控操作的用户。
 
-Agent 接口只读，**不提供任何交易、设置、导入导出或资金操作**。它使用独立于网页登录的 Agent token，按 scope 授权、默认拒绝、可随时撤销。
+Agent 接口以只读为主，写能力默认关闭且分层授权：自选维护与数据刷新是低风险直接写入；账本变更只能提交**待审批提案**，必须由网页管理员确认后由服务端执行。不提供设置、导入导出或资金划转，Agent token 也不能绕过网页审批直接写账本。Agent token 独立于网页登录，按 scope 授权、默认拒绝、可随时撤销。
 
 > English version: [AGENT_API_EN.md](./AGENT_API_EN.md)
 
@@ -79,12 +79,13 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 | `plans:read` | `auto-invest-plans` |
 | `watchlist:write` | `watchlist`（新增/更新/删除自选，需同时开启服务端写开关） |
 | `data:refresh` | `refresh`（启动/查询任务化数据刷新，仅净值/元数据，需开启写开关） |
+| `transactions:propose` | `proposals`（创建/查看/取消自己的待审批账本提案，需开启写开关；执行权只属于网页管理员） |
 
-写 scope 目前有 `watchlist:write` 与 `data:refresh`，均默认不勾选，且受 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 总开关约束（默认关闭）。调用未授权工具返回 **403**。
+写 scope 目前有 `watchlist:write`、`data:refresh` 与 `transactions:propose`，均默认不勾选，且受 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 总开关约束（默认关闭）。调用未授权工具返回 **403**。前两者是低风险直接写入；`transactions:propose` 只允许提交提案，**不能直接写账本**。
 
-`capabilities` 只要求有效 token，不要求特定 scope；它只返回当前 token 已获授权的工具，写工具会标注 `risk="write"` 与 `enabled`。
+`capabilities` 只要求有效 token，不要求特定 scope；它只返回当前 token 已获授权的工具，写工具会标注 `risk="write"`、提案工具标注 `risk="propose"`，并以 `enabled` 反映服务端写开关状态。
 
-> 前三个 scope 是签发页面的默认勾选项；`transactions:read`、`watchlist:read`、`alerts:read`、`plans:read`、`watchlist:write`、`data:refresh` 默认不勾选，需要读取或写入对应数据时请显式勾选，避免存量流程静默扩权。
+> 前三个 scope 是签发页面的默认勾选项；`transactions:read`、`watchlist:read`、`alerts:read`、`plans:read`、`watchlist:write`、`data:refresh`、`transactions:propose` 默认不勾选，需要读取或写入对应数据时请显式勾选，避免存量流程静默扩权。
 
 ---
 
@@ -132,7 +133,7 @@ Authorization: Bearer zfag_xxxxxxxx
 | `401` | 缺少 token，或 token 无效 / 已过期 / 已撤销 |
 | `403` | token 有效但缺少所需 scope、写能力总开关关闭；或实例未启用密码认证 |
 | `404` | 工具或基金不存在（带有效 token 时） |
-| `409` | 自选版本冲突、对象已存在/不存在、基金未收录或幂等键冲突 |
+| `409` | 自选版本冲突、对象已存在/不存在、基金未收录、提案非 `pending`/已过期，或幂等键冲突 |
 | `422` | 请求体/参数校验失败，或缺少合法的 `Idempotency-Key` |
 | `429` | 超过限流阈值，响应头含 `Retry-After` |
 
@@ -165,7 +166,7 @@ FastAPI 自动生成以下页面：
 
 ## 5. 工具列表
 
-除 5.20 使用 `POST` 外，其余工具均为 `GET`。所有工具都只读，不接受交易、设置或导出操作。
+5.1–5.20 为只读或只读模拟工具（5.20 的回测使用 `POST`）；5.21–5.23 为受控写能力，均默认关闭。任何工具都不接受设置、导入导出或资金划转操作，账本写入只能经由网页管理员批准提案。
 
 ### 5.1 `GET /api/agent/tools/portfolio-summary`
 
@@ -696,7 +697,7 @@ GET /api/agent/tools/portfolio-summary
 Authorization: Bearer zfag_xxx
 ```
 
-也可以用任意 HTTP 工具封装上述 20 个端点；仓库同时提供可选的 MCP 适配层（见本节末尾）。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
+也可以用任意 HTTP 工具封装上述端点；仓库同时提供可选的 MCP 适配层（见本节末尾）。建议在 Agent 侧把 `data-status` 作为每次分析前的必查项，避免基于过期净值下结论。
 
 ---
 
@@ -758,9 +759,49 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 - 错误码：`write_disabled`、`validation_error`、`refresh_busy`、`not_found`、`idempotency_conflict`、`idempotency_expired`。审计记录 `data_refresh_started/succeeded/failed/busy/rejected`，仅记计数与 token 前缀。
 - 单任务基金数上限 50，`POST refresh` 限流 10 次/分钟（`GET refresh/{job_id}` 走默认 120 次/分钟）。
 
+### 5.23 账本提案（写入需网页确认，默认关闭）
+
+Agent 只能提交**待审批提案**，不会直接写账本。scope：`transactions:propose`，同样受 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 总开关约束。首期仅开放 `operation_type="add_transaction"`；批准、拒绝、取消后的执行与状态迁移均由服务端完成，执行路径不联网。
+
+| MCP 工具 | HTTP | 说明 |
+|---|---|---|
+| `create_operation_proposal` | `POST /api/agent/tools/proposals` | 创建提案，返回 `201` + `proposal_id`；不写账本 |
+| `list_operation_proposals` | `GET /api/agent/tools/proposals` | 仅列出当前 token 创建的提案 |
+| `get_operation_proposal` | `GET /api/agent/tools/proposals/{proposal_id}` | 仅创建者可读，他人提案返回 `404` |
+| `cancel_operation_proposal` | `DELETE /api/agent/tools/proposals/{proposal_id}` | 取消自己仍为 `pending` 的提案 |
+
+```bash
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f52" \
+  -d '{
+    "operation_type": "add_transaction",
+    "params": {
+      "fund_code": "005827",
+      "action": "buy",
+      "date": "2026-10-30",
+      "amount": 1000,
+      "fee": 1,
+      "channel": "支付宝"
+    }
+  }' | jq
+# {"tool":"create_operation_proposal","data":{"proposal_id":1,"status":"pending","expires_at":"...","summary":{...}}}
+```
+
+- `params` 只接受 `add_transaction` 白名单字段：`fund_code`（6 位数字、需已在网页收录）、`action`（`buy`/`sell`/`dividend`/`reinvest`）、`date`（`YYYY-MM-DD`）、`amount`/`shares`/`nav`（买/卖至少两项可推导，卖出必须有份额，分红必须有金额）、`fee`、`channel`、`note`、`is_t1`。未知字段返回 `422 validation_error`。
+- 必须带 `Idempotency-Key`（16–128 安全 ASCII）。同键同参数返回原提案（`200` + `replayed=true`）；同键异参数/跨操作返回 `409 idempotency_conflict`，过期键返回 `409 idempotency_expired`。
+- 提案默认 7 天过期；过期后不可批准，也不能取消。每个 token 最多同时保留 20 个 `pending` 提案，超限返回 `409 too_many_pending`。
+- 基金尚未收录返回 `409 fund_not_registered`，避免审批路径联网补数据。
+- 状态机：`pending → succeeded / failed / conflict / rejected / cancelled / expired`。`failed` 表示创建者 token 失效或失去 scope；`conflict` 表示基金/参数在审批时已不合法。环境级阻断（`auth_disabled`、`write_disabled`）返回 `403` 且提案保持 `pending`，修复后可重试。
+- 网页管理员在「待确认提案」页面批准后，服务端在同一 SQLite 事务内复核实例认证、写开关、创建者 token 与业务规则，写入交易并记录 `proposal_approved` 与 `add_transaction` 两条审计；并发审批只有一个能成功，重复审批返回 `409 not_pending`。
+- 网页审批端点仅接受网页登录身份：`GET /api/proposals/count`、`GET /api/proposals`、`GET /api/proposals/{id}`、`POST /api/proposals/{id}/approve`、`POST /api/proposals/{id}/reject`。Agent token 调用这些路径返回 `401`。
+- 错误码：`write_disabled`、`validation_error`、`fund_not_registered`、`too_many_pending`、`not_pending`、`expired`、`not_found`、`idempotency_conflict`、`idempotency_expired`。审计记录 `proposal_created`、`proposal_create_rejected`、`proposal_cancelled`、`proposal_expired`、`proposal_approved`、`proposal_rejected`、`proposal_failed`、`proposal_conflict`，只记 token 前缀与提案摘要。
+- 创建/取消与自选写共用写总开关；提案不进入备份 ZIP，恢复备份时会清空未完成提案，避免旧提案指向已替换的数据。
+
 ### MCP 适配层（可选）
 
-仓库内置一个 stdio MCP 桥接，把上述 20 个工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
+仓库内置一个 stdio MCP 桥接，把上述工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
 
 ```bash
 # 在 ZFundPilot 源码目录安装可选依赖
@@ -789,7 +830,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 }
 ```
 
-暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`search_funds`、`screen_funds`、`run_dca_backtest`、`get_agent_capabilities`、`add_watchlist_item`、`update_watchlist_item`、`remove_watchlist_item`、`start_data_refresh`、`get_job_status`。
+暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`search_funds`、`screen_funds`、`run_dca_backtest`、`get_agent_capabilities`、`add_watchlist_item`、`update_watchlist_item`、`remove_watchlist_item`、`start_data_refresh`、`get_job_status`、`create_operation_proposal`、`list_operation_proposals`、`get_operation_proposal`、`cancel_operation_proposal`。
 写工具需要在客户端同时提供 `idempotency_key`，并映射到 HTTP 的 `Idempotency-Key`；MCP 客户端只负责传参，不能替代服务端鉴权、scope 与写开关。
 
 - `ZFUNDPILOT_BASE_URL` 默认 `http://127.0.0.1:8000`；ZFundPilot 跑在 NAS/Docker 时改成实际地址，远程访问请用 HTTPS。
@@ -804,7 +845,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 - **撤销**：设置页可随时撤销；撤销立即生效。建议为每个 Agent 单独签发，便于定位和回收。
 - **审计**：签发、撤销、鉴权成功/失败、限流都会写审计日志，只记录 token 前缀，不记录明文或完整响应。
 - **网络**：远程访问必须经 HTTPS 反向代理；不要把端口直接暴露到公网。token 泄漏时先撤销再重新签发。
-- **范围**：只读 scope 覆盖组合、组合曲线、基准、风险、行业敞口、基金、数据状态、交易流水、自选、提醒与定投计划；写操作和导出接口不会开放给 Agent token。
+- **范围**：只读 scope 覆盖组合、组合曲线、基准、风险、行业敞口、基金、数据状态、交易流水、自选、提醒与定投计划；写 scope 仅开放自选维护、任务化数据刷新与账本提案。提案必须经网页管理员确认，Agent token 不能直接写账本；设置、导入导出与资金划转接口不会开放给 Agent token。
 
 ---
 
@@ -820,3 +861,4 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 | 2026-10-28 | 新增 4 个组合级只读工具：`portfolio-curve`、`benchmark`、`risk-report`、`industry-exposure`，复用 `portfolio:read`/`health:read`，不新增 scope |
 | 2026-10-28 | 新增 2 个基金检索工具：`search`（关键词检索）、`screen`（类型/板块/关键词筛选，可选限量指标），复用 `funds:read`；引入按路由覆盖的限流 |
 | 2026-10-28 | 新增只读定投回测工具 `backtest/dca`（`POST`，复用 `funds:read`）：数据准备与计算解耦，不写正式净值表；统一估值日与 XIRR 终值日，显式标注数据不足、部分覆盖与费率未知 |
+| 2026-10-30 | 新增 `transactions:propose` scope 与 4 个账本提案工具：Agent 只能提交待审批提案，管理员在网页批准后由服务端同事务写入账本并审计；首期仅开放 `add_transaction`，提案默认 7 天过期、幂等创建、按 token 隔离 |

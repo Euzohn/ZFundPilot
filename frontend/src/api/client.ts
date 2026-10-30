@@ -47,6 +47,9 @@ import type {
   AgentTokenCreateResponse,
   BackupPreview,
   BackupRestoreResult,
+  ProposalActionResult,
+  ProposalCountResponse,
+  ProposalListResponse,
 } from "./types"
 import { getToken, clearToken } from "@/lib/auth"
 import { getCurrentLang } from "@/i18n/LanguageContext"
@@ -556,6 +559,22 @@ export const api = {
       method: "POST",
       headers: { "Idempotency-Key": newIdempotencyKey() },
       body: JSON.stringify({ expected_revision: expectedRevision }),
+    }),
+
+  // 账本提案（Agent 提交，网页管理员审批）
+  getProposalCount: () => request<ProposalCountResponse>("/proposals/count"),
+  getProposals: (status?: string) =>
+    request<ProposalListResponse>(
+      `/proposals?limit=100${status ? `&status=${encodeURIComponent(status)}` : ""}`,
+    ),
+  getProposal: (id: number) =>
+    request<ProposalActionResult>(`/proposals/${id}`),
+  approveProposal: (id: number) =>
+    request<ProposalActionResult>(`/proposals/${id}/approve`, { method: "POST" }),
+  rejectProposal: (id: number, reason: string) =>
+    request<ProposalActionResult>(`/proposals/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
     }),
 
   // Dividend

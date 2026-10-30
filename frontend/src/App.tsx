@@ -5,6 +5,7 @@ import LogoSplash from "@/components/LogoSplash"
 import Overview from "@/pages/Overview"
 import Home from "@/pages/Home"
 import Transactions from "@/pages/Transactions"
+import Proposals from "@/pages/Proposals"
 import Positions from "@/pages/Positions"
 import FundDetail from "@/pages/FundDetail"
 import NavUpdate from "@/pages/NavUpdate"
@@ -57,6 +58,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route path="overview" element={<Overview />} />
           <Route path="transactions" element={<Transactions />} />
+          <Route path="proposals" element={<Proposals />} />
           <Route path="positions" element={<Positions />} />
           <Route path="fund/:code" element={<FundDetail />} />
           <Route path="nav" element={<NavUpdate />} />

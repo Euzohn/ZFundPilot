@@ -68,16 +68,22 @@ ZFundPilot/
 │   ├── us_calendar.py       # 美股（NYSE）算法日历（纯计算休市日，零联网依赖，供定投跳过 QDII 休市）
 │   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
 │   ├── backup_service.py    # 备份格式 v2（manifest + JSONL + SHA-256）、预检与事务化恢复
+│   ├── agent_tokens.py      # Agent token 签发/校验/scope（仅存 SHA-256 摘要，独立于网页登录）
+│   ├── watchlist_service.py # 自选受控写入（幂等/revision/墓碑/业务审计同事务）
+│   ├── refresh_service.py   # 任务化净值/元数据刷新（refresh_jobs；不做交易回填/定投）
+│   ├── proposal_service.py  # 账本提案状态机（Agent 提案 + 网页审批 + 执行/审计同事务）
+│   ├── mcp_server.py        # 可选 MCP stdio 适配层（仅 HTTP 客户端，复用鉴权/scope/限流）
 │   ├── nav_update_state.py  # 净值更新共享状态+锁+阶段(phase)字段（api.py/scheduler.py 共用，避免循环导入）
 │   ├── scheduler.py         # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查 + 基准指数/宏观水位持久化
 │   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）+ 视觉模型截图解析（parse_screenshot + resolve_fund_code 名称→代码后处理）
 │   └── data_io.py           # CSV 导入/导出（全量备份由 backup_service.py 提供）
 ├── frontend/src/            # React 前端
 │   ├── App.tsx              # 路由（/ → Home 独立页，其余在 Layout 内）
-│   ├── pages/               # 15 个页面
+│   ├── pages/               # 16 个页面
 │   │   ├── Home.tsx         # 首页（brutalist 战术终端风格，中英双语切换）
 │   │   ├── Overview.tsx     # 组合总览
 │   │   ├── Transactions.tsx # 交易管理（录入/流水/CSV/定投计划/截图导入）
+│   │   ├── Proposals.tsx    # 待确认提案（Agent 提案审批 + 详情 + 侧边栏角标）
 │   │   ├── NavUpdate.tsx    # 净值更新
 │   │   ├── Positions.tsx    # 持仓明细（列表 + 网格双视图，网格为 Bento 大卡 + 仓位占比条；列表视图支持自定义列）
 │   │   ├── Returns.tsx      # 收益分析（曲线/基准对比/排名/日历/止盈止损提醒）
@@ -109,7 +115,7 @@ ZFundPilot/
 │   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12 并行) → tsc → build
 ├── tests/                   # Pytest 测试套件
 │   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
-│   └── test_*.py            #   583 个测试用例
+│   └── test_*.py            #   数百个测试用例
 └── docs/CONTEXT.md              # 本文件（不追踪）
 ```
 
@@ -132,6 +138,13 @@ ZFundPilot/
 | `tp_sl_alert_states` | 止盈止损状态机（fund_code + alert_type → armed/last_triggered_return/handled_at），控制重复提醒 |
 | `index_history` | 指数历史收盘价（沪深300/上证/创业板，持久化缓存，`UNIQUE(code, date)`） |
 | `trade_calendar` | A 股交易日历（`date` 主键，法定节假日/调休，供定投可投性校验） |
+| `portfolio_snapshots` | 组合每日快照（市值/投入/收益，用于曲线与缓存） |
+| `auto_invest_plans` | 定投计划（频率/金额/渠道/状态/下次执行） |
+| `watchlist_tombstones` | 自选删除墓碑（保留前值与单调 revision，供网页恢复） |
+| `agent_tokens` | Agent token 元数据（仅 SHA-256 摘要 + 前缀 + scope + 过期/撤销） |
+| `agent_operations` | Agent 写操作幂等记录（principal + key_hash + 参数摘要 + 结果，90 天） |
+| `refresh_jobs` | 任务化数据刷新（queued/running/succeeded/failed/interrupted） |
+| `operation_proposals` | 账本操作提案（待审批/状态机/创建者/参数摘要/审批与执行结果） |
 
 ### 核心模型（models.py）
 
@@ -174,13 +187,15 @@ ZFundPilot/
 - 版本: `FastAPI(title="ZFundPilot API", version="0.25.0")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
-- 启动: `@app.on_event("startup")` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`
-- 关闭: `@app.on_event("shutdown")` → `scheduler.shutdown_scheduler()`
+- 启动: `@app.lifespan` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`；把遗留刷新任务标为 `interrupted`，并把过期提案标为 `expired`
+- 关闭: lifespan 退出 → `scheduler.shutdown_scheduler()`
 - 静态文件: 生产模式挂载 `frontend/dist/` 到 `/`
 - i18n 序列化: `/api/risk` flags 和 `/api/rebalance` advice 输出 `code`+`params`，前端 `backendLabels.ts` 按 code 翻译
-- 自选列表: `POST/GET/DELETE /api/watchlist`，加入时自动获取基金 meta 并 upsert 到 `funds` 表
+- 自选列表: `POST/GET/DELETE /api/watchlist`，加入时自动获取基金 meta 并 upsert 到 `funds` 表；写操作下沉到 `watchlist_service`，网页与 Agent 共用幂等/revision/审计
+- Agent 接入: `/api/agent/tokens` 管理 token；`/api/agent/tools/*` 只读工具 + 受控写（自选、刷新任务、账本提案），独立中间件鉴权 + scope + 限流
+- 账本提案: Agent `POST/GET/DELETE /api/agent/tools/proposals*` 只能创建/查看/取消自己的待审批提案；网页 `GET /api/proposals/count`、`GET /api/proposals`、`GET /api/proposals/{id}`、`POST /api/proposals/{id}/approve|reject` 仅限网页登录，批准时同事务复核并写入账本
 - 截图导入: `POST /api/ai/parse-screenshot`（multipart 上传截图 → 视觉模型解析 → 返回结构化数据，不落库）+ `POST /api/ai/reconcile`（持仓对账 → 生成差额调整交易建议）+ `GET/PUT /api/settings/vision`（视觉模型配置）+ `POST /api/ai/vision-test`（测试视觉模型）。批量保存复用 `POST /api/csv/import`
-- 数据备份: `GET /api/export/zip` 导出格式 v2（`manifest.json` + 12 张表 JSONL，含净值历史与 SHA-256）；`POST /api/backup/preflight` 只读预检，`POST /api/backup/restore` 需 `RESTORE` 确认后先备份当前数据再事务化整体恢复，失败回滚。审计日志、AI 密钥、Agent token 不进入普通备份
+- 数据备份: `GET /api/export/zip` 导出格式 v2（`manifest.json` + 12 张表 JSONL，含净值历史与 SHA-256）；`POST /api/backup/preflight` 只读预检，`POST /api/backup/restore` 需 `RESTORE` 确认后先备份当前数据再事务化整体恢复，失败回滚。审计日志、AI 密钥、Agent token、Agent 幂等记录、刷新任务与提案不进入普通备份；恢复时清空 `agent_operations`、`refresh_jobs`、`operation_proposals`，避免旧记录指向已替换的数据
 - 基准对比: `GET /api/portfolio/benchmark?indices=000300,000001,399006`，返回基准累计收益率（`close / close_at_start - 1`），按组合曲线日期 ffill 对齐。`BENCHMARK_INDICES` 白名单控制可选指数
 
 ### config.py — 全局配置
@@ -513,6 +528,11 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ## 十二、当前工作状态
 
 ### [Unreleased]
+
+- feat: 账本提案与网页审批（E）——`transactions:propose` scope + `operation_proposals` 表；Agent 只能创建/查看/取消待审批提案，网页管理员批准后服务端同事务复核 token/写开关/业务规则、写入交易并记录 `proposal_approved` + `add_transaction` 审计；首期仅 `add_transaction`，7 天过期、幂等创建、每 token 20 条待处理上限；新增 `/proposals` 页面与导航角标；恢复备份时清空旧提案
+- feat: 任务化数据刷新（D）——`data:refresh` scope + `refresh_jobs` 表；`start_data_refresh`/`get_job_status` 仅刷新净值/元数据，不回填交易净值、不执行定投；与网页/调度器共用互斥锁
+- feat: 自选受控写入（B/C）——`watchlist:write` + `watchlist_service`；新增/更新/删除带幂等键与 revision 校验，删除保留墓碑，网页可恢复
+- feat: 可验证备份恢复（P2）——备份 v2 + 预检 + 事务化恢复 + 自动安全备份；Agent token/审计/AI 密钥/幂等/任务/提案不进入备份
 
 ### [0.25.0] - 2026-10-26
 

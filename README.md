@@ -82,7 +82,7 @@ ZFundPilot 是一个**自托管的中国基金组合分析工具**。记录每�
 - **中国市场专精** — 数据源来自 AkShare 和天天基金，支持中国基金的全维度分析（含实时估值、费率计算、板块分类）
 - **数据驱动分析** — 不是荐基平台，没有排行榜和营销话术，只有基于你持仓数据的量化指标
 - **AI 辅助，不是 AI 决策** — OpenAI 兼容 API 提供持仓上下文问答，建议仅供参考，决策在你自己
-- **Agent 可读，也可审计** — 独立只读 Agent token + MCP 适配层，让 Claude Desktop / Cursor 在明确的 scope、限流与审计边界内读取组合，而不是把整站 API 暴露给模型
+- **Agent 可读，也可审计** — 独立 Agent token + MCP 适配层，让 Claude Desktop / Cursor 在明确的 scope、限流与审计边界内读取组合、维护自选或提交待审批提案，而不是把整站 API 暴露给模型
 
 ## 快速开始
 
@@ -148,11 +148,12 @@ cd frontend && npm install && npm run dev
 
 ### Agent 接入（API / MCP）
 
-- **独立 Agent 令牌** — 与网页登录 token 物理隔离的高熵 Agent token，服务端只存 SHA-256 摘要；按 `portfolio:read`/`funds:read`/`health:read`/`transactions:read`/`watchlist:read`/`alerts:read`/`plans:read` 及可选的 `watchlist:write` 授权，默认拒绝、可撤销/过期；无密码模式下不可签发或使用
-- **20 个只读工具** — `/api/agent/tools/*` 提供组合汇总、数据状态、持仓、单基金详情、组合体检、收益视图、多基金对比、交易流水、自选、提醒、定投计划、组合曲线、基准对比、风险报告、行业敞口、基金检索、基金筛选、只读定投回测与能力发现；统一响应包、正式净值口径与数据缺口说明，不暴露交易/设置/导出等写接口
+- **独立 Agent 令牌** — 与网页登录 token 物理隔离的高熵 Agent token，服务端只存 SHA-256 摘要；按 `portfolio:read`/`funds:read`/`health:read`/`transactions:read`/`watchlist:read`/`alerts:read`/`plans:read` 及可选的 `watchlist:write`/`data:refresh`/`transactions:propose` 授权，默认拒绝、可撤销/过期；无密码模式下不可签发或使用
+- **20 个只读工具** — `/api/agent/tools/*` 提供组合汇总、数据状态、持仓、单基金详情、组合体检、收益视图、多基金对比、交易流水、自选、提醒、定投计划、组合曲线、基准对比、风险报告、行业敞口、基金检索、基金筛选、只读定投回测与能力发现；统一响应包、正式净值口径与数据缺口说明。这些只读工具不暴露交易、设置或导出写接口；受控写能力见下
 - **可选自选写入** — 3 个自选维护工具（新增/更新/删除）使用独立的 `watchlist:write`，默认不勾选，并受服务端写开关约束；只改自选关系与备注/分组，不创建交易或计划；幂等键、revision 冲突保护、删除前值恢复与业务结果审计同事务提交
 - **任务化数据刷新** — `start_data_refresh` / `get_job_status`（`data:refresh`）启动并轮询**仅净值/元数据**刷新任务；持久化 `refresh_jobs`、服务重启标记 interrupted、同幂等键返回原 job_id，与网页/调度器共用互斥锁；**不**回填交易净值、**不**执行定投，这是与网页刷新端点的关键区别
-- **MCP 适配层** — 可选 stdio 桥接（`python -m zfundpilot.mcp_server`），让 Claude Desktop / Cursor 直接读取组合；鉴权、scope 与限流完全复用 HTTP 入口，不访问数据库、不另开鉴权后门
+- **账本提案与网页确认** — `create_operation_proposal` 等 4 个工具（`transactions:propose`）只提交待审批提案，**不直接写账本**；管理员在网页确认后，服务端在同一事务内复核 token/写开关/业务规则、写入交易并记录审计。首期开放新增交易，提案 7 天过期、幂等创建、按 token 隔离，恢复备份时清空旧提案
+- **MCP 适配层** — 可选 stdio 桥接（`python -m zfundpilot.mcp_server`），让 Claude Desktop / Cursor 在 scope 边界内读取组合或提交待审批提案；鉴权、scope 与限流完全复用 HTTP 入口，不访问数据库、不另开鉴权后门
 - **可审计边界** — 鉴权成功/失败、限流、签发与撤销均写审计（仅记 token 前缀），按 token + 端点限流，远程访问要求 HTTPS。端点、示例与配置见 [docs/AGENT_API.md](docs/AGENT_API.md)
 
 ### 安全与自定义

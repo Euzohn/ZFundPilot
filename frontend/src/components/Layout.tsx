@@ -13,6 +13,7 @@ import {
   GitCompare,
   FlaskConical,
   Star,
+  Inbox,
   Search as SearchIcon,
   Settings as SettingsIcon,
   ChevronLeft,
@@ -44,6 +45,7 @@ const navGroups = [
     items: [
       { to: "/positions", labelKey: "positions" as const, icon: Briefcase },
       { to: "/transactions", labelKey: "transactions" as const, icon: ArrowLeftRight },
+      { to: "/proposals", labelKey: "proposals" as const, icon: Inbox },
       { to: "/nav", labelKey: "navUpdate" as const, icon: RefreshCw },
     ],
   },
@@ -63,7 +65,7 @@ const navGroups = [
 
 const bottomNav = { to: "/settings", labelKey: "settings" as const, icon: SettingsIcon }
 
-function NavLinks({ collapsed, onNavigate, dividendCount, tpSlCount, compareCount }: { collapsed: boolean; onNavigate?: () => void; dividendCount: number; tpSlCount: number; compareCount: number }) {
+function NavLinks({ collapsed, onNavigate, dividendCount, tpSlCount, compareCount, proposalCount }: { collapsed: boolean; onNavigate?: () => void; dividendCount: number; tpSlCount: number; compareCount: number; proposalCount: number }) {
   const { t } = useLang()
 
   const linkClass = (isActive: boolean) =>
@@ -86,6 +88,7 @@ function NavLinks({ collapsed, onNavigate, dividendCount, tpSlCount, compareCoun
             const showBadge = to === "/transactions" && dividendCount > 0
             const showTpSlBadge = to === "/returns" && tpSlCount > 0
             const showCompareBadge = to === "/compare" && compareCount > 0
+            const showProposalBadge = to === "/proposals" && proposalCount > 0
             return (
             <NavLink
               key={to}
@@ -106,6 +109,9 @@ function NavLinks({ collapsed, onNavigate, dividendCount, tpSlCount, compareCoun
                 {collapsed && showCompareBadge && (
                   <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-primary ring-1 ring-card" />
                 )}
+                {collapsed && showProposalBadge && (
+                  <span className="absolute -top-1 -right-1.5 h-2 w-2 rounded-full bg-warning ring-1 ring-card" />
+                )}
               </span>
               {!collapsed && <span className="whitespace-nowrap">{t.nav[labelKey]}</span>}
               {!collapsed && showBadge && (
@@ -121,6 +127,11 @@ function NavLinks({ collapsed, onNavigate, dividendCount, tpSlCount, compareCoun
               {!collapsed && showCompareBadge && (
                 <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold">
                   {compareCount > 99 ? "99+" : compareCount}
+                </span>
+              )}
+              {!collapsed && showProposalBadge && (
+                <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-warning text-warning-foreground text-[10px] font-semibold">
+                  {proposalCount > 99 ? "99+" : proposalCount}
                 </span>
               )}
             </NavLink>
@@ -152,6 +163,7 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [dividendCount, setDividendCount] = useState(0)
   const [tpSlCount, setTpSlCount] = useState(0)
+  const [proposalCount, setProposalCount] = useState(0)
   const location = useLocation()
 
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
@@ -173,6 +185,7 @@ export default function Layout() {
     const fetchCounts = () => {
       api.getPendingDividendAlertCount().then(r => { if (active) setDividendCount(r.count) }).catch(() => {})
       api.getPendingAlertCount("tp_sl").then(r => { if (active) setTpSlCount(r.count) }).catch(() => {})
+      api.getProposalCount().then(r => { if (active) setProposalCount(r.pending) }).catch(() => {})
     }
     fetchCounts()
     const timer = setInterval(fetchCounts, 60000)
@@ -226,7 +239,7 @@ export default function Layout() {
           )}
         </div>
 
-        <NavLinks collapsed={collapsed} dividendCount={dividendCount} tpSlCount={tpSlCount} compareCount={compareCount} />
+        <NavLinks collapsed={collapsed} dividendCount={dividendCount} tpSlCount={tpSlCount} compareCount={compareCount} proposalCount={proposalCount} />
 
         <div className={cn("border-t border-border", collapsed ? "px-2 py-3" : "px-3 py-3")}>
           <a
@@ -306,7 +319,7 @@ export default function Layout() {
           </button>
         </div>
 
-        <NavLinks collapsed={false} onNavigate={() => setMobileOpen(false)} dividendCount={dividendCount} tpSlCount={tpSlCount} compareCount={compareCount} />
+        <NavLinks collapsed={false} onNavigate={() => setMobileOpen(false)} dividendCount={dividendCount} tpSlCount={tpSlCount} compareCount={compareCount} proposalCount={proposalCount} />
       </aside>
 
       {/* Main content */}

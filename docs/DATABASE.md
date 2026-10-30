@@ -22,6 +22,12 @@
 | `tp_sl_alert_states` | 止盈止损状态机 | `(fund_code, alert_type)` |
 | `index_history` | 指数历史收盘价（基准对比，持久化缓存） | `id` (自增)，`UNIQUE(code, date)` |
 | `trade_calendar` | A 股交易日历（法定节假日/调休，定投可投性校验） | `date` |
+| `portfolio_snapshots` | 组合每日快照（投入/市值/收益，曲线缓存） | `id` (自增)，`UNIQUE(date)` |
+| `watchlist_tombstones` | 自选删除墓碑（保留前值与单调 revision，供恢复） | `fund_code` |
+| `agent_tokens` | Agent token 元数据（仅摘要/前缀/scope/过期/撤销） | `id` (自增)，`UNIQUE(token_hash)` |
+| `agent_operations` | Agent 写操作幂等记录（同主体同键只执行一次） | `id` (自增)，`UNIQUE(principal_type, principal_id, key_hash)` |
+| `refresh_jobs` | 任务化数据刷新（进度、结果、归属与有效期） | `id` (自增) |
+| `operation_proposals` | 账本操作提案（状态机、创建者、参数/摘要、审批与执行结果） | `id` (自增) |
 
 ---
 
@@ -331,6 +337,110 @@
 **获取**（`fetch_fund.fetch_trade_calendar` / `refresh_trade_calendar`）：24h 内存缓存 + stale-if-error，scheduler 净值更新后 + 定投执行前刷新并持久化。
 
 **scheduler 集成**：`_refresh_trade_calendar()` 在净值更新后 + 定投执行前调用。
+
+---
+
+## 13. operation_proposals — 账本操作提案
+
+Agent 只能提交**待审批提案**，不能直接写 `transactions`。网页管理员在「待确认提案」页面批准后，服务端在同一 SQLite 事务内复核实例认证、写总开关、创建者 token/scope 与业务规则，写入交易并记录审计。首期仅支持 `add_transaction`。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | 提案编号（对 Agent 暴露为 `proposal_id`） |
+| `principal_type` | TEXT | NOT NULL | 创建者类型，当前固定 `agent_token` |
+| `principal_id` | TEXT | NOT NULL | 创建者 token id；访问按此隔离 |
+| `token_prefix` | TEXT | DEFAULT '' | 创建时 token 前缀，仅用于审计展示 |
+| `operation_type` | TEXT | NOT NULL | 白名单操作类型，首期仅 `add_transaction` |
+| `status` | TEXT | NOT NULL | 状态机：`pending` / `succeeded` / `failed` / `conflict` / `rejected` / `cancelled` / `expired` |
+| `params_json` | TEXT | NOT NULL | 规范化后的入参（白名单字段），审批时按此复核 |
+| `params_digest` | TEXT | NOT NULL | 入参 SHA-256，用于幂等键“同键同参”判定 |
+| `summary_json` | TEXT | DEFAULT NULL | 面向网页展示的摘要（基金名/方向/金额/警告等） |
+| `risk_level` | TEXT | DEFAULT 'medium' | 风险等级，仅作展示与后续分级依据 |
+| `created_at` | TEXT | NOT NULL | 创建时间（ISO 8601，带时区） |
+| `expires_at` | TEXT | NOT NULL | 过期时间，默认创建后 7 天 |
+| `reviewed_by` | TEXT | DEFAULT NULL | 网页审批人标识 |
+| `reviewed_at` | TEXT | DEFAULT NULL | 审批时间 |
+| `rejection_reason` | TEXT | DEFAULT NULL | 拒绝原因（可选，≤500 字符） |
+| `execution_result_json` | TEXT | DEFAULT NULL | 执行结果或失败原因（含 `tx_id`） |
+| `audit_id` | INTEGER | DEFAULT NULL | 创建/审批关联的审计行 id |
+| `completed_at` | TEXT | DEFAULT NULL | 进入终态的时间 |
+
+**状态机**：
+
+- `pending → succeeded`：管理员批准且执行成功，交易与两条审计同事务提交。
+- `pending → failed`：创建者 token 已撤销/过期/失去 scope，执行前被拒。
+- `pending → conflict`：审批时基金或参数已不合法（如基金被删除、卖出缺份额）。
+- `pending → rejected` / `cancelled`：管理员拒绝 / 创建者主动取消，不写账本。
+- `pending → expired`：超过 `expires_at`，由启动清理与查询时惰性标记。
+- 环境级阻断（`auth_disabled`、`write_disabled`）返回 **403** 且**保持 `pending`**，修复后可重试。
+
+**相关函数**（db.py / proposal_service.py）：
+- `insert_proposal` / `get_proposal` / `list_proposals` / `count_pending_proposals` / `update_proposal_status`
+- `proposal_service.create_proposal`：校验 scope/写开关/基金已收录/参数白名单，写 `operation_proposals` 与 `proposal_created` 审计；幂等记录复用 `agent_operations`（`operation="create_proposal"`）。
+- `proposal_service.approve_proposal`：`BEGIN IMMEDIATE` + 状态复读，保证并发只成功一次；成功写 `proposal_approved` + `add_transaction` 两条审计。
+- 每个 token 最多 20 条 `pending`；超限 `409 too_many_pending`。
+- 提案**不进入**备份 ZIP；恢复备份时清空本表，避免旧提案指向已替换的账本数据。
+
+---
+
+## 14. Agent 与后台任务表
+
+### agent_tokens
+
+Agent 访问令牌元数据。服务端只存 SHA-256 摘要，明文仅在签发时返回一次。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | token id |
+| `name` | TEXT | NOT NULL | 名称（1–64 字符） |
+| `token_hash` | TEXT | NOT NULL UNIQUE | 明文 SHA-256 |
+| `token_prefix` | TEXT | DEFAULT '' | 12 字符前缀，仅用于审计/展示 |
+| `scopes` | TEXT | DEFAULT '' | 空格分隔的 scope 列表 |
+| `created_at` | TEXT | NOT NULL | 签发时间 |
+| `expires_at` | TEXT | DEFAULT NULL | 过期时间；`NULL` 表示不过期 |
+| `last_used_at` | TEXT | DEFAULT NULL | 最近一次成功鉴权时间 |
+| `revoked_at` | TEXT | DEFAULT NULL | 撤销时间 |
+
+### agent_operations
+
+写操作幂等记录，网页与 Agent 共用。保留 90 天。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | 记录 id |
+| `principal_type` / `principal_id` | TEXT | NOT NULL | 调用主体 |
+| `key_hash` | TEXT | NOT NULL | `Idempotency-Key` 的 SHA-256 |
+| `operation` | TEXT | NOT NULL | 操作名（如 `create_proposal`、自选写、刷新） |
+| `params_digest` | TEXT | NOT NULL | 参数摘要（同键异参判定） |
+| `status` | TEXT | NOT NULL | 执行状态 |
+| `result_json` | TEXT | DEFAULT NULL | 可重放结果 |
+| `audit_id` | INTEGER | DEFAULT NULL | 关联审计行 |
+| `created_at` / `expires_at` | TEXT | NOT NULL / NULL | 创建与过期时间 |
+
+### refresh_jobs
+
+任务化数据刷新。仅更新净值/元数据，不回填交易净值、不执行定投。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | 任务 id |
+| `principal_type` / `principal_id` | TEXT | NOT NULL | 创建者（仅创建者可读） |
+| `job_type` | TEXT | DEFAULT 'data_refresh' | 任务类型 |
+| `params_digest` | TEXT | NOT NULL | 规范化参数摘要 |
+| `status` | TEXT | NOT NULL | `queued` / `running` / `succeeded` / `failed` / `interrupted` |
+| `total` / `done` | INTEGER | DEFAULT 0 | 总数与完成数 |
+| `current` / `phase` | TEXT | DEFAULT '' | 当前基金与阶段标签 |
+| `result_json` / `error` | TEXT | DEFAULT NULL | 结果与错误 |
+| `created_at` / `updated_at` | TEXT | NOT NULL | 时间戳 |
+| `expires_at` | TEXT | DEFAULT NULL | 有效期（结果可查询 7 天） |
+
+### watchlist_tombstones
+
+自选删除墓碑，保留删除前值与单调 revision，供网页恢复。`fund_code` 为主键。
+
+### portfolio_snapshots
+
+组合每日快照：`date`（唯一）、`total_cost`、`total_value`、`total_profit`、`total_return`、`created_at`，用于组合曲线与缓存。
 
 ---
 

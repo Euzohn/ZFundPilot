@@ -173,7 +173,7 @@ class TestApprove:
 
         assert result.http_status == 403
         assert result.code == "write_disabled"
-        assert db.get_proposal_admin(pid).data["status"] == svc.STATUS_PENDING
+        assert svc.get_proposal_admin(pid).data["status"] == svc.STATUS_PENDING
         assert db.get_transactions_desc() == []
 
     def test_auth_disabled_blocks_execution(self, temp_db, monkeypatch):

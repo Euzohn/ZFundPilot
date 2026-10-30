@@ -386,6 +386,7 @@ ZFundPilot/
 | `ZFUNDPILOT_SECRET` | 自动生成 | 仅首次启动初始化 token 签名密钥 |
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式 |
 | `ZFUNDPILOT_TIMEZONE` | `Asia/Shanghai` | 系统时区（IANA 名称），影响定时任务、交易日期、日志时间戳 |
+| `ZFUNDPILOT_AGENT_WRITE_ENABLED` | 未设置（默认关闭，可在设置页开启） | Agent 写能力开关（双重语义）：显式 `0` = 紧急刹车强制关闭（设置页锁死）；`1` = 仅作数据库无记录时的首次启动默认值；日常开关走设置页 `agent_write_enabled` 偏好 |
 | `ZFUNDPILOT_TRUSTED_PROXIES` | 空 | 信任代理网段（CIDR 逗号分隔），仅在反代后配置 |
 | `ZFUNDPILOT_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 允许的前端源（逗号分隔），部署到非默认域名时需配置 |
 | `CONTAINER_NAME` | `zfundpilot` | Docker 容器名称，多实例部署时需为每个实例设置不同名称 |
@@ -529,6 +530,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- feat: Agent 写能力设置页开关——`ZFUNDPILOT_AGENT_WRITE_ENABLED` 改双重语义（`0` = 紧急刹车锁死，`1` = 仅首次启动默认值），日常开关走 `GET/PUT /api/settings/agent-write`（开启需当前登录密码确认，403 错误码 `env_forced_off`/`auth_required`/`wrong_password` 避免前端 401 登出）；状态存 `preferences`（key `agent_write_enabled`），lifespan 解析为运行时 `AGENT_WRITE_ENABLED`；审计 `agent_write_toggle`/`agent_write_toggle_denied`；capabilities 新增 `write_locked`；备份恢复后重新解析运行时开关；设置页新增「Agent 写能力」面板（AgentTokenPanel 上方）；新增 `tests/test_agent_write_settings.py`（15 用例）+ 恢复同步用例（总 841→857）
 - feat: 账本提案与网页审批（E）——`transactions:propose` scope + `operation_proposals` 表；Agent 只能创建/查看/取消待审批提案，网页管理员批准后服务端同事务复核 token/写开关/业务规则、写入交易并记录 `proposal_approved` + `add_transaction` 审计；首期仅 `add_transaction`，7 天过期、幂等创建、每 token 20 条待处理上限；新增 `/proposals` 页面与导航角标；恢复备份时清空旧提案
 - feat: 任务化数据刷新（D）——`data:refresh` scope + `refresh_jobs` 表；`start_data_refresh`/`get_job_status` 仅刷新净值/元数据，不回填交易净值、不执行定投；与网页/调度器共用互斥锁
 - feat: 自选受控写入（B/C）——`watchlist:write` + `watchlist_service`；新增/更新/删除带幂等键与 revision 校验，删除保留墓碑，网页可恢复

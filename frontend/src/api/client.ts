@@ -45,6 +45,7 @@ import type {
   AgentTokenInfo,
   AgentTokenListResponse,
   AgentTokenCreateResponse,
+  AgentWriteSettings,
   BackupPreview,
   BackupRestoreResult,
   ProposalActionResult,
@@ -170,6 +171,15 @@ export const api = {
   revokeAgentToken: (id: number) =>
     request<{ ok: boolean; already_revoked: boolean; token_info: AgentTokenInfo }>(
       `/agent/tokens/${id}`, { method: "DELETE" }),
+
+  // Agent Write Switch
+  getAgentWriteSettings: () =>
+    request<AgentWriteSettings>("/settings/agent-write"),
+  updateAgentWriteSettings: (enabled: boolean, password = "") =>
+    request<{ ok: boolean } & AgentWriteSettings>("/settings/agent-write", {
+      method: "PUT",
+      body: JSON.stringify({ enabled, password }),
+    }),
 
   // AI Config
   getAIConfig: () =>

@@ -101,3 +101,24 @@ class TestBackupHttp:
             bs._restore_guard.release()
         assert response.status_code == 409
         assert response.json()["detail"]["code"] == "restore_busy"
+
+    def test_restore_reapplies_agent_write_preference(self, client, monkeypatch):
+        """恢复整体替换 preferences 后，运行时写开关应立即跟随备份中的记录。"""
+        monkeypatch.setattr(config, "AGENT_WRITE_ENV_LOCKED", False)
+        monkeypatch.setattr(config, "AGENT_WRITE_ENV_DEFAULT", False)
+        monkeypatch.setattr(config, "AGENT_WRITE_ENABLED", False)
+        # 备份内开关为开启
+        db.upsert_preference(config.AGENT_WRITE_PREF_KEY, "true")
+        config.apply_agent_write_preference("true")
+        payload = _backup()
+        # 当前实例开关为关闭
+        db.upsert_preference(config.AGENT_WRITE_PREF_KEY, "false")
+        config.apply_agent_write_preference("false")
+        assert config.AGENT_WRITE_ENABLED is False
+
+        response = client.post(RESTORE, files=_upload(payload),
+                               data={"confirmation": "RESTORE"})
+        assert response.status_code == 200
+        assert db.get_preference(config.AGENT_WRITE_PREF_KEY) == "true"
+        # 无需重启：运行时全局已重新解析
+        assert config.AGENT_WRITE_ENABLED is True

@@ -23,12 +23,20 @@ import { Select } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import ThemeToggle from "@/components/ThemeToggle"
 import FieldError from "@/components/FieldError"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { toast } from "sonner"
 import { useLang, type Lang } from "@/i18n/LanguageContext"
 import { cn } from "@/lib/utils"
 import { copyText } from "@/lib/clipboard"
 import { useTabParam } from "@/hooks/useTabParam"
-import type { AIUsageStats, AIUsageDaily, AgentTokenInfo, AgentTokenListResponse, AuditLog, BackupPreview, KeywordMaps, SchedulerStatus, TpSlConfig, VisionConfig } from "@/api/types"
+import type { AIUsageStats, AIUsageDaily, AgentTokenInfo, AgentTokenListResponse, AgentWriteSettings, AuditLog, BackupPreview, KeywordMaps, SchedulerStatus, TpSlConfig, VisionConfig } from "@/api/types"
 import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
@@ -82,6 +90,159 @@ const AGENT_SCOPE_KEYS = [
 
 // 新 scope 默认不勾选，避免签发时静默扩权；需要时由用户显式勾选。
 const AGENT_DEFAULT_SCOPES = ["portfolio:read", "funds:read", "health:read"] as const
+
+function AgentWritePanel() {
+  const { t } = useLang()
+  const { data, loading, error, reload } = useApi<AgentWriteSettings>(() => api.getAgentWriteSettings(), [])
+  const [toggling, setToggling] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [password, setPassword] = useState("")
+  const [passwordError, setPasswordError] = useState("")
+
+  const disable = async () => {
+    setToggling(true)
+    try {
+      await api.updateAgentWriteSettings(false)
+      toast.success(t.settings.agentWriteDisabledToast)
+      await reload()
+    } catch (e) {
+      toast.error(`${t.common.operationFailed}: ${e}`)
+    } finally {
+      setToggling(false)
+    }
+  }
+
+  const handleToggle = () => {
+    if (!data || toggling) return
+    // 关闭不需要密码；开启需弹窗输入当前登录密码
+    if (data.enabled) {
+      void disable()
+      return
+    }
+    setPassword("")
+    setPasswordError("")
+    setDialogOpen(true)
+  }
+
+  const confirmEnable = async () => {
+    if (!password) {
+      setPasswordError(t.settings.agentWritePasswordRequired)
+      return
+    }
+    setToggling(true)
+    try {
+      await api.updateAgentWriteSettings(true, password)
+      setDialogOpen(false)
+      toast.success(t.settings.agentWriteEnabledToast)
+      await reload()
+    } catch (e) {
+      const err = e as Error & { code?: string }
+      if (err.code === "wrong_password") {
+        setPasswordError(t.settings.agentWriteWrongPassword)
+        return
+      }
+      setDialogOpen(false)
+      if (err.code === "auth_required") toast.error(t.settings.agentWriteAuthHint)
+      else if (err.code === "env_forced_off") toast.error(t.settings.agentWriteLockedHint)
+      else toast.error(`${t.common.operationFailed}: ${e}`)
+      await reload()
+    } finally {
+      setToggling(false)
+    }
+  }
+
+  return (
+    <Card className="mt-4">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Zap className="h-5 w-5 text-primary" />
+          {t.settings.agentWrite}
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">{t.settings.agentWriteHint}</p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {error ? (
+          <div className="flex items-center gap-2 py-2">
+            <span className="text-xs text-loss-600">{t.settings.agentWriteLoadFailed}</span>
+            <button onClick={reload} className="text-xs text-primary hover:underline">{t.common.retry}</button>
+          </div>
+        ) : !data ? (
+          loading ? <LoadingState size="sm" /> : null
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleToggle}
+                disabled={toggling || data.locked || (!data.enabled && !data.can_enable)}
+                className={cn(
+                  "rounded-lg border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]",
+                  data.enabled
+                    ? "border-primary/30 bg-primary/10 text-primary"
+                    : "border-border bg-background text-muted-foreground hover:bg-accent"
+                )}
+              >
+                {toggling ? t.settings.switching : data.enabled ? t.settings.enabled : t.settings.paused}
+              </button>
+              {data.locked && <Badge variant="warning">{t.settings.agentWriteLocked}</Badge>}
+            </div>
+            {data.locked && (
+              <p className="text-xs text-muted-foreground">{t.settings.agentWriteLockedHint}</p>
+            )}
+            {!data.locked && !data.can_enable && (
+              <p className="text-xs text-warning">{t.settings.agentWriteAuthHint}</p>
+            )}
+          </>
+        )}
+      </CardContent>
+
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          if (toggling) return
+          setDialogOpen(open)
+          if (!open) setPasswordError("")
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t.settings.agentWriteEnableTitle}</DialogTitle>
+            <DialogDescription>{t.settings.agentWriteEnableDesc}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="agent-write-password" className="text-xs font-medium text-muted-foreground">
+              {t.settings.currentPassword}
+            </Label>
+            <Input
+              id="agent-write-password"
+              type="password"
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setPasswordError("") }}
+              placeholder={t.settings.currentPasswordPlaceholder}
+              autoComplete="current-password"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                  e.preventDefault()
+                  void confirmEnable()
+                }
+              }}
+              aria-invalid={!!passwordError}
+              aria-describedby={passwordError ? "agent-write-password-error" : undefined}
+            />
+            <FieldError id="agent-write-password-error" error={passwordError || undefined} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={toggling}>
+              {t.common.cancel}
+            </Button>
+            <Button onClick={() => void confirmEnable()} disabled={toggling}>
+              {toggling ? t.settings.switching : t.settings.agentWriteConfirm}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  )
+}
 
 function AgentTokenPanel() {
   const { t } = useLang()
@@ -1097,6 +1258,9 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* ── Agent 写能力开关 ── */}
+            <AgentWritePanel />
 
             {/* ── Agent 访问令牌 ── */}
             <AgentTokenPanel />

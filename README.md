@@ -150,6 +150,7 @@ cd frontend && npm install && npm run dev
 
 - **独立 Agent 令牌** — 与网页登录 token 物理隔离的高熵 Agent token，服务端只存 SHA-256 摘要；按 `portfolio:read`/`funds:read`/`health:read`/`transactions:read`/`watchlist:read`/`alerts:read`/`plans:read` 及可选的 `watchlist:write`/`data:refresh`/`transactions:propose` 授权，默认拒绝、可撤销/过期；无密码模式下不可签发或使用
 - **20 个只读工具** — `/api/agent/tools/*` 提供组合汇总、数据状态、持仓、单基金详情、组合体检、收益视图、多基金对比、交易流水、自选、提醒、定投计划、组合曲线、基准对比、风险报告、行业敞口、基金检索、基金筛选、只读定投回测与能力发现；统一响应包、正式净值口径与数据缺口说明。这些只读工具不暴露交易、设置或导出写接口；受控写能力见下
+- **写开关设置页管理** — Agent 写能力总开关默认关闭，日常在网页「设置 → 账户与安全 → Agent 写能力」开启/关闭（需输入当前登录密码确认，状态持久化到数据库、重启保持）；环境变量 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 仅保留两种语义：显式 `0` = 紧急刹车（强制关闭且设置页锁死）、`1` = 数据库无记录时的首次启动默认值。无密码模式禁止开启写能力
 - **可选自选写入** — 3 个自选维护工具（新增/更新/删除）使用独立的 `watchlist:write`，默认不勾选，并受服务端写开关约束；只改自选关系与备注/分组，不创建交易或计划；幂等键、revision 冲突保护、删除前值恢复与业务结果审计同事务提交
 - **任务化数据刷新** — `start_data_refresh` / `get_job_status`（`data:refresh`）启动并轮询**仅净值/元数据**刷新任务；持久化 `refresh_jobs`、服务重启标记 interrupted、同幂等键返回原 job_id，与网页/调度器共用互斥锁；**不**回填交易净值、**不**执行定投，这是与网页刷新端点的关键区别
 - **账本提案与网页确认** — `create_operation_proposal` 等 4 个工具（`transactions:propose`）只提交待审批提案，**不直接写账本**；管理员在网页确认后，服务端在同一事务内复核 token/写开关/业务规则、写入交易并记录审计。首期开放新增交易，提案 7 天过期、幂等创建、按 token 隔离，恢复备份时清空旧提案

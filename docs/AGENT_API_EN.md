@@ -81,9 +81,9 @@ Request body:
 | `data:refresh` | `refresh` (start/query task-based data refresh; NAV/metadata only; requires the server write switch) |
 | `transactions:propose` | `proposals` (create/list/cancel your pending ledger proposals; requires the server write switch; execution belongs to the web administrator) |
 
-The write scopes are `watchlist:write`, `data:refresh`, and `transactions:propose`, all unchecked by default and gated by `ZFUNDPILOT_AGENT_WRITE_ENABLED` (off by default). Calling a tool without the required scope returns **403**. The first two are low-risk direct writes; `transactions:propose` only submits proposals and **cannot write the ledger directly**.
+The write scopes are `watchlist:write`, `data:refresh`, and `transactions:propose`, all unchecked by default and gated by the server write switch (off by default). The switch is managed day-to-day by the administrator on the web Settings page ("Account & Security → Agent write capability", `GET/PUT /api/settings/agent-write`); enabling it requires the current login password, and the state persists in the database. The `ZFUNDPILOT_AGENT_WRITE_ENABLED` environment variable only matters in two cases: explicitly set to `0`/`false`/`no`/`off` it is an **emergency brake** (forced off, and the Settings page cannot enable it); set to `1`/`true`/`yes`/`on` it only serves as the first-start default when the database has no record. Calling a tool without the required scope returns **403**. The first two are low-risk direct writes; `transactions:propose` only submits proposals and **cannot write the ledger directly**.
 
-`capabilities` only requires a valid token, not a specific scope; it returns only the tools granted to that token, marking write tools with `risk="write"`, proposal tools with `risk="propose"`, and `enabled` reflecting the server write switch.
+`capabilities` only requires a valid token, not a specific scope; it returns only the tools granted to that token, marking write tools with `risk="write"`, proposal tools with `risk="propose"`, and `enabled` reflecting the server write switch; the top-level `write_enabled` is the current switch value, and `write_locked: true` means the environment-variable emergency brake has locked the switch so the Settings page cannot enable it either.
 
 > The first three scopes are checked by default on the issuance panel. `transactions:read`, `watchlist:read`, `alerts:read`, `plans:read`, `watchlist:write`, `data:refresh`, and `transactions:propose` are unchecked by default: opt in explicitly when needed, so existing tokens are never silently broadened.
 
@@ -703,7 +703,7 @@ You can also wrap these twenty endpoints with any HTTP tool; an optional MCP ada
 
 ### 5.21 Watchlist maintenance (write, disabled by default)
 
-The three write tools share `watchlist:write` and are also gated by `ZFUNDPILOT_AGENT_WRITE_ENABLED` (off by default; when off, even a token with the scope gets `403 write_disabled`). They only change watchlist membership, notes, and groups — **never transactions, auto-invest plans, NAV data, or fund metadata**.
+The three write tools share `watchlist:write` and are also gated by the server write switch (off by default; when off, even a token with the scope gets `403 write_disabled` — see the write-switch notes above). They only change watchlist membership, notes, and groups — **never transactions, auto-invest plans, NAV data, or fund metadata**.
 
 | MCP tool | HTTP | Behavior |
 |---|---|---|
@@ -728,7 +728,7 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist" \
 
 ### 5.22 Data refresh (write, disabled by default)
 
-Start a **NAV/metadata-only** refresh job. Scope: `data:refresh`, also gated by `ZFUNDPILOT_AGENT_WRITE_ENABLED` (off by default). It does **not** backfill transaction NAVs, does **not** execute auto-invest plans, and never creates transactions or plans — the key difference from the web `POST /api/nav/update`.
+Start a **NAV/metadata-only** refresh job. Scope: `data:refresh`, also gated by the server write switch (see the write-switch notes above). It does **not** backfill transaction NAVs, does **not** execute auto-invest plans, and never creates transactions or plans — the key difference from the web `POST /api/nav/update`.
 
 | MCP tool | HTTP | Behavior |
 |---|---|---|
@@ -757,7 +757,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 ### 5.23 Ledger proposals (write, requires web approval; off by default)
 
-Agents can only submit **pending proposals**; they never write the ledger directly. Scope: `transactions:propose`, also gated by `ZFUNDPILOT_AGENT_WRITE_ENABLED`. This phase supports only `operation_type="add_transaction"`. Approval, rejection, execution, and state transitions happen server-side on the web, and the execution path performs no network access.
+Agents can only submit **pending proposals**; they never write the ledger directly. Scope: `transactions:propose`, also gated by the server write switch (see the write-switch notes above). This phase supports only `operation_type="add_transaction"`. Approval, rejection, execution, and state transitions happen server-side on the web, and the execution path performs no network access.
 
 | MCP tool | HTTP | Description |
 |---|---|---|

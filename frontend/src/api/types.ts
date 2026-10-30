@@ -766,6 +766,14 @@ export interface AgentTokenCreateResponse {
   message: string
 }
 
+// ── Agent 写能力总开关（设置页） ──
+export interface AgentWriteSettings {
+  enabled: boolean
+  locked: boolean
+  can_enable: boolean
+  source: "env_locked" | "settings" | "default"
+}
+
 // ── Agent 账本提案（网页审批） ──
 export type ProposalStatus =
   | "pending"

@@ -81,9 +81,9 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 | `data:refresh` | `refresh`（启动/查询任务化数据刷新，仅净值/元数据，需开启写开关） |
 | `transactions:propose` | `proposals`（创建/查看/取消自己的待审批账本提案，需开启写开关；执行权只属于网页管理员） |
 
-写 scope 目前有 `watchlist:write`、`data:refresh` 与 `transactions:propose`，均默认不勾选，且受 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 总开关约束（默认关闭）。调用未授权工具返回 **403**。前两者是低风险直接写入；`transactions:propose` 只允许提交提案，**不能直接写账本**。
+写 scope 目前有 `watchlist:write`、`data:refresh` 与 `transactions:propose`，均默认不勾选，且受服务端写开关约束（默认关闭）。写开关的日常开启/关闭由管理员在网页「设置 → 账户与安全 → Agent 写能力」完成（`GET/PUT /api/settings/agent-write`，开启需输入当前登录密码确认，状态持久化在数据库）；环境变量 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 只在两种情况下生效：显式设为 `0`/`false`/`no`/`off` 是**紧急刹车**（强制关闭且设置页无法开启），设为 `1`/`true`/`yes`/`on` 仅作为数据库无记录时的首次启动默认值。调用未授权工具返回 **403**。前两者是低风险直接写入；`transactions:propose` 只允许提交提案，**不能直接写账本**。
 
-`capabilities` 只要求有效 token，不要求特定 scope；它只返回当前 token 已获授权的工具，写工具会标注 `risk="write"`、提案工具标注 `risk="propose"`，并以 `enabled` 反映服务端写开关状态。
+`capabilities` 只要求有效 token，不要求特定 scope；它只返回当前 token 已获授权的工具，写工具会标注 `risk="write"`、提案工具标注 `risk="propose"`，并以 `enabled` 反映服务端写开关状态；顶层 `write_enabled` 为当前开关值，`write_locked` 为 `true` 时表示环境变量紧急刹车已锁死，设置页也无法开启。
 
 > 前三个 scope 是签发页面的默认勾选项；`transactions:read`、`watchlist:read`、`alerts:read`、`plans:read`、`watchlist:write`、`data:refresh`、`transactions:propose` 默认不勾选，需要读取或写入对应数据时请显式勾选，避免存量流程静默扩权。
 
@@ -703,7 +703,7 @@ Authorization: Bearer zfag_xxx
 
 ### 5.21 自选维护（写入，默认关闭）
 
-三个写工具共用 `watchlist:write`，并受服务端 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 总开关约束（默认关闭；关闭时即使 token 有 scope 也返回 `403 write_disabled`）。它们只修改自选关系与备注/分组，**不创建交易、定投计划、净值或基金元数据**。
+三个写工具共用 `watchlist:write`，并受服务端写开关约束（默认关闭；关闭时即使 token 有 scope 也返回 `403 write_disabled`，开启方式见上文「写开关」说明）。它们只修改自选关系与备注/分组，**不创建交易、定投计划、净值或基金元数据**。
 
 | MCP 工具 | HTTP | 说明 |
 |---|---|---|
@@ -730,7 +730,7 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist" \
 
 ### 5.22 数据刷新（写入，默认关闭）
 
-启动一次**仅净值/元数据**的刷新任务，scope：`data:refresh`，同样受 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 总开关约束。它**不**调用交易净值回填、**不**执行定投，也不会创建交易或计划——这是与网页 `POST /api/nav/update` 的关键区别。
+启动一次**仅净值/元数据**的刷新任务，scope：`data:refresh`，同样受服务端写开关约束（见上文「写开关」说明）。它**不**调用交易净值回填、**不**执行定投，也不会创建交易或计划——这是与网页 `POST /api/nav/update` 的关键区别。
 
 | MCP 工具 | HTTP | 说明 |
 |---|---|---|
@@ -761,7 +761,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 ### 5.23 账本提案（写入需网页确认，默认关闭）
 
-Agent 只能提交**待审批提案**，不会直接写账本。scope：`transactions:propose`，同样受 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 总开关约束。首期仅开放 `operation_type="add_transaction"`；批准、拒绝、取消后的执行与状态迁移均由服务端完成，执行路径不联网。
+Agent 只能提交**待审批提案**，不会直接写账本。scope：`transactions:propose`，同样受服务端写开关约束（见上文「写开关」说明）。首期仅开放 `operation_type="add_transaction"`；批准、拒绝、取消后的执行与状态迁移均由服务端完成，执行路径不联网。
 
 | MCP 工具 | HTTP | 说明 |
 |---|---|---|

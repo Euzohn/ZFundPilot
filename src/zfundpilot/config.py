@@ -301,12 +301,52 @@ AUTH_ENABLED = bool(AUTH_PASSWORD_HASH)
 # token 有效期（秒），默认 7 天
 AUTH_TOKEN_MAX_AGE = 7 * 24 * 3600
 
-# Agent 写能力总开关：默认关闭，需显式设置 ZFUNDPILOT_AGENT_WRITE_ENABLED=1。
-# 即使 token 具备 watchlist:write，也必须同时打开该开关；用于服务器验收前
-# 保持写能力不可用，而不是只依赖签发页面不勾选。
-AGENT_WRITE_ENABLED = os.environ.get(
+# ---------------------------------------------------------------------------
+# Agent 写能力总开关
+# ---------------------------------------------------------------------------
+# 环境变量 ZFUNDPILOT_AGENT_WRITE_ENABLED 有两种语义：
+#   1/true/yes/on  → 仅作为数据库无记录时的首次启动默认值（AGENT_WRITE_ENV_DEFAULT）
+#   0/false/no/off → 强制锁定关闭（AGENT_WRITE_ENV_LOCKED，设置页不可开启），用作紧急刹车
+#   空/未设置      → 两者都为 False，默认关闭但仍可在设置页开启
+# 日常开关由设置页维护（preferences 表 key=agent_write_enabled），运行时有效值见
+# AGENT_WRITE_ENABLED（启动时由 apply_agent_write_preference 依据 DB 记录解析）。
+AGENT_WRITE_PREF_KEY = "agent_write_enabled"
+
+_ENV_AGENT_WRITE = os.environ.get(
     "ZFUNDPILOT_AGENT_WRITE_ENABLED", ""
-).strip().lower() in {"1", "true", "yes", "on"}
+).strip().lower()
+AGENT_WRITE_ENV_LOCKED = _ENV_AGENT_WRITE in {"0", "false", "no", "off"}
+AGENT_WRITE_ENV_DEFAULT = _ENV_AGENT_WRITE in {"1", "true", "yes", "on"}
+
+# 运行时有效值：进程启动后由 apply_agent_write_preference 依据 DB 记录覆盖。
+AGENT_WRITE_ENABLED = AGENT_WRITE_ENV_DEFAULT and not AGENT_WRITE_ENV_LOCKED
+
+
+def resolve_agent_write_enabled(
+    stored: str | None, *, env_locked: bool, env_default: bool
+) -> bool:
+    """解析 Agent 写能力的有效值（优先级从高到低）：
+
+    1. env_locked（紧急刹车 0/false/no/off）→ 强制 False；
+    2. 数据库偏好记录 stored（"true"/"false" 等）；
+    3. env_default（首次启动默认值 1/true/yes/on）。
+    """
+    if env_locked:
+        return False
+    if stored is not None:
+        return stored.strip().lower() in {"1", "true", "yes", "on"}
+    return env_default
+
+
+def apply_agent_write_preference(stored: str | None) -> bool:
+    """把偏好解析结果应用到运行时全局 AGENT_WRITE_ENABLED 并返回。"""
+    global AGENT_WRITE_ENABLED
+    AGENT_WRITE_ENABLED = resolve_agent_write_enabled(
+        stored,
+        env_locked=AGENT_WRITE_ENV_LOCKED,
+        env_default=AGENT_WRITE_ENV_DEFAULT,
+    )
+    return AGENT_WRITE_ENABLED
 
 # 信任代理网段（用于登录限流时安全读取 X-Forwarded-For 头）
 # 逗号分隔 CIDR，默认空 = 不信任任何代理

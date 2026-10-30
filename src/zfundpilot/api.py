@@ -85,6 +85,11 @@ logger = logging.getLogger(__name__)
 async def _lifespan(app: FastAPI):
     """应用生命周期：startup 初始化 DB + 调度器，shutdown 清理。"""
     db.init_db()
+    # Agent 写能力开关：env 紧急刹车 > 数据库偏好记录 > env 首次默认值。
+    # 必须在 scheduler 启动与任何请求处理之前解析完成。
+    config.apply_agent_write_preference(
+        db.get_preference(config.AGENT_WRITE_PREF_KEY)
+    )
     # 一次性修复历史 T+1 交易的错误净值回填
     if db.get_preference("t1_nav_fix_done") is None:
         try:
@@ -595,6 +600,103 @@ def revoke_agent_token(token_id: int, request: Request) -> dict[str, Any]:
         )
     return {"ok": True, "already_revoked": not revoked,
             "token_info": db.get_agent_token(token_id)}
+
+
+# ---------------------------------------------------------------------------
+# Agent 写能力总开关（网页设置）
+# ---------------------------------------------------------------------------
+class AgentWriteSettingsUpdate(BaseModel):
+    """开启/关闭 Agent 写能力总开关；开启时需要当前登录密码确认。"""
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+    password: str = ""
+
+
+def _agent_write_settings_view() -> dict[str, Any]:
+    """当前开关状态（enabled/locked/can_enable/source）。"""
+    locked = config.AGENT_WRITE_ENV_LOCKED
+    stored = db.get_preference(config.AGENT_WRITE_PREF_KEY)
+    enabled = config.resolve_agent_write_enabled(
+        stored, env_locked=locked, env_default=config.AGENT_WRITE_ENV_DEFAULT
+    )
+    if locked:
+        source = "env_locked"
+    elif stored is not None:
+        source = "settings"
+    else:
+        source = "default"
+    return {
+        "enabled": enabled,
+        "locked": locked,
+        "can_enable": (not locked) and config.AUTH_ENABLED,
+        "source": source,
+    }
+
+
+@app.get("/api/settings/agent-write", tags=["agent-admin"],
+         summary="Agent 写能力开关状态",
+         responses=_ADMIN_ERROR_RESPONSES,
+         dependencies=[Security(_admin_bearer_scheme)])
+def get_agent_write_settings(request: Request) -> dict[str, Any]:
+    """返回 Agent 写能力总开关状态（由网页登录中间件保护）。"""
+    del request
+    return _agent_write_settings_view()
+
+
+@app.put("/api/settings/agent-write", tags=["agent-admin"],
+         summary="切换 Agent 写能力总开关",
+         responses=_ADMIN_ERROR_RESPONSES,
+         dependencies=[Security(_admin_bearer_scheme)])
+def update_agent_write_settings(
+    request: Request, body: AgentWriteSettingsUpdate
+) -> dict[str, Any]:
+    """开启/关闭 Agent 写能力总开关。
+
+    关闭不需要密码；开启需要：未锁死（env 紧急刹车）、已启用网页登录密码
+    认证、且当前登录密码正确。成功记录 agent_write_toggle 审计，拒绝记录
+    agent_write_toggle_denied。返回 403 而非 401，避免前端 401 强制登出。
+    """
+    ip = _get_client_ip(request)
+    username = config.AUTH_USERNAME if config.AUTH_ENABLED else None
+    previous = config.resolve_agent_write_enabled(
+        db.get_preference(config.AGENT_WRITE_PREF_KEY),
+        env_locked=config.AGENT_WRITE_ENV_LOCKED,
+        env_default=config.AGENT_WRITE_ENV_DEFAULT,
+    )
+    if config.AGENT_WRITE_ENV_LOCKED:
+        db.log_audit("agent_write_toggle_denied", ip=ip, username=username,
+                     detail={"reason": "env_forced_off", "to": body.enabled})
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "env_forced_off",
+                    "message": "服务器环境变量已强制关闭 Agent 写能力，设置页不可开启"},
+        )
+    if body.enabled:
+        if not config.AUTH_ENABLED:
+            db.log_audit("agent_write_toggle_denied", ip=ip, username=username,
+                         detail={"reason": "auth_required", "to": True})
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "auth_required",
+                        "message": "开启 Agent 写能力需先设置登录密码（无密码模式禁止开启）"},
+            )
+        if not config.verify_password(body.password, config.AUTH_PASSWORD_HASH):
+            db.log_audit("agent_write_toggle_denied", ip=ip, username=username,
+                         detail={"reason": "wrong_password", "to": True})
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "wrong_password",
+                        "message": "当前密码错误"},
+            )
+    value = "true" if body.enabled else "false"
+    db.upsert_preference(config.AGENT_WRITE_PREF_KEY, value)
+    config.apply_agent_write_preference(value)
+    db.log_audit("agent_write_toggle", ip=ip,
+                 username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                 detail={"enabled": body.enabled, "previous": previous,
+                         "source": "settings"})
+    return {"ok": True, **_agent_write_settings_view()}
 
 
 # --- Agent 请求鉴权依赖（供后续工具端点使用）-------------------------------
@@ -2526,6 +2628,7 @@ def agent_get_capabilities(
         "schema_version": 1,
         "granted_scopes": sorted(ctx.scopes),
         "write_enabled": config.AGENT_WRITE_ENABLED,
+        "write_locked": config.AGENT_WRITE_ENV_LOCKED,
         "currency": "CNY",
         "tools": tools,
     })
@@ -4298,6 +4401,10 @@ async def backup_restore(
         raise HTTPException(
             500, detail={"code": "restore_failed",
                          "message": "恢复失败，当前数据已回滚"}) from exc
+    # 恢复会整体替换 preferences 表：重新解析 Agent 写开关的运行时有效值，
+    # 避免内存全局与数据库漂移（否则需重启才生效）。
+    config.apply_agent_write_preference(
+        db.get_preference(config.AGENT_WRITE_PREF_KEY))
     return result.to_dict()
 
 

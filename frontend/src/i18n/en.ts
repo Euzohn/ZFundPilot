@@ -544,6 +544,8 @@ const en: typeof zh = {
       agent_auth_ok: "Agent auth success",
       agent_auth_failed: "Agent auth failed",
       agent_rate_limited: "Agent rate limited",
+      agent_write_toggle: "Agent write switch toggled",
+      agent_write_toggle_denied: "Agent write switch denied",
     },
     auditLogRecordsHint: "Last 100 sensitive operation records",
     auditUser: "User",

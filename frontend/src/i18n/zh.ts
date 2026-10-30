@@ -542,6 +542,8 @@ const zh = {
       agent_auth_ok: "Agent 鉴权成功",
       agent_auth_failed: "Agent 鉴权失败",
       agent_rate_limited: "Agent 触发限流",
+      agent_write_toggle: "Agent 写能力开关切换",
+      agent_write_toggle_denied: "Agent 写能力开关被拒绝",
     },
     auditLogRecordsHint: "最近 100 条敏感操作记录",
     auditUser: "用户",

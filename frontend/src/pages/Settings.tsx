@@ -605,6 +605,8 @@ function AuditLogPanel() {
     agent_auth_ok: t.settings.auditLabels.agent_auth_ok,
     agent_auth_failed: t.settings.auditLabels.agent_auth_failed,
     agent_rate_limited: t.settings.auditLabels.agent_rate_limited,
+    agent_write_toggle: t.settings.auditLabels.agent_write_toggle,
+    agent_write_toggle_denied: t.settings.auditLabels.agent_write_toggle_denied,
   }
 
   return (

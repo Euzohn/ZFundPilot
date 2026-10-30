@@ -677,3 +677,111 @@ def test_refresh_tools_validate_before_http(mock_api):
         _run(mcp_server.start_data_refresh(KEY, fund_codes=["123"]))
     with pytest.raises(ToolError):
         _run(mcp_server.get_job_status(0))
+
+
+# ---------------------------------------------------------------------------
+# 账本提案工具
+# ---------------------------------------------------------------------------
+BUY_PARAMS = {"fund_code": "005827", "action": "buy",
+              "date": "2026-10-31", "amount": 1000.0}
+
+
+def test_create_operation_proposal_maps_header_and_body(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        seen["key"] = request.headers.get("Idempotency-Key")
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(201, json={
+            "tool": "create_operation_proposal",
+            "data": {"proposal_id": 1, "status": "pending"}})
+
+    mock_api(handler)
+    _run(mcp_server.create_operation_proposal(
+        "add_transaction", BUY_PARAMS, KEY))
+
+    assert seen["method"] == "POST"
+    assert seen["path"] == "/api/agent/tools/proposals"
+    assert seen["key"] == KEY
+    assert seen["body"] == {"operation_type": "add_transaction",
+                            "params": BUY_PARAMS}
+
+
+def test_create_operation_proposal_validates_before_http(mock_api):
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("HTTP must not be called")
+
+    mock_api(handler)
+    with pytest.raises(ToolError):
+        _run(mcp_server.create_operation_proposal(
+            "update_transaction", {}, KEY))
+    with pytest.raises(ToolError):
+        _run(mcp_server.create_operation_proposal(
+            "add_transaction", "not-a-dict", KEY))
+    with pytest.raises(ToolError):
+        _run(mcp_server.create_operation_proposal(
+            "add_transaction", BUY_PARAMS, "short"))
+
+
+def test_list_operation_proposals_passes_filters(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"data": {"items": []}})
+
+    mock_api(handler)
+    _run(mcp_server.list_operation_proposals(
+        status="pending", limit=10, offset=20))
+
+    assert seen["method"] == "GET"
+    assert seen["path"] == "/api/agent/tools/proposals"
+    assert seen["params"] == {"limit": "10", "offset": "20",
+                              "status": "pending"}
+
+
+def test_get_and_cancel_operation_proposal_paths(mock_api):
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        return httpx.Response(200, json={"data": {"proposal_id": 9}})
+
+    mock_api(handler)
+    _run(mcp_server.get_operation_proposal(9))
+    _run(mcp_server.cancel_operation_proposal(9))
+
+    assert seen == [
+        ("GET", "/api/agent/tools/proposals/9"),
+        ("DELETE", "/api/agent/tools/proposals/9"),
+    ]
+
+
+def test_proposal_tools_validate_ids_before_http(mock_api):
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("HTTP must not be called")
+
+    mock_api(handler)
+    with pytest.raises(ToolError):
+        _run(mcp_server.get_operation_proposal(0))
+    with pytest.raises(ToolError):
+        _run(mcp_server.cancel_operation_proposal(-1))
+
+
+def test_proposal_dict_detail_becomes_readable_error(mock_api):
+    mock_api(lambda request: httpx.Response(409, json={"detail": {
+        "code": "too_many_pending",
+        "message": "待处理提案过多（上限 20）"}}))
+
+    with pytest.raises(ToolError) as excinfo:
+        _run(mcp_server.create_operation_proposal(
+            "add_transaction", BUY_PARAMS, KEY))
+
+    message = str(excinfo.value)
+    assert "too_many_pending" in message
+    assert "待处理提案过多" in message
+    assert "{'code'" not in message

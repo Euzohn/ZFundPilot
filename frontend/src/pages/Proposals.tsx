@@ -84,7 +84,7 @@ export default function Proposals() {
     () => api.getProposals(status || undefined),
     [status],
   )
-  const { data, loading, error, reload } = useApi(fetcher)
+  const { data, loading, error, reload } = useApi(fetcher, [status])
 
   const statusLabels = useMemo<Record<ProposalStatus, string>>(
     () => ({
@@ -104,10 +104,15 @@ export default function Proposals() {
     [statusLabels, t],
   )
 
+  const notifyChanged = () => {
+    window.dispatchEvent(new Event("zfund:proposals-changed"))
+  }
+
   const finish = (result: ProposalActionResult, message: string) => {
     if (detail?.proposal_id === result.proposal_id) setDetail(result)
     toast.success(message)
     reload()
+    notifyChanged()
   }
 
   const doApprove = async () => {
@@ -118,6 +123,8 @@ export default function Proposals() {
       finish(result, t.proposals.approveDone)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t.proposals.actionFailed)
+      reload()
+      notifyChanged()
     } finally {
       setBusy(false)
       setApproveTarget(null)
@@ -137,8 +144,18 @@ export default function Proposals() {
       setRejectReason("")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t.proposals.actionFailed)
+      reload()
+      notifyChanged()
     } finally {
       setBusy(false)
+    }
+  }
+
+  const openDetail = async (proposalId: number) => {
+    try {
+      setDetail(await api.getProposal(proposalId))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t.proposals.loadFailed)
     }
   }
 
@@ -252,7 +269,7 @@ export default function Proposals() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => setDetail(item)}
+                            onClick={() => openDetail(item.proposal_id)}
                           >
                             {t.proposals.view}
                           </Button>
@@ -311,7 +328,7 @@ export default function Proposals() {
                   </span>
                 </div>
 
-                {detail.summary.warnings.length > 0 && (
+                {(detail.summary.warnings?.length ?? 0) > 0 && (
                   <div className="rounded-md border border-warning/40 bg-warning/10 p-3">
                     <p className="flex items-center gap-1.5 text-xs font-medium text-warning">
                       <AlertTriangle className="h-3.5 w-3.5" />

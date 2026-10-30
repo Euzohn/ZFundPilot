@@ -189,8 +189,14 @@ export default function Layout() {
     }
     fetchCounts()
     const timer = setInterval(fetchCounts, 60000)
-    return () => { active = false; clearInterval(timer) }
-  }, [])
+    const onChange = () => fetchCounts()
+    window.addEventListener("zfund:proposals-changed", onChange)
+    return () => {
+      active = false
+      clearInterval(timer)
+      window.removeEventListener("zfund:proposals-changed", onChange)
+    }
+  }, [location.pathname])
 
   const toggle = () => {
     const next = !collapsed

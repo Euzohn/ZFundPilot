@@ -120,29 +120,39 @@ async def _send(
             f"Cannot reach ZFundPilot at {_base_url()}: {exc}"
         ) from exc
 
-    if response.status_code == 401:
-        raise ToolError(
-            "Agent token is invalid, expired, or revoked. "
-            "Issue a new token in ZFundPilot Settings."
-        )
-    if response.status_code == 403:
-        raise ToolError(
-            "Agent token lacks the required scope, or admin authentication is disabled."
-        )
-    if response.status_code == 429:
-        retry_after = response.headers.get("Retry-After", "60")
-        raise ToolError(
-            f"Rate limited by ZFundPilot. Retry after {retry_after} seconds."
-        )
     if response.status_code >= 400:
-        detail = response.text
+        detail: object = response.text
         try:
             payload = response.json()
             if isinstance(payload, dict):
-                detail = str(payload.get("detail", detail))
+                detail = payload.get("detail", detail)
         except ValueError:
             pass
-        raise ToolError(f"ZFundPilot API error ({response.status_code}): {detail}")
+        if isinstance(detail, dict):
+            code = detail.get("code")
+            message = detail.get("message") or code or ""
+            detail_text = f"{code}: {message}" if code else str(message)
+        else:
+            detail_text = str(detail)
+
+        if response.status_code == 401:
+            raise ToolError(
+                "Agent token is invalid, expired, or revoked. "
+                "Issue a new token in ZFundPilot Settings."
+            )
+        if response.status_code == 403:
+            raise ToolError(
+                "Agent token lacks the required scope, admin authentication "
+                "is disabled, or the Agent write switch is off. "
+                f"Server detail: {detail_text}"
+            )
+        if response.status_code == 429:
+            retry_after = response.headers.get("Retry-After", "60")
+            raise ToolError(
+                f"Rate limited by ZFundPilot. Retry after {retry_after} seconds."
+            )
+        raise ToolError(
+            f"ZFundPilot API error ({response.status_code}): {detail_text}")
 
     try:
         return response.json()
@@ -510,15 +520,17 @@ async def create_operation_proposal(
     """Create a ledger proposal for a human to approve in the web UI.
 
     This does NOT write the ledger. It only creates a pending proposal; the
-    administrator must approve it in ZFundPilot Settings > Proposals, and the
-    server then executes it. Currently only operation_type="add_transaction"
-    is supported.
+    administrator must approve it on the Proposals page in the ZFundPilot web
+    UI (top-level sidebar entry, not under Settings), and the server then
+    executes it. Currently only operation_type="add_transaction" is supported.
 
     Args:
         operation_type: Currently only "add_transaction".
         params: For add_transaction: fund_code, action (buy/sell/dividend/
-            reinvest), date (YYYY-MM-DD), amount/shares/nav (any two for
-            buy/sell), fee, channel, note, is_t1.
+            reinvest), date (YYYY-MM-DD), fee, channel, note, is_t1, and the
+            amount/shares/nav combination required by the action: buy and
+            reinvest need amount or shares; sell needs shares; dividend needs
+            amount. nav may be omitted while awaiting T+1 confirmation.
         idempotency_key: Unique retry key (16-128 chars); same key+params
             returns the same proposal.
     """
@@ -569,6 +581,9 @@ async def get_operation_proposal(proposal_id: int) -> dict[str, Any]:
 @mcp.tool()
 async def cancel_operation_proposal(proposal_id: int) -> dict[str, Any]:
     """Cancel one of your pending proposals. Approved/rejected ones cannot cancel.
+
+    This operation is inherently idempotent (a second cancel returns a
+    conflict), so no idempotency key is required.
 
     Args:
         proposal_id: Proposal id returned by create_operation_proposal.

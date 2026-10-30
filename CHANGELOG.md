@@ -31,6 +31,9 @@
 - 统一 `docs/AGENT_API.md` / `docs/AGENT_API_EN.md` 的接入示例：环境变量统一为 `ZFUNDPILOT_BASE_URL` / `ZFUNDPILOT_AGENT_TOKEN`，Python 示例由 `requests` 改为项目已依赖的 `httpx`
 
 ### Fixed
+- 修复提案页状态筛选完全失效——`Proposals.tsx` 调用 `useApi(fetcher)` 时漏传 `[status]` 依赖，`reload` 永久闭包首次渲染的 fetcher，点击状态筛选只改变按钮高亮、不发起请求，表格始终显示全部记录。现传入 `[status]` 依赖恢复筛选；同时审批/拒绝失败后立即刷新列表（并发 409/过期时不再残留「可批准」），打开详情时调用 `GET /api/proposals/{id}` 拉取最新状态（`getProposal` 此前为死代码），侧边栏提案角标在路由变化与审批成功后即时刷新（不再最长延迟 60 秒），`summary.warnings` 增加空值防御
+- 操作日志补齐 4 个备份/恢复审计标签中英文文案：`backup_preflight`、`backup_preflight_rejected`、`restore_backup_rejected`、`restore_backup`，此前回退显示原始英文 action（与 `agent_write_toggle` 同类遗漏）
+- 修复 MCP 适配层错误提示不可读——后端 `detail` 为对象时提取 `code: message`（此前 `str(dict)` 输出 Python repr），403 提示补充「写开关关闭」场景；修正提案工具 docstring（审批入口是顶级「待确认提案」页而非 Settings，amount/shares/nav 必填组合与 `Transaction.is_valid` 对齐，cancel 为天然幂等无需键）；新增 6 个提案工具行为测试（幂等键头映射、列表过滤参数、get/cancel 路径、输入预校验、对象型 detail 可读化）
 - 收紧 Agent 收益工具口径（A 收尾复核）：单基金收益改为包含已清仓渠道，完全清仓后 `realized_pnl`、`closed_realized_pnl` 与历史 XIRR 不再归零；组合级 XIRR 不再要求当前仍有市值，已清仓组合也能计算历史年化。有份额但缺少正式净值时，`return_rate`/`annualized_return` 返回 `null` 并给出 `data_quality.caveats`，不再把缺失市值显示成 `-100%` 亏损。新增 `return_basis`/`return_basis_note`/`realized_pnl_scope`/`total_pnl_scope`、开仓与已清仓计数、`closed_realized_pnl` 与渠道 `is_open`/`nav_missing` 字段，明确 `total_return`/`return_rate` 只是当前开仓浮动收益率，不是历史累计收益；中英文 Agent 文档同步说明现金分红、红利再投资与 T+1 待确认口径
 - 校正只读定投回测的一个测试断言：请求止日晚于最后一个可用净值日时，末期未被覆盖的计划期应计入 `skipped_periods` 并标记 `partial`（与文档契约一致），而非 `ok`；`valuation_date`/`data_end` 仍取实际覆盖范围。实现未变，补充中英文文档对该情形的明确说明
 - 修复 Agent 基金筛选工具 `GET /api/agent/tools/screen` 自上线起必然返回 500——端点误从 `fund_filter` 模块调用 `get_available_types()`/`get_available_sectors()`，这两个函数实际位于 `fetch_fund`；现改为正确引用，未提供筛选参数时同样可达。此前未被 CI 发现，是因为更早的网页 token 用例失败（`-x` 首败即停）挡住了该用例；同批的 `search` 工具不受影响

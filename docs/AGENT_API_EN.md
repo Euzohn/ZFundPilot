@@ -18,7 +18,7 @@ The Agent API is read-only by default. Write access is off by default and layere
 
 ## 2. Issuing and managing tokens
 
-In the web UI, go to **Settings → Account & Security → Agent Access Tokens**. The plaintext is shown only once; only its SHA-256 digest is stored server-side.
+In the web UI, go to **Settings → Agent Access → Agent Access Tokens**. The plaintext is shown only once; only its SHA-256 digest is stored server-side.
 
 You can also call the management API directly (these require a **web login token**, not an Agent token):
 
@@ -81,7 +81,7 @@ Request body:
 | `data:refresh` | `refresh` (start/query task-based data refresh; NAV/metadata only; requires the server write switch) |
 | `transactions:propose` | `proposals` (create/list/cancel your pending ledger proposals; requires the server write switch; execution belongs to the web administrator) |
 
-The write scopes are `watchlist:write`, `data:refresh`, and `transactions:propose`, all unchecked by default and gated by the server write switch (off by default). The switch is managed day-to-day by the administrator on the web Settings page ("Account & Security → Agent write capability", `GET/PUT /api/settings/agent-write`); enabling it requires the current login password, and the state persists in the database. The `ZFUNDPILOT_AGENT_WRITE_ENABLED` environment variable only matters in two cases: explicitly set to `0`/`false`/`no`/`off` it is an **emergency brake** (forced off, and the Settings page cannot enable it); set to `1`/`true`/`yes`/`on` it only serves as the first-start default when the database has no record. Calling a tool without the required scope returns **403**. The first two are low-risk direct writes; `transactions:propose` only submits proposals and **cannot write the ledger directly**.
+The write scopes are `watchlist:write`, `data:refresh`, and `transactions:propose`, all unchecked by default and gated by the server write switch (off by default). The switch is managed day-to-day by the administrator on the web Settings page ("Agent Access → Agent write capability", `GET/PUT /api/settings/agent-write`); enabling it requires the current login password, and the state persists in the database. The `ZFUNDPILOT_AGENT_WRITE_ENABLED` environment variable only matters in two cases: explicitly set to `0`/`false`/`no`/`off` it is an **emergency brake** (forced off, and the Settings page cannot enable it); set to `1`/`true`/`yes`/`on` it only serves as the first-start default when the database has no record. Calling a tool without the required scope returns **403**. The first two are low-risk direct writes; `transactions:propose` only submits proposals and **cannot write the ledger directly**.
 
 `capabilities` only requires a valid token, not a specific scope; it returns only the tools granted to that token, marking write tools with `risk="write"`, proposal tools with `risk="propose"`, and `enabled` reflecting the server write switch; the top-level `write_enabled` is the current switch value, and `write_locked: true` means the environment-variable emergency brake has locked the switch so the Settings page cannot enable it either.
 

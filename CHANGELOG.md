@@ -26,6 +26,7 @@
 - 新增只读定投回测 Agent 工具（P1.5-A 第 3 批 A3.2，复用 `funds:read`）：`POST /api/agent/tools/backtest/dca` 在历史净值上模拟定投，可选一次性投入对照，单次最多 5 只基金、区间最长 10 年、曲线可抽样。把数据准备与计算解耦：Agent 侧只读读取净值，覆盖不足时通过外部接口在内存补齐，**不调用会写库的 `update_fund_nav()`**，不写交易、计划、自选或基金元数据。修正回测口径：月投首期不早于请求起日；多个计划期落到同一净值日时只执行第一期并计数；期末估值、赎回费持有天数与 XIRR 终值统一使用最后一个可用净值日；费率表按每只基金一次快照使用。新增 `status`/`code`/`message`/`data_source`/`data_start`/`data_end`/`valuation_date`/`skipped_periods`/`fee_ok`/`caveats` 字段，数据不足、部分覆盖与费率未知均显式标注。MCP 适配层同步暴露 `run_dca_backtest`；中英文 Agent 文档与 README 更新为 20 个工具。新增 19 个用例，总测试 689→708
 
 ### Changed
+- 设置页 Agent 相关能力独立为「Agent 接入」tab：「Agent 写能力」与「Agent 访问令牌」面板从「账户与安全」tab 迁出（账户 tab 保留账户卡片与审计日志）；未启用登录密码时该 tab 与账户 tab 一样隐藏并回退到「AI 投顾」，支持 `settings?tab=agent` 直达；中英文文档中的入口位置说明同步更新
 - README 中英文版将 Agent 接入提升为独立功能亮点（新增「Agent 接入（API / MCP）」段与「为什么不同」差异点），从「安全与自定义」移出，避免能力被埋在安全条目里
 - 统一 `docs/AGENT_API.md` / `docs/AGENT_API_EN.md` 的接入示例：环境变量统一为 `ZFUNDPILOT_BASE_URL` / `ZFUNDPILOT_AGENT_TOKEN`，Python 示例由 `requests` 改为项目已依赖的 `httpx`
 

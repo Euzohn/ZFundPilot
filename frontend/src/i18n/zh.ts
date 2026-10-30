@@ -628,6 +628,8 @@ const zh = {
     agentWriteLoadFailed: "Agent 写能力开关状态加载失败",
     accountSecurity: "账户与安全",
     account: "账户",
+    agentAccess: "Agent 接入",
+    agent: "Agent",
     aiAdvisor: "AI 投顾",
     ai: "AI",
     preferences: "偏好设置",

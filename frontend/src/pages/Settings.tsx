@@ -40,7 +40,7 @@ import type { AIUsageStats, AIUsageDaily, AgentTokenInfo, AgentTokenListResponse
 import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
-  SlidersHorizontal, LogOut, Loader2, CheckCircle2, XCircle, Zap,
+  SlidersHorizontal, LogOut, Loader2, CheckCircle2, XCircle, Zap, Cable,
   Search, X, Palette, UserCircle, Clock, Archive, FileDown, Gift, Copy,
   Bell, TrendingUp, TrendingDown, Camera, Settings as SettingsIcon,
 } from "lucide-react"
@@ -152,7 +152,7 @@ function AgentWritePanel() {
   }
 
   return (
-    <Card className="mt-4">
+    <Card>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Zap className="h-5 w-5 text-primary" />
@@ -1129,20 +1129,26 @@ export default function Settings() {
   }
 
   const authRequired = authStatus?.required
-  const [tab, setTab] = useTabParam("tab", "ai", ["account", "ai", "prefs"])
-  const activeTab = tab === "account" && authRequired !== true ? "ai" : tab
+  const [tab, setTab] = useTabParam("tab", "ai", ["account", "agent", "ai", "prefs"])
+  const activeTab = (tab === "account" || tab === "agent") && authRequired !== true ? "ai" : tab
 
   return (
     <div className="space-y-6">
         <PageHeader title={t.settings.title} icon={<SettingsIcon className="h-5 w-5" />} />
 
       <Tabs value={activeTab} onValueChange={setTab}>
-        <TabsList className={cn("grid w-full sm:inline-flex sm:w-auto", authRequired ? "grid-cols-3" : "grid-cols-2")}>
+        <TabsList className={cn("grid w-full sm:inline-flex sm:w-auto", authRequired ? "grid-cols-4" : "grid-cols-2")}>
           {authRequired && (
-            <TabsTrigger value="account" className="gap-1.5">
-              <ShieldCheck className="h-4 w-4" />
-              <span className="hidden sm:inline">{t.settings.accountSecurity}</span><span className="sm:hidden">{t.settings.account}</span>
-            </TabsTrigger>
+            <>
+              <TabsTrigger value="account" className="gap-1.5">
+                <ShieldCheck className="h-4 w-4" />
+                <span className="hidden sm:inline">{t.settings.accountSecurity}</span><span className="sm:hidden">{t.settings.account}</span>
+              </TabsTrigger>
+              <TabsTrigger value="agent" className="gap-1.5">
+                <Cable className="h-4 w-4" />
+                <span className="hidden sm:inline">{t.settings.agentAccess}</span><span className="sm:hidden">{t.settings.agent}</span>
+              </TabsTrigger>
+            </>
           )}
           <TabsTrigger value="ai" className="gap-1.5">
             <Bot className="h-4 w-4" />
@@ -1259,14 +1265,19 @@ export default function Settings() {
               </CardContent>
             </Card>
 
+            {/* ── 审计日志 ── */}
+            <AuditLogPanel />
+          </TabsContent>
+        )}
+
+        {/* ── Agent 接入 ── */}
+        {authRequired && (
+          <TabsContent value="agent">
             {/* ── Agent 写能力开关 ── */}
             <AgentWritePanel />
 
             {/* ── Agent 访问令牌 ── */}
             <AgentTokenPanel />
-
-            {/* ── 审计日志 ── */}
-            <AuditLogPanel />
           </TabsContent>
         )}
 

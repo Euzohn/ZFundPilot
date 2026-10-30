@@ -86,7 +86,7 @@ nohup uvicorn zfundpilot.api:app --host 0.0.0.0 --port 8000 > zfundpilot.log 2>&
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式（工作日 21:00）。可在设置页面暂停/启用 |
 | `ZFUNDPILOT_TIMEZONE` | `Asia/Shanghai` | 系统时区（IANA 名称），影响定时任务触发时间、交易日期、日志时间戳。需重启应用生效 |
 | `ZFUNDPILOT_TRUSTED_PROXIES` | 空 | 反向代理信任网段，逗号分隔 CIDR（如 `127.0.0.1/32,10.0.0.0/8`）。仅在 Nginx/Caddy 等反代后需配置，用于登录限流正确读取客户端 IP。公网直连不要设置 |
-| `ZFUNDPILOT_AGENT_WRITE_ENABLED` | 未设置（默认关闭，可在设置页开启） | Agent 写能力开关（双重语义）：`0`/`false`/`no`/`off` = **紧急刹车**，强制关闭且设置页无法开启；`1`/`true`/`yes`/`on` = 仅作为数据库无记录时的**首次启动默认值**；不设置 = 默认关闭但可在设置页开启。日常开关在「设置 → 账户与安全 → Agent 写能力」维护（持久化到数据库，无需重启），开启需输入当前登录密码确认，无密码模式禁止开启。写能力含自选维护（`watchlist:write`）、净值/元数据刷新（`data:refresh`）与账本提案（`transactions:propose`），提案仍需网页管理员批准；关闭时写端点与提案创建/审批返回 `403 write_disabled` |
+| `ZFUNDPILOT_AGENT_WRITE_ENABLED` | 未设置（默认关闭，可在设置页开启） | Agent 写能力开关（双重语义）：`0`/`false`/`no`/`off` = **紧急刹车**，强制关闭且设置页无法开启；`1`/`true`/`yes`/`on` = 仅作为数据库无记录时的**首次启动默认值**；不设置 = 默认关闭但可在设置页开启。日常开关在「设置 → Agent 接入 → Agent 写能力」维护（持久化到数据库，无需重启），开启需输入当前登录密码确认，无密码模式禁止开启。写能力含自选维护（`watchlist:write`）、净值/元数据刷新（`data:refresh`）与账本提案（`transactions:propose`），提案仍需网页管理员批准；关闭时写端点与提案创建/审批返回 `403 write_disabled` |
 
 ```bash
 # 示例：设置用户名 + 访问密码 + 自定义数据目录

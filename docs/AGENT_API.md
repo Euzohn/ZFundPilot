@@ -18,7 +18,7 @@ Agent 接口以只读为主，写能力默认关闭且分层授权：自选维�
 
 ## 2. 签发与管理 token
 
-在网页端 **设置 → 账户与安全 → Agent 访问令牌** 中签发。明文只显示一次，关闭页面后无法再次查看；服务端只保存 SHA-256 摘要。
+在网页端 **设置 → Agent 接入 → Agent 访问令牌** 中签发。明文只显示一次，关闭页面后无法再次查看；服务端只保存 SHA-256 摘要。
 
 也可以直接调用管理 API（需要**网页登录 token**，不是 Agent token）：
 
@@ -81,7 +81,7 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 | `data:refresh` | `refresh`（启动/查询任务化数据刷新，仅净值/元数据，需开启写开关） |
 | `transactions:propose` | `proposals`（创建/查看/取消自己的待审批账本提案，需开启写开关；执行权只属于网页管理员） |
 
-写 scope 目前有 `watchlist:write`、`data:refresh` 与 `transactions:propose`，均默认不勾选，且受服务端写开关约束（默认关闭）。写开关的日常开启/关闭由管理员在网页「设置 → 账户与安全 → Agent 写能力」完成（`GET/PUT /api/settings/agent-write`，开启需输入当前登录密码确认，状态持久化在数据库）；环境变量 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 只在两种情况下生效：显式设为 `0`/`false`/`no`/`off` 是**紧急刹车**（强制关闭且设置页无法开启），设为 `1`/`true`/`yes`/`on` 仅作为数据库无记录时的首次启动默认值。调用未授权工具返回 **403**。前两者是低风险直接写入；`transactions:propose` 只允许提交提案，**不能直接写账本**。
+写 scope 目前有 `watchlist:write`、`data:refresh` 与 `transactions:propose`，均默认不勾选，且受服务端写开关约束（默认关闭）。写开关的日常开启/关闭由管理员在网页「设置 → Agent 接入 → Agent 写能力」完成（`GET/PUT /api/settings/agent-write`，开启需输入当前登录密码确认，状态持久化在数据库）；环境变量 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 只在两种情况下生效：显式设为 `0`/`false`/`no`/`off` 是**紧急刹车**（强制关闭且设置页无法开启），设为 `1`/`true`/`yes`/`on` 仅作为数据库无记录时的首次启动默认值。调用未授权工具返回 **403**。前两者是低风险直接写入；`transactions:propose` 只允许提交提案，**不能直接写账本**。
 
 `capabilities` 只要求有效 token，不要求特定 scope；它只返回当前 token 已获授权的工具，写工具会标注 `risk="write"`、提案工具标注 `risk="propose"`，并以 `enabled` 反映服务端写开关状态；顶层 `write_enabled` 为当前开关值，`write_locked` 为 `true` 时表示环境变量紧急刹车已锁死，设置页也无法开启。
 

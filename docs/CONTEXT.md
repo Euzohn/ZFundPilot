@@ -94,7 +94,7 @@ ZFundPilot/
 │   │   ├── Backtest.tsx       # 定投回测（DCA vs 一次性投入 + 累计曲线 + 每期明细）
 │   │   ├── AIChat.tsx       # AI 投顾对话
 │   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 持仓卡片 + 排名 + 档案 + 顶栏：对比/自选/买入/卖出/定投快捷入口）
-│   │   ├── Settings.tsx     # 设置（账户/AI/偏好/止盈止损提醒）
+│   │   ├── Settings.tsx     # 设置（账户/Agent 接入/AI/偏好/止盈止损提醒）
 │   │   └── Login.tsx        # 登录
 │   ├── components/          # Layout + Logo 系列 + PnLCalendar + TpSlAlertsPanel + ScreenshotImportPanel + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
 │   ├── i18n/                # LanguageContext（Provider + useLang hook + getCurrentLang）+ zh.ts + en.ts
@@ -530,7 +530,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
-- feat: Agent 写能力设置页开关——`ZFUNDPILOT_AGENT_WRITE_ENABLED` 改双重语义（`0` = 紧急刹车锁死，`1` = 仅首次启动默认值），日常开关走 `GET/PUT /api/settings/agent-write`（开启需当前登录密码确认，403 错误码 `env_forced_off`/`auth_required`/`wrong_password` 避免前端 401 登出）；状态存 `preferences`（key `agent_write_enabled`），lifespan 解析为运行时 `AGENT_WRITE_ENABLED`；审计 `agent_write_toggle`/`agent_write_toggle_denied`；capabilities 新增 `write_locked`；备份恢复后重新解析运行时开关；设置页新增「Agent 写能力」面板（AgentTokenPanel 上方）；新增 `tests/test_agent_write_settings.py`（15 用例）+ 恢复同步用例（总 841→857）
+- feat: Agent 写能力设置页开关——`ZFUNDPILOT_AGENT_WRITE_ENABLED` 改双重语义（`0` = 紧急刹车锁死，`1` = 仅首次启动默认值），日常开关走 `GET/PUT /api/settings/agent-write`（开启需当前登录密码确认，403 错误码 `env_forced_off`/`auth_required`/`wrong_password` 避免前端 401 登出）；状态存 `preferences`（key `agent_write_enabled`），lifespan 解析为运行时 `AGENT_WRITE_ENABLED`；审计 `agent_write_toggle`/`agent_write_toggle_denied`；capabilities 新增 `write_locked`；备份恢复后重新解析运行时开关；设置页新增「Agent 写能力」面板（AgentTokenPanel 上方）；Agent 写能力与访问令牌面板独立为「Agent 接入」tab（`settings?tab=agent`，未启用登录密码时隐藏）；新增 `tests/test_agent_write_settings.py`（15 用例）+ 恢复同步用例（总 841→857）
 - feat: 账本提案与网页审批（E）——`transactions:propose` scope + `operation_proposals` 表；Agent 只能创建/查看/取消待审批提案，网页管理员批准后服务端同事务复核 token/写开关/业务规则、写入交易并记录 `proposal_approved` + `add_transaction` 审计；首期仅 `add_transaction`，7 天过期、幂等创建、每 token 20 条待处理上限；新增 `/proposals` 页面与导航角标；恢复备份时清空旧提案
 - feat: 任务化数据刷新（D）——`data:refresh` scope + `refresh_jobs` 表；`start_data_refresh`/`get_job_status` 仅刷新净值/元数据，不回填交易净值、不执行定投；与网页/调度器共用互斥锁
 - feat: 自选受控写入（B/C）——`watchlist:write` + `watchlist_service`；新增/更新/删除带幂等键与 revision 校验，删除保留墓碑，网页可恢复

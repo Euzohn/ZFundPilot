@@ -630,6 +630,8 @@ const en: typeof zh = {
     agentWriteLoadFailed: "Failed to load Agent write switch status",
     accountSecurity: "Account & Security",
     account: "Account",
+    agentAccess: "Agent Access",
+    agent: "Agent",
     aiAdvisor: "AI Advisor",
     ai: "AI",
     preferences: "Preferences",

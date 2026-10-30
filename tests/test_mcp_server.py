@@ -67,6 +67,10 @@ def test_tools_registered():
         "remove_watchlist_item",
         "start_data_refresh",
         "get_job_status",
+        "create_operation_proposal",
+        "list_operation_proposals",
+        "get_operation_proposal",
+        "cancel_operation_proposal",
     }
 
 

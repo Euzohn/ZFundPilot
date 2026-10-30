@@ -238,6 +238,8 @@ def export_backup_zip() -> bytes:
     tables: dict[str, dict[str, Any]] = {}
     payloads: dict[str, bytes] = {}
     with db.get_connection() as conn:
+        # 同一读事务保证各表来自同一快照，避免导出期间并发写入造成交叉不一致。
+        conn.execute("BEGIN")
         for table in TABLE_COLUMNS:
             rows = _table_rows(conn, table)
             data = _safe_jsonl(rows)
@@ -552,6 +554,3 @@ def restore_backup(data: bytes, *, ip: str | None = None,
         )
     finally:
         _restore_guard.release()
-
-
-

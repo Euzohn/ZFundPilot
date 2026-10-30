@@ -215,7 +215,8 @@ ZFundPilot/
 │   ├── backtest.py       # 定投策略回测
 │   ├── auto_invest.py    # 定投计划自动执行
 │   ├── crypto.py         # 敏感字段加密（Fernet）
-│   ├── data_io.py        # CSV 导入/导出 + 全量备份 ZIP
+│   ├── backup_service.py # 备份格式 v2、预检与事务化恢复
+│   ├── data_io.py        # CSV 导入/导出（备份兼容入口）
 │   ├── api.py            # FastAPI REST API（37+ 路由 + 认证中间件）
 │   ├── ai.py             # AI 投顾对话（持仓上下文 + 联网搜索 + LLM 流式调用）
 │   └── scheduler.py      # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查

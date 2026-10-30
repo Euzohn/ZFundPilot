@@ -67,10 +67,11 @@ ZFundPilot/
 │   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延 + QDII 跳美股休市 + 申购状态/法定节假日可投性校验）
 │   ├── us_calendar.py       # 美股（NYSE）算法日历（纯计算休市日，零联网依赖，供定投跳过 QDII 休市）
 │   ├── crypto.py            # 敏感字段加密（Fernet，AI API key 等落盘加密）
+│   ├── backup_service.py    # 备份格式 v2（manifest + JSONL + SHA-256）、预检与事务化恢复
 │   ├── nav_update_state.py  # 净值更新共享状态+锁+阶段(phase)字段（api.py/scheduler.py 共用，避免循环导入）
 │   ├── scheduler.py         # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查 + 基准指数/宏观水位持久化
 │   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）+ 视觉模型截图解析（parse_screenshot + resolve_fund_code 名称→代码后处理）
-│   └── data_io.py           # CSV 导入/导出 + 全量备份 ZIP
+│   └── data_io.py           # CSV 导入/导出（全量备份由 backup_service.py 提供）
 ├── frontend/src/            # React 前端
 │   ├── App.tsx              # 路由（/ → Home 独立页，其余在 Layout 内）
 │   ├── pages/               # 15 个页面
@@ -179,7 +180,7 @@ ZFundPilot/
 - i18n 序列化: `/api/risk` flags 和 `/api/rebalance` advice 输出 `code`+`params`，前端 `backendLabels.ts` 按 code 翻译
 - 自选列表: `POST/GET/DELETE /api/watchlist`，加入时自动获取基金 meta 并 upsert 到 `funds` 表
 - 截图导入: `POST /api/ai/parse-screenshot`（multipart 上传截图 → 视觉模型解析 → 返回结构化数据，不落库）+ `POST /api/ai/reconcile`（持仓对账 → 生成差额调整交易建议）+ `GET/PUT /api/settings/vision`（视觉模型配置）+ `POST /api/ai/vision-test`（测试视觉模型）。批量保存复用 `POST /api/csv/import`
-- 数据备份: `GET /api/export/zip`，ZIP 含 5 个 CSV（交易/基金/自选/定投/偏好），净值历史不含
+- 数据备份: `GET /api/export/zip` 导出格式 v2（`manifest.json` + 12 张表 JSONL，含净值历史与 SHA-256）；`POST /api/backup/preflight` 只读预检，`POST /api/backup/restore` 需 `RESTORE` 确认后先备份当前数据再事务化整体恢复，失败回滚。审计日志、AI 密钥、Agent token 不进入普通备份
 - 基准对比: `GET /api/portfolio/benchmark?indices=000300,000001,399006`，返回基准累计收益率（`close / close_at_start - 1`），按组合曲线日期 ffill 对齐。`BENCHMARK_INDICES` 白名单控制可选指数
 
 ### config.py — 全局配置

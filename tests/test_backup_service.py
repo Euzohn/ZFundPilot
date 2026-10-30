@@ -173,5 +173,3 @@ class TestRestore:
                 bs.restore_backup(payload)
         finally:
             bs._restore_guard.release()
-
-

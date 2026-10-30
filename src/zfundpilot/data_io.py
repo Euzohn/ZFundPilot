@@ -1,4 +1,4 @@
-"""交易流水 CSV 导入/导出 + 全量备份 ZIP 模块。
+"""交易流水 CSV 导入/导出模块。
 
 CSV 列（表头，第一行）：
     fund_code, action, date, amount, shares, nav, fee, channel, note
@@ -7,6 +7,8 @@ CSV 列（表头，第一行）：
 - amount / shares / nav：给出任意两个即可，导入时自动补全
 - channel：购买渠道（支付宝/理财通等）
 支持中文表头。
+
+全量备份与恢复由 ``backup_service`` 提供；``export_backup_zip`` 仅保留兼容入口。
 """
 
 from __future__ import annotations

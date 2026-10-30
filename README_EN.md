@@ -215,7 +215,8 @@ ZFundPilot/
 │   ├── backtest.py       # DCA backtest
 │   ├── auto_invest.py    # Auto-invest plan execution
 │   ├── crypto.py         # Field encryption (Fernet)
-│   ├── data_io.py        # CSV import/export + backup ZIP
+│   ├── backup_service.py # Backup format v2, preflight, transactional restore
+│   ├── data_io.py        # CSV import/export (backup compatibility wrapper)
 │   ├── api.py            # FastAPI REST API (37+ routes + auth middleware)
 │   ├── ai.py             # AI advisor chat (portfolio context + web search)
 │   └── scheduler.py      # APScheduler NAV update + auto-invest + dividend check + TP/SL check

@@ -28,7 +28,7 @@ import { useLang, type Lang } from "@/i18n/LanguageContext"
 import { cn } from "@/lib/utils"
 import { copyText } from "@/lib/clipboard"
 import { useTabParam } from "@/hooks/useTabParam"
-import type { AIUsageStats, AIUsageDaily, AgentTokenInfo, AgentTokenListResponse, AuditLog, KeywordMaps, SchedulerStatus, TpSlConfig, VisionConfig } from "@/api/types"
+import type { AIUsageStats, AIUsageDaily, AgentTokenInfo, AgentTokenListResponse, AuditLog, BackupPreview, KeywordMaps, SchedulerStatus, TpSlConfig, VisionConfig } from "@/api/types"
 import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
@@ -530,6 +530,12 @@ export default function Settings() {
   const [colorTheme, setColorTheme] = useState<ColorTheme>(() => getColorTheme())
   const [colorThemeLoading, setColorThemeLoading] = useState(false)
 
+  // 备份 v2 预检/恢复
+  const [backupFile, setBackupFile] = useState<File | null>(null)
+  const [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null)
+  const [backupBusy, setBackupBusy] = useState(false)
+  const [restoreOpen, setRestoreOpen] = useState(false)
+
   // Scheduler
   const { data: schedulerStatus, error: schedulerError, reload: reloadScheduler } = useApi<SchedulerStatus>(() => api.getSchedulerStatus(), [])
   const [schedulerToggling, setSchedulerToggling] = useState(false)
@@ -917,6 +923,37 @@ export default function Settings() {
     const sectorCustom = kwTab === "sector" ? next : keywordMaps!.sector_custom
     setKeywordMaps({ ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next })
     try { await api.saveKeywordMaps(JSON.stringify(typeCustom), JSON.stringify(sectorCustom)) } catch {}
+  }
+
+  const handleBackupPreflight = async (file: File) => {
+    setBackupBusy(true)
+    setBackupPreview(null)
+    setBackupFile(null)
+    try {
+      const preview = await api.preflightBackup(file)
+      setBackupFile(file)
+      setBackupPreview(preview)
+      toast.success(t.settings.backupPreflightOk)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t.settings.backupPreflightFailed)
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  const handleRestoreBackup = async () => {
+    if (!backupFile) return
+    setBackupBusy(true)
+    try {
+      const result = await api.restoreBackup(backupFile, "RESTORE")
+      toast.success(`${t.settings.backupRestoreDone} (${result.total_rows})`)
+      setBackupPreview(null)
+      setBackupFile(null)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t.settings.backupRestoreFailed)
+    } finally {
+      setBackupBusy(false)
+    }
   }
 
   const authRequired = authStatus?.required
@@ -1772,21 +1809,70 @@ export default function Settings() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-sm text-muted-foreground">{t.settings.backupHint}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  try {
-                    await api.exportZip()
-                    toast.success(t.settings.backupExported)
-                  } catch (e) {
-                    toast.error(e instanceof Error ? e.message : t.settings.backupFailed)
-                  }
-                }}
-              >
-                <FileDown className="mr-1.5 h-4 w-4" />
-                {t.settings.exportZip}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await api.exportZip()
+                      toast.success(t.settings.backupExported)
+                    } catch (e) {
+                      toast.error(e instanceof Error ? e.message : t.settings.backupFailed)
+                    }
+                  }}
+                >
+                  <FileDown className="mr-1.5 h-4 w-4" />
+                  {t.settings.exportZip}
+                </Button>
+                <Input
+                  type="file"
+                  accept=".zip,application/zip"
+                  className="max-w-xs text-xs"
+                  disabled={backupBusy}
+                  onChange={(e) => {
+                    const file = e.currentTarget.files?.[0]
+                    if (file) void handleBackupPreflight(file)
+                    e.currentTarget.value = ""
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">{t.settings.backupFormatHint}</p>
+              {backupPreview && (
+                <div className="space-y-2 rounded-lg border border-border p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{t.settings.backupPreviewTitle}</span>
+                    <Badge variant="outline">
+                      {t.settings.backupFormatVersion} v{backupPreview.format_version}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t.settings.backupRows}: {backupPreview.total_rows} · {t.settings.backupCurrentRows}: {backupPreview.current_total_rows}
+                  </p>
+                  <div className="grid gap-1 text-xs sm:grid-cols-2">
+                    {Object.entries(backupPreview.tables)
+                      .filter(([name]) => name !== "preferences" && name !== "trade_calendar")
+                      .map(([name, info]) => (
+                        <div key={name} className="flex items-center justify-between gap-2 rounded bg-muted/40 px-2 py-1">
+                          <span className="font-mono">{name}</span>
+                          <span className="text-muted-foreground">{info.rows} / {info.current_rows}</span>
+                        </div>
+                      ))}
+                  </div>
+                  {backupPreview.warnings.map((warning) => (
+                    <p key={warning} className="text-xs text-warning">{warning}</p>
+                  ))}
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={backupBusy}
+                    onClick={() => setRestoreOpen(true)}
+                  >
+                    <RotateCcw className="mr-1.5 h-4 w-4" />
+                    {t.settings.backupRestore}
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1822,6 +1908,21 @@ export default function Settings() {
         title={t.settings.resetSectorMapping}
         tone="destructive"
         onConfirm={async () => { setShowResetSectors(false); await handleResetSectors() }}
+      />
+      <ConfirmDialog
+        open={restoreOpen}
+        onOpenChange={setRestoreOpen}
+        title={t.settings.backupRestoreTitle}
+        tone="destructive"
+        loading={backupBusy}
+        confirmText={t.settings.backupRestoreConfirm}
+        description={
+          <div className="space-y-2">
+            <p>{t.settings.backupRestoreDesc}</p>
+            <p className="text-xs">{t.settings.backupSafetyHint}</p>
+          </div>
+        }
+        onConfirm={handleRestoreBackup}
       />
     </div>
   )

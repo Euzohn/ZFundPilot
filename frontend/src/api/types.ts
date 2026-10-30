@@ -765,3 +765,33 @@ export interface AgentTokenCreateResponse {
   token_info: AgentTokenInfo
   message: string
 }
+
+// ── 备份 v2 预检/恢复 ──
+export interface BackupTablePreview {
+  rows: number
+  current_rows: number
+}
+
+export interface BackupPreview {
+  format: string
+  format_version: number
+  app_version: string
+  created_at: string
+  tables: Record<string, BackupTablePreview>
+  total_rows: number
+  current_total_rows: number
+  replace_all: boolean
+  can_restore: boolean
+  warnings: string[]
+  excluded: Record<string, string>
+  excluded_secrets: Record<string, string>
+  safety_backup: string
+}
+
+export interface BackupRestoreResult {
+  ok: boolean
+  restored: Record<string, number>
+  total_rows: number
+  safety_backup: string
+  replace_all: boolean
+}

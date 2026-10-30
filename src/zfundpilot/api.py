@@ -24,7 +24,17 @@ from dataclasses import asdict, replace
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Security, UploadFile
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Security,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.security import HTTPBearer
@@ -37,6 +47,7 @@ from . import (
     analysis,
     auto_invest,
     backtest,
+    backup_service,
     compare,
     config,
     data_io,
@@ -3966,8 +3977,8 @@ def export_transactions() -> Response:
 
 @app.get("/api/export/zip")
 def export_backup(request: Request) -> Response:
-    """全量备份导出（ZIP 含 5 个 CSV：交易/基金/自选/定投/偏好）。"""
-    content = data_io.export_backup_zip()
+    """全量备份导出（格式 v2：manifest + 12 张表 JSONL，含净值历史）。"""
+    content = backup_service.export_backup_zip()
     db.log_audit("export_backup", ip=_get_client_ip(request), detail={})
     date_str = datetime.now(config.TIMEZONE).strftime("%Y%m%d")
     return Response(
@@ -3975,6 +3986,79 @@ def export_backup(request: Request) -> Response:
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="zfundpilot_backup_{date_str}.zip"'},
     )
+
+
+_MAX_BACKUP_SIZE = backup_service.MAX_ZIP_BYTES
+
+
+async def _read_backup_upload(file: UploadFile) -> bytes:
+    """读取上传备份并限制大小；超限返回 413。"""
+    if file.size is not None and file.size > _MAX_BACKUP_SIZE:
+        raise HTTPException(413, "备份文件超过大小限制")
+    data = await file.read()
+    if len(data) > _MAX_BACKUP_SIZE:
+        raise HTTPException(413, "备份文件超过大小限制")
+    return data
+
+
+def _backup_validation_error(
+    exc: backup_service.BackupValidationError,
+) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={"code": exc.code, "field": exc.field, "message": exc.message},
+    )
+
+
+@app.post("/api/backup/preflight")
+async def backup_preflight(
+    request: Request, file: UploadFile = File(...),
+) -> dict[str, Any]:
+    """备份导入预检：只读校验结构、版本、校验和与行数，不修改数据。"""
+    data = await _read_backup_upload(file)
+    try:
+        preview = backup_service.preview_backup(data)
+    except backup_service.BackupValidationError as exc:
+        db.log_audit("backup_preflight_rejected", ip=_get_client_ip(request),
+                     detail={"code": exc.code})
+        raise _backup_validation_error(exc) from exc
+    db.log_audit("backup_preflight", ip=_get_client_ip(request),
+                 detail={"total_rows": preview.total_rows,
+                         "format_version": preview.format_version})
+    return preview.to_dict()
+
+
+@app.post("/api/backup/restore")
+async def backup_restore(
+    request: Request,
+    file: UploadFile = File(...),
+    confirmation: str = Form(...),
+) -> dict[str, Any]:
+    """从备份整体恢复用户数据；需输入 RESTORE 确认，自动先备份当前数据。"""
+    if confirmation.strip().upper() != "RESTORE":
+        raise HTTPException(
+            400, detail={"code": "confirmation_required",
+                         "message": "请输入 RESTORE 确认整体恢复"})
+    data = await _read_backup_upload(file)
+    try:
+        result = backup_service.restore_backup(
+            data,
+            ip=_get_client_ip(request),
+            username=config.AUTH_USERNAME if config.AUTH_ENABLED else "local",
+        )
+    except backup_service.BackupBusyError as exc:
+        raise HTTPException(
+            409, detail={"code": "restore_busy", "message": str(exc)}) from exc
+    except backup_service.BackupValidationError as exc:
+        db.log_audit("restore_backup_rejected", ip=_get_client_ip(request),
+                     detail={"code": exc.code})
+        raise _backup_validation_error(exc) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("备份恢复失败")
+        raise HTTPException(
+            500, detail={"code": "restore_failed",
+                         "message": "恢复失败，当前数据已回滚"}) from exc
+    return result.to_dict()
 
 
 _MAX_CSV_SIZE = 5 * 1024 * 1024  # 5 MB

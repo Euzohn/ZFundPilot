@@ -45,6 +45,8 @@ import type {
   AgentTokenInfo,
   AgentTokenListResponse,
   AgentTokenCreateResponse,
+  BackupPreview,
+  BackupRestoreResult,
 } from "./types"
 import { getToken, clearToken } from "@/lib/auth"
 import { getCurrentLang } from "@/i18n/LanguageContext"
@@ -108,6 +110,31 @@ async function downloadWithAuth(url: string, filename: string) {
   a.download = filename
   a.click()
   URL.revokeObjectURL(a.href)
+}
+
+async function uploadWithAuth<T>(url: string, form: FormData): Promise<T> {
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (token) headers["Authorization"] = `Bearer ${token}`
+  const res = await fetch(`${BASE}${url}`, { method: "POST", body: form, headers })
+  if (res.status === 401) {
+    clearToken()
+    window.location.reload()
+    throw new Error(ERR_401[getCurrentLang()])
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    let msg = text || `${res.status}`
+    try {
+      const j = JSON.parse(text)
+      const detail = j?.detail
+      if (typeof detail === "string") msg = detail
+      else if (typeof detail?.message === "string") msg = detail.message
+      else if (detail) msg = JSON.stringify(detail)
+    } catch { /* not json */ }
+    throw new Error(msg)
+  }
+  return res.json()
 }
 
 export const api = {
@@ -319,6 +346,17 @@ export const api = {
     const pad = (n: number) => String(n).padStart(2, "0")
     const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
     return downloadWithAuth("/export/zip", `zfundpilot_backup_${ts}.zip`)
+  },
+  preflightBackup: (file: File) => {
+    const form = new FormData()
+    form.append("file", file)
+    return uploadWithAuth<BackupPreview>("/backup/preflight", form)
+  },
+  restoreBackup: (file: File, confirmation: string) => {
+    const form = new FormData()
+    form.append("file", file)
+    form.append("confirmation", confirmation)
+    return uploadWithAuth<BackupRestoreResult>("/backup/restore", form)
   },
   parseCsv: async (file: File): Promise<CSVParseResult> => {
     const form = new FormData()

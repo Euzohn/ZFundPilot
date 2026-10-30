@@ -348,4 +348,6 @@ cp data/fund.db data/fund.db.bak
 cp -r data data.bak.$(date +%Y%m%d)
 ```
 
-也可通过前端「交易管理 → CSV 导入/导出」导出交易流水为 CSV。
+也可在网页「设置 → 数据备份」导出格式 v2 ZIP：包含 `manifest.json` 与 12 张表 JSONL（含净值历史、自选墓碑、提醒、指数历史与偏好），逐表记录行数、列顺序和 SHA-256。导入前先预检；恢复需输入 `RESTORE` 确认，系统会先把当前数据写入 `data/backups/pre_restore_*.zip`，再在单个 SQLite 事务中整体替换，失败自动回滚。审计日志、AI 用量、Agent token 与 AI 密钥不进入普通备份。
+
+恢复是管理操作：建议先停止写入（或短暂停服），不要在服务运行时直接覆盖 `data/fund.db`；恢复完成后再刷新页面核对持仓、交易与净值历史。

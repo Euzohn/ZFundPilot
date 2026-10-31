@@ -72,6 +72,8 @@ def test_tools_registered():
         "get_operation_proposal",
         "cancel_operation_proposal",
         "record_transaction",
+        "precheck_transactions",
+        "precheck_reconciliation",
     }
 
 

@@ -717,7 +717,7 @@ def test_create_operation_proposal_validates_before_http(mock_api):
     mock_api(handler)
     with pytest.raises(ToolError):
         _run(mcp_server.create_operation_proposal(
-            "update_transaction", {}, KEY))
+            "transfer_transaction", {}, KEY))
     with pytest.raises(ToolError):
         _run(mcp_server.create_operation_proposal(
             "add_transaction", "not-a-dict", KEY))

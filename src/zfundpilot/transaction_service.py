@@ -758,7 +758,8 @@ def _record_downgrade(conn: sqlite3.Connection, principal: Principal,
             principal, code="downgraded", message=message,
             proposal_id=int(row["id"]), operation_id=operation_id,
             replayed=replayed, now=now, used=used + 1,
-            amount_used=amount_used, proposal_row=row))
+            amount_used=amount_used, proposal_row=row),
+        replayed=replayed)
 
 
 def _proposal_expired(row: sqlite3.Row, now: datetime) -> bool:

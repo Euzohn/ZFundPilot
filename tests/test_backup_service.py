@@ -71,6 +71,9 @@ class TestExport:
         assert "tables/nav_history.jsonl" in files
         assert all("agent_tokens" not in name for name in files)
         assert all("audit_log" not in name for name in files)
+        assert set(manifest["excluded"]) == set(bs.EXCLUDED_TABLES)
+        # 待审批提案不进备份，恢复时也会被清空（避免指向已替换的数据）。
+        assert "operation_proposals" in manifest["excluded"]
 
     def test_nav_history_roundtrip(self, temp_env):
         db.upsert_nav_batch([type("P", (), {

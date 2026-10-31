@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import threading
 import time
 import urllib.parse
@@ -136,6 +137,39 @@ app = FastAPI(
         },
     ],
 )
+
+
+@app.exception_handler(sqlite3.OperationalError)
+async def _sqlite_operational_error_handler(
+    request: Request, exc: sqlite3.OperationalError,
+) -> JSONResponse:
+    """把 SQLite 持锁超时映射为可重试的 503，而不是笼统的 500。
+
+    备份恢复等长事务会持有写锁；若 ``busy_timeout`` 耗尽，Agent 调用方应
+    收到明确的「稍后重试」信号，而不是无法区分的服务器错误。
+    """
+    message = str(exc).lower()
+    if "locked" in message or "busy" in message:
+        logger.warning(
+            "数据库繁忙，请求稍后重试：%s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=503,
+            content={"detail": {
+                "code": "database_busy",
+                "message": "数据库正忙（可能正在备份或恢复），请稍后重试",
+            }},
+            headers={"Retry-After": "5"},
+        )
+    logger.error(
+        "数据库操作失败：%s %s", request.method, request.url.path,
+        exc_info=exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": {
+            "code": "database_error",
+            "message": "数据库操作失败，请稍后重试",
+        }},
+    )
 
 # ---------------------------------------------------------------------------
 # 登录速率限制（in-memory，单 uvicorn worker）

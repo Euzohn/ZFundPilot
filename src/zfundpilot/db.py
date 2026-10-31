@@ -1299,6 +1299,26 @@ def get_preference(key: str) -> str | None:
     return row["value"] if row else None
 
 
+def agent_write_enabled_conn(conn: sqlite3.Connection) -> bool:
+    """在调用方事务内解析 Agent 写能力总开关的权威值。
+
+    多 worker 部署时各进程的运行时 ``config.AGENT_WRITE_ENABLED`` 可能陈旧，
+    因此执行写操作前必须回到 ``preferences`` 表复核。数据库无记录（从未在
+    设置页切换过）时退回运行时值，与启动解析和测试替身保持一致。
+    """
+    row = conn.execute(
+        "SELECT value FROM preferences WHERE key=?",
+        (config.AGENT_WRITE_PREF_KEY,),
+    ).fetchone()
+    if row is None:
+        return bool(config.AGENT_WRITE_ENABLED) and not config.AGENT_WRITE_ENV_LOCKED
+    return config.resolve_agent_write_enabled(
+        row["value"],
+        env_locked=config.AGENT_WRITE_ENV_LOCKED,
+        env_default=config.AGENT_WRITE_ENV_DEFAULT,
+    )
+
+
 def get_all_preferences() -> dict[str, str]:
     with get_connection() as conn:
         rows = conn.execute("SELECT key, value FROM preferences").fetchall()

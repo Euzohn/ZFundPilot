@@ -226,6 +226,54 @@ class TestCapabilitiesFollowSwitch:
         assert blocked_again.json()["detail"]["code"] == "write_disabled"
 
 
+class TestTransactionSwitchRecheck:
+    """多 worker 场景：设置页写入 DB 后，其他进程事务内立即看到权威值。"""
+
+    def _create_proposal(self, client: TestClient, key: str) -> int:
+        headers = _agent_headers([agent_tokens.SCOPE_TRANSACTIONS_PROPOSE])
+        response = client.post(
+            AGENT_PROPOSALS, headers={**headers, "Idempotency-Key": key},
+            json={"operation_type": "add_transaction", "params": BUY_PARAMS})
+        assert response.status_code == 201
+        return response.json()["data"]["proposal_id"]
+
+    def _proposal_status(self, proposal_id: int) -> str:
+        with db.get_connection() as conn:
+            return db.get_proposal(conn, proposal_id)["status"]
+
+    def test_db_off_blocks_approval_even_if_runtime_says_on(
+            self, client, monkeypatch):
+        monkeypatch.setattr(config, "AGENT_WRITE_ENABLED", True)
+        proposal_id = self._create_proposal(client, "multi-worker-off-key-01")
+        # 模拟另一 worker 在设置页关闭总闸：本进程运行时值仍旧为 True。
+        db.upsert_preference(config.AGENT_WRITE_PREF_KEY, "false")
+        assert config.AGENT_WRITE_ENABLED is True
+
+        response = client.post(
+            f"/api/proposals/{proposal_id}/approve", headers=_web_headers())
+
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "write_disabled"
+        assert self._proposal_status(proposal_id) == "pending"
+        assert db.get_transactions_desc() == []
+
+    def test_db_on_allows_approval_even_if_runtime_says_off(
+            self, client, monkeypatch):
+        monkeypatch.setattr(config, "AGENT_WRITE_ENABLED", True)
+        proposal_id = self._create_proposal(client, "multi-worker-on-key-01")
+        # 模拟另一 worker 在设置页开启总闸：本进程运行时值仍旧为 False。
+        db.upsert_preference(config.AGENT_WRITE_PREF_KEY, "true")
+        monkeypatch.setattr(config, "AGENT_WRITE_ENABLED", False)
+
+        response = client.post(
+            f"/api/proposals/{proposal_id}/approve", headers=_web_headers())
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "succeeded"
+        assert self._proposal_status(proposal_id) == "succeeded"
+        assert len(db.get_transactions_desc()) == 1
+
+
 class TestResolveAgentWriteEnabled:
     def test_env_lock_wins_over_everything(self):
         assert config.resolve_agent_write_enabled(

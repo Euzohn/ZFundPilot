@@ -116,6 +116,7 @@ EXCLUDED_TABLES = {
     "ai_usage": "AI 用量统计可重建",
     "agent_tokens": "凭据摘要不进入普通备份",
     "agent_operations": "临时幂等记录，恢复后无意义",
+    "operation_proposals": "待审批提案，恢复后指向已替换数据",
     "refresh_jobs": "临时刷新任务，恢复后无意义",
 }
 

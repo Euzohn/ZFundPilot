@@ -673,7 +673,8 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
             return ProposalResult(
                 403, "auth_disabled",
                 "未启用管理员认证，不能执行提案", {"proposal_id": pid})
-        if not config.AGENT_WRITE_ENABLED:
+        # 事务内复核 DB 权威值：多 worker 下其他进程关闭总闸后立即生效。
+        if not db.agent_write_enabled_conn(conn):
             return ProposalResult(
                 403, "write_disabled",
                 "Agent 写能力未启用，不能执行提案", {"proposal_id": pid})

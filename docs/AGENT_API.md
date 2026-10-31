@@ -434,7 +434,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 ### 5.9 `GET /api/agent/tools/transactions/{tx_id}`
 
-单笔交易详情，scope：`transactions:read`。字段与 5.8 的单项一致，另在 `data` 顶层附带 `valuation_basis`；id 不存在返回 `404`。
+单笔交易详情，scope：`transactions:read`。字段与 5.8 的单项一致，另在 `data` 顶层附带 `valuation_basis` 与 `row_digest`（目标行内容 SHA-256，覆盖 `fund_code/action/date/amount/shares/nav/fee/channel/note/is_t1`，数值 `round(_,4)`；用于构造 `update_transaction`/`delete_transaction` 提案的 `expected_digest`）；id 不存在返回 `404`。
 
 ```bash
 curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
@@ -763,7 +763,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 ### 5.23 账本提案（写入需网页确认，默认关闭）
 
-本组工具只能提交**待审批提案**，不会直接写账本（可信直记见 §5.24）。scope：`transactions:propose`，同样受服务端写开关约束（见上文「写开关」说明）。首期仅开放 `operation_type="add_transaction"`；批准、拒绝、取消后的执行与状态迁移均由服务端完成，执行路径不联网。
+本组工具只能提交**待审批提案**，不会直接写账本（可信直记见 §5.24）。scope：`transactions:propose`，同样受服务端写开关约束（见上文「写开关」说明）。开放三种 `operation_type`：`add_transaction`（新增）、`update_transaction`（修改单笔，须带 `expected_digest` 行版本前置）、`delete_transaction`（删除单笔，须带 `expected_digest`）；批准、拒绝、取消后的执行与状态迁移均由服务端完成，执行路径不联网。修改/删除均整笔处理，不支持单腿编辑转换腿。
 
 | MCP 工具 | HTTP | 说明 |
 |---|---|---|
@@ -791,14 +791,55 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
 # {"tool":"create_operation_proposal","data":{"proposal_id":1,"status":"pending","expires_at":"...","summary":{...}}}
 ```
 
-- `params` 只接受 `add_transaction` 白名单字段：`fund_code`（6 位数字、需已在网页收录）、`action`（`buy`/`sell`/`dividend`/`reinvest`）、`date`（`YYYY-MM-DD`）、`amount`/`shares`/`nav`（买/卖至少两项可推导，卖出必须有份额，分红必须有金额）、`fee`、`channel`、`note`、`is_t1`。未知字段返回 `422 validation_error`。
-- 必须带 `Idempotency-Key`（16–128 安全 ASCII）。同键同参数返回原提案（`200` + `replayed=true`）；同键异参数/跨操作返回 `409 idempotency_conflict`，过期键返回 `409 idempotency_expired`。
+修改单笔（先取 `row_digest`，再带 `expected_digest` 提交完整字段）：
+
+```bash
+# 1) 取目标行哈希
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/transactions/12 | jq '.data.row_digest'
+
+# 2) 提交修改提案（amount 1000→2000，其余字段原样回填）
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: upd-1a2b3c4d-5e6f-7a8b-9c0d" \
+  -d '{
+    "operation_type": "update_transaction",
+    "params": {
+      "tx_id": 12,
+      "expected_digest": "<上一步返回的 row_digest>",
+      "fund_code": "005827", "action": "buy", "date": "2026-10-30",
+      "amount": 2000, "fee": 1, "channel": "支付宝", "is_t1": false, "note": ""
+    }
+  }' | jq
+# data.summary 含 tx_id / before / after / changed_fields（如 ["amount"]）
+```
+
+删除单笔（`reason` 可选）：
+
+```bash
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: del-9f8e7d6c-5b4a-3c2d" \
+  -d '{
+    "operation_type": "delete_transaction",
+    "params": {"tx_id": 12, "expected_digest": "<row_digest>", "reason": "误录"}
+  }' | jq
+# data.summary 含 tx_id / before / reason
+```
+
+- `add_transaction` 的 `params` 只接受白名单字段：`fund_code`（6 位数字、需已在网页收录）、`action`（`buy`/`sell`/`dividend`/`reinvest`）、`date`（`YYYY-MM-DD`）、`amount`/`shares`/`nav`（买/卖至少两项可推导，卖出必须有份额，分红必须有金额）、`fee`、`channel`、`note`、`is_t1`。未知字段返回 `422 validation_error`。
+- `update_transaction` 的 `params` 须带 `tx_id`（目标交易 id）与 `expected_digest`（目标行内容哈希，取自 `GET /api/agent/tools/transactions/{tx_id}` 响应的 `row_digest`），再加与 `add_transaction` 相同的**完整字段集**（非部分更新，缺省字段按规则补默认）。哈希覆盖 `fund_code/action/date/amount/shares/nav/fee/channel/note/is_t1`（数值 `round(_,4)`，`None` 保留）。目标行内容已变（`409 target_changed`）或已删（`404 target_not_found`）时创建被拒；审批期再行复核，已变/已删则 `conflict`（`target_changed`/`target_deleted`），不覆盖。改 `fund_code`/`channel` 时双侧份额校验，改基金给出 warning。
+- `delete_transaction` 的 `params` 为 `tx_id` + `expected_digest` + 可选 `reason`。审批期复核哈希，通过后删除目标行；删除买入若令后续卖出超份额则 `insufficient_shares_after_change`（不删），删除卖出恒放行。
+- **转换腿**（`conversion_id` 非空）的单腿修改/删除一律 `409 conversion_leg_isolated`，整对删除留待 F2。
+- 必须带 `Idempotency-Key`（16–128 安全 ASCII）。同键同参数返回原提案（`200` + `replayed=true`）；同键异参数/跨操作返回 `409 idempotency_conflict`，过期键返回 `409 idempotency_expired`。`tx_id`+`expected_digest`+完整字段集视作 update 的完整参数参与重放比对。
 - 提案默认 7 天过期；过期后不可批准，也不能取消。每个 token 最多同时保留 20 个 `pending` 提案，超限返回 `409 too_many_pending`。
 - 基金尚未收录返回 `409 fund_not_registered`，避免审批路径联网补数据。
 - 状态机：`pending → succeeded / failed / conflict / rejected / cancelled / expired`。`failed` 表示创建者 token 失效或失去 scope；`conflict` 表示基金/参数在审批时已不合法。环境级阻断（`auth_disabled`、`write_disabled`）返回 `403` 且提案保持 `pending`，修复后可重试。
 - 网页管理员在「待确认提案」页面批准后，服务端在同一 SQLite 事务内复核实例认证、写开关、创建者 token 与业务规则，写入交易并记录 `proposal_approved` 与 `add_transaction` 两条审计；并发审批只有一个能成功，重复审批返回 `409 not_pending`。
 - 网页审批端点仅接受网页登录身份：`GET /api/proposals/count`、`GET /api/proposals`、`GET /api/proposals/{id}`、`POST /api/proposals/{id}/approve`、`POST /api/proposals/{id}/reject`。Agent token 调用这些路径返回 `401`。
-- 错误码：`write_disabled`、`validation_error`、`fund_not_registered`、`too_many_pending`、`not_pending`、`expired`、`not_found`、`idempotency_conflict`、`idempotency_expired`。审计记录 `proposal_created`、`proposal_create_rejected`、`proposal_cancelled`、`proposal_expired`、`proposal_approved`、`proposal_rejected`、`proposal_failed`、`proposal_conflict`，只记 token 前缀与提案摘要。
+- 错误码：`write_disabled`、`validation_error`、`fund_not_registered`、`too_many_pending`、`not_pending`、`expired`、`not_found`、`target_changed`（目标行哈希不匹配，`409`）、`target_not_found`（目标行不存在，`404`）、`conversion_leg_isolated`（转换腿单腿修改/删除被拒，`409`）、`insufficient_shares_after_change`（审批执行期：修改/删除令后续卖出超份额，`conflict`）、`idempotency_conflict`、`idempotency_expired`。审计记录 `proposal_created`、`proposal_create_rejected`、`proposal_cancelled`、`proposal_expired`、`proposal_approved`、`proposal_rejected`、`proposal_failed`、`proposal_conflict`，只记 token 前缀与提案摘要（update/delete 摘要含 `tx_id`/`before`/`after`/`changed_fields`/`reason`）。
 - 创建/取消与自选写共用写总开关；提案不进入备份 ZIP，恢复备份时会清空未完成提案，避免旧提案指向已替换的数据。
 
 ### 5.24 可信单笔直记（写入，默认关闭）
@@ -897,3 +938,4 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 | 2026-10-28 | 新增只读定投回测工具 `backtest/dca`（`POST`，复用 `funds:read`）：数据准备与计算解耦，不写正式净值表；统一估值日与 XIRR 终值日，显式标注数据不足、部分覆盖与费率未知 |
 | 2026-10-30 | 新增 `transactions:propose` scope 与 4 个账本提案工具：Agent 只能提交待审批提案，管理员在网页批准后由服务端同事务写入账本并审计；首期仅开放 `add_transaction`，提案默认 7 天过期、幂等创建、按 token 隔离 |
 | 2026-10-31 | 新增 `transactions:create` scope 与 `record_transaction` 工具（F0 可信单笔直记）：限额内直接写入 buy/sell，预检异常降级为提案或稳定报错；新增 `transactions.source` 列与 3 个审计标签，备份兼容旧 v2 列变体 |
+| 2026-10-31 | F1：`create_operation_proposal` 新增 `update_transaction`/`delete_transaction` 两种 operation_type，携带 `expected_digest`（行内容 SHA-256）作目标行版本前置；转换腿单腿修改/删除被拒，份额连带在执行期阻断；`GET transactions/{tx_id}` 新增 `row_digest` 字段 |

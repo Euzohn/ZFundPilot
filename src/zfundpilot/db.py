@@ -849,21 +849,26 @@ def add_transaction(tx: Transaction) -> int:
         return insert_transaction(conn, tx)
 
 
-def update_transaction(tx: Transaction) -> None:
+def update_transaction_conn(conn: sqlite3.Connection, tx: Transaction) -> None:
+    """在调用方事务内更新流水；供提案审批路径复用，避免另开连接抢写锁。"""
     if tx.id is None:
         raise ValueError("update_transaction 需要 tx.id")
     tx.normalize()
+    conn.execute(
+        """
+        UPDATE transactions SET
+            fund_code=?, action=?, date=?, amount=?, shares=?, nav=?,
+            fee=?, channel=?, note=?, is_t1=?, conversion_id=?
+        WHERE id=?
+        """,
+        (tx.fund_code.strip(), tx.action, tx.date, tx.amount, tx.shares,
+         tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1), tx.conversion_id, tx.id),
+    )
+
+
+def update_transaction(tx: Transaction) -> None:
     with get_connection() as conn:
-        conn.execute(
-            """
-            UPDATE transactions SET
-                fund_code=?, action=?, date=?, amount=?, shares=?, nav=?,
-                fee=?, channel=?, note=?, is_t1=?, conversion_id=?
-            WHERE id=?
-            """,
-            (tx.fund_code.strip(), tx.action, tx.date, tx.amount, tx.shares,
-             tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1), tx.conversion_id, tx.id),
-        )
+        update_transaction_conn(conn, tx)
 
 
 def add_conversion(from_tx: Transaction, to_tx: Transaction) -> tuple[int, int]:
@@ -898,17 +903,22 @@ def add_conversion(from_tx: Transaction, to_tx: Transaction) -> tuple[int, int]:
         return int(cur_from.lastrowid), int(cur_to.lastrowid)
 
 
+def delete_transaction_conn(conn: sqlite3.Connection, tx_id: int) -> None:
+    """在调用方事务内删除流水；转换腿解关联逻辑与独立调用一致。"""
+    row = conn.execute(
+        "SELECT conversion_id FROM transactions WHERE id=?", (tx_id,)
+    ).fetchone()
+    if row and row[0]:
+        conn.execute(
+            "UPDATE transactions SET conversion_id='' WHERE conversion_id=? AND id!=?",
+            (row[0], tx_id),
+        )
+    conn.execute("DELETE FROM transactions WHERE id=?", (tx_id,))
+
+
 def delete_transaction(tx_id: int) -> None:
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT conversion_id FROM transactions WHERE id=?", (tx_id,)
-        ).fetchone()
-        if row and row[0]:
-            conn.execute(
-                "UPDATE transactions SET conversion_id='' WHERE conversion_id=? AND id!=?",
-                (row[0], tx_id),
-            )
-        conn.execute("DELETE FROM transactions WHERE id=?", (tx_id,))
+        delete_transaction_conn(conn, tx_id)
 
 
 def delete_all_transactions() -> None:
@@ -966,12 +976,19 @@ def get_transactions_desc() -> list[Transaction]:
     return [Transaction.from_row(r) for r in rows]
 
 
+def get_transaction_conn(
+    conn: sqlite3.Connection, tx_id: int,
+) -> sqlite3.Row | None:
+    """在调用方事务内按 id 返回原始行；不存在返回 None。"""
+    return conn.execute(
+        "SELECT * FROM transactions WHERE id=?", (tx_id,)
+    ).fetchone()
+
+
 def get_transaction(tx_id: int) -> Transaction | None:
     """按 id 返回单笔流水；不存在返回 None。"""
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM transactions WHERE id=?", (tx_id,)
-        ).fetchone()
+        row = get_transaction_conn(conn, tx_id)
     return Transaction.from_row(row) if row else None
 
 

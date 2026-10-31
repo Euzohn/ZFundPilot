@@ -241,6 +241,127 @@ def validate_add_transaction_params(params: object) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# F1：修改/删除提案的目标行摘要与参数校验
+# ---------------------------------------------------------------------------
+# 目标行摘要覆盖的业务字段；不含 id / conversion_id / source / created_at。
+_ROW_DIGEST_FIELDS = (
+    "fund_code", "action", "date", "amount", "shares", "nav",
+    "fee", "channel", "note", "is_t1",
+)
+
+
+def _norm_number(value: float | None) -> float | None:
+    """摘要用数值规范化：None 保持 None，否则 round(x, 4) 抵消浮点尾差。"""
+    if value is None:
+        return None
+    return round(float(value), 4)
+
+
+def transaction_row_digest(row: sqlite3.Row | Transaction | dict) -> str:
+    """对交易行的业务字段做规范 SHA-256 摘要，作为 update/delete 的版本前置条件。
+
+    与 ``params_digest`` 不同：``params_digest`` 摘要「提案想做什么」，
+    ``expected_digest`` 摘要「提案针对的那一行当时长什么样」。任何业务字段
+    变化都会改变摘要，从而触发执行期 conflict，避免覆盖他人改动。
+    """
+    if isinstance(row, Transaction):
+        payload = {
+            "fund_code": row.fund_code, "action": row.action,
+            "date": row.date, "amount": _norm_number(row.amount),
+            "shares": _norm_number(row.shares), "nav": _norm_number(row.nav),
+            "fee": _norm_number(row.fee), "channel": row.channel,
+            "note": row.note, "is_t1": bool(row.is_t1),
+        }
+    elif isinstance(row, dict):
+        payload = {
+            "fund_code": row.get("fund_code"), "action": row.get("action"),
+            "date": row.get("date"), "amount": _norm_number(row.get("amount")),
+            "shares": _norm_number(row.get("shares")),
+            "nav": _norm_number(row.get("nav")),
+            "fee": _norm_number(row.get("fee") or 0.0),
+            "channel": row.get("channel") or "",
+            "note": row.get("note") or "",
+            "is_t1": bool(row.get("is_t1", False)),
+        }
+    else:  # sqlite3.Row
+        payload = {
+            "fund_code": row["fund_code"], "action": row["action"],
+            "date": row["date"], "amount": _norm_number(row["amount"]),
+            "shares": _norm_number(row["shares"]),
+            "nav": _norm_number(row["nav"]),
+            "fee": _norm_number(row["fee"]),
+            "channel": row["channel"] or "",
+            "note": row["note"] or "",
+            "is_t1": bool(row["is_t1"]),
+        }
+    return hashlib.sha256(_canonical(payload).encode("utf-8")).hexdigest()
+
+
+_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+DELETE_REASON_MAX_LEN = 500
+
+
+def _validate_target_ref(params: dict) -> tuple[int, str]:
+    """校验并返回 (tx_id, expected_digest)；update/delete 共用。"""
+    tx_id = params.get("tx_id")
+    if isinstance(tx_id, bool) or not isinstance(tx_id, int) or tx_id <= 0:
+        raise TransactionValidationError("tx_id", "tx_id 必须是正整数")
+
+    expected_digest = params.get("expected_digest")
+    if not isinstance(expected_digest, str) or not _DIGEST_RE.fullmatch(
+            expected_digest.strip().lower()):
+        raise TransactionValidationError(
+            "expected_digest",
+            "expected_digest 必须是 64 位十六进制（通过 get_transaction 获取）")
+    return tx_id, expected_digest.strip().lower()
+
+
+def validate_update_transaction_params(params: object) -> dict[str, Any]:
+    """校验 ``update_transaction`` 参数，返回含 tx_id/expected_digest + 交易字段。
+
+    update 接受修改后的**完整**字段集（非 PATCH），与现有网页 ``TransactionCreate``
+    一致。目标行定位与版本前置条件由 tx_id + expected_digest 承载。
+    """
+    if not isinstance(params, dict):
+        raise TransactionValidationError("params", "params 必须是对象")
+    allowed = {
+        "tx_id", "expected_digest",
+        "fund_code", "action", "date", "amount", "shares", "nav",
+        "fee", "channel", "note", "is_t1",
+    }
+    unknown = set(params) - allowed
+    if unknown:
+        raise TransactionValidationError(
+            "params", f"包含不支持的参数：{', '.join(sorted(unknown))}")
+
+    tx_id, expected_digest = _validate_target_ref(params)
+
+    # 复用 add_transaction 的字段校验，确保两条路径口径一致。
+    tx_fields = validate_add_transaction_params(
+        {k: v for k, v in params.items() if k != "tx_id"
+         and k != "expected_digest"})
+
+    return {
+        "tx_id": tx_id, "expected_digest": expected_digest, **tx_fields,
+    }
+
+
+def validate_delete_transaction_params(params: object) -> dict[str, Any]:
+    """校验 ``delete_transaction`` 参数，返回含 tx_id/expected_digest/reason。"""
+    if not isinstance(params, dict):
+        raise TransactionValidationError("params", "params 必须是对象")
+    allowed = {"tx_id", "expected_digest", "reason"}
+    unknown = set(params) - allowed
+    if unknown:
+        raise TransactionValidationError(
+            "params", f"包含不支持的参数：{', '.join(sorted(unknown))}")
+
+    tx_id, expected_digest = _validate_target_ref(params)
+    reason = clean_text(params.get("reason"), "reason", DELETE_REASON_MAX_LEN)
+    return {"tx_id": tx_id, "expected_digest": expected_digest, "reason": reason}
+
+
 def validate_direct_params(params: object) -> dict[str, Any]:
     """直记专用校验：仅 buy/sell，且日期不得晚于今天。"""
     clean = validate_add_transaction_params(params)

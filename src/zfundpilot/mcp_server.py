@@ -343,6 +343,9 @@ async def get_transaction(
 ) -> dict[str, Any]:
     """Read one transaction by id, including derived NAV and conversion fields.
 
+    The response includes data.row_digest: pass it as expected_digest when
+    creating an update_transaction or delete_transaction proposal for this row.
+
     Args:
         tx_id: Transaction id.
     """
@@ -526,21 +529,40 @@ async def create_operation_proposal(
     This does NOT write the ledger. It only creates a pending proposal; the
     administrator must approve it on the Proposals page in the ZFundPilot web
     UI (top-level sidebar entry, not under Settings), and the server then
-    executes it. Currently only operation_type="add_transaction" is supported.
+    executes it.
+
+    Supported operation types:
+      - "add_transaction": add a transaction (buy/sell/dividend/reinvest).
+      - "update_transaction": modify one existing transaction. Requires the
+        target tx_id and its current row_digest (from get_transaction); the
+        server rejects the approval with a conflict if the row changed in the
+        meantime. Conversion legs cannot be modified individually.
+      - "delete_transaction": delete one existing transaction. Requires tx_id
+        and row_digest; conversion legs cannot be deleted individually.
 
     Args:
-        operation_type: Currently only "add_transaction".
+        operation_type: "add_transaction", "update_transaction", or
+            "delete_transaction".
         params: For add_transaction: fund_code, action (buy/sell/dividend/
             reinvest), date (YYYY-MM-DD), fee, channel, note, is_t1, and the
             amount/shares/nav combination required by the action: buy and
             reinvest need amount or shares; sell needs shares; dividend needs
             amount. nav may be omitted while awaiting T+1 confirmation.
+            For update_transaction: tx_id, expected_digest (the row_digest from
+            get_transaction), plus the full post-change field set (fund_code,
+            action, date, amount, shares, nav, fee, channel, note, is_t1) —
+            partial updates are not supported.
+            For delete_transaction: tx_id, expected_digest, and an optional
+            reason (max 500 chars).
         idempotency_key: Unique retry key (16-128 chars); same key+params
             returns the same proposal.
     """
     _validate_write_key(idempotency_key)
-    if operation_type != "add_transaction":
-        raise ToolError('operation_type must be "add_transaction".')
+    if operation_type not in (
+            "add_transaction", "update_transaction", "delete_transaction"):
+        raise ToolError(
+            'operation_type must be "add_transaction", "update_transaction", '
+            'or "delete_transaction".')
     if not isinstance(params, dict):
         raise ToolError("params must be an object.")
     return await _post(

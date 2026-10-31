@@ -434,7 +434,7 @@ Per transaction:
 
 ### 5.9 `GET /api/agent/tools/transactions/{tx_id}`
 
-Single transaction detail. Scope: `transactions:read`. Fields match one item from 5.8, plus a top-level `data.valuation_basis`; an unknown id returns `404`.
+Single transaction detail. Scope: `transactions:read`. Fields match one item from 5.8, plus top-level `data.valuation_basis` and `data.row_digest` (the target row's content SHA-256 covering `fund_code/action/date/amount/shares/nav/fee/channel/note/is_t1`, numbers `round(_,4)`; use it as `expected_digest` when building `update_transaction`/`delete_transaction` proposals); an unknown id returns `404`.
 
 ```bash
 curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
@@ -759,7 +759,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 ### 5.23 Ledger proposals (write, requires web approval; off by default)
 
-This group only submits **pending proposals** and never writes the ledger directly (for trusted direct write, see §5.24). Scope: `transactions:propose`, also gated by the server write switch (see the write-switch notes above). This phase supports only `operation_type="add_transaction"`. Approval, rejection, execution, and state transitions happen server-side on the web, and the execution path performs no network access.
+This group only submits **pending proposals** and never writes the ledger directly (for trusted direct write, see §5.24). Scope: `transactions:propose`, also gated by the server write switch (see the write-switch notes above). Three `operation_type` values are supported: `add_transaction` (new), `update_transaction` (modify a single row, must carry `expected_digest` row-version precondition), and `delete_transaction` (delete a single row, must carry `expected_digest`). Approval, rejection, execution, and state transitions happen server-side on the web, and the execution path performs no network access. Updates and deletes operate on the whole row; a conversion leg cannot be edited in isolation.
 
 | MCP tool | HTTP | Description |
 |---|---|---|
@@ -787,14 +787,55 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
 # {"tool":"create_operation_proposal","data":{"proposal_id":1,"status":"pending","expires_at":"...","summary":{...}}}
 ```
 
-- `params` accepts only the `add_transaction` whitelist: `fund_code` (six digits, must already be registered), `action` (`buy`/`sell`/`dividend`/`reinvest`), `date` (`YYYY-MM-DD`), `amount`/`shares`/`nav` (buy/sell need enough fields to derive the rest; sell requires shares; dividend requires an amount), `fee`, `channel`, `note`, `is_t1`. Unknown fields return `422 validation_error`.
-- Must send `Idempotency-Key` (16–128 safe ASCII chars). Same key and parameters replay the original proposal (`200` + `replayed=true`); same key with different parameters/operation returns `409 idempotency_conflict`; expired keys return `409 idempotency_expired`.
+Modify a single row (fetch `row_digest` first, then submit the full field set with `expected_digest`):
+
+```bash
+# 1) Fetch the target row digest
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  $ZFUNDPILOT_BASE_URL/api/agent/tools/transactions/12 | jq '.data.row_digest'
+
+# 2) Submit an update proposal (amount 1000->2000; other fields echoed in full)
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: upd-1a2b3c4d-5e6f-7a8b-9c0d" \
+  -d '{
+    "operation_type": "update_transaction",
+    "params": {
+      "tx_id": 12,
+      "expected_digest": "<row_digest from step 1>",
+      "fund_code": "005827", "action": "buy", "date": "2026-10-30",
+      "amount": 2000, "fee": 1, "channel": "Alipay", "is_t1": false, "note": ""
+    }
+  }' | jq
+# data.summary includes tx_id / before / after / changed_fields (e.g. ["amount"])
+```
+
+Delete a single row (`reason` is optional):
+
+```bash
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: del-9f8e7d6c-5b4a-3c2d" \
+  -d '{
+    "operation_type": "delete_transaction",
+    "params": {"tx_id": 12, "expected_digest": "<row_digest>", "reason": "recorded by mistake"}
+  }' | jq
+# data.summary includes tx_id / before / reason
+```
+
+- `add_transaction` `params` accept only the whitelist: `fund_code` (six digits, must already be registered), `action` (`buy`/`sell`/`dividend`/`reinvest`), `date` (`YYYY-MM-DD`), `amount`/`shares`/`nav` (buy/sell need enough fields to derive the rest; sell requires shares; dividend requires an amount), `fee`, `channel`, `note`, `is_t1`. Unknown fields return `422 validation_error`.
+- `update_transaction` `params` require `tx_id` (target transaction id) and `expected_digest` (the target row's content hash, taken from `GET /api/agent/tools/transactions/{tx_id}` as `row_digest`), plus the **full field set** identical to `add_transaction` (not a partial patch; omitted fields take defaults). The hash covers `fund_code/action/date/amount/shares/nav/fee/channel/note/is_t1` (numbers `round(_,4)`, `None` preserved). If the target changed (`409 target_changed`) or was deleted (`404 target_not_found`) the proposal is rejected at creation; it is re-checked at approval and, if changed/deleted, resolves to `conflict` (`target_changed`/`target_deleted`) without overwriting. Changing `fund_code`/`channel` validates shares on both sides; changing the fund adds a warning.
+- `delete_transaction` `params` are `tx_id` + `expected_digest` + optional `reason`. At approval the hash is re-checked and the row deleted; deleting a buy that would leave later sells over-shares returns `insufficient_shares_after_change` (not deleted), while deleting a sell is always allowed.
+- **Conversion legs** (`conversion_id` set) cannot be updated/deleted in isolation: `409 conversion_leg_isolated`. Whole-pair deletion is deferred to F2.
+- Must send `Idempotency-Key` (16–128 safe ASCII chars). Same key and parameters replay the original proposal (`200` + `replayed=true`); same key with different parameters/operation returns `409 idempotency_conflict`; expired keys return `409 idempotency_expired`. For updates, `tx_id` + `expected_digest` + the full field set count as the complete parameter set for replay comparison.
 - Proposals expire after 7 days and can then no longer be approved or cancelled. Each token may keep at most 20 `pending` proposals; beyond that returns `409 too_many_pending`.
 - A fund that is not yet registered returns `409 fund_not_registered`, so the approval path never fetches data over the network.
 - State machine: `pending → succeeded / failed / conflict / rejected / cancelled / expired`. `failed` means the creator token was revoked, expired, or lost the scope; `conflict` means the fund/parameters became invalid at approval time. Environment-level blocks (`auth_disabled`, `write_disabled`) return `403` and leave the proposal `pending` so it can be retried after the fix.
 - After a web administrator approves, the server re-checks instance authentication, the write switch, the creator token, and business rules in the same SQLite transaction, writes the transaction, and records both `proposal_approved` and `add_transaction` audits. Concurrent approvals succeed only once; a repeat returns `409 not_pending`.
 - Web approval endpoints accept web login identities only: `GET /api/proposals/count`, `GET /api/proposals`, `GET /api/proposals/{id}`, `POST /api/proposals/{id}/approve`, `POST /api/proposals/{id}/reject`. An Agent token calling these returns `401`.
-- Error codes: `write_disabled`, `validation_error`, `fund_not_registered`, `too_many_pending`, `not_pending`, `expired`, `not_found`, `idempotency_conflict`, `idempotency_expired`. Audits `proposal_created`, `proposal_create_rejected`, `proposal_cancelled`, `proposal_expired`, `proposal_approved`, `proposal_rejected`, `proposal_failed`, and `proposal_conflict` record only the token prefix and proposal summary.
+- Error codes: `write_disabled`, `validation_error`, `fund_not_registered`, `too_many_pending`, `not_pending`, `expired`, `not_found`, `target_changed` (row hash mismatch, `409`), `target_not_found` (target row missing, `404`), `conversion_leg_isolated` (single-leg edit/delete of a conversion leg, `409`), `insufficient_shares_after_change` (at approval: update/delete would leave later sells over-shares, `conflict`), `idempotency_conflict`, `idempotency_expired`. Audits `proposal_created`, `proposal_create_rejected`, `proposal_cancelled`, `proposal_expired`, `proposal_approved`, `proposal_rejected`, `proposal_failed`, and `proposal_conflict` record only the token prefix and proposal summary (update/delete summaries include `tx_id`/`before`/`after`/`changed_fields`/`reason`).
 - Creation/cancellation share the global write switch with watchlist writes. Proposals are not included in backup archives; restoring a backup clears stale proposals so they cannot point at replaced ledger data.
 
 ### 5.24 Trusted single direct write (write, off by default)
@@ -893,3 +934,4 @@ Write tools require an `idempotency_key` argument, mapped to the HTTP `Idempoten
 | 2026-10-28 | Added the read-only DCA backtest tool `backtest/dca` (`POST`, reusing `funds:read`): separated data preparation from calculation, never writes formal NAV data; unified valuation/XIRR terminal dates and explicitly flags insufficient data, partial coverage, and unknown fees |
 | 2026-10-30 | Added the `transactions:propose` scope and four ledger proposal tools: agents can only submit pending proposals; after web administrator approval the server writes the ledger and audits in one transaction. This phase supports only `add_transaction`; proposals expire after 7 days, are idempotent, and are isolated per token |
 | 2026-10-31 | Added the `transactions:create` scope and the `record_transaction` tool (F0 trusted single direct write): within quotas it writes a single buy/sell directly and downgrades to a proposal or rejects on precheck anomalies. Added the `transactions.source` column and three audit labels; backups remain compatible with the legacy v2 column variant |
+| 2026-10-31 | F1: `create_operation_proposal` adds `update_transaction`/`delete_transaction` operation types carrying `expected_digest` (row content SHA-256) as a row-version precondition; single-leg edits/deletes of conversion legs are rejected and share cascades block at execution time; `GET transactions/{tx_id}` adds `row_digest` |

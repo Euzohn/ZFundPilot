@@ -1479,6 +1479,8 @@ def agent_get_transaction(
     fund = db.get_fund(tx.fund_code)
     data = _agent_transaction_item(tx, fund.fund_name if fund else None)
     data["valuation_basis"] = "latest_formal_nav"
+    # F1：当前行内容摘要，供 update/delete 提案回填 expected_digest。
+    data["row_digest"] = transaction_service.transaction_row_digest(tx)
     return _agent_tool_response("get_transaction", data)
 
 

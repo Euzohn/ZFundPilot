@@ -785,6 +785,19 @@ export type ProposalStatus =
   | "cancelled"
   | "expired"
 
+export interface TransactionSnapshot {
+  fund_code: string
+  action: string
+  date: string
+  amount: number | null
+  shares: number | null
+  nav: number | null
+  fee: number | null
+  channel: string
+  is_t1: boolean
+  note: string
+}
+
 export interface ProposalSummary {
   operation_type: string
   operation_label: string
@@ -802,6 +815,13 @@ export interface ProposalSummary {
   is_t1: boolean
   note: string
   warnings: string[]
+  // F1 update/delete: 目标行快照与修改后值（仅 update_transaction /
+  // delete_transaction 提案携带）。
+  tx_id?: number
+  before?: TransactionSnapshot
+  after?: TransactionSnapshot
+  changed_fields?: string[]
+  reason?: string
 }
 
 export interface ProposalExecution {

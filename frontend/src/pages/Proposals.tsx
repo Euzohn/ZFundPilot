@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { Fragment, useCallback, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
@@ -6,6 +6,7 @@ import type {
   OperationProposal,
   ProposalActionResult,
   ProposalStatus,
+  ProposalSummary,
 } from "@/api/types"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -382,6 +383,9 @@ export default function Proposals() {
                   </DetailRow>
                 </dl>
 
+                {/* F1：update/delete 的前后差异展示 */}
+                <DiffSection summary={detail.summary} />
+
                 {(detail.reviewed_by || detail.reviewed_at) && (
                   <div>
                     <p className="mb-1.5 text-xs font-medium text-muted-foreground">
@@ -533,4 +537,82 @@ function DetailRow({
       <dd className="mt-0.5">{children}</dd>
     </div>
   )
+}
+
+const DIFF_FIELD_LABELS: Record<string, (t: { proposals: Record<string, string> }) => string> = {
+  fund_code: (t) => t.proposals.colFund,
+  action: (t) => t.proposals.colAction,
+  date: (t) => t.proposals.colDate,
+  amount: (t) => t.proposals.colAmount,
+  shares: (t) => t.proposals.shares,
+  nav: (t) => t.proposals.nav,
+  fee: (t) => t.proposals.fee,
+  channel: (t) => t.proposals.channel,
+  is_t1: (t) => t.proposals.isT1,
+  note: (t) => t.proposals.note,
+}
+
+function formatField(field: string, value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—"
+  if (field === "is_t1") return value ? "是/Yes" : "否/No"
+  if (typeof value === "number") {
+    if (field === "amount" || field === "fee") return money(value)
+    if (field === "nav" || field === "shares") return navStr(value)
+    return String(value)
+  }
+  return String(value)
+}
+
+function DiffSection({ summary }: { summary: ProposalSummary }) {
+  const { t } = useLang()
+  if (summary.operation_type === "update_transaction") {
+    const before = summary.before
+    const after = summary.after
+    const changed = summary.changed_fields ?? []
+    if (!before || !after || changed.length === 0) return null
+    return (
+      <div className="rounded-md border border-border p-3">
+        <p className="mb-2 text-xs font-medium text-muted-foreground">
+          {t.proposals.changedFields}：{changed.join("、")}
+        </p>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+          <span className="font-medium text-muted-foreground">{t.proposals.diffBefore}</span>
+          <span className="font-medium text-muted-foreground">{t.proposals.diffAfter}</span>
+          {changed.map((field) => {
+            const beforeVal = (before as unknown as Record<string, unknown>)[field]
+            const afterVal = (after as unknown as Record<string, unknown>)[field]
+            const label = DIFF_FIELD_LABELS[field]?.(t) ?? field
+            return (
+              <Fragment key={field}>
+                <div>
+                  <span className="text-muted-foreground">{label}：</span>
+                  <span className="line-through text-muted-foreground">{formatField(field, beforeVal)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">{label}：</span>
+                  <span className="font-medium">{formatField(field, afterVal)}</span>
+                </div>
+              </Fragment>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+  if (summary.operation_type === "delete_transaction" && summary.before) {
+    return (
+      <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3">
+        <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          {t.proposals.diffWillDelete} · {t.proposals.txId} #{summary.tx_id}
+        </p>
+        {summary.reason && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t.proposals.deleteReason}：{summary.reason}
+          </p>
+        )}
+      </div>
+    )
+  }
+  return null
 }

@@ -153,7 +153,7 @@ cd frontend && npm install && npm run dev
 - **写开关设置页管理** — Agent 写能力总开关默认关闭，日常在网页「设置 → Agent 接入 → Agent 写能力」开启/关闭（需输入当前登录密码确认，状态持久化到数据库、重启保持）；环境变量 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 仅保留两种语义：显式 `0` = 紧急刹车（强制关闭且设置页锁死）、`1` = 数据库无记录时的首次启动默认值。无密码模式禁止开启写能力
 - **可选自选写入** — 3 个自选维护工具（新增/更新/删除）使用独立的 `watchlist:write`，默认不勾选，并受服务端写开关约束；只改自选关系与备注/分组，不创建交易或计划；幂等键、revision 冲突保护、删除前值恢复与业务结果审计同事务提交
 - **任务化数据刷新** — `start_data_refresh` / `get_job_status`（`data:refresh`）启动并轮询**仅净值/元数据**刷新任务；持久化 `refresh_jobs`、服务重启标记 interrupted、同幂等键返回原 job_id，与网页/调度器共用互斥锁；**不**回填交易净值、**不**执行定投，这是与网页刷新端点的关键区别
-- **账本提案与网页确认** — `create_operation_proposal` 等 4 个工具（`transactions:propose`）只提交待审批提案，**不直接写账本**；管理员在网页确认后，服务端在同一事务内复核 token/写开关/业务规则、写入交易并记录审计。首期开放新增交易，提案 7 天过期、幂等创建、按 token 隔离，恢复备份时清空旧提案
+- **账本提案与网页确认** — `create_operation_proposal` 等 4 个工具（`transactions:propose`）只提交待审批提案，**不直接写账本**；管理员在网页确认后，服务端在同一事务内复核 token/写开关/业务规则、写入交易并记录审计。支持新增交易、单笔修改与单笔删除：修改/删除携带 `expected_digest`（目标行内容 SHA-256）作版本前置，内容已变或已删则冲突不覆盖；转换腿禁止单腿修改/删除，份额连带的超卖在执行期阻断；提案 7 天过期、幂等创建、按 token 隔离，恢复备份时清空旧提案
 - **可信单笔直记** — `record_transaction` 工具（`transactions:create`，首期仅普通买入/卖出）让用户明确陈述"外部已完成"的单笔交易由可信 Token 在限额内直接写入账本，无需逐笔跳转网页审批；服务在单事务内执行收录/额度/重复/份额/上限预检，软失败且 Token 同时持有 `transactions:propose` 时降级为待审批提案（复用同主体同参 pending 提案），否则返回 409 稳定错误码，硬失败（未收录/日额度用尽）永不降级；响应 `execution_mode` 显式区分 `direct`/`proposal`，重放永不升级。直记交易 `source="agent"`，流水页显示「Agent」徽标；额度（单笔 50 万 / 日 10 笔 / 日 100 万）可 env 覆盖
 - **MCP 适配层** — 可选 stdio 桥接（`python -m zfundpilot.mcp_server`），让 Claude Desktop / Cursor 在 scope 边界内读取组合、维护自选、提交待审批提案或可信直记单笔交易；鉴权、scope 与限流完全复用 HTTP 入口，不访问数据库、不另开鉴权后门
 - **可审计边界** — 鉴权成功/失败、限流、签发与撤销均写审计（仅记 token 前缀），按 token + 端点限流，远程访问要求 HTTPS。端点、示例与配置见 [docs/AGENT_API.md](docs/AGENT_API.md)

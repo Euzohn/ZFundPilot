@@ -94,7 +94,7 @@ class TestCreate:
 
     def test_rejects_unknown_operation(self, temp_db):
         with pytest.raises(svc.ProposalValidationError):
-            _create(_principal(), operation="delete_transaction")
+            _create(_principal(), operation="transfer_transaction")
 
     @pytest.mark.parametrize("overrides", [
         {"fund_code": "abc"},

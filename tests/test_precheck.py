@@ -46,6 +46,9 @@ def client(temp_db, monkeypatch):
     monkeypatch.setattr(config, "AUTH_SECRET", "test-secret")
     monkeypatch.setattr(config, "AUTH_USERNAME", "admin")
     monkeypatch.setattr(config, "AGENT_WRITE_ENABLED", True)
+    # 清空两套限流日志，避免同类用例密集调用 precheck 端点跨用例累积触发 429
+    monkeypatch.setattr(api, "_REQ_LOGS", {})
+    monkeypatch.setattr(api, "_AGENT_REQ_LOGS", {})
     return TestClient(api.app)
 
 

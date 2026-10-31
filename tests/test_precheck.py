@@ -224,7 +224,8 @@ class TestPrecheckTransactionsCsv:
         assert len(data["parse_errors"]) >= 1
 
     def test_csv_too_large(self, client):
-        big = "fund_code,action,date\n" + "005827,buy,2026-01-02\n" * 200000
+        # 每行 22 字节，需超过 5 MB（_MAX_CSV_BYTES=5_242_880）
+        big = "fund_code,action,date\n" + "005827,buy,2026-01-02\n" * 260000
         r = _precheck_tx(client, {"format": "csv", "csv_text": big})
         assert r.status_code == 422
         assert r.json()["detail"]["code"] == "csv_too_large"

@@ -759,7 +759,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 ### 5.23 Ledger proposals (write, requires web approval; off by default)
 
-Agents can only submit **pending proposals**; they never write the ledger directly. Scope: `transactions:propose`, also gated by the server write switch (see the write-switch notes above). This phase supports only `operation_type="add_transaction"`. Approval, rejection, execution, and state transitions happen server-side on the web, and the execution path performs no network access.
+This group only submits **pending proposals** and never writes the ledger directly (for trusted direct write, see §5.24). Scope: `transactions:propose`, also gated by the server write switch (see the write-switch notes above). This phase supports only `operation_type="add_transaction"`. Approval, rejection, execution, and state transitions happen server-side on the web, and the execution path performs no network access.
 
 | MCP tool | HTTP | Description |
 |---|---|---|
@@ -875,7 +875,7 @@ Write tools require an `idempotency_key` argument, mapped to the HTTP `Idempoten
 - **Revocation**: Revoke from Settings at any time; it takes effect immediately. Issue one token per agent for easier tracing and cleanup.
 - **Audit**: Issuance, revocation, auth success/failure, and rate limiting are audited. Only token prefixes are recorded — never plaintext or full responses.
 - **Network**: Remote access must go through an HTTPS reverse proxy; do not expose the port directly. Revoke and reissue if a token leaks.
-- **Scope**: Read scopes cover portfolio, portfolio curve, benchmark, risk, industry exposure, funds, data status, transactions, watchlist, alerts, and auto-invest plans. Write scopes are limited to watchlist maintenance, task-based data refresh, and ledger proposals. Proposals require web administrator approval; Agent tokens cannot write the ledger directly, and settings/import/export/fund-moving endpoints are never available to them.
+- **Scope**: Read scopes cover portfolio, portfolio curve, benchmark, risk, industry exposure, funds, data status, transactions, watchlist, alerts, and auto-invest plans. Write scopes are limited to watchlist maintenance, task-based data refresh, ledger proposals, and trusted single-transaction direct write. Proposals require web administrator approval; trusted direct write requires an explicitly issued `transactions:create` and only records ordinary buys/sells directly within per-transaction/daily limits, downgrading to a proposal or rejecting on precheck anomalies, and cannot update/delete/convert or touch auto-invest. Settings/import/export/fund-moving endpoints are never available to Agent tokens.
 
 ---
 

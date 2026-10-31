@@ -73,6 +73,8 @@
 | `channel` | TEXT | DEFAULT '' | 购买渠道（支付宝/理财通/天天基金等） |
 | `note` | TEXT | DEFAULT '' | 备注 |
 | `is_t1` | INTEGER | DEFAULT 0 | T+1 待确认标记（1=T+1，净值用 date+1 回填） |
+| `conversion_id` | TEXT | DEFAULT '' | 基金转换链接 ID（同一转换的卖出/买入两腿共享） |
+| `source` | TEXT | DEFAULT '' | 来源标识：`agent` = Agent 可信单笔直记；空串 = 网页/CSV/提案审批 |
 | `created_at` | TEXT | DEFAULT datetime('now','localtime') | 创建时间 |
 
 ### 金额与手续费约定
@@ -342,7 +344,9 @@
 
 ## 13. operation_proposals — 账本操作提案
 
-Agent 只能提交**待审批提案**，不能直接写 `transactions`。网页管理员在「待确认提案」页面批准后，服务端在同一 SQLite 事务内复核实例认证、写总开关、创建者 token/scope 与业务规则，写入交易并记录审计。首期仅支持 `add_transaction`。
+Agent 默认只能提交**待审批提案**。网页管理员在「待确认提案」页面批准后，服务端在同一 SQLite 事务内复核实例认证、写总开关、创建者 token/scope 与业务规则，写入交易并记录审计。首期仅支持 `add_transaction`。
+
+例外是**可信单笔直记（F0）**：持有 `transactions:create` 的 token 可在单笔/每日额度内直接写入 `transactions`（仅 `buy` / `sell`），写入行 `source='agent'`；预检不通过时若同时具备 `transactions:propose`，则降级为待审批提案。详见 `docs/AGENT_API.md` §5.24。
 
 | 字段 | 类型 | 约束 | 说明 |
 |---|---|---|---|
@@ -459,6 +463,8 @@ Agent 访问令牌元数据。服务端只存 SHA-256 摘要，明文仅在签�
 - `normalize()`: 根据已知字段补全 amount/shares/nav，按 action 处理手续费
 - `is_valid()`: 校验交易合法性（方向合法、必要字段非空）
 
+`source` 字段标记来源：`agent` 表示由 Agent 可信直记写入，空串表示网页/CSV/提案审批等其它路径；该字段不参与任何收益计算。
+
 ### Position
 
 **不对应数据库表**，由 `analysis.calculate_positions()` 从 transactions 流水汇总计算。
@@ -517,6 +523,15 @@ Agent 访问令牌元数据。服务端只存 SHA-256 摘要，明文仅在签�
 3. **`_migrate_relax_transactions_schema()`**: 重建 transactions 表，移除 `CHECK(action IN ('buy','sell'))` 约束和 `NOT NULL` 约束，支持 dividend/reinvest 和待确认交易
 4. **`_migrate_legacy_holdings()`**: 旧版 `holdings` 表数据迁移为一条买入流水
 5. **`_migrate_tp_sl()`**: 为 `dividend_alerts` 补充 `alert_type`/`triggered_return`/`threshold` 列，新建 `tp_sl_alert_states` 表
+6. **`_migrate_dividend_alerts_unique()`**: 清理重复分红提醒并补 `UNIQUE(fund_code, ex_date, alert_type)`
+7. **`_migrate_auto_invest_plans_check()`**: 为 `auto_invest_plans` 补 `CHECK(amount > 0)`
+8. **`_migrate_nav_history_check()`**: 为 `nav_history` 补 `CHECK(nav > 0)`
+9. **`_migrate_add_indexes()`**: 补充缺失索引、删除冗余索引
+10. **`_migrate_add_conversion_id()`**: 为 `transactions` 补 `conversion_id`（基金转换链接 ID）
+11. **`_migrate_add_purchase_status()`**: 为 `funds` 补申购状态字段
+12. **`_migrate_add_risk_level()`**: 为 `funds` 补 `risk_level`
+13. **`_migrate_add_transaction_source()`**: 为 `transactions` 补 `source`（可信直记写 `agent`，其余空串）
+14. **`_migrate_watchlist_revision()`**: 为 `watchlist` 补 `revision` 并回填版本 1
 
 > `index_history` 表通过 `init_db()` 中的 `CREATE TABLE IF NOT EXISTS` 创建，无需单独迁移函数（新表，无历史数据兼容问题）。
 

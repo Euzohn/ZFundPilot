@@ -30,6 +30,9 @@ BUY_PARAMS = {
 def temp_db(monkeypatch):
     with TemporaryDirectory() as d:
         monkeypatch.setattr(config, "DB_PATH", str(Path(d) / "test.db"))
+        # 限流状态是进程级全局，且临时库让每个用例的 token id 都从 1 开始；
+        # 不清空会让所有用例共用 "1:POST ..." 桶并提前触发路由限流。
+        monkeypatch.setattr(api, "_AGENT_REQ_LOGS", {})
         db.init_db()
         db.upsert_fund(Fund("005827", "易方达蓝筹精选", "混合型", "消费"))
         clear_analysis_cache()

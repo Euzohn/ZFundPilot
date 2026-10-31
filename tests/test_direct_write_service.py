@@ -230,7 +230,8 @@ class TestPrechecks:
         assert result.http_status == 201
         assert len(db.get_transactions_desc()) == 2
 
-    def test_duplicate_matches_pending_proposal(self, temp_db):
+    def test_duplicate_matches_other_pending_proposal_hides_id(self, temp_db):
+        # 他人主体创建的待审提案：命中时只判重复，不返回其 proposal_id
         proposer = _principal(
             agent_tokens.SCOPE_TRANSACTIONS_PROPOSE, name="proposer")
         proposals.create_proposal(
@@ -242,7 +243,7 @@ class TestPrechecks:
 
         assert result.http_status == 409
         assert result.code == "duplicate_candidate"
-        assert result.data["proposal_id"] > 0
+        assert "proposal_id" not in result.data
 
     def test_insufficient_shares_without_propose_is_409(self, temp_db):
         db.add_transaction(Transaction(

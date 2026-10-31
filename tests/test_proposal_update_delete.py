@@ -228,10 +228,11 @@ class TestIdempotency:
 
     def test_same_key_different_params_conflicts(self, temp_db):
         tx_id = _add_tx()
-        _create_update(_principal(), tx_id=tx_id, digest=_digest_of(tx_id),
+        principal = _principal()
+        _create_update(principal, tx_id=tx_id, digest=_digest_of(tx_id),
                        key=KEY_A)
         result = _create_update(
-            _principal(), tx_id=tx_id, digest=_digest_of(tx_id),
+            principal, tx_id=tx_id, digest=_digest_of(tx_id),
             params={**BUY_PARAMS, "amount": 2000.0}, key=KEY_A)
         assert result.http_status == 409
         assert result.code == "idempotency_conflict"

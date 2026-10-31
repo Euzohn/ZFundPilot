@@ -1028,7 +1028,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 - **撤销**：设置页可随时撤销；撤销立即生效。建议为每个 Agent 单独签发，便于定位和回收。
 - **审计**：签发、撤销、鉴权成功/失败、限流都会写审计日志，只记录 token 前缀，不记录明文或完整响应。
 - **网络**：远程访问必须经 HTTPS 反向代理；不要把端口直接暴露到公网。token 泄漏时先撤销再重新签发。
-- **范围**：只读 scope 覆盖组合、组合曲线、基准、风险、行业敞口、基金、数据状态、交易流水、自选、提醒与定投计划；写 scope 仅开放自选维护、任务化数据刷新、账本提案与可信单笔直记。账本提案必须经网页管理员确认；可信直记需显式签发 `transactions:create`，仅在单笔/每日额度内直接写入普通买入/卖出，预检异常时降级为提案或拒绝，不能修改/删除/转换/定投；设置、导入导出与资金划转接口不会开放给 Agent token。
+- **范围**：只读 scope 覆盖组合、组合曲线、基准、风险、行业敞口、基金、数据状态、交易流水、自选、提醒与定投计划；写 scope 仅开放自选维护、任务化数据刷新、账本提案与可信单笔直记。账本提案必须经网页管理员确认；可信直记需显式签发 `transactions:create`，仅在单笔/每日额度内直接写入普通买入/卖出，预检异常时降级为提案或拒绝，不能修改/删除/转换/定投；`transactions:propose` 另含两个只读预检工具（CSV/条目交易预检与持仓对账预检），受写总闸约束、不写账本，仅返回报告供确认后再提交提案。设置、导入导出与资金划转接口不会开放给 Agent token。
 
 ---
 
@@ -1048,3 +1048,4 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 | 2026-10-31 | 新增 `transactions:create` scope 与 `record_transaction` 工具（F0 可信单笔直记）：限额内直接写入 buy/sell，预检异常降级为提案或稳定报错；新增 `transactions.source` 列与 3 个审计标签，备份兼容旧 v2 列变体 |
 | 2026-10-31 | F1：`create_operation_proposal` 新增 `update_transaction`/`delete_transaction` 两种 operation_type，携带 `expected_digest`（行内容 SHA-256）作目标行版本前置；转换腿单腿修改/删除被拒，份额连带在执行期阻断；`GET transactions/{tx_id}` 新增 `row_digest` 字段 |
 | 2026-10-31 | F2：新增 `add_conversion`/`delete_conversion` 提案（转换双腿原子写入；按 `conversion_id` 整对删除并校验两腿 `expected_digest`），`add_transaction` 支持可选 `dividend_alert_id` 原子关联分红提醒；均复用 `transactions:propose`，新增对应错误码与审计标签 |
+| 2026-11-01 | F3：新增 `precheck_transactions`/`precheck_reconciliation` 两个只读预检工具（复用 `transactions:propose`，受写总闸约束、限流 10 次/分钟）：交易预检支持 CSV 文本或条目数组，逐条做基金识别（查账本 `funds` 表）、字段校验与重复检测；对账预检先做基金识别 + `shares` 校验，合法条目复用 `reconcile_holdings` 生成差额与建议交易。均不写账本、不联网、不创建提案 |

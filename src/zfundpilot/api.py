@@ -756,6 +756,9 @@ _AGENT_ROUTE_RATE_MAX: dict[str, int] = {
     "POST /api/agent/tools/refresh": 10,
     # 可信单笔直记：独立桶，防止与同路径的流水读取共用额度。
     "POST /api/agent/tools/transactions": 10,
+    # 预检虽只读，但受写总闸约束且为写流程前置，独立桶 10 次/分钟。
+    "POST /api/agent/tools/precheck/transactions": 10,
+    "POST /api/agent/tools/precheck/reconciliation": 10,
 }
 
 

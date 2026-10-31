@@ -594,7 +594,7 @@ const en: typeof zh = {
     agentTokenScopePlans: "Auto-invest plans read",
     agentTokenScopeWatchlistWrite: "Watchlist maintenance (write)",
     agentTokenScopeDataRefresh: "Data refresh (write)",
-    agentTokenScopeTransactionsPropose: "Transaction proposals (web approval)",
+    agentTokenScopeTransactionsPropose: "Transaction proposals: add/update/delete (web approval)",
     agentTokenScopeTransactionsCreate: "Trusted single transaction (direct write)",
     agentTokenWriteHint: "Write access changes real watchlist or NAV/metadata data, or creates ledger proposals. Proposals still require web administrator approval before anything is written. Enable only when needed and after the server write switch is on.",
     agentTokenCreateRiskHint: "⚠️ Holders of this token can write transactions directly to the ledger within the configured limits, without per-transaction human approval. Grant it only to fully trusted callers; for per-transaction review, grant Transaction proposals instead and leave this unchecked.",

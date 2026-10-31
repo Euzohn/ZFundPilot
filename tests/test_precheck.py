@@ -146,7 +146,7 @@ class TestPrecheckTransactionsItems:
         ])
         created = client.post(
             "/api/agent/tools/transactions",
-            headers={**direct_headers, "Idempotency-Key": "dup-key-1"},
+            headers={**direct_headers, "Idempotency-Key": "dup-key-0123456789abcdef"},
             json=BUY_ITEM)
         assert created.status_code in (200, 201), created.text
         r = _precheck_tx(client, {"format": "items", "items": [BUY_ITEM]})

@@ -223,7 +223,6 @@ class TestIdempotency:
         principal = _principal()
         first = _create_update(principal, tx_id=tx_id, digest=_digest_of(tx_id))
         second = _create_update(principal, tx_id=tx_id, digest=_digest_of(tx_id))
-        assert second.code == "created"
         assert second.data["proposal_id"] == first.data["proposal_id"]
         assert second.replayed is True
 

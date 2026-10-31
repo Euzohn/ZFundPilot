@@ -71,6 +71,7 @@ def test_tools_registered():
         "list_operation_proposals",
         "get_operation_proposal",
         "cancel_operation_proposal",
+        "record_transaction",
     }
 
 

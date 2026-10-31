@@ -140,10 +140,15 @@ class TestPrecheckTransactionsItems:
 
     def test_duplicate_in_ledger(self, client):
         # 先直接记一笔，再预检同样的条目
-        client.post(
+        direct_headers = _agent_headers([
+            agent_tokens.SCOPE_TRANSACTIONS_CREATE,
+            agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+        ])
+        created = client.post(
             "/api/agent/tools/transactions",
-            headers={**_propose_headers(), "Idempotency-Key": "dup-key-1"},
-            json={**BUY_ITEM, "action": "buy"})
+            headers={**direct_headers, "Idempotency-Key": "dup-key-1"},
+            json=BUY_ITEM)
+        assert created.status_code in (200, 201), created.text
         r = _precheck_tx(client, {"format": "items", "items": [BUY_ITEM]})
         data = r.json()["data"]
         assert data["duplicate"] == 1

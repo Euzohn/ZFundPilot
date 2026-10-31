@@ -798,6 +798,17 @@ export interface TransactionSnapshot {
   note: string
 }
 
+export interface ConversionLeg {
+  fund_code: string
+  fund_name?: string
+  action: string
+  action_label?: string
+  amount?: number | null
+  shares?: number | null
+  nav?: number | null
+  fee?: number | null
+}
+
 export interface ProposalSummary {
   operation_type: string
   operation_label: string
@@ -822,6 +833,12 @@ export interface ProposalSummary {
   after?: TransactionSnapshot
   changed_fields?: string[]
   reason?: string
+  // F2 转换提案：两腿明细（add_conversion / delete_conversion 携带）。
+  conversion?: {
+    from: ConversionLeg
+    to: ConversionLeg
+  }
+  conversion_id?: string
 }
 
 export interface ProposalExecution {

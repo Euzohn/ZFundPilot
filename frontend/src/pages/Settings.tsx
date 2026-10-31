@@ -611,6 +611,8 @@ function AuditLogPanel() {
     tp_sl_alert: t.settings.auditLabels.tp_sl_alert,
     tp_sl_alert_update: t.settings.auditLabels.tp_sl_alert_update,
     add_conversion: t.settings.auditLabels.add_conversion,
+    delete_conversion: t.settings.auditLabels.delete_conversion,
+    dividend_alert_confirm: t.settings.auditLabels.dividend_alert_confirm,
     update_vision_config: t.settings.auditLabels.update_vision_config,
     agent_token_created: t.settings.auditLabels.agent_token_created,
     agent_token_revoked: t.settings.auditLabels.agent_token_revoked,

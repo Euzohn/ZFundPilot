@@ -614,5 +614,53 @@ function DiffSection({ summary }: { summary: ProposalSummary }) {
       </div>
     )
   }
+  if (summary.operation_type === "add_conversion" && summary.conversion) {
+    const from = summary.conversion.from
+    const to = summary.conversion.to
+    return (
+      <div className="rounded-md border border-border p-3">
+        <p className="mb-2 text-xs font-medium text-muted-foreground">
+          {t.proposals.conversionFrom} → {t.proposals.conversionTo}
+        </p>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+          <div>
+            <span className="font-medium text-muted-foreground">{t.proposals.conversionLegFrom}：</span>
+            <span>{from.fund_code}{from.action_label ? ` (${from.action_label})` : ""}</span>
+          </div>
+          <div>
+            <span className="font-medium text-muted-foreground">{t.proposals.conversionLegTo}：</span>
+            <span>{to.fund_code}{to.action_label ? ` (${to.action_label})` : ""}</span>
+          </div>
+          <div><span className="text-muted-foreground">{t.proposals.shares}：</span>{formatField("shares", from.shares)}</div>
+          <div><span className="text-muted-foreground">{t.proposals.colAmount}：</span>{formatField("amount", to.amount)}</div>
+          <div><span className="text-muted-foreground">{t.proposals.nav}：</span>{formatField("nav", from.nav)}</div>
+          <div><span className="text-muted-foreground">{t.proposals.nav}：</span>{formatField("nav", to.nav)}</div>
+        </div>
+      </div>
+    )
+  }
+  if (summary.operation_type === "delete_conversion" && summary.conversion) {
+    const from = summary.conversion.from
+    const to = summary.conversion.to
+    return (
+      <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3">
+        <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          {t.proposals.deleteConversion}
+        </p>
+        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+          <div><span className="text-muted-foreground">{t.proposals.conversionLegFrom}：</span>{from.fund_code}</div>
+          <div><span className="text-muted-foreground">{t.proposals.conversionLegTo}：</span>{to.fund_code}</div>
+          <div><span className="text-muted-foreground">{t.proposals.shares}：</span>{formatField("shares", from.shares)}</div>
+          <div><span className="text-muted-foreground">{t.proposals.colAmount}：</span>{formatField("amount", to.amount)}</div>
+        </div>
+        {summary.reason && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t.proposals.deleteReason}：{summary.reason}
+          </p>
+        )}
+      </div>
+    )
+  }
   return null
 }

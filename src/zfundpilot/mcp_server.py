@@ -345,6 +345,8 @@ async def get_transaction(
 
     The response includes data.row_digest: pass it as expected_digest when
     creating an update_transaction or delete_transaction proposal for this row.
+    For a conversion leg, row_digest is also used as expected_from_digest /
+    expected_to_digest when creating a delete_conversion proposal for the pair.
 
     Args:
         tx_id: Transaction id.
@@ -533,18 +535,27 @@ async def create_operation_proposal(
 
     Supported operation types:
       - "add_transaction": add a transaction (buy/sell/dividend/reinvest).
+        Dividend/reinvest may optionally carry dividend_alert_id to atomically
+        mark the matching pending dividend alert as confirmed.
       - "update_transaction": modify one existing transaction. Requires the
         target tx_id and its current row_digest (from get_transaction); the
         server rejects the approval with a conflict if the row changed in the
         meantime. Conversion legs cannot be modified individually.
       - "delete_transaction": delete one existing transaction. Requires tx_id
         and row_digest; conversion legs cannot be deleted individually.
+      - "add_conversion": record a fund conversion as two linked legs (sell the
+        from fund, buy the to fund) sharing one conversion_id. Written
+        atomically on approval. Never fetches NAVs.
+      - "delete_conversion": delete a whole conversion pair (both legs) at
+        once. Requires conversion_id plus both legs' row_digest; use
+        delete_transaction for non-conversion rows.
 
     Args:
-        operation_type: "add_transaction", "update_transaction", or
-            "delete_transaction".
+        operation_type: "add_transaction", "update_transaction",
+            "delete_transaction", "add_conversion", or "delete_conversion".
         params: For add_transaction: fund_code, action (buy/sell/dividend/
-            reinvest), date (YYYY-MM-DD), fee, channel, note, is_t1, and the
+            reinvest), date (YYYY-MM-DD), fee, channel, note, is_t1, optional
+            dividend_alert_id (dividend/reinvest only), and the
             amount/shares/nav combination required by the action: buy and
             reinvest need amount or shares; sell needs shares; dividend needs
             amount. nav may be omitted while awaiting T+1 confirmation.
@@ -554,15 +565,24 @@ async def create_operation_proposal(
             partial updates are not supported.
             For delete_transaction: tx_id, expected_digest, and an optional
             reason (max 500 chars).
+            For add_conversion: from_code, to_code (both registered, different),
+            date, from_shares, optional from_nav/from_fee, optional
+            to_amount/to_nav/to_fee, channel, note, is_t1. Non-T+1 requires a
+            derivable to-leg amount or shares; T+1 may defer it.
+            For delete_conversion: conversion_id, expected_from_digest,
+            expected_to_digest (both row_digest values, e.g. from
+            list_transactions?conversion_id=... then get_transaction), and an
+            optional reason.
         idempotency_key: Unique retry key (16-128 chars); same key+params
             returns the same proposal.
     """
     _validate_write_key(idempotency_key)
     if operation_type not in (
-            "add_transaction", "update_transaction", "delete_transaction"):
+            "add_transaction", "update_transaction", "delete_transaction",
+            "add_conversion", "delete_conversion"):
         raise ToolError(
             'operation_type must be "add_transaction", "update_transaction", '
-            'or "delete_transaction".')
+            '"delete_transaction", "add_conversion", or "delete_conversion".')
     if not isinstance(params, dict):
         raise ToolError("params must be an object.")
     return await _post(

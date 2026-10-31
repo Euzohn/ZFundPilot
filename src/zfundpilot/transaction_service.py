@@ -172,12 +172,16 @@ def _number(value: object, field_name: str) -> float | None:
 
 
 def validate_add_transaction_params(params: object) -> dict[str, Any]:
-    """校验并规范化 ``add_transaction`` 参数，返回交易字段字典。"""
+    """校验并规范化 ``add_transaction`` 参数，返回交易字段字典。
+
+    ``dividend_alert_id`` 为可选字段：仅 ``dividend``/``reinvest`` 可携带，
+    用于审批执行时把对应分红提醒原子标记为 confirmed 并回填 tx_id（F2）。
+    """
     if not isinstance(params, dict):
         raise TransactionValidationError("params", "params 必须是对象")
     allowed = {
         "fund_code", "action", "date", "amount", "shares", "nav",
-        "fee", "channel", "note", "is_t1",
+        "fee", "channel", "note", "is_t1", "dividend_alert_id",
     }
     unknown = set(params) - allowed
     if unknown:
@@ -227,7 +231,19 @@ def validate_add_transaction_params(params: object) -> dict[str, Any]:
     if tx.action == ACTION_BUY and (tx.amount is None or tx.amount <= 0):
         raise TransactionValidationError("amount", "买入金额必须大于 0")
 
-    return {
+    # F2：dividend_alert_id 仅分红/再投资可携带；其余方向携带即拒。
+    dividend_alert_id = params.get("dividend_alert_id")
+    if dividend_alert_id is not None:
+        if (isinstance(dividend_alert_id, bool)
+                or not isinstance(dividend_alert_id, int)
+                or dividend_alert_id <= 0):
+            raise TransactionValidationError(
+                "dividend_alert_id", "dividend_alert_id 必须是正整数")
+        if action not in ("dividend", "reinvest"):
+            raise TransactionValidationError(
+                "dividend_alert_id", "仅分红/再投资可关联分红提醒")
+
+    result = {
         "fund_code": tx.fund_code,
         "action": tx.action,
         "date": tx.date,
@@ -239,6 +255,9 @@ def validate_add_transaction_params(params: object) -> dict[str, Any]:
         "note": tx.note,
         "is_t1": tx.is_t1,
     }
+    if dividend_alert_id is not None:
+        result["dividend_alert_id"] = int(dividend_alert_id)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +379,179 @@ def validate_delete_transaction_params(params: object) -> dict[str, Any]:
     tx_id, expected_digest = _validate_target_ref(params)
     reason = clean_text(params.get("reason"), "reason", DELETE_REASON_MAX_LEN)
     return {"tx_id": tx_id, "expected_digest": expected_digest, "reason": reason}
+
+
+# ---------------------------------------------------------------------------
+# F2：基金转换参数校验
+# ---------------------------------------------------------------------------
+CONVERSION_ID_MAX_LEN = 64
+CONVERSION_ID_RE = re.compile(r"^[0-9a-fA-F-]{1,64}$")
+
+
+def validate_add_conversion_params(params: object) -> dict[str, Any]:
+    """校验 ``add_conversion`` 参数，返回规范化后的字段字典。
+
+    字段镜像网页 ``ConversionCreate``；``normalize`` 推导净值/金额；执行期
+    生成 ``conversion_id``。校验口径与网页 ``api.add_conversion`` 一致。
+    """
+    if not isinstance(params, dict):
+        raise TransactionValidationError("params", "params 必须是对象")
+    allowed = {
+        "from_code", "to_code", "date",
+        "from_shares", "from_nav", "from_fee",
+        "to_amount", "to_nav", "to_fee",
+        "channel", "note", "is_t1",
+    }
+    unknown = set(params) - allowed
+    if unknown:
+        raise TransactionValidationError(
+            "params", f"包含不支持的参数：{', '.join(sorted(unknown))}")
+
+    from_code = params.get("from_code")
+    if not isinstance(from_code, str) or not FUND_CODE_RE.fullmatch(from_code.strip()):
+        raise TransactionValidationError("from_code", "基金代码必须是 6 位数字")
+    from_code = from_code.strip()
+
+    to_code = params.get("to_code")
+    if not isinstance(to_code, str) or not FUND_CODE_RE.fullmatch(to_code.strip()):
+        raise TransactionValidationError("to_code", "基金代码必须是 6 位数字")
+    to_code = to_code.strip()
+
+    if from_code == to_code:
+        raise TransactionValidationError(
+            "from_code", "转出基金和转入基金不能相同")
+
+    date = params.get("date")
+    if not isinstance(date, str) or not DATE_RE.fullmatch(date.strip()):
+        raise TransactionValidationError("date", "日期必须是 YYYY-MM-DD")
+    date = date.strip()
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError as exc:
+        raise TransactionValidationError("date", "日期不是有效日期") from exc
+
+    from_shares = _number(params.get("from_shares"), "from_shares")
+    if from_shares is None or from_shares <= 0:
+        raise TransactionValidationError(
+            "from_shares", "转出份额必须大于 0")
+    from_nav = _number(params.get("from_nav"), "from_nav")
+    from_fee = _number(params.get("from_fee"), "from_fee") or 0.0
+    to_amount = _number(params.get("to_amount"), "to_amount")
+    to_nav = _number(params.get("to_nav"), "to_nav")
+    to_fee = _number(params.get("to_fee"), "to_fee") or 0.0
+    channel = clean_text(params.get("channel"), "channel", CHANNEL_MAX_LEN)
+    note = clean_text(params.get("note"), "note", NOTE_MAX_LEN)
+    is_t1 = params.get("is_t1", False)
+    if not isinstance(is_t1, bool):
+        raise TransactionValidationError("is_t1", "is_t1 必须是布尔值")
+
+    # 复用 normalize 推导净值/金额（与网页 add_conversion 同口径）
+    from_tx = Transaction(
+        fund_code=from_code, action="sell", date=date,
+        shares=from_shares, nav=from_nav, fee=from_fee,
+        channel=channel, note=note, is_t1=is_t1,
+    )
+    from_tx.normalize()
+    if not from_tx.is_valid():
+        raise TransactionValidationError(
+            "from_shares", "转出信息不完整（需要份额）")
+
+    to_tx = Transaction(
+        fund_code=to_code, action="buy", date=date,
+        amount=to_amount, nav=to_nav, fee=to_fee,
+        channel=channel, note=note, is_t1=is_t1,
+    )
+    # 非 T+1 且未填转入金额：从卖出腿推导（卖出净到账 = 转入金额）
+    if not is_t1 and to_amount is None and from_tx.amount is not None:
+        to_tx.amount = from_tx.amount
+    to_tx.normalize()
+    if not is_t1 and not to_tx.is_valid():
+        raise TransactionValidationError(
+            "to_amount", "转入信息不完整（需要金额或份额）")
+
+    return {
+        "from_code": from_code,
+        "to_code": to_code,
+        "date": date,
+        "from_shares": from_tx.shares,
+        "from_nav": from_tx.nav,
+        "from_fee": from_tx.fee,
+        "to_amount": to_tx.amount,
+        "to_nav": to_tx.nav,
+        "to_fee": to_tx.fee,
+        "channel": channel,
+        "note": note,
+        "is_t1": is_t1,
+    }
+
+
+def validate_delete_conversion_params(params: object) -> dict[str, Any]:
+    """校验 ``delete_conversion`` 参数，返回 conversion_id/两腿 digest/reason。"""
+    if not isinstance(params, dict):
+        raise TransactionValidationError("params", "params 必须是对象")
+    allowed = {
+        "conversion_id", "expected_from_digest",
+        "expected_to_digest", "reason",
+    }
+    unknown = set(params) - allowed
+    if unknown:
+        raise TransactionValidationError(
+            "params", f"包含不支持的参数：{', '.join(sorted(unknown))}")
+
+    conversion_id = params.get("conversion_id")
+    if not isinstance(conversion_id, str) or not CONVERSION_ID_RE.fullmatch(
+            conversion_id.strip()):
+        raise TransactionValidationError(
+            "conversion_id", "conversion_id 格式不合法")
+    conversion_id = conversion_id.strip()
+
+    expected_from_digest = params.get("expected_from_digest")
+    if not isinstance(expected_from_digest, str) or not _DIGEST_RE.fullmatch(
+            expected_from_digest.strip().lower()):
+        raise TransactionValidationError(
+            "expected_from_digest",
+            "expected_from_digest 必须是 64 位十六进制（通过 get_transaction 获取）")
+    expected_to_digest = params.get("expected_to_digest")
+    if not isinstance(expected_to_digest, str) or not _DIGEST_RE.fullmatch(
+            expected_to_digest.strip().lower()):
+        raise TransactionValidationError(
+            "expected_to_digest",
+            "expected_to_digest 必须是 64 位十六进制（通过 get_transaction 获取）")
+
+    reason = clean_text(params.get("reason"), "reason", DELETE_REASON_MAX_LEN)
+    return {
+        "conversion_id": conversion_id,
+        "expected_from_digest": expected_from_digest.strip().lower(),
+        "expected_to_digest": expected_to_digest.strip().lower(),
+        "reason": reason,
+    }
+
+
+def build_conversion_legs(clean: dict[str, Any]) -> tuple[Transaction, Transaction]:
+    """从规范化后的转换参数构造两条 Transaction 腿（网页与提案共用）。
+
+    非 T+1 且未填转入金额时，从卖出腿净到账推导转入金额（卖出净到账 =
+    转出份额 × 净值 − 赎回费）。本函数内对 from 腿 ``normalize`` 以完成推导，
+    调用方仍需各自 ``is_valid`` 复核。
+    """
+    from_tx = Transaction(
+        fund_code=clean["from_code"], action="sell", date=clean["date"],
+        shares=clean.get("from_shares"), nav=clean.get("from_nav"),
+        fee=clean.get("from_fee") or 0.0, channel=clean.get("channel", ""),
+        note=clean.get("note", ""), is_t1=bool(clean.get("is_t1")),
+    )
+    to_tx = Transaction(
+        fund_code=clean["to_code"], action="buy", date=clean["date"],
+        amount=clean.get("to_amount"), nav=clean.get("to_nav"),
+        fee=clean.get("to_fee") or 0.0, channel=clean.get("channel", ""),
+        note=clean.get("note", ""), is_t1=bool(clean.get("is_t1")),
+    )
+    from_tx.normalize()
+    if (not clean.get("is_t1") and clean.get("to_amount") is None
+            and from_tx.amount is not None):
+        to_tx.amount = from_tx.amount
+    to_tx.normalize()
+    return from_tx, to_tx
 
 
 def validate_direct_params(params: object) -> dict[str, Any]:

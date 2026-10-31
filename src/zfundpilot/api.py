@@ -3322,33 +3322,15 @@ def add_conversion(request: Request, body: ConversionCreate) -> dict[str, Any]:
         raise HTTPException(400, "转出基金和转入基金不能相同")
     _ensure_fund_exists(body.from_code)
     _ensure_fund_exists(body.to_code)
-    from_tx = Transaction(
-        fund_code=body.from_code,
-        action="sell",
-        date=body.date,
-        shares=body.from_shares,
-        nav=body.from_nav,
-        fee=body.from_fee,
-        channel=body.channel,
-        note=body.note,
-        is_t1=body.is_t1,
-    )
-    to_tx = Transaction(
-        fund_code=body.to_code,
-        action="buy",
-        date=body.date,
-        amount=body.to_amount,
-        nav=body.to_nav,
-        fee=body.to_fee,
-        channel=body.channel,
-        note=body.note,
-        is_t1=body.is_t1,
-    )
-    from_tx.normalize()
-    # 非 T+1 且未填转入金额：从卖出腿推导（卖出净到账 = 转出份额×净值−赎回费）
-    if not body.is_t1 and body.to_amount is None and from_tx.amount is not None:
-        to_tx.amount = from_tx.amount
-    to_tx.normalize()
+    # 与提案路径共用腿构造与推导逻辑，避免两条路径漂移。
+    from_tx, to_tx = transaction_service.build_conversion_legs({
+        "from_code": body.from_code, "to_code": body.to_code,
+        "date": body.date, "from_shares": body.from_shares,
+        "from_nav": body.from_nav, "from_fee": body.from_fee,
+        "to_amount": body.to_amount, "to_nav": body.to_nav,
+        "to_fee": body.to_fee, "channel": body.channel,
+        "note": body.note, "is_t1": body.is_t1,
+    })
     if not from_tx.is_valid():
         raise HTTPException(400, "转出信息不完整（需要份额）")
     if not body.is_t1 and body.to_amount is not None and not to_tx.is_valid():

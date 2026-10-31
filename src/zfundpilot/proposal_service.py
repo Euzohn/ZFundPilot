@@ -33,8 +33,11 @@ from .models import Transaction
 from .transaction_service import (
     ACTION_LABELS,
     CONTRACT_VERSION,
+    build_conversion_legs,
     transaction_row_digest,
+    validate_add_conversion_params,
     validate_add_transaction_params,
+    validate_delete_conversion_params,
     validate_delete_transaction_params,
     validate_idempotency_key,
     validate_update_transaction_params,
@@ -49,15 +52,21 @@ from .transaction_service import (
 OPERATION_ADD_TRANSACTION = "add_transaction"
 OPERATION_UPDATE_TRANSACTION = "update_transaction"
 OPERATION_DELETE_TRANSACTION = "delete_transaction"
+OPERATION_ADD_CONVERSION = "add_conversion"
+OPERATION_DELETE_CONVERSION = "delete_conversion"
 ALLOWED_OPERATIONS = frozenset({
     OPERATION_ADD_TRANSACTION,
     OPERATION_UPDATE_TRANSACTION,
     OPERATION_DELETE_TRANSACTION,
+    OPERATION_ADD_CONVERSION,
+    OPERATION_DELETE_CONVERSION,
 })
 OPERATION_LABELS = {
     OPERATION_ADD_TRANSACTION: "新增交易",
     OPERATION_UPDATE_TRANSACTION: "修改交易",
     OPERATION_DELETE_TRANSACTION: "删除交易",
+    OPERATION_ADD_CONVERSION: "基金转换",
+    OPERATION_DELETE_CONVERSION: "删除转换",
 }
 
 PROPOSAL_TTL_DAYS = 7
@@ -84,6 +93,8 @@ OPERATION_SCOPE = {
     OPERATION_ADD_TRANSACTION: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
     OPERATION_UPDATE_TRANSACTION: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
     OPERATION_DELETE_TRANSACTION: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+    OPERATION_ADD_CONVERSION: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+    OPERATION_DELETE_CONVERSION: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
 }
 
 
@@ -252,6 +263,79 @@ def _build_summary(fund_name: str, operation_type: str,
             "note": before_fields.get("note", ""),
             "before": before_fields,
             "reason": params.get("reason", ""),
+            "warnings": warnings,
+        }
+    if operation_type == OPERATION_ADD_CONVERSION:
+        if params.get("from_nav") is None or params.get("to_nav") is None:
+            warnings.append("成交净值尚未确定，市值与收益可能暂时缺失")
+        if params.get("is_t1"):
+            warnings.append("T+1 确认：转入份额可能尚未到账，需后续核对")
+        warnings.append("请核对转出份额是否超过该渠道可用份额")
+        from_tx, to_tx = build_conversion_legs(params)
+        return {
+            "operation_type": operation_type,
+            "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
+            "title": f"转换 {params['from_code']} → {params['to_code']}",
+            "fund_code": params["from_code"],
+            "fund_name": fund_name,
+            "action": "conversion",
+            "action_label": "转换",
+            "date": params["date"],
+            "amount": None,
+            "shares": from_tx.shares,
+            "nav": from_tx.nav,
+            "fee": from_tx.fee,
+            "channel": params.get("channel", ""),
+            "is_t1": params.get("is_t1", False),
+            "note": params.get("note", ""),
+            "conversion": {
+                "from": {
+                    "fund_code": from_tx.fund_code,
+                    "action": from_tx.action, "action_label": "卖出",
+                    "shares": from_tx.shares,
+                    "nav": from_tx.nav,
+                    "fee": from_tx.fee,
+                },
+                "to": {
+                    "fund_code": to_tx.fund_code,
+                    "action": to_tx.action, "action_label": "买入",
+                    "amount": to_tx.amount,
+                    "shares": to_tx.shares,
+                    "nav": to_tx.nav,
+                    "fee": to_tx.fee,
+                },
+            },
+            "warnings": warnings,
+        }
+    if operation_type == OPERATION_DELETE_CONVERSION:
+        before_pair = before if isinstance(before, dict) else {}
+        from_snap = before_pair.get("from", {}) or {}
+        to_snap = before_pair.get("to", {}) or {}
+        from_code = from_snap.get("fund_code", "")
+        to_code = to_snap.get("fund_code", "")
+        return {
+            "operation_type": operation_type,
+            "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
+            "title": f"删除转换 {from_code} → {to_code}",
+            "fund_code": from_code,
+            "fund_name": fund_name,
+            "action": "conversion",
+            "action_label": "转换",
+            "date": from_snap.get("date", ""),
+            "amount": None,
+            "shares": from_snap.get("shares"),
+            "nav": from_snap.get("nav"),
+            "fee": from_snap.get("fee"),
+            "channel": from_snap.get("channel", ""),
+            "is_t1": from_snap.get("is_t1", False),
+            "note": from_snap.get("note", ""),
+            "conversion_id": params.get("conversion_id", ""),
+            "reason": params.get("reason", ""),
+            "conversion": {
+                "from": from_snap,
+                "to": to_snap,
+            },
+            "before": before_pair,
             "warnings": warnings,
         }
     # 兜底：不应到达
@@ -506,6 +590,10 @@ def _validate_proposal_params(operation_type: str, params: object) -> dict:
         return validate_update_transaction_params(params)
     if operation_type == OPERATION_DELETE_TRANSACTION:
         return validate_delete_transaction_params(params)
+    if operation_type == OPERATION_ADD_CONVERSION:
+        return validate_add_conversion_params(params)
+    if operation_type == OPERATION_DELETE_CONVERSION:
+        return validate_delete_conversion_params(params)
     raise ProposalValidationError(
         "operation_type", f"操作类型不受支持：{operation_type}")
 
@@ -534,6 +622,41 @@ def _resolve_target_row(
             "该交易属于基金转换腿，暂不支持单独修改/删除",
             {"tx_id": tx_id, "conversion_id": row["conversion_id"]})
     return row, None
+
+
+def _resolve_conversion_pair(
+        conn: sqlite3.Connection, clean: dict,
+) -> tuple[tuple[sqlite3.Row, sqlite3.Row] | None, ProposalResult | None]:
+    """定位 delete_conversion 的两腿并校验版本；返回 ((from_row, to_row), error)。
+
+    要求 conversion_id 恰好关联 2 条流水且分别为 sell/buy 标准对，否则
+    ``conversion_leg_mismatch``；任一腿 digest 不匹配 ``target_changed``
+    （区分 ``leg: from/to``）。
+    """
+    cid = clean["conversion_id"]
+    rows = db.get_conversion_pair_conn(conn, cid)
+    if len(rows) != 2:
+        return None, ProposalResult(
+            404, "conversion_not_found",
+            "未找到该转换对，或已非成对存在", {"conversion_id": cid})
+    from_row = next((r for r in rows if r["action"] == "sell"), None)
+    to_row = next((r for r in rows if r["action"] == "buy"), None)
+    if from_row is None or to_row is None:
+        return None, ProposalResult(
+            409, "conversion_leg_mismatch",
+            "该 conversion_id 关联的两条流水非标准转换对（缺卖出腿或买入腿）",
+            {"conversion_id": cid})
+    if transaction_row_digest(from_row) != clean["expected_from_digest"]:
+        return None, ProposalResult(
+            409, "target_changed",
+            "转出腿已被修改，请通过 get_transaction 重新读取后再提案",
+            {"conversion_id": cid, "leg": "from"})
+    if transaction_row_digest(to_row) != clean["expected_to_digest"]:
+        return None, ProposalResult(
+            409, "target_changed",
+            "转入腿已被修改，请通过 get_transaction 重新读取后再提案",
+            {"conversion_id": cid, "leg": "to"})
+    return (from_row, to_row), None
 
 
 def create_proposal(principal: Principal, *, operation_type: object,
@@ -567,6 +690,26 @@ def create_proposal(principal: Principal, *, operation_type: object,
             before = _row_snapshot(row)
             if operation_type == OPERATION_DELETE_TRANSACTION:
                 fund_code = row["fund_code"]
+        elif operation_type == OPERATION_ADD_CONVERSION:
+            fund_code = clean["from_code"]
+            # 创建期校验转出+转入基金均已收录，保证审批路径不联网。
+            if fund_name_in_conn(conn, clean["to_code"]) is None:
+                _audit(conn, principal, ip, "proposal_create_rejected", {
+                    "reason": "fund_not_registered",
+                    "operation_type": operation_type,
+                    "fund_code": clean["to_code"]})
+                return ProposalResult(
+                    409, "fund_not_registered",
+                    "基金尚未收录，请先在网页添加或刷新基金信息后再提案",
+                    {"fund_code": clean["to_code"]})
+        elif operation_type == OPERATION_DELETE_CONVERSION:
+            pair, error = _resolve_conversion_pair(conn, clean)
+            if error is not None:
+                return error
+            from_row, to_row = pair
+            fund_code = from_row["fund_code"]
+            before = {"from": _row_snapshot(from_row),
+                      "to": _row_snapshot(to_row)}
 
         created = create_pending_proposal_conn(
             conn, principal, clean=clean, digest=digest, now=now, ip=ip,
@@ -811,7 +954,46 @@ def _exec_add_transaction(conn: sqlite3.Connection, row: sqlite3.Row,
         return _mark_failure(
             conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
             reason="invalid_params", message="交易信息不完整，不能执行")
+    # F2：dividend_alert_id 关联分红提醒（仅 dividend/reinvest）。
+    # 先校验提醒状态，再写流水，避免失败时把流水留在已提交事务中。
+    alert_id = clean.get("dividend_alert_id")
+    alert = None
+    if alert_id is not None:
+        alert = db.get_dividend_alert_conn(conn, int(alert_id))
+        if alert is None:
+            return _mark_failure(
+                conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+                reason="dividend_alert_not_found",
+                message="关联的分红提醒已不存在，请重新提案")
+        if (alert["status"] or "") != "pending":
+            return _mark_failure(
+                conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+                reason="dividend_alert_resolved",
+                message="关联的分红提醒已处理（confirmed/ignored），请重新提案")
+        if (alert["alert_type"] or "dividend") != "dividend":
+            return _mark_failure(
+                conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+                reason="dividend_alert_type_mismatch",
+                message="该提醒不是分红类型，不能关联分红/再投资流水")
+        if (alert["fund_code"] or "") != tx.fund_code:
+            return _mark_failure(
+                conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+                reason="dividend_alert_fund_mismatch",
+                message="分红提醒的基金与流水基金不一致")
+
     tx_id = db.insert_transaction(conn, tx)
+
+    if alert is not None:
+        db.update_dividend_alert_conn(
+            conn, int(alert_id), status="confirmed",
+            tx_id=tx_id, resolved_at=now.isoformat())
+        db.log_audit(
+            "dividend_alert_confirm", ip=ip, username=reviewer,
+            detail={"alert_id": int(alert_id), "tx_id": tx_id,
+                    "proposal_id": pid},
+            conn=conn,
+        )
+
     db.log_audit(
         "add_transaction", ip=ip, username=reviewer,
         detail={"tx_id": tx_id, "fund_code": tx.fund_code,
@@ -952,6 +1134,106 @@ def _exec_delete_transaction(conn: sqlite3.Connection, row: sqlite3.Row,
     return execution, audit_id
 
 
+def _conversion_share_warnings(
+        conn: sqlite3.Connection, from_tx: Transaction) -> list[str]:
+    """转换转出份额超过该渠道可用份额时返回 warning；不阻断（§6.2）。"""
+    warnings: list[str] = []
+    available = _net_shares_conn(
+        conn, from_tx.fund_code, from_tx.channel or "")
+    if float(from_tx.shares or 0.0) > available + 1e-6:
+        warnings.append("转出份额可能超过该渠道可用份额，请核对持仓")
+    return warnings
+
+
+def _exec_add_conversion(conn: sqlite3.Connection, row: sqlite3.Row,
+                         clean: dict, pid: int, reviewer: str,
+                         now: datetime, ip: str | None):
+    """执行 add_conversion：复核基金收录与腿完整性后成对写入。
+
+    审批路径不联网抓净值；缺失净值留空由既有回填流程后续补齐。
+    份额不足仅 warning 不阻断（转换常用于补录历史/迁移持仓）。
+    """
+    from_name = fund_name_in_conn(conn, clean["from_code"])
+    to_name = fund_name_in_conn(conn, clean["to_code"])
+    if from_name is None or to_name is None:
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="fund_missing",
+            message="转出或转入基金已不在账本中，请先在网页添加后再提案")
+
+    from_tx, to_tx = build_conversion_legs(clean)
+    if not from_tx.is_valid() or (
+            not clean.get("is_t1") and not to_tx.is_valid()):
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="invalid_params", message="转换信息不完整，不能执行")
+
+    warnings = _conversion_share_warnings(conn, from_tx)
+    from_id, to_id = db.add_conversion_conn(conn, from_tx, to_tx)
+    db.log_audit(
+        "add_conversion", ip=ip, username=reviewer,
+        detail={"from_id": from_id, "to_id": to_id,
+                "from_code": from_tx.fund_code, "to_code": to_tx.fund_code,
+                "date": from_tx.date, "proposal_id": pid},
+        conn=conn,
+    )
+    execution = {
+        "ok": True, "from_id": from_id, "to_id": to_id,
+        "from": _row_snapshot(from_tx), "to": _row_snapshot(to_tx),
+        "warnings": warnings,
+    }
+    audit_id = _audit(conn, None, ip, "proposal_approved", {
+        "proposal_id": pid, "operation_type": row["operation_type"],
+        "from_id": from_id, "to_id": to_id}, reviewer=reviewer)
+    return execution, audit_id
+
+
+def _exec_delete_conversion(conn: sqlite3.Connection, row: sqlite3.Row,
+                            clean: dict, pid: int, reviewer: str,
+                            now: datetime, ip: str | None):
+    """执行 delete_conversion：事务内复读两腿、校验版本后成对删除。
+
+    份额连带仅校验买入腿（to）删除是否致转入基金后续超卖；卖出腿（from）
+    删除释放份额，恒放行。
+    """
+    pair, error = _resolve_conversion_pair(conn, clean)
+    if error is not None:
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason=error.code, message=error.message)
+
+    from_row, to_row = pair
+    if _share_conflict_after_change(
+        conn,
+        old_fund=to_row["fund_code"], old_channel=to_row["channel"] or "",
+        new_fund=to_row["fund_code"], new_channel=to_row["channel"] or "",
+        new_action="", new_shares=None, tx_id=int(to_row["id"]),
+    ):
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="insufficient_shares_after_change",
+            message="删除后转入基金同渠道累计卖出将超过买入，已拒绝")
+
+    before = {"from": _row_snapshot(from_row), "to": _row_snapshot(to_row)}
+    db.delete_conversion_pair_conn(conn, clean["conversion_id"])
+    db.log_audit(
+        "delete_conversion", ip=ip, username=reviewer,
+        detail={"conversion_id": clean["conversion_id"],
+                "from_id": int(from_row["id"]), "to_id": int(to_row["id"]),
+                "proposal_id": pid},
+        conn=conn,
+    )
+    execution = {
+        "ok": True, "conversion_id": clean["conversion_id"],
+        "from_id": int(from_row["id"]), "to_id": int(to_row["id"]),
+        "before": before,
+    }
+    audit_id = _audit(conn, None, ip, "proposal_approved", {
+        "proposal_id": pid, "operation_type": row["operation_type"],
+        "conversion_id": clean["conversion_id"]}, reviewer=reviewer)
+    return execution, audit_id
+
+
 def approve_proposal(proposal_id: object, *, reviewer: str,
                      ip: str | None = None) -> ProposalResult:
     """管理员批准并立即执行；状态迁移、业务写入与审计在同一事务内完成。"""
@@ -1027,6 +1309,12 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
                 conn, row, clean, pid, reviewer, now, ip)
         elif operation_type == OPERATION_DELETE_TRANSACTION:
             outcome = _exec_delete_transaction(
+                conn, row, clean, pid, reviewer, now, ip)
+        elif operation_type == OPERATION_ADD_CONVERSION:
+            outcome = _exec_add_conversion(
+                conn, row, clean, pid, reviewer, now, ip)
+        elif operation_type == OPERATION_DELETE_CONVERSION:
+            outcome = _exec_delete_conversion(
                 conn, row, clean, pid, reviewer, now, ip)
         else:
             return _mark_failure(

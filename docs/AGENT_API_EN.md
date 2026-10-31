@@ -434,7 +434,7 @@ Per transaction:
 
 ### 5.9 `GET /api/agent/tools/transactions/{tx_id}`
 
-Single transaction detail. Scope: `transactions:read`. Fields match one item from 5.8, plus top-level `data.valuation_basis` and `data.row_digest` (the target row's content SHA-256 covering `fund_code/action/date/amount/shares/nav/fee/channel/note/is_t1`, numbers `round(_,4)`; use it as `expected_digest` when building `update_transaction`/`delete_transaction` proposals); an unknown id returns `404`.
+Single transaction detail. Scope: `transactions:read`. Fields match one item from 5.8, plus top-level `data.valuation_basis` and `data.row_digest` (the target row's content SHA-256 covering `fund_code/action/date/amount/shares/nav/fee/channel/note/is_t1`, numbers `round(_,4)`; use it as `expected_digest` when building `update_transaction`/`delete_transaction` proposals; for a conversion leg, the same row digest is used as `expected_from_digest`/`expected_to_digest` in a `delete_conversion` proposal); an unknown id returns `404`.
 
 ```bash
 curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
@@ -759,7 +759,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 ### 5.23 Ledger proposals (write, requires web approval; off by default)
 
-This group only submits **pending proposals** and never writes the ledger directly (for trusted direct write, see §5.24). Scope: `transactions:propose`, also gated by the server write switch (see the write-switch notes above). Three `operation_type` values are supported: `add_transaction` (new), `update_transaction` (modify a single row, must carry `expected_digest` row-version precondition), and `delete_transaction` (delete a single row, must carry `expected_digest`). Approval, rejection, execution, and state transitions happen server-side on the web, and the execution path performs no network access. Updates and deletes operate on the whole row; a conversion leg cannot be edited in isolation.
+This group only submits **pending proposals** and never writes the ledger directly (for trusted direct write, see §5.24). Scope: `transactions:propose`, also gated by the server write switch (see the write-switch notes above). Five `operation_type` values are supported: `add_transaction` (new), `update_transaction` (modify a single row, must carry `expected_digest` row-version precondition), `delete_transaction` (delete a single row, must carry `expected_digest`), `add_conversion` (fund conversion; writes a sell leg and a buy leg sharing one `conversion_id`), and `delete_conversion` (delete a whole conversion pair by `conversion_id`, carrying both legs' `expected_digest`). Approval, rejection, execution, and state transitions happen server-side on the web, and the execution path performs no network access. Updates and deletes operate on the whole row; conversion legs still cannot be edited in isolation — use `delete_conversion` for whole-pair removal.
 
 | MCP tool | HTTP | Description |
 |---|---|---|
@@ -825,17 +825,83 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
 # data.summary includes tx_id / before / reason
 ```
 
-- `add_transaction` `params` accept only the whitelist: `fund_code` (six digits, must already be registered), `action` (`buy`/`sell`/`dividend`/`reinvest`), `date` (`YYYY-MM-DD`), `amount`/`shares`/`nav` (buy/sell need enough fields to derive the rest; sell requires shares; dividend requires an amount), `fee`, `channel`, `note`, `is_t1`. Unknown fields return `422 validation_error`.
+Fund conversion (sell the from fund + buy the to fund; written atomically as a pair on approval):
+
+```bash
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: conv-0f6c2f9a-4b1e-4e2a" \
+  -d '{
+    "operation_type": "add_conversion",
+    "params": {
+      "from_code": "005827",
+      "to_code": "110011",
+      "date": "2026-10-30",
+      "from_shares": 100,
+      "from_nav": 2.1,
+      "from_fee": 0.5,
+      "to_nav": 3.2,
+      "channel": "Alipay"
+    }
+  }' | jq
+# data.summary.conversion contains from (sell) / to (buy); approval receipt contains from_id/to_id
+```
+
+Delete a whole conversion pair (find both legs by `conversion_id`, then take each `row_digest`):
+
+```bash
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions?conversion_id=<conversion_id>" | jq
+
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: delconv-1a2b3c4d-5e6f-7a8b" \
+  -d '{
+    "operation_type": "delete_conversion",
+    "params": {
+      "conversion_id": "<conversion_id>",
+      "expected_from_digest": "<sell-leg row_digest>",
+      "expected_to_digest": "<buy-leg row_digest>",
+      "reason": "recorded by mistake"
+    }
+  }' | jq
+```
+
+Link a dividend/reinvest transaction to a dividend alert (optional; confirmed atomically at approval):
+
+```bash
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: div-0f6c2f9a-4b1e-4e2a" \
+  -d '{
+    "operation_type": "add_transaction",
+    "params": {
+      "fund_code": "005827",
+      "action": "dividend",
+      "date": "2026-10-30",
+      "amount": 120,
+      "dividend_alert_id": 7
+    }
+  }' | jq
+```
+
+- `add_transaction` `params` accept only the whitelist: `fund_code` (six digits, must already be registered), `action` (`buy`/`sell`/`dividend`/`reinvest`), `date` (`YYYY-MM-DD`), `amount`/`shares`/`nav` (buy/sell need enough fields to derive the rest; sell requires shares; dividend requires an amount), `fee`, `channel`, `note`, `is_t1`, and optional `dividend_alert_id` (only for `dividend`/`reinvest`). Unknown fields return `422 validation_error`.
+- `add_conversion` `params`: `from_code`, `to_code` (both six digits, registered, and different), `date`, `from_shares` (>0), optional `from_nav`/`from_fee`, optional `to_amount`/`to_nav`/`to_fee`, `channel`, `note`, `is_t1`. For non-T+1, the to-leg amount/shares must be derivable (when `to_amount` is omitted it is derived from the sell-leg net proceeds); for T+1 the to-leg amount may be deferred and approval will not block it. Approval writes both `sell`/`buy` legs atomically with a newly generated shared `conversion_id` and never fetches NAVs; if the from-leg shares exceed available shares in that channel it is a warning only, not a block. `summary.conversion` contains both legs.
+- `delete_conversion` `params` are `conversion_id` + `expected_from_digest` + `expected_to_digest` (each leg's `row_digest` from `GET /api/agent/tools/transactions/{tx_id}`) + optional `reason`. At creation the `conversion_id` must link exactly two rows that are a standard sell/buy pair, otherwise `404 conversion_not_found` / `409 conversion_leg_mismatch`; a digest mismatch returns `409 target_changed` with `leg=from|to`. Approval re-reads both legs and deletes the pair in the same transaction; deleting the buy leg returns `insufficient_shares_after_change` if it would leave later sells over-shares, while removing the sell leg is always allowed.
+- `add_transaction` with `action=dividend`/`reinvest` may carry `dividend_alert_id` (positive integer): approval writes the transaction and marks the matching alert `confirmed`, backfilling `tx_id`, in one transaction. A missing/resolved/non-dividend alert or a fund mismatch returns `dividend_alert_not_found`, `dividend_alert_resolved`, `dividend_alert_type_mismatch`, or `dividend_alert_fund_mismatch` at approval (all `conflict`, no transaction written).
 - `update_transaction` `params` require `tx_id` (target transaction id) and `expected_digest` (the target row's content hash, taken from `GET /api/agent/tools/transactions/{tx_id}` as `row_digest`), plus the **full field set** identical to `add_transaction` (not a partial patch; omitted fields take defaults). The hash covers `fund_code/action/date/amount/shares/nav/fee/channel/note/is_t1` (numbers `round(_,4)`, `None` preserved). If the target changed (`409 target_changed`) or was deleted (`404 target_not_found`) the proposal is rejected at creation; it is re-checked at approval and, if changed/deleted, resolves to `conflict` (`target_changed`/`target_deleted`) without overwriting. Changing `fund_code`/`channel` validates shares on both sides; changing the fund adds a warning.
 - `delete_transaction` `params` are `tx_id` + `expected_digest` + optional `reason`. At approval the hash is re-checked and the row deleted; deleting a buy that would leave later sells over-shares returns `insufficient_shares_after_change` (not deleted), while deleting a sell is always allowed.
-- **Conversion legs** (`conversion_id` set) cannot be updated/deleted in isolation: `409 conversion_leg_isolated`. Whole-pair deletion is deferred to F2.
+- **Conversion legs** (`conversion_id` set) cannot be updated/deleted in isolation: `409 conversion_leg_isolated`. Use `delete_conversion` to remove the whole pair rather than operating on individual legs.
 - Must send `Idempotency-Key` (16–128 safe ASCII chars). Same key and parameters replay the original proposal (`200` + `replayed=true`); same key with different parameters/operation returns `409 idempotency_conflict`; expired keys return `409 idempotency_expired`. For updates, `tx_id` + `expected_digest` + the full field set count as the complete parameter set for replay comparison.
 - Proposals expire after 7 days and can then no longer be approved or cancelled. Each token may keep at most 20 `pending` proposals; beyond that returns `409 too_many_pending`.
 - A fund that is not yet registered returns `409 fund_not_registered`, so the approval path never fetches data over the network.
 - State machine: `pending → succeeded / failed / conflict / rejected / cancelled / expired`. `failed` means the creator token was revoked, expired, or lost the scope; `conflict` means the fund/parameters became invalid at approval time. Environment-level blocks (`auth_disabled`, `write_disabled`) return `403` and leave the proposal `pending` so it can be retried after the fix.
-- After a web administrator approves, the server re-checks instance authentication, the write switch, the creator token, and business rules in the same SQLite transaction, writes the transaction, and records both `proposal_approved` and `add_transaction` audits. Concurrent approvals succeed only once; a repeat returns `409 not_pending`.
+- After a web administrator approves, the server re-checks instance authentication, the write switch, the creator token, and business rules in the same SQLite transaction, writes the ledger, and records `proposal_approved` plus the business audit (`add_transaction`/`add_conversion`/`delete_conversion`; dividend linking also records `dividend_alert_confirm`). Concurrent approvals succeed only once; a repeat returns `409 not_pending`.
 - Web approval endpoints accept web login identities only: `GET /api/proposals/count`, `GET /api/proposals`, `GET /api/proposals/{id}`, `POST /api/proposals/{id}/approve`, `POST /api/proposals/{id}/reject`. An Agent token calling these returns `401`.
-- Error codes: `write_disabled`, `validation_error`, `fund_not_registered`, `too_many_pending`, `not_pending`, `expired`, `not_found`, `target_changed` (row hash mismatch, `409`), `target_not_found` (target row missing, `404`), `conversion_leg_isolated` (single-leg edit/delete of a conversion leg, `409`), `insufficient_shares_after_change` (at approval: update/delete would leave later sells over-shares, `conflict`), `idempotency_conflict`, `idempotency_expired`. Audits `proposal_created`, `proposal_create_rejected`, `proposal_cancelled`, `proposal_expired`, `proposal_approved`, `proposal_rejected`, `proposal_failed`, and `proposal_conflict` record only the token prefix and proposal summary (update/delete summaries include `tx_id`/`before`/`after`/`changed_fields`/`reason`).
+- Error codes: `write_disabled`, `validation_error`, `fund_not_registered`, `too_many_pending`, `not_pending`, `expired`, `not_found`, `target_changed` (target row/leg hash mismatch, `409`), `target_not_found` (target row missing, `404`), `conversion_leg_isolated` (single-leg edit/delete of a conversion leg, `409`), `conversion_not_found` (`conversion_id` missing or no longer a pair, `404`), `conversion_leg_mismatch` (linked rows are not a sell/buy pair, `409`), `insufficient_shares_after_change` (at approval: update/delete would leave later sells over-shares, `conflict`), `fund_missing` (fund removed before approval), `dividend_alert_not_found`/`dividend_alert_resolved`/`dividend_alert_type_mismatch`/`dividend_alert_fund_mismatch` (dividend-alert linking failed at approval), `idempotency_conflict`, `idempotency_expired`. Audits `proposal_created`, `proposal_create_rejected`, `proposal_cancelled`, `proposal_expired`, `proposal_approved`, `proposal_rejected`, `proposal_failed`, and `proposal_conflict` record only the token prefix and proposal summary (update/delete summaries include `tx_id`/`before`/`after`/`changed_fields`/`reason`; conversion summaries include `conversion`/`conversion_id`).
 - Creation/cancellation share the global write switch with watchlist writes. Proposals are not included in backup archives; restoring a backup clears stale proposals so they cannot point at replaced ledger data.
 
 ### 5.24 Trusted single direct write (write, off by default)
@@ -935,3 +1001,4 @@ Write tools require an `idempotency_key` argument, mapped to the HTTP `Idempoten
 | 2026-10-30 | Added the `transactions:propose` scope and four ledger proposal tools: agents can only submit pending proposals; after web administrator approval the server writes the ledger and audits in one transaction. This phase supports only `add_transaction`; proposals expire after 7 days, are idempotent, and are isolated per token |
 | 2026-10-31 | Added the `transactions:create` scope and the `record_transaction` tool (F0 trusted single direct write): within quotas it writes a single buy/sell directly and downgrades to a proposal or rejects on precheck anomalies. Added the `transactions.source` column and three audit labels; backups remain compatible with the legacy v2 column variant |
 | 2026-10-31 | F1: `create_operation_proposal` adds `update_transaction`/`delete_transaction` operation types carrying `expected_digest` (row content SHA-256) as a row-version precondition; single-leg edits/deletes of conversion legs are rejected and share cascades block at execution time; `GET transactions/{tx_id}` adds `row_digest` |
+| 2026-10-31 | F2: adds `add_conversion`/`delete_conversion` proposals (atomic two-leg conversion writes; whole-pair deletion by `conversion_id` with both legs' `expected_digest`) and optional `dividend_alert_id` atomic linking on `add_transaction`; all reuse `transactions:propose`, with new error codes and audit labels |

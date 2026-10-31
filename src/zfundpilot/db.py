@@ -871,36 +871,52 @@ def update_transaction(tx: Transaction) -> None:
         update_transaction_conn(conn, tx)
 
 
-def add_conversion(from_tx: Transaction, to_tx: Transaction) -> tuple[int, int]:
-    """原子插入两条关联交易（卖出腿 + 买入腿），共享同一 conversion_id。
+def add_conversion_conn(conn: sqlite3.Connection, from_tx: Transaction,
+                        to_tx: Transaction) -> tuple[int, int]:
+    """在调用方事务内原子插入两条关联交易，共享同一 conversion_id。
 
-    返回 (from_tx_id, to_tx_id)。
+    供提案审批路径复用，避免另开连接抢写锁。复用 ``insert_transaction``，
+    使 ``source`` 列写入语义与单笔插入一致（转换提案来源为空串）。
     """
     conversion_id = str(uuid.uuid4())
     from_tx.conversion_id = conversion_id
     to_tx.conversion_id = conversion_id
     from_tx.normalize()
     to_tx.normalize()
+    from_id = insert_transaction(conn, from_tx)
+    to_id = insert_transaction(conn, to_tx)
+    return from_id, to_id
+
+
+def add_conversion(from_tx: Transaction, to_tx: Transaction) -> tuple[int, int]:
+    """原子插入两条关联交易（卖出腿 + 买入腿），共享同一 conversion_id。
+
+    返回 (from_tx_id, to_tx_id)。
+    """
     with get_connection() as conn:
-        cur_from = conn.execute(
-            """
-            INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note,is_t1,conversion_id)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?)
-            """,
-            (from_tx.fund_code.strip(), from_tx.action, from_tx.date, from_tx.amount,
-             from_tx.shares, from_tx.nav, from_tx.fee, from_tx.channel, from_tx.note,
-             int(from_tx.is_t1), conversion_id),
-        )
-        cur_to = conn.execute(
-            """
-            INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note,is_t1,conversion_id)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?)
-            """,
-            (to_tx.fund_code.strip(), to_tx.action, to_tx.date, to_tx.amount,
-             to_tx.shares, to_tx.nav, to_tx.fee, to_tx.channel, to_tx.note,
-             int(to_tx.is_t1), conversion_id),
-        )
-        return int(cur_from.lastrowid), int(cur_to.lastrowid)
+        return add_conversion_conn(conn, from_tx, to_tx)
+
+
+def get_conversion_pair_conn(
+        conn: sqlite3.Connection, conversion_id: str,
+        ) -> list[sqlite3.Row]:
+    """在调用方事务内取某 conversion_id 关联的全部流水（按 id 升序）。"""
+    return conn.execute(
+        "SELECT * FROM transactions WHERE conversion_id=? ORDER BY id",
+        (conversion_id,),
+    ).fetchall()
+
+
+def delete_conversion_pair_conn(
+        conn: sqlite3.Connection, conversion_id: str) -> int:
+    """在调用方事务内成对删除某 conversion_id 的全部流水；返回删除行数。
+
+    直接 ``DELETE WHERE conversion_id=?``，不走 ``delete_transaction_conn``
+    的解关联逻辑（整对删除无需保留另一腿）。
+    """
+    cur = conn.execute(
+        "DELETE FROM transactions WHERE conversion_id=?", (conversion_id,))
+    return int(cur.rowcount)
 
 
 def delete_transaction_conn(conn: sqlite3.Connection, tx_id: int) -> None:
@@ -1954,16 +1970,32 @@ def update_dividend_alert(alert_id: int, **fields) -> None:
     """更新分红提醒字段（status / resolved_at / tx_id 等）。"""
     if not fields:
         return
+    with get_connection() as conn:
+        update_dividend_alert_conn(conn, alert_id, **fields)
+
+
+def update_dividend_alert_conn(
+        conn: sqlite3.Connection, alert_id: int, **fields) -> None:
+    """在调用方事务内更新分红提醒；供提案审批路径原子关联复用（F2）。"""
+    if not fields:
+        return
     allowed = {"status", "resolved_at", "tx_id"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return
     set_clause = ", ".join(f"{k}=?" for k in updates)
     vals = list(updates.values()) + [alert_id]
-    with get_connection() as conn:
-        conn.execute(
-            f"UPDATE dividend_alerts SET {set_clause} WHERE id=?", vals
-        )
+    conn.execute(
+        f"UPDATE dividend_alerts SET {set_clause} WHERE id=?", vals
+    )
+
+
+def get_dividend_alert_conn(
+        conn: sqlite3.Connection, alert_id: int) -> sqlite3.Row | None:
+    """在调用方事务内读取单条分红提醒；供执行期校验关联提醒复用（F2）。"""
+    return conn.execute(
+        "SELECT * FROM dividend_alerts WHERE id=?", (alert_id,)
+    ).fetchone()
 
 
 def delete_dividend_alert(alert_id: int) -> bool:

@@ -700,7 +700,9 @@ async def precheck_reconciliation(payload: dict[str, Any]) -> dict[str, Any]:
     computes share differences, and suggests adjustment transactions (buy/sell)
     with estimated NAV. Returns a diff table with a proposal_ready flag per
     item. Funds not registered in the ledger are reported in
-    fund_resolution_errors and skipped.
+    fund_resolution_errors and skipped. "maybe_sold" entries (held in the
+    ledger but absent from the input) are hints only: proposal_ready is false
+    and the user must confirm before any sell proposal.
 
     This does NOT write the ledger and does NOT create a proposal. Use
     create_operation_proposal to submit the suggested transactions after the

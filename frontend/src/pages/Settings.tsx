@@ -591,6 +591,8 @@ function AuditLogPanel() {
     agent_direct_add: t.settings.auditLabels.agent_direct_add,
     agent_direct_downgraded: t.settings.auditLabels.agent_direct_downgraded,
     agent_direct_rejected: t.settings.auditLabels.agent_direct_rejected,
+    agent_precheck_transactions: t.settings.auditLabels.agent_precheck_transactions,
+    agent_precheck_reconciliation: t.settings.auditLabels.agent_precheck_reconciliation,
     data_refresh_started: t.settings.auditLabels.data_refresh_started,
     data_refresh_succeeded: t.settings.auditLabels.data_refresh_succeeded,
     data_refresh_failed: t.settings.auditLabels.data_refresh_failed,

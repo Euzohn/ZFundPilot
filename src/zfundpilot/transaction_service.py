@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from . import agent_tokens, analysis, config, data_io, db, fund_filter
+from . import agent_tokens, analysis, config, data_io, db
 from .models import ACTION_BUY, ACTION_SELL, Transaction
 
 if TYPE_CHECKING:  # pragma: no cover - 仅类型检查，避免与 proposal_service 循环导入
@@ -726,11 +726,33 @@ def _params_from_row(row: sqlite3.Row) -> dict:
     return params if isinstance(params, dict) else {}
 
 
-def _duplicate_pending_proposal(conn: sqlite3.Connection, clean: dict,
-                                now: datetime) -> int | None:
-    """含待审提案的重复候选：避免直记与稍后批准的提案重复入账。"""
-    for row in _pending_proposal_rows(conn, now):
-        params = _params_from_row(row)
+def _parse_pending_rows(rows: list[sqlite3.Row]) -> list[dict]:
+    """把待审提案行预解析为 {id, principal_type, principal_id, params}。
+
+    预检按条目比较时复用同一份解析结果，避免 O(条目 × 提案) 的重复 JSON 解析。
+    """
+    parsed: list[dict] = []
+    for row in rows:
+        parsed.append({
+            "id": int(row["id"]),
+            "principal_type": row["principal_type"],
+            "principal_id": row["principal_id"],
+            "params": _params_from_row(row),
+        })
+    return parsed
+
+
+def _is_own_proposal(entry: dict, principal: Principal | None) -> bool:
+    if principal is None:
+        return False
+    return (entry["principal_type"] == principal.kind
+            and str(entry["principal_id"]) == str(principal.id))
+
+
+def _match_pending_proposal(parsed: list[dict], clean: dict) -> dict | None:
+    """在同基金/渠道/日期/方向且金额或份额相近的待审提案中取最新一条。"""
+    for entry in reversed(parsed):
+        params = entry["params"]
         if (params.get("fund_code") != clean["fund_code"]
                 or (params.get("channel") or "") != (clean.get("channel") or "")
                 or params.get("date") != clean["date"]
@@ -738,8 +760,27 @@ def _duplicate_pending_proposal(conn: sqlite3.Connection, clean: dict,
             continue
         if (_same_number(params.get("amount"), clean.get("amount"))
                 or _same_number(params.get("shares"), clean.get("shares"))):
-            return int(row["id"])
+            return entry
     return None
+
+
+def _duplicate_pending_proposal(conn: sqlite3.Connection, clean: dict,
+                                 now: datetime,
+                                 principal: Principal | None = None,
+                                 parsed: list[dict] | None = None,
+                                 ) -> dict | None:
+    """含待审提案的重复候选：避免直记与稍后批准的提案重复入账。
+
+    返回 ``{"proposal_id": int|None, "own": bool}``。他人提案只用于判定
+    重复（保守地照常降级/拒绝），**不返回其 ID**，避免跨 token 泄漏。
+    """
+    if parsed is None:
+        parsed = _parse_pending_rows(_pending_proposal_rows(conn, now))
+    entry = _match_pending_proposal(parsed, clean)
+    if entry is None:
+        return None
+    own = _is_own_proposal(entry, principal)
+    return {"proposal_id": entry["id"] if own else None, "own": own}
 
 
 def _available_shares(conn: sqlite3.Connection, clean: dict,
@@ -767,15 +808,21 @@ def _available_shares(conn: sqlite3.Connection, clean: dict,
 
 
 def _soft_failure(conn: sqlite3.Connection, clean: dict,
-                  now: datetime) -> tuple[str, dict[str, Any]] | None:
+                  now: datetime,
+                  principal: Principal | None = None,
+                  ) -> tuple[str, dict[str, Any]] | None:
     """按 §5 顺序返回首个软性失败；无异常返回 None。"""
     duplicate_tx = _duplicate_in_ledger(conn, clean)
     if duplicate_tx is not None:
         return "duplicate_candidate", {"tx_id": duplicate_tx}
 
-    duplicate_proposal = _duplicate_pending_proposal(conn, clean, now)
+    duplicate_proposal = _duplicate_pending_proposal(
+        conn, clean, now, principal)
     if duplicate_proposal is not None:
-        return "duplicate_candidate", {"proposal_id": duplicate_proposal}
+        detail: dict[str, Any] = {}
+        if duplicate_proposal["proposal_id"] is not None:
+            detail["proposal_id"] = duplicate_proposal["proposal_id"]
+        return "duplicate_candidate", detail
 
     if clean["action"] == ACTION_SELL and clean.get("shares") is not None:
         available = _available_shares(conn, clean, now)
@@ -1136,7 +1183,7 @@ def record_transaction_direct(principal: Principal, *, params: object,
                         "reset_at": reset_at},
                 params=clean)
 
-        failure = _soft_failure(conn, clean, now)
+        failure = _soft_failure(conn, clean, now, principal)
         if failure is not None:
             reason, detail = failure
             token_row = _token_row(conn, principal)
@@ -1183,14 +1230,34 @@ class PrecheckError(ValueError):
         self.message = message
 
 
+def _ledger_resolution(code: str, name: str, status: str,
+                       candidates: list[dict] | None = None,
+                       *, input_value: str | None = None) -> dict:
+    """构造与所有预检/对账分支一致的基金解析结果。
+
+    ``input_value`` 保留调用方原始输入（如基金名称）；缺省用 code，
+    再回退 name。
+    """
+    return {
+        "input": (input_value if input_value is not None
+                  else code or name),
+        "status": status,
+        "resolved_code": code or None,
+        "candidates": candidates or [],
+        "fund_name": name,
+    }
+
+
 def _resolve_fund(conn: sqlite3.Connection, item: dict) -> dict:
-    """解析条目的基金：优先 fund_code 校验（查账本收录），否则 fund_name 匹配。
+    """解析条目的基金：只查账本 ``funds`` 表，**绝不联网、不写磁盘**。
 
-    fund_code 走账本 ``funds`` 表校验，离线可用且与提案语义一致；
-    fund_name 走 ``fund_filter.resolve_fund_code``（依赖基金池，离线返回 none）。
+    ``fund_code`` 直接校验收录；``fund_name`` 在已收录基金中做
+    精确 → 双向子串匹配（A/C 类等后缀差异由子串规则覆盖）。这与提案
+    ``add_transaction`` 的收录要求一致，避免预检说「可提案」而实际被
+    ``fund_not_registered`` 拒绝。
 
-    返回 ``{"input": str, "status": str, "resolved_code": str|None,
-    "candidates": list, "fund_name": str}``。status ∈ exact/multiple/none/verified。
+    返回 ``{"input", "status", "resolved_code", "candidates", "fund_name"}``；
+    status ∈ exact/multiple/none/verified。
     """
     code = str(item.get("fund_code") or "").strip()
     name = str(item.get("fund_name") or "").strip()
@@ -1199,32 +1266,37 @@ def _resolve_fund(conn: sqlite3.Connection, item: dict) -> dict:
             "SELECT fund_name FROM funds WHERE fund_code=?", (code,)
         ).fetchone()
         if row is not None:
-            return {"input": code, "status": "verified",
-                    "resolved_code": code, "candidates": [],
-                    "fund_name": row["fund_name"] or code}
-        return {"input": code, "status": "none",
-                "resolved_code": None, "candidates": [],
-                "fund_name": ""}
-    if name:
-        result = fund_filter.resolve_fund_code(name)
-        resolved_code = result.get("code")
-        fund_name = name
-        if resolved_code:
-            row = conn.execute(
-                "SELECT fund_name FROM funds WHERE fund_code=?",
-                (resolved_code,)).fetchone()
-            if row is not None:
-                fund_name = row["fund_name"] or resolved_code
-        return {
-            "input": name,
-            "status": result.get("status", "none"),
-            "resolved_code": resolved_code,
-            "candidates": result.get("candidates", []),
-            "fund_name": fund_name,
-        }
-    return {"input": "", "status": "none",
-            "resolved_code": None, "candidates": [],
-            "fund_name": ""}
+            return _ledger_resolution(
+                code, row["fund_name"] or code, "verified")
+        return _ledger_resolution("", "", "none", candidates=[])
+    if not name:
+        return _ledger_resolution("", "", "none", candidates=[])
+
+    rows = conn.execute(
+        "SELECT fund_code, fund_name FROM funds "
+        "WHERE fund_name IS NOT NULL AND fund_name<>''").fetchall()
+    exact = [r for r in rows if r["fund_name"] == name]
+    if len(exact) == 1:
+        return _ledger_resolution(
+            exact[0]["fund_code"], exact[0]["fund_name"], "exact",
+            input_value=name)
+    if len(exact) > 1:
+        return _ledger_resolution("", name, "multiple", [
+            {"code": r["fund_code"], "name": r["fund_name"]} for r in exact])
+
+    contains = [
+        r for r in rows
+        if name in r["fund_name"] or r["fund_name"] in name
+    ]
+    if len(contains) == 1:
+        return _ledger_resolution(
+            contains[0]["fund_code"], contains[0]["fund_name"], "exact",
+            input_value=name)
+    if contains:
+        return _ledger_resolution("", name, "multiple", [
+            {"code": r["fund_code"], "name": r["fund_name"]}
+            for r in contains[:20]])
+    return _ledger_resolution("", name, "none", candidates=[])
 
 
 def _tx_to_report_dict(tx: Transaction) -> dict:
@@ -1245,12 +1317,29 @@ def _tx_to_report_dict(tx: Transaction) -> dict:
     }
 
 
-def precheck_transactions(input_data: dict) -> dict:
+def _csv_error_line(message: str) -> int | None:
+    """从 CSV 解析错误文案中提取行号（``第 N 行：...``）。"""
+    match = re.match(r"^第\s*(\d+)\s*行", message)
+    return int(match.group(1)) if match else None
+
+
+def _csv_has_fee_column(csv_text: str) -> bool:
+    """粗判 CSV 表头是否含手续费列，用于 ``missing_fee`` warning。"""
+    first_line = csv_text.splitlines()[0] if csv_text else ""
+    cells = {cell.strip().lower() for cell in first_line.split(",")}
+    return bool(cells & {"fee", "手续费", "费用"})
+
+
+def precheck_transactions(input_data: dict,
+                          principal: Principal | None = None) -> dict:
     """预检交易条目：解析→基金识别→字段校验→重复检测，返回结构化报告。
 
-    不写账本、不联网。支持两种输入格式：
+    不写账本、不联网、不写磁盘。支持两种输入格式：
     - ``{"format": "csv", "csv_text": str, "channel_hint"?: str}``
     - ``{"format": "items", "items": list[dict], "channel_hint"?: str}``
+
+    ``principal`` 仅用于判断重复命中提案的归属：他人提案只参与重复判定，
+    不返回其 ID。
     """
     fmt = input_data.get("format")
     channel_hint = str(input_data.get("channel_hint") or "").strip()
@@ -1258,6 +1347,7 @@ def precheck_transactions(input_data: dict) -> dict:
 
     raw_items: list[dict] = []
     parse_errors: list[dict] = []
+    fee_column_present = True
 
     if fmt == "csv":
         csv_text = input_data.get("csv_text")
@@ -1265,10 +1355,17 @@ def precheck_transactions(input_data: dict) -> dict:
             raise PrecheckError("validation_error", "csv_text 必须是字符串")
         if len(csv_text.encode("utf-8")) > _MAX_CSV_BYTES:
             raise PrecheckError("csv_too_large", "CSV 文本超过 5 MB 限制")
+        # 行数粗筛先于 pandas 全量解析，避免超大 CSV 白付解析成本。
+        if csv_text.count("\n") > _MAX_PRECHECK_ITEMS + 1:
+            raise PrecheckError(
+                "too_many_items",
+                f"条目数超过 {_MAX_PRECHECK_ITEMS} 上限")
+        fee_column_present = _csv_has_fee_column(csv_text)
         transactions, errors = data_io.parse_transactions_csv(
             csv_text.encode("utf-8"))
         for err in errors:
-            parse_errors.append({"line": None, "message": err})
+            parse_errors.append({
+                "line": _csv_error_line(err), "message": err})
         raw_items = [
             {
                 "fund_code": tx.fund_code, "action": tx.action,
@@ -1302,6 +1399,9 @@ def precheck_transactions(input_data: dict) -> dict:
     duplicate_count = 0
 
     with db.get_connection() as conn:
+        # 待审提案只解析一次，供所有条目的重复检测复用。
+        parsed_pending = _parse_pending_rows(
+            _pending_proposal_rows(conn, now))
         for idx, raw in enumerate(raw_items):
             if not isinstance(raw, dict):
                 report_items.append({
@@ -1392,7 +1492,8 @@ def precheck_transactions(input_data: dict) -> dict:
 
             # 重复检测
             dup_ledger = _duplicate_in_ledger(conn, clean)
-            dup_pending = _duplicate_pending_proposal(conn, clean, now)
+            dup_pending = _duplicate_pending_proposal(
+                conn, clean, now, principal, parsed=parsed_pending)
             duplicate_info = None
             if dup_ledger is not None:
                 duplicate_info = {
@@ -1402,7 +1503,9 @@ def precheck_transactions(input_data: dict) -> dict:
                 }
             elif dup_pending is not None:
                 duplicate_info = {
-                    "kind": "pending_proposal", "proposal_id": dup_pending,
+                    "kind": "pending_proposal",
+                    "proposal_id": dup_pending["proposal_id"],
+                    "own": dup_pending["own"],
                     "match_fields": ["fund_code", "action", "date",
                                      "amount", "shares"],
                 }
@@ -1411,7 +1514,9 @@ def precheck_transactions(input_data: dict) -> dict:
             if not tx.channel:
                 issues.append({"field": "channel", "code": "missing_channel",
                                "message": "未提供渠道，将按空串记录"})
-            if not tx.fee:
+            fee_missing = (raw.get("fee") is None if fmt != "csv"
+                           else not fee_column_present)
+            if fee_missing:
                 issues.append({"field": "fee", "code": "missing_fee",
                                "message": "未提供手续费，将按 0 记录"})
 
@@ -1452,7 +1557,9 @@ def precheck_transactions(input_data: dict) -> dict:
 def precheck_reconciliation(input_data: dict) -> dict:
     """持仓对账预检：基金解析→差额计算→建议交易，返回差额表。
 
-    不写账本、不联网。复用 ``analysis.reconcile_holdings``。
+    不写账本、不联网、不写磁盘。复用 ``analysis.reconcile_holdings``。
+    ``maybe_sold``（输入中缺失的已有持仓）只作提示，``proposal_ready``
+    固定为 false 并附 ``absent_from_input`` issue，须用户确认。
     """
     holdings = input_data.get("holdings")
     if not isinstance(holdings, list):
@@ -1462,9 +1569,14 @@ def precheck_reconciliation(input_data: dict) -> dict:
             "too_many_items",
             f"持仓条目数超过 {_MAX_RECONCILE_ITEMS} 上限")
     channel = str(input_data.get("channel") or "").strip()
+    if len(channel) > CHANNEL_MAX_LEN:
+        raise PrecheckError(
+            "validation_error",
+            f"channel 不能超过 {CHANNEL_MAX_LEN} 个字符", "channel")
 
     # 基金解析前置 + shares 校验：只保留 exact/verified 且 shares 合法的条目参与对账
     resolved_items: list[dict] = []
+    resolved_by_code: dict[str, dict] = {}
     resolution_errors: list[dict] = []
     with db.get_connection() as conn:
         for idx, raw in enumerate(holdings):
@@ -1509,25 +1621,44 @@ def precheck_reconciliation(input_data: dict) -> dict:
                     "message": shares_error})
                 continue
             market_value = raw.get("market_value")
+            resolved_by_code[code] = resolution
             resolved_items.append({
                 "fund_code": code,
                 "shares": shares_num,
                 "market_value": market_value,
             })
 
+    # 被剔除的条目（如 shares 非法）不得再产生「疑似清仓」建议：
+    # 用户实际提供了该基金，只是数据不合法，不能据此推断已卖出。
+    excluded_codes = {
+        err["resolved_code"] for err in resolution_errors
+        if err.get("resolved_code")
+    }
+
     result = analysis.reconcile_holdings(resolved_items, channel=channel)
 
-    # 为每条补 fund_resolution + proposal_ready
+    # 为每条补 fund_resolution + issues + proposal_ready
     enriched_items: list[dict] = []
     for item in result["items"]:
         code = item["fund_code"]
+        if item["status"] == "maybe_sold" and code in excluded_codes:
+            continue
         suggested = item.get("suggested_tx")
+        resolution = resolved_by_code.get(code) or _ledger_resolution(
+            code, item.get("fund_name") or code, "verified")
+        issues: list[dict] = []
         proposal_ready = (
             item["status"] != "ok" and suggested is not None and bool(code))
+        if item["status"] == "maybe_sold":
+            # 截图/输入中没有该基金，只能「疑似」清仓，必须由用户确认。
+            proposal_ready = False
+            issues.append({
+                "field": "shares", "code": "absent_from_input",
+                "message": "该基金未出现在输入中，疑似清仓，请核实后再创建提案"})
         enriched = {
             **item,
-            "fund_resolution": {"status": "verified",
-                                "resolved_code": code, "candidates": []},
+            "fund_resolution": resolution,
+            "issues": issues,
             "proposal_ready": proposal_ready,
         }
         enriched_items.append(enriched)

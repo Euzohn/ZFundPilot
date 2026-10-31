@@ -1978,13 +1978,24 @@ def agent_precheck_transactions(
     """
     _require_agent_write_enabled(request, ctx)
     try:
-        result = transaction_service.precheck_transactions(body.input)
+        result = transaction_service.precheck_transactions(
+            body.input, _proposal_principal(ctx))
     except transaction_service.PrecheckError as exc:
         raise HTTPException(
             status_code=422,
             detail={"code": exc.code, "field": exc.field,
                     "message": exc.message},
         ) from exc
+    # 只记计数与格式，不记条目内容（可能含金额）
+    db.log_audit(
+        "agent_precheck_transactions", ip=_get_client_ip(request),
+        username=f"agent:{ctx.prefix}",
+        detail={"token_prefix": ctx.prefix, "format": body.input.get("format"),
+                "total": result["total"], "valid": result["valid"],
+                "invalid": result["invalid"],
+                "duplicate": result["duplicate"],
+                "parse_errors": len(result["parse_errors"])},
+    )
     return _agent_tool_response("precheck_transactions", result)
 
 
@@ -2013,6 +2024,14 @@ def agent_precheck_reconciliation(
             detail={"code": exc.code, "field": exc.field,
                     "message": exc.message},
         ) from exc
+    # 只记渠道与计数，不记持仓明细（可能含金额）
+    db.log_audit(
+        "agent_precheck_reconciliation", ip=_get_client_ip(request),
+        username=f"agent:{ctx.prefix}",
+        detail={"token_prefix": ctx.prefix, "channel": result["channel"],
+                "items": len(result["items"]),
+                "fund_resolution_errors": len(result["fund_resolution_errors"])},
+    )
     return _agent_tool_response("precheck_reconciliation", result)
 
 

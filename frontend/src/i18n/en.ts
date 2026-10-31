@@ -526,6 +526,8 @@ const en: typeof zh = {
       agent_direct_add: "Agent direct transaction recorded",
       agent_direct_downgraded: "Agent direct write downgraded",
       agent_direct_rejected: "Agent direct write rejected",
+      agent_precheck_transactions: "Agent transaction precheck",
+      agent_precheck_reconciliation: "Agent reconciliation precheck",
       data_refresh_started: "Data refresh started",
       data_refresh_succeeded: "Data refresh succeeded",
       data_refresh_failed: "Data refresh failed",

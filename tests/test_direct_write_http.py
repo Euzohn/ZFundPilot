@@ -152,6 +152,27 @@ class TestDirectWriteResults:
         assert body["data"]["verify_path"] == "/proposals"
         assert len(db.get_transactions_desc()) == 1
 
+    def test_other_pending_proposal_duplicate_hides_id(self, client):
+        other = _agent_headers([agent_tokens.SCOPE_TRANSACTIONS_PROPOSE])
+        created = client.post(
+            PROPOSAL_ENDPOINT,
+            headers={**other,
+                     "Idempotency-Key": "proposal-key-0123456789abcdef"},
+            json={"operation_type": "add_transaction",
+                  "params": BUY_PARAMS})
+        assert created.status_code == 201, created.text
+        proposal_id = created.json()["data"]["proposal_id"]
+
+        # A 只有 create scope，命中 B 的 pending 提案 → 拒绝且不泄漏其 ID
+        headers = _agent_headers([agent_tokens.SCOPE_TRANSACTIONS_CREATE])
+        response = _post(client, headers)
+        assert response.status_code == 409
+        detail = response.json()["detail"]
+        assert detail["code"] == "duplicate_candidate"
+        assert "proposal_id" not in detail
+        assert str(proposal_id) not in response.text
+        assert db.get_transactions_desc() == []
+
     def test_capabilities_registers_record_transaction_with_fallback(
             self, client):
         headers = _agent_headers([agent_tokens.SCOPE_TRANSACTIONS_CREATE])

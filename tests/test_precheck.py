@@ -11,9 +11,16 @@ from tempfile import TemporaryDirectory
 import pytest
 from fastapi.testclient import TestClient
 
-from zfundpilot import agent_tokens, api, config, db
+from zfundpilot import (
+    agent_tokens,
+    api,
+    config,
+    db,
+    proposal_service,
+    transaction_service,
+)
 from zfundpilot.analysis import clear_analysis_cache
-from zfundpilot.models import Fund
+from zfundpilot.models import Fund, Transaction
 
 PRECHECK_TX = "/api/agent/tools/precheck/transactions"
 PRECHECK_REC = "/api/agent/tools/precheck/reconciliation"
@@ -59,6 +66,24 @@ def _agent_headers(scopes: list[str]) -> dict[str, str]:
 
 def _propose_headers() -> dict[str, str]:
     return _agent_headers([agent_tokens.SCOPE_TRANSACTIONS_PROPOSE])
+
+
+def _propose_token() -> tuple[dict[str, str], proposal_service.Principal]:
+    """签发 token 并返回其请求头与服务层 principal（用于造 pending 提案）。"""
+    plaintext, meta = agent_tokens.issue_token(
+        "test-agent", [agent_tokens.SCOPE_TRANSACTIONS_PROPOSE])
+    principal = proposal_service.Principal(
+        "agent_token", str(meta["id"]), f"agent:{meta['token_prefix']}")
+    return {"Authorization": f"Bearer {plaintext}"}, principal
+
+
+def _create_pending_proposal(
+        principal: proposal_service.Principal, params: dict) -> int:
+    result = proposal_service.create_proposal(
+        principal, operation_type="add_transaction", params=params,
+        idempotency_key="pending-key-0123456789abcdef")
+    assert result.ok, result.message
+    return int(result.data["proposal_id"])
 
 
 def _precheck_tx(client, payload, headers=None):
@@ -171,6 +196,90 @@ class TestPrecheckTransactionsItems:
         assert "missing_channel" in codes
         assert "missing_fee" in codes
 
+    def test_explicit_zero_fee_not_warned(self, client):
+        item = {**BUY_ITEM, "fee": 0}
+        r = _precheck_tx(client, {"format": "items", "items": [item]})
+        codes = {i["code"] for i in r.json()["data"]["items"][0]["issues"]}
+        assert "missing_fee" not in codes
+
+    def test_fund_name_exact_from_ledger(self, client):
+        item = {k: v for k, v in BUY_ITEM.items() if k != "fund_code"}
+        item["fund_name"] = "易方达蓝筹精选"
+        r = _precheck_tx(client, {"format": "items", "items": [item]})
+        data = r.json()["data"]
+        item0 = data["items"][0]
+        assert item0["status"] == "valid"
+        assert item0["fund_resolution"]["status"] == "exact"
+        assert item0["fund_resolution"]["resolved_code"] == "005827"
+        assert item0["transaction"]["fund_code"] == "005827"
+
+    def test_fund_name_ambiguous_from_ledger(self, client):
+        db.upsert_fund(Fund("005828", "易方达蓝筹精选C", "混合型", "消费"))
+        item = {k: v for k, v in BUY_ITEM.items() if k != "fund_code"}
+        item["fund_name"] = "易方达蓝筹"
+        r = _precheck_tx(client, {"format": "items", "items": [item]})
+        data = r.json()["data"]
+        item0 = data["items"][0]
+        assert item0["status"] == "invalid"
+        assert item0["fund_resolution"]["status"] == "multiple"
+        assert item0["proposal_ready"] is False
+        assert len(item0["fund_resolution"]["candidates"]) == 2
+
+    def test_fund_name_not_found(self, client):
+        item = {k: v for k, v in BUY_ITEM.items() if k != "fund_code"}
+        item["fund_name"] = "不存在的基金"
+        r = _precheck_tx(client, {"format": "items", "items": [item]})
+        data = r.json()["data"]
+        item0 = data["items"][0]
+        assert item0["status"] == "invalid"
+        assert item0["fund_resolution"]["status"] == "none"
+        assert any(i["code"] == "no_match" for i in item0["issues"])
+
+    def test_duplicate_matches_own_pending_proposal(self, client):
+        headers, principal = _propose_token()
+        proposal_id = _create_pending_proposal(principal, BUY_ITEM)
+        r = _precheck_tx(client, {"format": "items", "items": [BUY_ITEM]},
+                         headers=headers)
+        data = r.json()["data"]
+        dup = data["items"][0]
+        assert dup["status"] == "duplicate"
+        assert dup["duplicate"]["kind"] == "pending_proposal"
+        assert dup["duplicate"]["own"] is True
+        assert dup["duplicate"]["proposal_id"] == proposal_id
+        assert dup["proposal_ready"] is False
+
+    def test_duplicate_other_pending_proposal_hides_id(self, client):
+        other = proposal_service.Principal(
+            "agent_token", "999999", "agent:other")
+        _create_pending_proposal(other, BUY_ITEM)
+        r = _precheck_tx(client, {"format": "items", "items": [BUY_ITEM]})
+        diff = r.json()["data"]["items"][0]
+        assert diff["status"] == "duplicate"
+        assert diff["duplicate"]["kind"] == "pending_proposal"
+        assert diff["duplicate"]["own"] is False
+        assert diff["duplicate"]["proposal_id"] is None
+        assert diff["proposal_ready"] is False
+
+    def test_precheck_does_not_write_ledger(self, client):
+        with db.get_connection() as conn:
+            before_tx = conn.execute(
+                "SELECT COUNT(*) FROM transactions").fetchone()[0]
+            before_pp = conn.execute(
+                "SELECT COUNT(*) FROM operation_proposals").fetchone()[0]
+            before_audit = conn.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE action=?",
+                ("agent_precheck_transactions",)).fetchone()[0]
+        r = _precheck_tx(client, {"format": "items", "items": [BUY_ITEM]})
+        assert r.status_code == 200
+        with db.get_connection() as conn:
+            assert conn.execute(
+                "SELECT COUNT(*) FROM transactions").fetchone()[0] == before_tx
+            assert conn.execute(
+                "SELECT COUNT(*) FROM operation_proposals").fetchone()[0] == before_pp
+            assert conn.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE action=?",
+                ("agent_precheck_transactions",)).fetchone()[0] == before_audit + 1
+
     def test_channel_hint_applied(self, client):
         item = {k: v for k, v in BUY_ITEM.items() if k != "channel"}
         r = _precheck_tx(client, {"format": "items", "items": [item],
@@ -223,12 +332,53 @@ class TestPrecheckTransactionsCsv:
         data = r.json()["data"]
         assert len(data["parse_errors"]) >= 1
 
-    def test_csv_too_large(self, client):
-        # 每行 22 字节，需超过 5 MB（_MAX_CSV_BYTES=5_242_880）
-        big = "fund_code,action,date\n" + "005827,buy,2026-01-02\n" * 260000
-        r = _precheck_tx(client, {"format": "csv", "csv_text": big})
+    def test_csv_too_large(self, client, monkeypatch):
+        # 缩小阈值避免构造 5 MB 文本拖慢测试
+        monkeypatch.setattr(transaction_service, "_MAX_CSV_BYTES", 64)
+        r = _precheck_tx(client, {"format": "csv",
+                                  "csv_text": self.CSV_OK})
         assert r.status_code == 422
         assert r.json()["detail"]["code"] == "csv_too_large"
+
+    def test_csv_too_many_rows(self, client):
+        rows = "005827,buy,2026-01-02,1000\n" * 201
+        r = _precheck_tx(client, {
+            "format": "csv",
+            "csv_text": "fund_code,action,date,amount\n" + rows})
+        assert r.status_code == 422
+        assert r.json()["detail"]["code"] == "too_many_items"
+
+    def test_csv_channel_hint(self, client):
+        csv_text = ("fund_code,action,date,amount,fee\n"
+                    "005827,buy,2026-01-02,1000,1\n")
+        r = _precheck_tx(client, {"format": "csv", "csv_text": csv_text,
+                                  "channel_hint": "理财通"})
+        data = r.json()["data"]
+        item0 = data["items"][0]
+        assert item0["transaction"]["channel"] == "理财通"
+        codes = {i["code"] for i in item0["issues"]}
+        assert "missing_channel" not in codes
+
+    def test_csv_fee_column_detected(self, client):
+        r = _precheck_tx(client, {"format": "csv", "csv_text": self.CSV_OK})
+        for item in r.json()["data"]["items"]:
+            codes = {i["code"] for i in item["issues"]}
+            assert "missing_fee" not in codes
+
+    def test_csv_without_fee_column_warns(self, client):
+        csv_text = ("fund_code,action,date,amount\n"
+                    "005827,buy,2026-01-02,1000\n")
+        r = _precheck_tx(client, {"format": "csv", "csv_text": csv_text})
+        codes = {i["code"] for i in r.json()["data"]["items"][0]["issues"]}
+        assert "missing_fee" in codes
+
+    def test_csv_parse_error_line(self, client):
+        csv_text = ("fund_code,action,date,amount\n"
+                    "005827,,2026-01-02,1000\n")
+        r = _precheck_tx(client, {"format": "csv", "csv_text": csv_text})
+        errs = r.json()["data"]["parse_errors"]
+        assert errs
+        assert errs[0]["line"] == 2
 
     def test_csv_not_string(self, client):
         r = _precheck_tx(client, {"format": "csv", "csv_text": 123})
@@ -238,6 +388,14 @@ class TestPrecheckTransactionsCsv:
 # ---------------------------------------------------------------------------
 # precheck_reconciliation
 # ---------------------------------------------------------------------------
+
+def _record_holding(shares: float = 100.0, channel: str = "支付宝") -> None:
+    """写入一笔买入，构造账本已有持仓。"""
+    db.add_transaction(Transaction(
+        fund_code="005827", action="buy", date="2026-01-02",
+        amount=shares * 10.0, shares=shares, nav=10.0, channel=channel))
+    clear_analysis_cache()
+
 
 class TestPrecheckReconciliation:
     def test_reconcile_valid(self, client):
@@ -289,6 +447,61 @@ class TestPrecheckReconciliation:
     def test_reconcile_holdings_not_array(self, client):
         r = _precheck_rec(client, {"holdings": "nope"})
         assert r.status_code == 422
+
+    def test_reconcile_channel_too_long(self, client):
+        r = _precheck_rec(client, {"channel": "x" * 51, "holdings": []})
+        assert r.status_code == 422
+        assert r.json()["detail"]["field"] == "channel"
+
+    def test_reconcile_maybe_sold_not_proposal_ready(self, client):
+        _record_holding()
+        r = _precheck_rec(client, {"channel": "支付宝", "holdings": []})
+        data = r.json()["data"]
+        maybe = [i for i in data["items"] if i["status"] == "maybe_sold"]
+        assert len(maybe) == 1
+        item = maybe[0]
+        assert item["fund_code"] == "005827"
+        assert item["proposal_ready"] is False
+        assert any(i["code"] == "absent_from_input"
+                   for i in item["issues"])
+        assert item["fund_resolution"]["status"] == "verified"
+        assert item["fund_resolution"]["resolved_code"] == "005827"
+        assert item["fund_resolution"]["input"] == "005827"
+
+    def test_reconcile_invalid_shares_suppresses_maybe_sold(self, client):
+        _record_holding()
+        r = _precheck_rec(client, {"channel": "支付宝", "holdings": [
+            {"fund_code": "005827", "shares": "abc"}]})
+        data = r.json()["data"]
+        assert data["fund_resolution_errors"]
+        assert not [i for i in data["items"]
+                    if i["fund_code"] == "005827"
+                    and i["status"] == "maybe_sold"]
+
+    def test_reconcile_market_value_estimates_nav(self, client):
+        r = _precheck_rec(client, {"holdings": [
+            {"fund_code": "005827", "shares": 10.0,
+             "market_value": 12.0}]})
+        item = r.json()["data"]["items"][0]
+        assert item["status"] == "new"
+        assert item["proposal_ready"] is True
+        assert item["suggested_tx"]["nav"] == pytest.approx(1.2)
+        assert item["suggested_tx"]["amount"] == pytest.approx(12.0)
+        assert item["fund_resolution"]["fund_name"] == "易方达蓝筹精选"
+        assert item["issues"] == []
+
+    def test_reconcile_audit_recorded(self, client):
+        with db.get_connection() as conn:
+            before = conn.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE action=?",
+                ("agent_precheck_reconciliation",)).fetchone()[0]
+        r = _precheck_rec(client, {"holdings": []})
+        assert r.status_code == 200
+        with db.get_connection() as conn:
+            after = conn.execute(
+                "SELECT COUNT(*) FROM audit_log WHERE action=?",
+                ("agent_precheck_reconciliation",)).fetchone()[0]
+        assert after == before + 1
 
     def test_reconcile_item_not_object(self, client):
         r = _precheck_rec(client, {"holdings": ["str"]})

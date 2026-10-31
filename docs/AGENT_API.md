@@ -935,7 +935,7 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions" \
 - 请求体为扁平字段：`fund_code`、`action`（仅 `buy`/`sell`）、`date`（`YYYY-MM-DD`，不得晚于今天，否则 `422 future_date`）、`amount`/`shares`/`nav`、`fee`、`channel`、`note`、`is_t1`。未知字段按请求校验错误返回 `422`。
 - 必须带 `Idempotency-Key`（16–128 安全 ASCII）。同键同参返回原结果（`200` + `replayed=true`）；同键异参返回 `409 idempotency_conflict`。**重放永不升级**：原结局为降级提案时，即使诱因消除，重放仍返回提案实时状态，不会再直写第二笔。
 - 预检顺序：参数/日期 → 幂等重放 → 事务内复核 token/scope/写总闸 → 基金收录 → 每日额度 → 疑似重复 → 卖出份额 → 单笔金额上限。
-- 错误码：`write_disabled`、`scope_revoked`、`validation_error`、`future_date`、`fund_not_registered`（409，不降级）、`daily_quota_exceeded`（429，含 `used`/`limit`/`reset_at`，不降级）、`duplicate_candidate`（含 `tx_id` 或 `proposal_id`）、`insufficient_shares`（含 `available`/`requested`）、`amount_exceeds_cap`（含 `cap`/`amount`）、`idempotency_conflict`/`idempotency_expired`、`too_many_pending`（降级路径透传）。
+- 错误码：`write_disabled`、`scope_revoked`、`validation_error`、`future_date`、`fund_not_registered`（409，不降级）、`daily_quota_exceeded`（429，含 `used`/`limit`/`reset_at`，不降级）、`duplicate_candidate`（账本重复含 `tx_id`；命中本人待审提案含 `proposal_id`，命中他人提案只报重复、不含 ID）、`insufficient_shares`（含 `available`/`requested`）、`amount_exceeds_cap`（含 `cap`/`amount`）、`idempotency_conflict`/`idempotency_expired`、`too_many_pending`（降级路径透传）。
 - 降级产生的提案与 `create_operation_proposal` 完全等价，需在「待确认提案」页批准；同主体已存在同参 pending 提案时复用而非新建。
 - 额度（可 env 覆盖）：单笔 `ZFUNDPILOT_AGENT_TX_MAX_AMOUNT`（默认 50 万）、每日笔数 `ZFUNDPILOT_AGENT_TX_DAILY_COUNT`（默认 10，含降级）、每日金额 `ZFUNDPILOT_AGENT_TX_DAILY_AMOUNT`（默认 100 万，仅直写累计）；路由限流 10 次/分钟。
 - 直记写入的交易 `source="agent"`，流水页显示「Agent」徽标；网页/CSV/提案审批路径 `source` 为空。审计记录 `agent_direct_add`（直记成功）、`agent_direct_downgraded`（降级）、`agent_direct_rejected`（拒绝），并沿用业务 `add_transaction`（detail 含 `source`）。
@@ -970,17 +970,22 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/precheck/reconciliation" \
 **交易预检**（`precheck_transactions`）：
 
 - `input.format`：`"csv"`（需 `csv_text` 字符串，≤5 MB）或 `"items"`（数组，≤200 条）；可选 `channel_hint` 补全缺渠道的条目。
-- 每条经「基金识别 → 字段校验 → 重复检测」三步：`fund_code` 查账本 `funds` 表校验收录（离线可用）；`fund_name` 走基金池名称匹配（离线返回 `none`）。返回 `status`：`valid`/`invalid`/`duplicate`，附 `fund_resolution`、`duplicate`（`kind` 为 `ledger` 或 `pending_proposal`）、`issues`（`code` 含 `no_match`/`ambiguous_match`/`validation_error`/`invalid_params`/`missing_channel`/`missing_fee`）与 `proposal_ready` 标志。
-- 重复检测复用直记/提案的 `_duplicate_in_ledger`（同基金+渠道+日期+方向且金额或份额容差匹配）与 `_duplicate_pending_proposal`（待审批提案）。
-- 硬阻断仅：`date`/`action`/`fund_code`/`shares`(卖出)/`amount`(分红) 缺失或非法；`channel`/`fee` 缺失为 warning（条目仍 `valid`）。
+- 每条经「基金识别 → 字段校验 → 重复检测」三步：`fund_code` 查账本 `funds` 表校验收录（离线可用）；`fund_name` **也只查账本已收录基金**（精确 → 双向唯一子串匹配，覆盖 A/C 类后缀差异），不联网、不读基金池。返回 `status`：`valid`/`invalid`/`duplicate`，附 `fund_resolution`、`duplicate`、`issues`（`code` 含 `no_match`/`ambiguous_match`/`validation_error`/`invalid_params`/`missing_channel`/`missing_fee`）与 `proposal_ready` 标志。
+- `duplicate.kind` 为 `ledger` 或 `pending_proposal`；`pending_proposal` 带 `own`（是否本人提案），仅 `own=true` 时返回 `proposal_id`，他人提案只参与重复判定、不泄漏 ID。
+- 重复检测复用直记/提案的 `_duplicate_in_ledger`（同基金+渠道+日期+方向且金额或份额容差匹配）与 `_duplicate_pending_proposal`（待审批提案，跨主体保守判定）。
+- 硬阻断仅：`date`/`action`/`fund_code`/`shares`(卖出)/`amount`(分红) 缺失或非法；`channel`/`fee` 缺失为 warning（条目仍 `valid`）。`missing_fee` 按「条目是否提供 `fee`」判断（items 路径）或「CSV 是否含 fee 列」判断（csv 路径），显式 `fee=0` 不告警。
+- `parse_errors` 每条含 `line`（CSV 行号，无法定位时为 `null`）与 `message`。
 - 请求级错误（`format` 非法、`items` 非数组、超 200 条、CSV 超 5 MB）返回 `422`，`detail.code` 为 `validation_error`/`too_many_items`/`csv_too_large`。
 
 **对账预检**（`precheck_reconciliation`）：
 
-- `input.holdings`：`[{fund_code 或 fund_name, shares, market_value?}]`，≤100 条；可选 `channel` 按渠道过滤。
-- 先做基金识别 + `shares` 校验（非负有限数字），未收录或 shares 非法的条目进 `fund_resolution_errors`（含 `reason`：`fund_unresolved`/`invalid_shares`/`not_object`），不参与对账。
-- 合法条目复用 `analysis.reconcile_holdings` 生成差额表：`status` 为 `buy`/`sell`/`ok`/`new`/`maybe_sold`，附 `suggested_tx`（`nav` 取 `latest_nav` 估算，`note` 标注「请核实」）与 `proposal_ready` 标志。
+- `input.holdings`：`[{fund_code 或 fund_name, shares, market_value?}]`，≤100 条；可选 `channel` 按渠道过滤（≤50 字符）。
+- 先做基金识别 + `shares` 校验（非负有限数字），未收录或 shares 非法的条目进 `fund_resolution_errors`（含 `reason`：`fund_unresolved`/`invalid_shares`/`not_object`），不参与对账；被剔除的基金**不会**生成 `maybe_sold` 清仓建议。
+- 合法条目复用 `analysis.reconcile_holdings` 生成差额表：`status` 为 `buy`/`sell`/`ok`/`new`/`maybe_sold`，附 `suggested_tx`（`nav` 取 `latest_nav` 估算，`note` 标注「请核实」）、`fund_resolution`（完整 shape）、`issues` 与 `proposal_ready` 标志。
+- `maybe_sold`（系统有、输入无）一律 `proposal_ready=false`，并在 `issues` 附 `absent_from_input`；这只是疑似清仓提示，须用户确认后另行处理。`suggested_tx.date` 为 `null`，创建提案时须填当日日期。
 - 调用方据报告确认后，用 `create_operation_proposal`（`add_transaction`）逐条提交建议交易，仍需网页审批。
+
+两个预检成功时分别写审计 `agent_precheck_transactions`（token 前缀、`format`、条目计数）与 `agent_precheck_reconciliation`（token 前缀、`channel`、差额条目数）；**不记录**条目金额或明细。
 
 ### MCP 适配层（可选）
 
@@ -1049,3 +1054,4 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 | 2026-10-31 | F1：`create_operation_proposal` 新增 `update_transaction`/`delete_transaction` 两种 operation_type，携带 `expected_digest`（行内容 SHA-256）作目标行版本前置；转换腿单腿修改/删除被拒，份额连带在执行期阻断；`GET transactions/{tx_id}` 新增 `row_digest` 字段 |
 | 2026-10-31 | F2：新增 `add_conversion`/`delete_conversion` 提案（转换双腿原子写入；按 `conversion_id` 整对删除并校验两腿 `expected_digest`），`add_transaction` 支持可选 `dividend_alert_id` 原子关联分红提醒；均复用 `transactions:propose`，新增对应错误码与审计标签 |
 | 2026-11-01 | F3：新增 `precheck_transactions`/`precheck_reconciliation` 两个只读预检工具（复用 `transactions:propose`，受写总闸约束、限流 10 次/分钟）：交易预检支持 CSV 文本或条目数组，逐条做基金识别（查账本 `funds` 表）、字段校验与重复检测；对账预检先做基金识别 + `shares` 校验，合法条目复用 `reconcile_holdings` 生成差额与建议交易。均不写账本、不联网、不创建提案 |
+| 2026-11-01 | F3 加固：`fund_name` 改为只查账本已收录基金（离线、与提案收录要求一致）；命中他人待审提案只判重复不返回 `proposal_id`（新增 `own`）；对账 `maybe_sold` 不再标记可提案并附 `absent_from_input`，被剔除条目不再生成清仓建议；`channel` 增加 50 字符上限；CSV `parse_errors` 补行号；预检成功写审计（仅计数/格式/渠道） |

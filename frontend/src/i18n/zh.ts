@@ -524,6 +524,8 @@ const zh = {
       agent_direct_add: "Agent 可信直记入账",
       agent_direct_downgraded: "Agent 直记转提案",
       agent_direct_rejected: "Agent 直记被拒绝",
+      agent_precheck_transactions: "Agent 交易预检",
+      agent_precheck_reconciliation: "Agent 对账预检",
       data_refresh_started: "启动数据刷新",
       data_refresh_succeeded: "数据刷新成功",
       data_refresh_failed: "数据刷新失败",

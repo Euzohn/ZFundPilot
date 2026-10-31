@@ -63,8 +63,12 @@ mcp = FastMCP(
         "Call get_data_status before drawing conclusions from NAV-based data, "
         "and get_agent_capabilities to discover tools granted to this token. "
         "Watchlist writes and data refresh are direct low-risk writes. "
-        "Ledger changes are proposal-only: create_operation_proposal never "
-        "writes the ledger; an administrator must approve it in the web UI."
+        "Ledger changes are proposal-only by default: create_operation_proposal "
+        "never writes the ledger; an administrator must approve it in the web UI. "
+        "record_transaction is a separately authorized direct-write path for a "
+        "single buy/sell the user explicitly says already happened elsewhere; it "
+        "requires transactions:create and may still be downgraded to a proposal "
+        "(check execution_mode in the response)."
     ),
 )
 
@@ -542,6 +546,79 @@ async def create_operation_proposal(
     return await _post(
         "/api/agent/tools/proposals",
         {"operation_type": operation_type, "params": params},
+        headers={"Idempotency-Key": idempotency_key},
+    )
+
+
+@mcp.tool()
+async def record_transaction(
+    fund_code: str,
+    action: str,
+    date: str,
+    idempotency_key: str,
+    amount: float | None = None,
+    shares: float | None = None,
+    nav: float | None = None,
+    fee: float = 0.0,
+    channel: str = "",
+    note: str = "",
+    is_t1: bool = False,
+) -> dict[str, Any]:
+    """Directly record ONE buy/sell the user says already happened externally.
+
+    Use this only when the user explicitly states that a buy or sell has already
+    been completed on an external platform. Never infer a transaction from a
+    screenshot, forecast, recommendation, or portfolio suggestion; use
+    create_operation_proposal for reconciliation-style input instead.
+
+    Requires the transactions:create scope. Prechecks may downgrade the request
+    to a pending proposal (for example suspected duplicate, insufficient shares,
+    or amount over the direct-write cap). Always inspect
+    data.execution_mode: "direct" means the ledger was written; "proposal" means
+    nothing was written and an administrator must approve it in the web UI.
+
+    The receipt's data.receipt.unconfirmed_fields lists fields awaiting T+1/NAV
+    backfill. Do not present an estimated NAV as the confirmed execution NAV.
+
+    Args:
+        fund_code: Six-digit fund code.
+        action: "buy" or "sell" (direct write supports only these two).
+        date: Trade date YYYY-MM-DD; must not be in the future.
+        idempotency_key: Unique retry key (16-128 chars); retries with the same
+            key and params never create a second transaction or upgrade a
+            downgraded proposal to a direct write.
+        amount: Buy amount including fee, or sell proceeds. For buy, provide
+            amount or shares; for sell, shares is required.
+        shares: Confirmed shares, if known.
+        nav: Confirmed execution NAV; omit while awaiting T+1 confirmation.
+        fee: Fee amount (default 0).
+        channel: Purchase channel, e.g. "支付宝"; keep it consistent with
+            existing ledger rows for share and duplicate checks.
+        note: Optional note.
+        is_t1: True when the trade awaits T+1 confirmation.
+    """
+    _validate_write_key(idempotency_key)
+    if action not in ("buy", "sell"):
+        raise ToolError('action must be "buy" or "sell" for direct write.')
+    _validate_date(date, "date")
+    if not re.fullmatch(r"\d{6}", fund_code):
+        raise ToolError("fund_code must be a six-digit code.")
+    if amount is None and shares is None:
+        raise ToolError("Provide amount or shares.")
+    body = {
+        "fund_code": fund_code,
+        "action": action,
+        "date": date,
+        "amount": amount,
+        "shares": shares,
+        "nav": nav,
+        "fee": fee,
+        "channel": channel,
+        "note": note,
+        "is_t1": is_t1,
+    }
+    return await _post(
+        "/api/agent/tools/transactions", body,
         headers={"Idempotency-Key": idempotency_key},
     )
 

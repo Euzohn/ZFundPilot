@@ -23,15 +23,25 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
-import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
 from . import agent_tokens, analysis, config, db
-from .models import ACTION_BUY, ACTIONS, Transaction
+from .models import Transaction
+from .transaction_service import (
+    ACTION_LABELS,
+    CONTRACT_VERSION,
+    validate_add_transaction_params,
+    validate_idempotency_key,
+)
+from .transaction_service import (
+    TransactionValidationError as ProposalValidationError,
+)
+from .transaction_service import (
+    clean_text as _clean_text,
+)
 
 OPERATION_ADD_TRANSACTION = "add_transaction"
 ALLOWED_OPERATIONS = frozenset({OPERATION_ADD_TRANSACTION})
@@ -42,17 +52,7 @@ OPERATION_LABELS = {
 PROPOSAL_TTL_DAYS = 7
 PROPOSAL_PURGE_DAYS = 30
 MAX_PENDING_PER_OWNER = 20
-IDEMPOTENCY_KEY_MIN = 16
-IDEMPOTENCY_KEY_MAX = 128
-CONTRACT_VERSION = 1
-NOTE_MAX_LEN = 500
-CHANNEL_MAX_LEN = 50
 REASON_MAX_LEN = 500
-MAX_NUMBER = 1e12
-
-FUND_CODE_RE = re.compile(r"^[0-9]{6}$")
-DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-IDEMPOTENCY_KEY_RE = re.compile(r"^[A-Za-z0-9._~+/=-]+$")
 
 STATUS_PENDING = "pending"
 STATUS_SUCCEEDED = "succeeded"
@@ -71,15 +71,6 @@ TERMINAL_STATUSES = frozenset({
 OPERATION_SCOPE = {
     OPERATION_ADD_TRANSACTION: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
 }
-
-
-class ProposalValidationError(ValueError):
-    """输入校验失败（映射为 HTTP 422）；不创建提案、不写幂等记录。"""
-
-    def __init__(self, field_name: str, message: str) -> None:
-        super().__init__(message)
-        self.field = field_name
-        self.message = message
 
 
 @dataclass(frozen=True)
@@ -133,136 +124,12 @@ def _canonical(payload: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 输入校验与规范化
+# 输入校验与规范化（交易参数校验统一由 transaction_service 提供）
 # ---------------------------------------------------------------------------
-def validate_idempotency_key(value: object) -> str:
-    if not isinstance(value, str):
-        raise ProposalValidationError(
-            "idempotency_key", "缺少 Idempotency-Key 请求头")
-    if not (IDEMPOTENCY_KEY_MIN <= len(value) <= IDEMPOTENCY_KEY_MAX):
-        raise ProposalValidationError(
-            "idempotency_key",
-            f"Idempotency-Key 长度需在 "
-            f"{IDEMPOTENCY_KEY_MIN}–{IDEMPOTENCY_KEY_MAX} 之间")
-    if not IDEMPOTENCY_KEY_RE.fullmatch(value):
-        raise ProposalValidationError(
-            "idempotency_key", "Idempotency-Key 含不支持的字符")
-    return value
-
-
 def validate_proposal_id(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ProposalValidationError("proposal_id", "proposal_id 必须是正整数")
     return value
-
-
-def _clean_text(value: object, field_name: str, max_len: int) -> str:
-    if value is None:
-        return ""
-    if not isinstance(value, str):
-        raise ProposalValidationError(field_name, f"{field_name} 必须是字符串")
-    text = value.strip()
-    if "\x00" in text:
-        raise ProposalValidationError(field_name, f"{field_name} 不能包含空字符")
-    if len(text) > max_len:
-        raise ProposalValidationError(
-            field_name, f"{field_name} 最多 {max_len} 个字符")
-    return text
-
-
-def _number(value: object, field_name: str, *, required: bool = False) -> float | None:
-    if value is None:
-        if required:
-            raise ProposalValidationError(field_name, f"{field_name} 不能为空")
-        return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ProposalValidationError(field_name, f"{field_name} 必须是数字")
-    number = float(value)
-    if not math.isfinite(number):
-        raise ProposalValidationError(field_name, f"{field_name} 必须是有限数字")
-    if number < 0:
-        raise ProposalValidationError(field_name, f"{field_name} 不能为负数")
-    if number > MAX_NUMBER:
-        raise ProposalValidationError(field_name, f"{field_name} 超出上限")
-    return number
-
-
-def _validate_add_transaction(params: object) -> dict[str, Any]:
-    """校验并规范化 ``add_transaction`` 参数，返回交易字段字典。"""
-    if not isinstance(params, dict):
-        raise ProposalValidationError("params", "params 必须是对象")
-    allowed = {
-        "fund_code", "action", "date", "amount", "shares", "nav",
-        "fee", "channel", "note", "is_t1",
-    }
-    unknown = set(params) - allowed
-    if unknown:
-        raise ProposalValidationError(
-            "params", f"包含不支持的参数：{', '.join(sorted(unknown))}")
-
-    fund_code = params.get("fund_code")
-    if not isinstance(fund_code, str) or not FUND_CODE_RE.fullmatch(
-            fund_code.strip()):
-        raise ProposalValidationError("fund_code", "基金代码必须是 6 位数字")
-    fund_code = fund_code.strip()
-
-    action = params.get("action")
-    if action not in ACTIONS:
-        raise ProposalValidationError(
-            "action", f"操作方向必须是：{', '.join(ACTIONS)}")
-
-    date = params.get("date")
-    if not isinstance(date, str) or not DATE_RE.fullmatch(date.strip()):
-        raise ProposalValidationError("date", "日期必须是 YYYY-MM-DD")
-    date = date.strip()
-    try:
-        datetime.strptime(date, "%Y-%m-%d")
-    except ValueError as exc:
-        raise ProposalValidationError("date", "日期不是有效日期") from exc
-
-    amount = _number(params.get("amount"), "amount")
-    shares = _number(params.get("shares"), "shares")
-    nav = _number(params.get("nav"), "nav")
-    fee = _number(params.get("fee"), "fee") or 0.0
-    channel = _clean_text(params.get("channel"), "channel", CHANNEL_MAX_LEN)
-    note = _clean_text(params.get("note"), "note", NOTE_MAX_LEN)
-
-    is_t1 = params.get("is_t1", False)
-    if not isinstance(is_t1, bool):
-        raise ProposalValidationError("is_t1", "is_t1 必须是布尔值")
-
-    tx = Transaction(
-        fund_code=fund_code, action=action, date=date,
-        amount=amount, shares=shares, nav=nav, fee=fee,
-        channel=channel, note=note, is_t1=is_t1,
-    )
-    tx.normalize()
-    if not tx.is_valid():
-        raise ProposalValidationError(
-            "params", "交易信息不完整：买入/再投资需金额或份额，卖出需份额，分红需金额")
-    if tx.action == ACTION_BUY and (tx.amount is None or tx.amount <= 0):
-        raise ProposalValidationError("amount", "买入金额必须大于 0")
-
-    return {
-        "fund_code": tx.fund_code,
-        "action": tx.action,
-        "date": tx.date,
-        "amount": tx.amount,
-        "shares": tx.shares,
-        "nav": tx.nav,
-        "fee": tx.fee,
-        "channel": tx.channel,
-        "note": tx.note,
-        "is_t1": tx.is_t1,
-    }
-
-
-ACTION_LABELS = {
-    "buy": "买入",
-    "sell": "卖出",
-    "dividend": "现金分红",
-    "reinvest": "红利再投资",
-}
 
 
 def _digest(operation_type: str, params: dict) -> str:
@@ -275,9 +142,10 @@ def _digest(operation_type: str, params: dict) -> str:
 
 
 def _build_summary(fund_name: str, operation_type: str,
-                   params: dict) -> dict[str, Any]:
+                   params: dict,
+                   extra_warnings: list[str] | None = None) -> dict[str, Any]:
     action = params["action"]
-    warnings: list[str] = []
+    warnings: list[str] = list(extra_warnings or [])
     if operation_type == OPERATION_ADD_TRANSACTION:
         if params.get("nav") is None:
             warnings.append("成交净值尚未确定，市值与收益可能暂时缺失")
@@ -305,7 +173,7 @@ def _build_summary(fund_name: str, operation_type: str,
     }
 
 
-def _fund_name(conn: sqlite3.Connection, fund_code: str) -> str | None:
+def fund_name_in_conn(conn: sqlite3.Connection, fund_code: str) -> str | None:
     row = conn.execute(
         "SELECT fund_name FROM funds WHERE fund_code=?", (fund_code,)
     ).fetchone()
@@ -314,7 +182,7 @@ def _fund_name(conn: sqlite3.Connection, fund_code: str) -> str | None:
     return row["fund_name"] or fund_code
 
 
-def _row_to_dict(row: sqlite3.Row, now: datetime) -> dict[str, Any]:
+def proposal_row_to_dict(row: sqlite3.Row, now: datetime) -> dict[str, Any]:
     status = row["status"]
     if status == STATUS_PENDING and _expired(row["expires_at"], now):
         status = STATUS_EXPIRED
@@ -403,12 +271,88 @@ def _replay_create(conn: sqlite3.Connection, principal: Principal,
             {"operation_id": op["id"]})
     return ProposalResult(
         200, "replayed", "提案已创建（幂等重放）",
-        _row_to_dict(row, _now()), replayed=True)
+        proposal_row_to_dict(row, _now()), replayed=True)
 
 
 def _expire_stale(now: datetime) -> None:
     """惰性清理过期 pending 提案；独立短事务，避免嵌套写锁。"""
     db.expire_pending_proposals(now.isoformat())
+
+
+def proposal_digest(clean: dict) -> str:
+    """提案路径的参数摘要；降级去重与 create_proposal 共用。"""
+    return _digest(OPERATION_ADD_TRANSACTION, clean)
+
+
+def create_pending_proposal_conn(
+    conn: sqlite3.Connection, principal: Principal, *,
+    clean: dict, digest: str, now: datetime, ip: str | None,
+    origin: str = "", reason: str = "",
+    extra_warnings: list[str] | None = None,
+) -> ProposalResult:
+    """在调用方事务内创建待审提案；不写幂等记录。
+
+    供 ``create_proposal`` 与可信直记降级路径共用，确保基金收录、pending
+    上限、摘要与审计语义一致。``origin``/``reason`` 仅追加到
+    ``proposal_created`` 审计，复用既有 action，不新增标签。
+    """
+    fund_name = fund_name_in_conn(conn, clean["fund_code"])
+    if fund_name is None:
+        _audit(conn, principal, ip, "proposal_create_rejected", {
+            "reason": "fund_not_registered",
+            "operation_type": OPERATION_ADD_TRANSACTION,
+            "fund_code": clean["fund_code"]})
+        return ProposalResult(
+            409, "fund_not_registered",
+            "基金尚未收录，请先在网页添加或刷新基金信息后再提案",
+            {"fund_code": clean["fund_code"]})
+
+    pending = int(conn.execute(
+        "SELECT COUNT(*) FROM operation_proposals "
+        "WHERE principal_type=? AND principal_id=? AND status='pending'",
+        (principal.kind, principal.id)).fetchone()[0])
+    if pending >= MAX_PENDING_PER_OWNER:
+        _audit(conn, principal, ip, "proposal_create_rejected", {
+            "reason": "too_many_pending",
+            "operation_type": OPERATION_ADD_TRANSACTION})
+        return ProposalResult(
+            409, "too_many_pending",
+            f"待处理提案过多（上限 {MAX_PENDING_PER_OWNER}），请先处理或取消",
+            {"pending": pending, "limit": MAX_PENDING_PER_OWNER})
+
+    summary = _build_summary(
+        fund_name, OPERATION_ADD_TRANSACTION, clean, extra_warnings)
+    params_json = json.dumps(clean, ensure_ascii=False, sort_keys=True)
+    summary_json = json.dumps(summary, ensure_ascii=False, sort_keys=True)
+    expires_at = (now + timedelta(days=PROPOSAL_TTL_DAYS)).isoformat()
+
+    proposal_id = db.insert_proposal(
+        conn,
+        principal_type=principal.kind, principal_id=principal.id,
+        token_prefix=principal.display.split(":", 1)[-1]
+        if ":" in principal.display else "",
+        operation_type=OPERATION_ADD_TRANSACTION, status=STATUS_PENDING,
+        params_json=params_json, params_digest=digest,
+        summary_json=summary_json, risk_level="medium",
+        created_at=now.isoformat(), expires_at=expires_at,
+    )
+    audit_detail: dict[str, Any] = {
+        "proposal_id": proposal_id,
+        "operation_type": OPERATION_ADD_TRANSACTION,
+        "fund_code": clean["fund_code"], "action": clean["action"],
+        "amount": clean.get("amount"), "shares": clean.get("shares"),
+    }
+    if origin:
+        audit_detail["origin"] = origin
+    if reason:
+        audit_detail["reason"] = reason
+    audit_id = _audit(
+        conn, principal, ip, "proposal_created", audit_detail)
+    db.update_proposal(conn, proposal_id, audit_id=audit_id)
+    row = db.get_proposal(conn, proposal_id)
+    return ProposalResult(
+        201, "created", "提案已创建，等待网页管理员确认",
+        proposal_row_to_dict(row, now))
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +367,7 @@ def create_proposal(principal: Principal, *, operation_type: object,
         raise ProposalValidationError(
             "operation_type",
             f"操作类型不受支持，当前仅支持：{', '.join(sorted(ALLOWED_OPERATIONS))}")
-    clean = _validate_add_transaction(params)
+    clean = validate_add_transaction_params(params)
     key_hash = _key_hash(validate_idempotency_key(idempotency_key))
     digest = _digest(operation_type, clean)
     now = _now()
@@ -435,50 +379,12 @@ def create_proposal(principal: Principal, *, operation_type: object,
         if replay is not None:
             return replay
 
-        fund_name = _fund_name(conn, clean["fund_code"])
-        if fund_name is None:
-            _audit(conn, principal, ip, "proposal_create_rejected", {
-                "reason": "fund_not_registered",
-                "operation_type": operation_type,
-                "fund_code": clean["fund_code"]})
-            return ProposalResult(
-                409, "fund_not_registered",
-                "基金尚未收录，请先在网页添加或刷新基金信息后再提案",
-                {"fund_code": clean["fund_code"]})
-
-        pending = int(conn.execute(
-            "SELECT COUNT(*) FROM operation_proposals "
-            "WHERE principal_type=? AND principal_id=? AND status='pending'",
-            (principal.kind, principal.id)).fetchone()[0])
-        if pending >= MAX_PENDING_PER_OWNER:
-            _audit(conn, principal, ip, "proposal_create_rejected", {
-                "reason": "too_many_pending",
-                "operation_type": operation_type})
-            return ProposalResult(
-                409, "too_many_pending",
-                f"待处理提案过多（上限 {MAX_PENDING_PER_OWNER}），请先处理或取消",
-                {"pending": pending, "limit": MAX_PENDING_PER_OWNER})
-
-        summary = _build_summary(fund_name, operation_type, clean)
-        params_json = json.dumps(clean, ensure_ascii=False, sort_keys=True)
-        summary_json = json.dumps(summary, ensure_ascii=False, sort_keys=True)
-        expires_at = (now + timedelta(days=PROPOSAL_TTL_DAYS)).isoformat()
-
-        proposal_id = db.insert_proposal(
-            conn,
-            principal_type=principal.kind, principal_id=principal.id,
-            token_prefix=principal.display.split(":", 1)[-1]
-            if ":" in principal.display else "",
-            operation_type=operation_type, status=STATUS_PENDING,
-            params_json=params_json, params_digest=digest,
-            summary_json=summary_json, risk_level="medium",
-            created_at=now.isoformat(), expires_at=expires_at,
-        )
-        audit_id = _audit(conn, principal, ip, "proposal_created", {
-            "proposal_id": proposal_id, "operation_type": operation_type,
-            "fund_code": clean["fund_code"], "action": clean["action"],
-            "amount": clean.get("amount"), "shares": clean.get("shares")})
-        db.update_proposal(conn, proposal_id, audit_id=audit_id)
+        created = create_pending_proposal_conn(
+            conn, principal, clean=clean, digest=digest, now=now, ip=ip)
+        if not created.ok:
+            return created
+        proposal_id = int(created.data["proposal_id"])
+        audit_id = created.data.get("audit_id")
         db.insert_operation(
             conn, principal_type=principal.kind, principal_id=principal.id,
             key_hash=key_hash, operation="create_proposal",
@@ -488,10 +394,7 @@ def create_proposal(principal: Principal, *, operation_type: object,
             audit_id=audit_id, created_at=now.isoformat(),
             expires_at=(now + timedelta(days=90)).isoformat(),
         )
-        row = db.get_proposal(conn, proposal_id)
-        return ProposalResult(
-            201, "created", "提案已创建，等待网页管理员确认",
-            _row_to_dict(row, now))
+        return created
 
 
 def get_proposal(principal: Principal, proposal_id: object) -> ProposalResult:
@@ -502,7 +405,7 @@ def get_proposal(principal: Principal, proposal_id: object) -> ProposalResult:
             conn, pid, principal.kind, principal.id)
     if row is None:
         return ProposalResult(404, "not_found", "未找到提案", {"proposal_id": pid})
-    return ProposalResult(200, "ok", "提案详情", _row_to_dict(row, _now()))
+    return ProposalResult(200, "ok", "提案详情", proposal_row_to_dict(row, _now()))
 
 
 def list_own_proposals(principal: Principal, *, status: str | None = None,
@@ -524,7 +427,7 @@ def list_own_proposals(principal: Principal, *, status: str | None = None,
             ((principal.kind, principal.id, status) if status
              else (principal.kind, principal.id)) + (limit, offset),
         ).fetchall()
-    items = [_row_to_dict(row, now) for row in rows]
+    items = [proposal_row_to_dict(row, now) for row in rows]
     return ProposalResult(200, "ok", "提案列表", {
         "count": len(items), "total": total, "items": items,
         "pagination": {"limit": limit, "offset": offset, "total": total},
@@ -562,7 +465,7 @@ def cancel_proposal(principal: Principal, proposal_id: object,
             audit_id=audit_id)
         updated = db.get_proposal(conn, pid)
     return ProposalResult(
-        200, "cancelled", "提案已取消", _row_to_dict(updated, now))
+        200, "cancelled", "提案已取消", proposal_row_to_dict(updated, now))
 
 
 VALID_STATUSES = frozenset({
@@ -591,7 +494,7 @@ def list_proposals(*, status: str | None = None, limit: int = 50,
         pending = db.count_proposals(conn, STATUS_PENDING)
         rows = db.list_proposals(
             conn, status=status, limit=limit, offset=offset)
-    items = [_row_to_dict(row, now) for row in rows]
+    items = [proposal_row_to_dict(row, now) for row in rows]
     return ProposalResult(200, "ok", "提案列表", {
         "count": len(items), "total": total, "pending_count": pending,
         "items": items,
@@ -605,10 +508,10 @@ def get_proposal_admin(proposal_id: object) -> ProposalResult:
         row = db.get_proposal(conn, pid)
     if row is None:
         return ProposalResult(404, "not_found", "未找到提案", {"proposal_id": pid})
-    return ProposalResult(200, "ok", "提案详情", _row_to_dict(row, _now()))
+    return ProposalResult(200, "ok", "提案详情", proposal_row_to_dict(row, _now()))
 
 
-def _token_error(token_row: sqlite3.Row | None, now: datetime) -> str:
+def token_error(token_row: sqlite3.Row | None, now: datetime) -> str:
     """复核创建者 token；返回稳定错误码，空串表示仍有效。"""
     if token_row is None:
         return "token_missing"
@@ -639,7 +542,7 @@ def _mark_failure(conn: sqlite3.Connection, row: sqlite3.Row, reviewer: str,
         audit_id=audit_id, completed_at=now.isoformat())
     updated = db.get_proposal(conn, row["id"])
     return ProposalResult(
-        http_status, reason, message, _row_to_dict(updated, now))
+        http_status, reason, message, proposal_row_to_dict(updated, now))
 
 
 def approve_proposal(proposal_id: object, *, reviewer: str,
@@ -685,11 +588,11 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
             token_row = None
         else:
             token_row = db.get_agent_token_conn(conn, token_id)
-        token_error = _token_error(token_row, now)
-        if token_error:
+        token_err = token_error(token_row, now)
+        if token_err:
             return _mark_failure(
                 conn, row, reviewer, now, ip, status=STATUS_FAILED,
-                reason=token_error,
+                reason=token_err,
                 message="创建提案的 Agent token 已失效，请重新提案")
         scopes = frozenset((token_row["scopes"] or "").split())
         required = OPERATION_SCOPE.get(row["operation_type"])
@@ -700,7 +603,7 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
                 message="创建提案的 Agent token 已失去对应权限，请重新提案")
 
         try:
-            clean = _validate_add_transaction(
+            clean = validate_add_transaction_params(
                 json.loads(row["params_json"] or "{}"))
         except (ProposalValidationError, ValueError) as exc:
             return _mark_failure(
@@ -708,7 +611,7 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
                 reason="invalid_params",
                 message=getattr(exc, "message", "提案参数已不合法"))
 
-        fund_name = _fund_name(conn, clean["fund_code"])
+        fund_name = fund_name_in_conn(conn, clean["fund_code"])
         if fund_name is None:
             return _mark_failure(
                 conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
@@ -757,7 +660,7 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
     analysis.clear_analysis_cache()
     return ProposalResult(
         200, "succeeded", "提案已批准并写入账本",
-        _row_to_dict(updated, now))
+        proposal_row_to_dict(updated, now))
 
 
 def reject_proposal(proposal_id: object, *, reviewer: str, reason: str = "",
@@ -797,7 +700,7 @@ def reject_proposal(proposal_id: object, *, reviewer: str, reason: str = "",
             audit_id=audit_id, completed_at=now.isoformat())
         updated = db.get_proposal(conn, pid)
     return ProposalResult(
-        200, "rejected", "提案已拒绝", _row_to_dict(updated, now))
+        200, "rejected", "提案已拒绝", proposal_row_to_dict(updated, now))
 
 
 def mark_stale_on_startup() -> int:

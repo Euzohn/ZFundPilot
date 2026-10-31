@@ -1246,6 +1246,11 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
                         >
                           {t.actionLabels[tx.action as keyof typeof t.actionLabels] ?? tx.action}
                         </Badge>
+                        {tx.source === "agent" && (
+                          <Badge variant="outline" className="text-[10px]">
+                            {t.transactions.agentSource}
+                          </Badge>
+                        )}
                         {tx.conversion_id && (
                           <Badge
                             variant="secondary"

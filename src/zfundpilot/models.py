@@ -82,6 +82,7 @@ class Transaction:
     note: str = ""
     is_t1: bool = False              # T+1 确认（15:00 后下单，按次日净值确认）
     conversion_id: str = ""          # 基金转换链接 ID（卖出腿 + 买入腿共享同一 UUID）
+    source: str = ""                 # 来源标识（"agent" = Agent 可信直记；空串 = 网页/CSV/提案）
     id: int | None = None
 
     def normalize(self) -> Transaction:

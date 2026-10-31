@@ -42,10 +42,13 @@ SCOPE_WATCHLIST_WRITE = "watchlist:write"
 SCOPE_DATA_REFRESH = "data:refresh"
 # 提案 scope：只允许创建/查看/取消自己的待审批提案，不能直写账本。
 SCOPE_TRANSACTIONS_PROPOSE = "transactions:propose"
+# 可信直记 scope：仅授权新增单笔普通买入/卖出，直接写账本（F0）。
+# 与提案 scope 相互独立，不自动附带；默认不勾选，旧 token 不扩权。
+SCOPE_TRANSACTIONS_CREATE = "transactions:create"
 
-# 写 scope 仅开放低风险自选维护、任务化数据刷新与账本提案；均受
-# config.AGENT_WRITE_ENABLED 总开关约束。提案必须由网页管理员确认后由服务端
-# 执行，Agent token 不能绕过确认直接写账本。
+# 写 scope 仅开放低风险自选维护、任务化数据刷新、账本提案与可信单笔直记；
+# 均受 config.AGENT_WRITE_ENABLED 总开关约束。直记是管理员对特定 token 的
+# 预授权，不是逐笔人类确认；高影响账本变更仍必须走网页审批。
 ALLOWED_SCOPES = frozenset({
     SCOPE_PORTFOLIO_READ,
     SCOPE_FUNDS_READ,
@@ -57,6 +60,7 @@ ALLOWED_SCOPES = frozenset({
     SCOPE_WATCHLIST_WRITE,
     SCOPE_DATA_REFRESH,
     SCOPE_TRANSACTIONS_PROPOSE,
+    SCOPE_TRANSACTIONS_CREATE,
 })
 
 # 写 scope 集合：用于能力发现、审计与前端风险提示，避免把写权限当只读展示。
@@ -64,6 +68,7 @@ WRITE_SCOPES = frozenset({
     SCOPE_WATCHLIST_WRITE,
     SCOPE_DATA_REFRESH,
     SCOPE_TRANSACTIONS_PROPOSE,
+    SCOPE_TRANSACTIONS_CREATE,
 })
 
 # 提案 scope 集合：仅可提交待审批提案，执行权限只属于网页管理员。

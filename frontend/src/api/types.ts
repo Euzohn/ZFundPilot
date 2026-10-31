@@ -65,6 +65,7 @@ export interface Transaction {
   note: string
   is_t1?: boolean
   conversion_id?: string
+  source?: string
 }
 
 export interface ConversionCreate {

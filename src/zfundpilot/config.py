@@ -348,6 +348,38 @@ def apply_agent_write_preference(stored: str | None) -> bool:
     )
     return AGENT_WRITE_ENABLED
 
+
+# ---------------------------------------------------------------------------
+# Agent 可信单笔直记额度（F0）
+# ---------------------------------------------------------------------------
+def _env_positive_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    try:
+        value = int(raw) if raw else default
+    except ValueError:
+        return default
+    return value if value >= 1 else default
+
+
+def _env_positive_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    try:
+        value = float(raw) if raw else default
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+# 单笔金额上限：超过时直记转审批（或拒绝），不再直接写账本。
+AGENT_TX_MAX_AMOUNT = _env_positive_float(
+    "ZFUNDPILOT_AGENT_TX_MAX_AMOUNT", 500_000.0)
+# 每 Token 每日笔数（含降级为提案的请求，防止用降级刷提案）。
+AGENT_TX_DAILY_COUNT = _env_positive_int(
+    "ZFUNDPILOT_AGENT_TX_DAILY_COUNT", 10)
+# 每 Token 每日直写金额合计。
+AGENT_TX_DAILY_AMOUNT = _env_positive_float(
+    "ZFUNDPILOT_AGENT_TX_DAILY_AMOUNT", 1_000_000.0)
+
 # 信任代理网段（用于登录限流时安全读取 X-Forwarded-For 头）
 # 逗号分隔 CIDR，默认空 = 不信任任何代理
 TRUSTED_PROXIES: list[ipaddress.IPv4Network] = []

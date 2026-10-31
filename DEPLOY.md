@@ -86,7 +86,10 @@ nohup uvicorn zfundpilot.api:app --host 0.0.0.0 --port 8000 > zfundpilot.log 2>&
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式（工作日 21:00）。可在设置页面暂停/启用 |
 | `ZFUNDPILOT_TIMEZONE` | `Asia/Shanghai` | 系统时区（IANA 名称），影响定时任务触发时间、交易日期、日志时间戳。需重启应用生效 |
 | `ZFUNDPILOT_TRUSTED_PROXIES` | 空 | 反向代理信任网段，逗号分隔 CIDR（如 `127.0.0.1/32,10.0.0.0/8`）。仅在 Nginx/Caddy 等反代后需配置，用于登录限流正确读取客户端 IP。公网直连不要设置 |
-| `ZFUNDPILOT_AGENT_WRITE_ENABLED` | 未设置（默认关闭，可在设置页开启） | Agent 写能力开关（双重语义）：`0`/`false`/`no`/`off` = **紧急刹车**，强制关闭且设置页无法开启；`1`/`true`/`yes`/`on` = 仅作为数据库无记录时的**首次启动默认值**；不设置 = 默认关闭但可在设置页开启。日常开关在「设置 → Agent 接入 → Agent 写能力」维护（持久化到数据库，无需重启），开启需输入当前登录密码确认，无密码模式禁止开启。写能力含自选维护（`watchlist:write`）、净值/元数据刷新（`data:refresh`）与账本提案（`transactions:propose`），提案仍需网页管理员批准；关闭时写端点与提案创建/审批返回 `403 write_disabled` |
+| `ZFUNDPILOT_AGENT_WRITE_ENABLED` | 未设置（默认关闭，可在设置页开启） | Agent 写能力开关（双重语义）：`0`/`false`/`no`/`off` = **紧急刹车**，强制关闭且设置页无法开启；`1`/`true`/`yes`/`on` = 仅作为数据库无记录时的**首次启动默认值**；不设置 = 默认关闭但可在设置页开启。日常开关在「设置 → Agent 接入 → Agent 写能力」维护（持久化到数据库，无需重启），开启需输入当前登录密码确认，无密码模式禁止开启。写能力含自选维护（`watchlist:write`）、净值/元数据刷新（`data:refresh`）、账本提案（`transactions:propose`）与可信单笔直记（`transactions:create`），提案仍需网页管理员批准；关闭时写端点与提案创建/审批返回 `403 write_disabled` |
+| `ZFUNDPILOT_AGENT_TX_MAX_AMOUNT` | `500000` | 可信直记单笔金额上限（仅 `transactions:create` 生效） |
+| `ZFUNDPILOT_AGENT_TX_DAILY_COUNT` | `10` | 可信直记每日笔数额度（含降级为提案的次数） |
+| `ZFUNDPILOT_AGENT_TX_DAILY_AMOUNT` | `1000000` | 可信直记每日直写金额额度（降级不累计） |
 
 ```bash
 # 示例：设置用户名 + 访问密码 + 自定义数据目录
@@ -192,6 +195,9 @@ sudo firewall-cmd --permanent --add-port=8080/tcp && sudo firewall-cmd --reload
 | `ZFUNDPILOT_HOME` | 可选 | 数据目录位置，默认 `/app/data` |
 | `ZFUNDPILOT_TRUSTED_PROXIES` | 可选 | 反向代理信任网段，逗号分隔 CIDR（如 `127.0.0.1/32,10.0.0.0/8`）。仅在 Nginx/Caddy 等反代后需配置，用于登录限流正确读取客户端 IP |
 | `ZFUNDPILOT_TIMEZONE` | 可选，默认 `Asia/Shanghai` | 系统时区（IANA 名称），影响定时任务触发时间、交易日期、日志时间戳。Dockerfile 已内置 `TZ=Asia/Shanghai`，海外用户改时区需同时设置此项。需重启容器生效 |
+| `ZFUNDPILOT_AGENT_TX_MAX_AMOUNT` | 可选，默认 `500000` | 可信直记单笔金额上限（`transactions:create`） |
+| `ZFUNDPILOT_AGENT_TX_DAILY_COUNT` | 可选，默认 `10` | 可信直记每日笔数额度（含降级为提案） |
+| `ZFUNDPILOT_AGENT_TX_DAILY_AMOUNT` | 可选，默认 `1000000` | 可信直记每日直写金额额度（降级不累计） |
 | `CONTAINER_NAME` | 可选，默认 `zfundpilot` | 容器名称。同一机器运行多实例时需为每个实例设置不同名称，避免容器名冲突 |
 
 > ⚠️ 服务器对外暴露时**务必设置 `ZFUNDPILOT_PASSWORD`**，否则任何人都能查看你的持仓。

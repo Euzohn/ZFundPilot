@@ -86,6 +86,7 @@ const AGENT_SCOPE_KEYS = [
   "watchlist:write",
   "data:refresh",
   "transactions:propose",
+  "transactions:create",
 ] as const
 
 // 新 scope 默认不勾选，避免签发时静默扩权；需要时由用户显式勾选。
@@ -268,6 +269,7 @@ function AgentTokenPanel() {
     "watchlist:write": t.settings.agentTokenScopeWatchlistWrite,
     "data:refresh": t.settings.agentTokenScopeDataRefresh,
     "transactions:propose": t.settings.agentTokenScopeTransactionsPropose,
+    "transactions:create": t.settings.agentTokenScopeTransactionsCreate,
   }
 
   const toggleScope = (scope: string) => {
@@ -444,6 +446,9 @@ function AgentTokenPanel() {
           {(scopes.includes("watchlist:write") || scopes.includes("data:refresh") || scopes.includes("transactions:propose")) && (
             <p className="text-xs text-warning">{t.settings.agentTokenWriteHint}</p>
           )}
+          {scopes.includes("transactions:create") && (
+            <p className="text-xs text-loss-600">{t.settings.agentTokenCreateRiskHint}</p>
+          )}
         </div>
 
         <div className="border-t pt-3">
@@ -583,6 +588,9 @@ function AuditLogPanel() {
     proposal_rejected: t.settings.auditLabels.proposal_rejected,
     proposal_failed: t.settings.auditLabels.proposal_failed,
     proposal_conflict: t.settings.auditLabels.proposal_conflict,
+    agent_direct_add: t.settings.auditLabels.agent_direct_add,
+    agent_direct_downgraded: t.settings.auditLabels.agent_direct_downgraded,
+    agent_direct_rejected: t.settings.auditLabels.agent_direct_rejected,
     data_refresh_started: t.settings.auditLabels.data_refresh_started,
     data_refresh_succeeded: t.settings.auditLabels.data_refresh_succeeded,
     data_refresh_failed: t.settings.auditLabels.data_refresh_failed,

@@ -47,6 +47,7 @@ TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
     "transactions": (
         "id", "fund_code", "action", "date", "amount", "shares", "nav",
         "fee", "channel", "note", "is_t1", "created_at", "conversion_id",
+        "source",
     ),
     "nav_history": (
         "id", "fund_code", "date", "nav", "accumulated_nav", "source",
@@ -78,6 +79,15 @@ TABLE_COLUMNS: dict[str, tuple[str, ...]] = {
         "fund_code", "alert_type", "last_alert_id", "last_triggered_return",
         "handled_at", "armed", "updated_at",
     ),
+}
+
+# 旧 v2 备份（source 列上线前）的合法列变体：读取侧放宽，恢复时缺省补空串；
+# 新备份始终写入完整列集，FORMAT_VERSION 维持 2。
+LEGACY_COLUMN_VARIANTS: dict[str, tuple[tuple[str, ...], ...]] = {
+    "transactions": ((
+        "id", "fund_code", "action", "date", "amount", "shares", "nav",
+        "fee", "channel", "note", "is_t1", "created_at", "conversion_id",
+    ),),
 }
 
 # 唯一键用于预检重复行；与数据库约束保持一致（可有多组）。
@@ -413,9 +423,14 @@ def _inspect(data: bytes) -> tuple[Preview, dict[str, list[dict[str, Any]]]]:
         parsed: dict[str, list[dict[str, Any]]] = {}
         for table, columns in TABLE_COLUMNS.items():
             meta = tables_meta[table]
-            if not isinstance(meta, dict) or meta.get("columns") != list(columns):
+            accepted = [list(columns)] + [
+                list(variant)
+                for variant in LEGACY_COLUMN_VARIANTS.get(table, ())
+            ]
+            if not isinstance(meta, dict) or meta.get("columns") not in accepted:
                 raise BackupValidationError(
                     "column_mismatch", f"{table} 列定义与当前版本不兼容")
+            legacy = meta["columns"] != list(columns)
             path = meta.get("file")
             if path != f"{TABLE_DIR}/{table}.jsonl":
                 raise BackupValidationError(
@@ -433,6 +448,10 @@ def _inspect(data: bytes) -> tuple[Preview, dict[str, list[dict[str, Any]]]]:
                 raise BackupValidationError(
                     "checksum_mismatch", f"{table} 校验和失败，备份可能已损坏")
             rows = _parse_table_rows(table, raw)
+            if legacy:
+                # 旧备份缺 source：按空串（手动来源）恢复，保持既有语义。
+                for row in rows:
+                    row.setdefault("source", "")
             if meta.get("rows") != len(rows):
                 raise BackupValidationError(
                     "row_count_mismatch", f"{table} 行数与清单不一致")

@@ -63,6 +63,7 @@ from . import (
     refresh_service,
     risk,
     scheduler,
+    transaction_service,
     watchlist_service,
 )
 from .models import (
@@ -751,6 +752,8 @@ _AGENT_ROUTE_RATE_MAX: dict[str, int] = {
     "DELETE /api/agent/tools/watchlist/{code}": 30,
     # 刷新创建较重（联网抓取），任务状态查询轻量走默认额度。
     "POST /api/agent/tools/refresh": 10,
+    # 可信单笔直记：独立桶，防止与同路径的流水读取共用额度。
+    "POST /api/agent/tools/transactions": 10,
 }
 
 
@@ -1558,6 +1561,90 @@ def _require_agent_write_enabled(
         detail={"code": "write_disabled",
                 "message": "Agent 写能力未启用，请联系管理员开启"},
     )
+
+
+class AgentDirectTransactionRequest(BaseModel):
+    """可信单笔直记请求；扁平字段与 MCP 工具对齐，首期仅 buy/sell。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fund_code: str
+    action: Literal["buy", "sell"]
+    date: str
+    amount: float | None = None
+    shares: float | None = None
+    nav: float | None = None
+    fee: float = 0.0
+    channel: str = ""
+    note: str = ""
+    is_t1: bool = False
+
+
+def _direct_validation_error(
+    exc: transaction_service.TransactionValidationError,
+) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={"code": "validation_error", "field": exc.field,
+                "message": exc.message},
+    )
+
+
+def _direct_result_data(result: transaction_service.DirectWriteResult) -> dict:
+    """成功结果展开；失败结果映射为 HTTPException（保留可操作细节）。"""
+    if not result.ok:
+        detail: dict[str, Any] = {
+            "code": result.code, "message": result.message}
+        detail.update(result.data)
+        raise HTTPException(status_code=result.http_status, detail=detail)
+    return {
+        "ok": True,
+        "code": result.code,
+        "message": result.message,
+        "replayed": result.replayed,
+        **result.data,
+    }
+
+
+@app.post("/api/agent/tools/transactions", tags=["agent"], status_code=201,
+          summary="可信单笔直记（受控写入）",
+          responses={**_AGENT_WRITE_ERROR_RESPONSES,
+                     201: {"description": "交易已直记或已降级为待审批提案"},
+                     429: {"description": "路由或每日额度超限"}},
+          dependencies=[Security(_agent_bearer_scheme)])
+def agent_record_transaction(
+    request: Request,
+    body: AgentDirectTransactionRequest,
+    response: Response,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_CREATE)),
+    ],
+) -> dict[str, Any]:
+    """仅在用户明确陈述外部已完成的买入/卖出时直接记账。
+
+    ``execution_mode`` 显式区分 ``direct``（已写账本）与 ``proposal``
+    （预检异常转人工审批）；``receipt.unconfirmed_fields`` 列出待回填字段。
+    """
+    _require_agent_write_enabled(request, ctx)
+    try:
+        result = transaction_service.record_transaction_direct(
+            _proposal_principal(ctx),
+            params=body.model_dump(),
+            idempotency_key=_idempotency_key_header(request),
+            ip=_get_client_ip(request),
+        )
+    except transaction_service.FutureDateError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "future_date", "field": exc.field,
+                    "message": exc.message},
+        ) from exc
+    except transaction_service.TransactionValidationError as exc:
+        raise _direct_validation_error(exc) from exc
+    response.status_code = result.http_status
+    return _agent_tool_response(
+        "record_transaction", _direct_result_data(result))
 
 
 @app.get("/api/agent/tools/watchlist", tags=["agent"],
@@ -2621,6 +2708,11 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
      "path": "/api/agent/tools/proposals",
      "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
      "risk": "propose", "requires_confirmation": True},
+    {"name": "record_transaction", "method": "POST",
+     "path": "/api/agent/tools/transactions",
+     "scope": agent_tokens.SCOPE_TRANSACTIONS_CREATE,
+     "risk": "write", "requires_confirmation": False,
+     "fallback_tool": "create_operation_proposal"},
     {"name": "list_operation_proposals", "method": "GET",
      "path": "/api/agent/tools/proposals",
      "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE},

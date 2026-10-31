@@ -2,7 +2,7 @@
 
 This document is for users who want AI agents (Claude Desktop, Cursor, custom MCP servers, scripts, etc.) to read portfolio data from ZFundPilot and submit controlled operations within explicit boundaries.
 
-The Agent API is read-only by default. Write access is off by default and layered: watchlist maintenance and data refresh are low-risk direct writes; ledger changes can only be submitted as **pending proposals**, which a web administrator must approve before the server executes them. Settings, import/export, and fund-moving operations are not exposed, and an Agent token can never bypass web approval to write the ledger. Agent tokens are independent of web login tokens, scoped, default-deny, and revocable.
+The Agent API is read-only by default. Write access is off by default and layered: watchlist maintenance and data refresh are low-risk direct writes; ledger changes are proposal-only by default (a web administrator must approve them before the server executes them); administrators may additionally grant a trusted token the `transactions:create` scope, which lets it directly record a single buy/sell the user explicitly says already happened externally, within limits and with downgrade-to-proposal on precheck anomalies. Settings, import/export, and fund-moving operations are not exposed, and an Agent token can never bypass web approval to write the ledger except for that trusted direct-write path. Agent tokens are independent of web login tokens, scoped, default-deny, and revocable.
 
 > 中文版本：[AGENT_API.md](./AGENT_API.md)
 
@@ -80,12 +80,13 @@ Request body:
 | `watchlist:write` | `watchlist` (add/update/remove; requires the server write switch) |
 | `data:refresh` | `refresh` (start/query task-based data refresh; NAV/metadata only; requires the server write switch) |
 | `transactions:propose` | `proposals` (create/list/cancel your pending ledger proposals; requires the server write switch; execution belongs to the web administrator) |
+| `transactions:create` | `POST /api/agent/tools/transactions` (trusted single buy/sell direct write; requires the server write switch; downgrades to a proposal or rejects on precheck anomalies) |
 
-The write scopes are `watchlist:write`, `data:refresh`, and `transactions:propose`, all unchecked by default and gated by the server write switch (off by default). The switch is managed day-to-day by the administrator on the web Settings page ("Agent Access → Agent write capability", `GET/PUT /api/settings/agent-write`); enabling it requires the current login password, and the state persists in the database. The `ZFUNDPILOT_AGENT_WRITE_ENABLED` environment variable only matters in two cases: explicitly set to `0`/`false`/`no`/`off` it is an **emergency brake** (forced off, and the Settings page cannot enable it); set to `1`/`true`/`yes`/`on` it only serves as the first-start default when the database has no record. Calling a tool without the required scope returns **403**. The first two are low-risk direct writes; `transactions:propose` only submits proposals and **cannot write the ledger directly**.
+The write scopes are `watchlist:write`, `data:refresh`, `transactions:propose`, and `transactions:create`, all unchecked by default and gated by the server write switch (off by default). The switch is managed day-to-day by the administrator on the web Settings page ("Agent Access → Agent write capability", `GET/PUT /api/settings/agent-write`); enabling it requires the current login password, and the state persists in the database and is authoritative across multiple workers. The `ZFUNDPILOT_AGENT_WRITE_ENABLED` environment variable only matters in two cases: explicitly set to `0`/`false`/`no`/`off` it is an **emergency brake** (forced off, and the Settings page cannot enable it); set to `1`/`true`/`yes`/`on` it only serves as the first-start default when the database has no record. Calling a tool without the required scope returns **403**. The first two are low-risk direct writes; `transactions:propose` only submits proposals and **cannot write the ledger directly**; `transactions:create` is an independent pre-authorization that writes the ledger directly within limits — a token with only `transactions:create` (no `transactions:propose`) is rejected on precheck anomalies rather than downgraded.
 
 `capabilities` only requires a valid token, not a specific scope; it returns only the tools granted to that token, marking write tools with `risk="write"`, proposal tools with `risk="propose"`, and `enabled` reflecting the server write switch; the top-level `write_enabled` is the current switch value, and `write_locked: true` means the environment-variable emergency brake has locked the switch so the Settings page cannot enable it either.
 
-> The first three scopes are checked by default on the issuance panel. `transactions:read`, `watchlist:read`, `alerts:read`, `plans:read`, `watchlist:write`, `data:refresh`, and `transactions:propose` are unchecked by default: opt in explicitly when needed, so existing tokens are never silently broadened.
+> The first three scopes are checked by default on the issuance panel. `transactions:read`, `watchlist:read`, `alerts:read`, `plans:read`, `watchlist:write`, `data:refresh`, `transactions:propose`, and `transactions:create` are unchecked by default: opt in explicitly when needed, so existing tokens are never silently broadened.
 
 ---
 
@@ -142,7 +143,7 @@ Standard FastAPI error shape:
 
 ### Rate limiting
 
-**120 requests per minute** per token per endpoint by default. Path parameters count as the same endpoint (for example, different fund codes share the `funds/{code}` budget), so enumerating codes cannot bypass the limit. Heavier endpoints use lower limits: `search` is 60/min; `screen`, `backtest/dca`, `benchmark`, and `industry-exposure` are 20/min; watchlist writes (`POST`/`PATCH`/`DELETE`) are 30/min and count separately from `GET` on the same path; `POST refresh` is 10/min (network-fetching, so avoid high-frequency triggers). Screening shares one bucket whether or not metrics are requested, so switching parameters cannot bypass it. Exceeding a limit returns `429`; retry after the `Retry-After` seconds. Rate-limit and metric-enrichment concurrency are **in-process** state; multiple workers count independently.
+**120 requests per minute** per token per endpoint by default. Path parameters count as the same endpoint (for example, different fund codes share the `funds/{code}` budget), so enumerating codes cannot bypass the limit. Heavier endpoints use lower limits: `search` is 60/min; `screen`, `backtest/dca`, `benchmark`, and `industry-exposure` are 20/min; watchlist writes (`POST`/`PATCH`/`DELETE`) are 30/min and count separately from `GET` on the same path; `POST refresh` is 10/min (network-fetching, so avoid high-frequency triggers); `POST /api/agent/tools/transactions` (trusted single direct write) is 10/min and counts separately from the `GET` ledger list on the same path. Screening shares one bucket whether or not metrics are requested, so switching parameters cannot bypass it. Exceeding a limit returns `429`; retry after the `Retry-After` seconds. Rate-limit and metric-enrichment concurrency are **in-process** state; multiple workers count independently.
 
 ### OpenAPI / Swagger
 
@@ -796,6 +797,38 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
 - Error codes: `write_disabled`, `validation_error`, `fund_not_registered`, `too_many_pending`, `not_pending`, `expired`, `not_found`, `idempotency_conflict`, `idempotency_expired`. Audits `proposal_created`, `proposal_create_rejected`, `proposal_cancelled`, `proposal_expired`, `proposal_approved`, `proposal_rejected`, `proposal_failed`, and `proposal_conflict` record only the token prefix and proposal summary.
 - Creation/cancellation share the global write switch with watchlist writes. Proposals are not included in backup archives; restoring a backup clears stale proposals so they cannot point at replaced ledger data.
 
+### 5.24 Trusted single direct write (write, off by default)
+
+Use this only when the user **explicitly states a single ordinary buy/sell already completed on an external platform**; never infer a trade from a screenshot, a forecast, or a recommendation. Scope: `transactions:create`, also gated by the server write switch (see the write-switch notes above). On precheck anomalies the service downgrades to a pending proposal if the token also holds `transactions:propose`, otherwise it returns a 409 stable error code; hard failures (unregistered fund, exhausted daily quota) never downgrade.
+
+| MCP tool | HTTP | Description |
+|---|---|---|
+| `record_transaction` | `POST /api/agent/tools/transactions` | Direct-write a single buy/sell; the response `execution_mode` distinguishes direct write from downgrade |
+
+```bash
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: direct-0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f52" \
+  -d '{
+    "fund_code": "005827",
+    "action": "buy",
+    "date": "2026-10-30",
+    "amount": 1000,
+    "fee": 1,
+    "channel": "Alipay"
+  }' | jq
+# {"tool":"record_transaction","data":{"execution_mode":"direct","transaction_id":12,"operation_id":3,"receipt":{...},"daily_quota":{"used":1,"count_limit":10,...},"verify_path":"/transactions"}}
+```
+
+- The request body is flat: `fund_code`, `action` (only `buy`/`sell`), `date` (`YYYY-MM-DD`, must not be later than today, else `422 future_date`), `amount`/`shares`/`nav`, `fee`, `channel`, `note`, `is_t1`. Unknown fields return `422` as a request-validation error.
+- Must send `Idempotency-Key` (16–128 safe ASCII chars). Same key and parameters replay the original result (`200` + `replayed=true`); same key with different parameters returns `409 idempotency_conflict`. **Replay never upgrades**: if the original outcome was a downgraded proposal, replay returns the proposal's live status even after the trigger has cleared, and never writes a second direct transaction.
+- Precheck order: parameters/date → idempotency replay → in-transaction recheck of token/scope/write switch → fund registration → daily quota → suspected duplicate → sell shares → single-amount cap.
+- Error codes: `write_disabled`, `scope_revoked`, `validation_error`, `future_date`, `fund_not_registered` (409, no downgrade), `daily_quota_exceeded` (429, includes `used`/`limit`/`reset_at`, no downgrade), `duplicate_candidate` (includes `tx_id` or `proposal_id`), `insufficient_shares` (includes `available`/`requested`), `amount_exceeds_cap` (includes `cap`/`amount`), `idempotency_conflict`/`idempotency_expired`, `too_many_pending` (forwarded from the downgrade path).
+- A downgrade proposal is fully equivalent to one from `create_operation_proposal` and is approved on the "Pending proposals" page; when a same-principal same-params pending proposal already exists it is reused rather than recreated.
+- Quotas (env-overridable): single `ZFUNDPILOT_AGENT_TX_MAX_AMOUNT` (default 500000), daily count `ZFUNDPILOT_AGENT_TX_DAILY_COUNT` (default 10, includes downgrades), daily amount `ZFUNDPILOT_AGENT_TX_DAILY_AMOUNT` (default 1000000, direct writes only); route rate limit 10/min.
+- Transactions written by direct write carry `source="agent"` and show an "Agent" badge on the ledger page; the web/CSV/proposal-approval paths leave `source` empty. Audits record `agent_direct_add` (direct success), `agent_direct_downgraded` (downgrade), `agent_direct_rejected` (reject), plus the business `add_transaction` (detail includes `source`).
+
 ### MCP adapter (optional)
 
 A stdio MCP bridge is bundled to expose the tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
@@ -827,7 +860,7 @@ Claude Desktop example (`claude_desktop_config.json`):
 }
 ```
 
-Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`, `add_watchlist_item`, `update_watchlist_item`, `remove_watchlist_item`, `start_data_refresh`, `get_job_status`, `create_operation_proposal`, `list_operation_proposals`, `get_operation_proposal`, `cancel_operation_proposal`.
+Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`, `add_watchlist_item`, `update_watchlist_item`, `remove_watchlist_item`, `start_data_refresh`, `get_job_status`, `create_operation_proposal`, `list_operation_proposals`, `get_operation_proposal`, `cancel_operation_proposal`, `record_transaction`.
 Write tools require an `idempotency_key` argument, mapped to the HTTP `Idempotency-Key` header. The MCP client only passes parameters; server-side auth, scope, and the write switch remain authoritative.
 
 - `ZFUNDPILOT_BASE_URL` defaults to `http://127.0.0.1:8000`; use the real NAS/Docker address for remote instances and HTTPS for remote access.
@@ -859,3 +892,4 @@ Write tools require an `idempotency_key` argument, mapped to the HTTP `Idempoten
 | 2026-10-28 | Added two fund lookup tools: `search` (keyword lookup) and `screen` (type/sector/keyword screening with optional capped metrics), reusing `funds:read`; added per-route rate limits |
 | 2026-10-28 | Added the read-only DCA backtest tool `backtest/dca` (`POST`, reusing `funds:read`): separated data preparation from calculation, never writes formal NAV data; unified valuation/XIRR terminal dates and explicitly flags insufficient data, partial coverage, and unknown fees |
 | 2026-10-30 | Added the `transactions:propose` scope and four ledger proposal tools: agents can only submit pending proposals; after web administrator approval the server writes the ledger and audits in one transaction. This phase supports only `add_transaction`; proposals expire after 7 days, are idempotent, and are isolated per token |
+| 2026-10-31 | Added the `transactions:create` scope and the `record_transaction` tool (F0 trusted single direct write): within quotas it writes a single buy/sell directly and downgrades to a proposal or rejects on precheck anomalies. Added the `transactions.source` column and three audit labels; backups remain compatible with the legacy v2 column variant |

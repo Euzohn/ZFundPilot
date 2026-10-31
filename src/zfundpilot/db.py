@@ -303,6 +303,7 @@ def init_db() -> None:
     _migrate_add_conversion_id()
     _migrate_add_purchase_status()
     _migrate_add_risk_level()
+    _migrate_add_transaction_source()
     _migrate_watchlist_revision()
 
 
@@ -350,6 +351,21 @@ def _migrate_add_columns() -> None:
             # 回填：note 含 "T+1确认" 的旧交易标记为 is_t1
             conn.execute(
                 "UPDATE transactions SET is_t1=1 WHERE note LIKE '%T+1确认%'"
+            )
+
+
+def _migrate_add_transaction_source() -> None:
+    """为 transactions 表补充来源标识（旧库升级）。幂等。
+
+    ``source`` 只用于区分 Agent 可信直记（``"agent"``）与网页/CSV/提案审批
+    等既有路径（空串），不参与任何收益计算。
+    """
+    with get_connection() as conn:
+        cols = {r["name"] for r in
+                conn.execute("PRAGMA table_info(transactions)").fetchall()}
+        if "source" not in cols:
+            conn.execute(
+                "ALTER TABLE transactions ADD COLUMN source TEXT DEFAULT ''"
             )
 
 
@@ -816,11 +832,12 @@ def insert_transaction(conn: sqlite3.Connection, tx: Transaction) -> int:
     """在调用方事务内插入一笔流水，返回 id；调用方负责 normalize 与提交。"""
     cur = conn.execute(
         """
-        INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note,is_t1,conversion_id)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO transactions(fund_code,action,date,amount,shares,nav,fee,channel,note,is_t1,conversion_id,source)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (tx.fund_code.strip(), tx.action, tx.date, tx.amount, tx.shares,
-         tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1), tx.conversion_id),
+         tx.nav, tx.fee, tx.channel, tx.note, int(tx.is_t1),
+         tx.conversion_id, tx.source),
     )
     return int(cur.lastrowid)
 

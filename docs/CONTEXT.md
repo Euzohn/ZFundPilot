@@ -72,6 +72,7 @@ ZFundPilot/
 │   ├── watchlist_service.py # 自选受控写入（幂等/revision/墓碑/业务审计同事务）
 │   ├── refresh_service.py   # 任务化净值/元数据刷新（refresh_jobs；不做交易回填/定投）
 │   ├── proposal_service.py  # 账本提案状态机（Agent 提案 + 网页审批 + 执行/审计同事务）
+│   ├── transaction_service.py # 可信单笔直记（transactions:create，限额/预检/降级/幂等，与提案共享校验）
 │   ├── mcp_server.py        # 可选 MCP stdio 适配层（仅 HTTP 客户端，复用鉴权/scope/限流）
 │   ├── nav_update_state.py  # 净值更新共享状态+锁+阶段(phase)字段（api.py/scheduler.py 共用，避免循环导入）
 │   ├── scheduler.py         # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查 + 基准指数/宏观水位持久化
@@ -192,8 +193,9 @@ ZFundPilot/
 - 静态文件: 生产模式挂载 `frontend/dist/` 到 `/`
 - i18n 序列化: `/api/risk` flags 和 `/api/rebalance` advice 输出 `code`+`params`，前端 `backendLabels.ts` 按 code 翻译
 - 自选列表: `POST/GET/DELETE /api/watchlist`，加入时自动获取基金 meta 并 upsert 到 `funds` 表；写操作下沉到 `watchlist_service`，网页与 Agent 共用幂等/revision/审计
-- Agent 接入: `/api/agent/tokens` 管理 token；`/api/agent/tools/*` 只读工具 + 受控写（自选、刷新任务、账本提案），独立中间件鉴权 + scope + 限流
+- Agent 接入: `/api/agent/tokens` 管理 token；`/api/agent/tools/*` 只读工具 + 受控写（自选、刷新任务、账本提案、可信单笔直记），独立中间件鉴权 + scope + 限流
 - 账本提案: Agent `POST/GET/DELETE /api/agent/tools/proposals*` 只能创建/查看/取消自己的待审批提案；网页 `GET /api/proposals/count`、`GET /api/proposals`、`GET /api/proposals/{id}`、`POST /api/proposals/{id}/approve|reject` 仅限网页登录，批准时同事务复核并写入账本
+- 可信单笔直记: Agent `POST /api/agent/tools/transactions`（scope `transactions:create`，仅 buy/sell）在限额内直接写入账本，预检异常时按 `transactions:propose` 降级为待审提案或稳定报错；逻辑下沉到 `transaction_service`，与提案共用参数校验
 - 截图导入: `POST /api/ai/parse-screenshot`（multipart 上传截图 → 视觉模型解析 → 返回结构化数据，不落库）+ `POST /api/ai/reconcile`（持仓对账 → 生成差额调整交易建议）+ `GET/PUT /api/settings/vision`（视觉模型配置）+ `POST /api/ai/vision-test`（测试视觉模型）。批量保存复用 `POST /api/csv/import`
 - 数据备份: `GET /api/export/zip` 导出格式 v2（`manifest.json` + 12 张表 JSONL，含净值历史与 SHA-256）；`POST /api/backup/preflight` 只读预检，`POST /api/backup/restore` 需 `RESTORE` 确认后先备份当前数据再事务化整体恢复，失败回滚。审计日志、AI 密钥、Agent token、Agent 幂等记录、刷新任务与提案不进入普通备份；恢复时清空 `agent_operations`、`refresh_jobs`、`operation_proposals`，避免旧记录指向已替换的数据
 - 基准对比: `GET /api/portfolio/benchmark?indices=000300,000001,399006`，返回基准累计收益率（`close / close_at_start - 1`），按组合曲线日期 ffill 对齐。`BENCHMARK_INDICES` 白名单控制可选指数
@@ -387,6 +389,9 @@ ZFundPilot/
 | `ZFUNDPILOT_NAV_CRON` | `0 21 * * 1-5` | 净值定时更新 cron 表达式 |
 | `ZFUNDPILOT_TIMEZONE` | `Asia/Shanghai` | 系统时区（IANA 名称），影响定时任务、交易日期、日志时间戳 |
 | `ZFUNDPILOT_AGENT_WRITE_ENABLED` | 未设置（默认关闭，可在设置页开启） | Agent 写能力开关（双重语义）：显式 `0` = 紧急刹车强制关闭（设置页锁死）；`1` = 仅作数据库无记录时的首次启动默认值；日常开关走设置页 `agent_write_enabled` 偏好 |
+| `ZFUNDPILOT_AGENT_TX_MAX_AMOUNT` | `500000` | 可信直记单笔金额上限（`transactions:create`） |
+| `ZFUNDPILOT_AGENT_TX_DAILY_COUNT` | `10` | 可信直记每日笔数额度（含降级为提案） |
+| `ZFUNDPILOT_AGENT_TX_DAILY_AMOUNT` | `1000000` | 可信直记每日直写金额额度（降级不累计） |
 | `ZFUNDPILOT_TRUSTED_PROXIES` | 空 | 信任代理网段（CIDR 逗号分隔），仅在反代后配置 |
 | `ZFUNDPILOT_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 允许的前端源（逗号分隔），部署到非默认域名时需配置 |
 | `CONTAINER_NAME` | `zfundpilot` | Docker 容器名称，多实例部署时需为每个实例设置不同名称 |
@@ -530,6 +535,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- feat: 可信单笔直记（F0）——新增 `transactions:create` scope + `transaction_service.py` + `POST /api/agent/tools/transactions`（MCP `record_transaction`），首期仅普通买入/卖出，让可信 Token 在用户明确陈述「外部已完成」时限额内直接写账本，无需逐笔网页审批。单事务内按序：参数/未来日期（422 `future_date`）→ 幂等重放 → 事务内复核 token/scope/写总闸 → 基金收录 → 每日额度（笔数含降级、金额仅直写，429 `daily_quota_exceeded` 不降级）→ 疑似重复（含待审提案）/卖出份额/单笔上限预检 → 直记或降级。软失败时有 `transactions:propose` 则降级为待审批提案（复用同主体同参 pending 提案），否则 409 稳定错误码；硬失败不降级；重放永不把降级提案升级为直写。响应 `execution_mode` 区分 `direct`/`proposal`，回执含 `unconfirmed_fields`/`daily_quota`/`verify_path`。新增 `transactions.source` 列（直记 `agent`，其余空串）+ 流水页「Agent」徽标 + 3 个审计 action；备份 v2 列集放宽接受无 `source` 旧变体，恢复补空串，FORMAT_VERSION 维持 2。额度 env 覆盖：单笔 50 万 / 日 10 笔 / 日 100 万
 - fix: Agent 写能力多 worker 一致性——审批提案改为在事务内读取 `preferences.agent_write_enabled` 权威值（无记录回退运行时值），任一 worker 关闭总闸后立即阻断；SQLite 持锁超时映射为 `503 database_busy` + `Retry-After: 5`；备份排除清单补齐 `operation_proposals`；新增 vitest + Testing Library 前端测试基建（4 个回归用例）与 CI Frontend tests 步骤
 - feat: Agent 写能力设置页开关——`ZFUNDPILOT_AGENT_WRITE_ENABLED` 改双重语义（`0` = 紧急刹车锁死，`1` = 仅首次启动默认值），日常开关走 `GET/PUT /api/settings/agent-write`（开启需当前登录密码确认，403 错误码 `env_forced_off`/`auth_required`/`wrong_password` 避免前端 401 登出）；状态存 `preferences`（key `agent_write_enabled`），lifespan 解析为运行时 `AGENT_WRITE_ENABLED`；审计 `agent_write_toggle`/`agent_write_toggle_denied`；capabilities 新增 `write_locked`；备份恢复后重新解析运行时开关；设置页新增「Agent 写能力」面板（AgentTokenPanel 上方）；Agent 写能力与访问令牌面板独立为「Agent 接入」tab（`settings?tab=agent`，未启用登录密码时隐藏）；新增 `tests/test_agent_write_settings.py`（15 用例）+ 恢复同步用例（总 841→857）
 - feat: 账本提案与网页审批（E）——`transactions:propose` scope + `operation_proposals` 表；Agent 只能创建/查看/取消待审批提案，网页管理员批准后服务端同事务复核 token/写开关/业务规则、写入交易并记录 `proposal_approved` + `add_transaction` 审计；首期仅 `add_transaction`，7 天过期、幂等创建、每 token 20 条待处理上限；新增 `/proposals` 页面与导航角标；恢复备份时清空旧提案

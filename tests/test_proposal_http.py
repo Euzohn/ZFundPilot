@@ -145,7 +145,7 @@ class TestProposalCreateAndRead:
         response = client.post(
             AGENT_PROPOSALS,
             headers={**headers, "Idempotency-Key": KEY_A},
-            json={"operation_type": "delete_transaction", "params": {}})
+            json={"operation_type": "transfer_transaction", "params": {}})
 
         assert response.status_code == 422
         assert response.json()["detail"]["field"] == "operation_type"

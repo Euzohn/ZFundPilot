@@ -269,6 +269,8 @@ _ENDPOINT_LIMITS: dict[str, tuple[int, int]] = {
     "/api/csv/import":         (30, 60),
     "/api/portfolio/industry-exposure": (60, 60),
     "/api/agent/tokens":       (30, 60),
+    "/api/agent/tools/precheck/transactions":   (10, 60),
+    "/api/agent/tools/precheck/reconciliation": (10, 60),
 }
 
 _DOMAIN_LIMITS: dict[str, tuple[int, int]] = {
@@ -1874,6 +1876,22 @@ class AgentProposalCreateRequest(BaseModel):
     params: dict[str, Any]
 
 
+class PrecheckTransactionsRequest(BaseModel):
+    """交易预检请求体；input 由服务层按 format 分支解析。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    input: dict[str, Any]
+
+
+class PrecheckReconciliationRequest(BaseModel):
+    """持仓对账预检请求体；input 由服务层解析。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    input: dict[str, Any]
+
+
 def _proposal_principal(
     ctx: agent_tokens.AgentTokenContext,
 ) -> proposal_service.Principal:
@@ -1937,6 +1955,62 @@ def agent_create_proposal(
     response.status_code = result.http_status
     return _agent_tool_response(
         "create_operation_proposal", _proposal_result_data(result))
+
+
+@app.post("/api/agent/tools/precheck/transactions", tags=["agent"],
+          summary="交易预检（只读，不写账本）",
+          responses=_AGENT_WRITE_ERROR_RESPONSES,
+          dependencies=[Security(_agent_bearer_scheme)])
+def agent_precheck_transactions(
+    request: Request,
+    body: PrecheckTransactionsRequest,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_PROPOSE)),
+    ],
+) -> dict[str, Any]:
+    """预检 CSV 或条目数组：基金识别→字段校验→重复检测，返回结构化报告。
+
+    不写账本、不联网。受写总闸控制（关闭时 403），便于管理员统一收口写路径。
+    """
+    _require_agent_write_enabled(request, ctx)
+    try:
+        result = transaction_service.precheck_transactions(body.input)
+    except transaction_service.PrecheckError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "field": exc.field,
+                    "message": exc.message},
+        ) from exc
+    return _agent_tool_response("precheck_transactions", result)
+
+
+@app.post("/api/agent/tools/precheck/reconciliation", tags=["agent"],
+          summary="持仓对账预检（只读，不写账本）",
+          responses=_AGENT_WRITE_ERROR_RESPONSES,
+          dependencies=[Security(_agent_bearer_scheme)])
+def agent_precheck_reconciliation(
+    request: Request,
+    body: PrecheckReconciliationRequest,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_PROPOSE)),
+    ],
+) -> dict[str, Any]:
+    """预检截图持仓与账本持仓的差额，生成建议交易，返回差额表。
+
+    不写账本、不联网。受写总闸控制（关闭时 403）。
+    """
+    _require_agent_write_enabled(request, ctx)
+    try:
+        result = transaction_service.precheck_reconciliation(body.input)
+    except transaction_service.PrecheckError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": exc.code, "field": exc.field,
+                    "message": exc.message},
+        ) from exc
+    return _agent_tool_response("precheck_reconciliation", result)
 
 
 @app.get("/api/agent/tools/proposals", tags=["agent"],
@@ -2725,6 +2799,14 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
      "path": "/api/agent/tools/proposals/{proposal_id}",
      "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
      "risk": "write", "requires_confirmation": False},
+    {"name": "precheck_transactions", "method": "POST",
+     "path": "/api/agent/tools/precheck/transactions",
+     "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+     "risk": "propose", "requires_confirmation": False},
+    {"name": "precheck_reconciliation", "method": "POST",
+     "path": "/api/agent/tools/precheck/reconciliation",
+     "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+     "risk": "propose", "requires_confirmation": False},
 )
 
 

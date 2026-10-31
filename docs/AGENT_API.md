@@ -940,6 +940,48 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions" \
 - 额度（可 env 覆盖）：单笔 `ZFUNDPILOT_AGENT_TX_MAX_AMOUNT`（默认 50 万）、每日笔数 `ZFUNDPILOT_AGENT_TX_DAILY_COUNT`（默认 10，含降级）、每日金额 `ZFUNDPILOT_AGENT_TX_DAILY_AMOUNT`（默认 100 万，仅直写累计）；路由限流 10 次/分钟。
 - 直记写入的交易 `source="agent"`，流水页显示「Agent」徽标；网页/CSV/提案审批路径 `source` 为空。审计记录 `agent_direct_add`（直记成功）、`agent_direct_downgraded`（降级）、`agent_direct_rejected`（拒绝），并沿用业务 `add_transaction`（detail 含 `source`）。
 
+### 5.25 CSV/截图预检与对账预检（只读，默认关闭）
+
+**只读预检**：在提交交易提案前，先校验 CSV 或条目数组的基金收录、字段合法性与重复情况；或把截图持仓与账本持仓对账，生成差额建议交易。不写账本、不联网、不创建提案，仅返回结构化报告供调用方与用户确认后再走 `create_operation_proposal`。scope：`transactions:propose`，受写总闸约束（关闭时 `403 write_disabled`），路由限流 10 次/分钟。
+
+| MCP 工具 | HTTP | 说明 |
+|---|---|---|
+| `precheck_transactions(payload)` | `POST /api/agent/tools/precheck/transactions` | 预检 CSV 文本或条目数组 |
+| `precheck_reconciliation(payload)` | `POST /api/agent/tools/precheck/reconciliation` | 截图持仓对账，生成差额建议交易 |
+
+```bash
+# 条目预检
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/precheck/transactions" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"input":{"format":"items","items":[
+    {"fund_code":"005827","action":"buy","date":"2026-10-30","amount":1000,"channel":"支付宝"}
+  ]}}' | jq
+# {"tool":"precheck_transactions","data":{"ok":true,"total":1,"valid":1,"invalid":0,
+#  "duplicate":0,"items":[{"index":0,"status":"valid","proposal_ready":true,...}],"parse_errors":[]}}
+
+# 持仓对账预检
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/precheck/reconciliation" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"input":{"holdings":[{"fund_code":"005827","shares":5932}],"channel":"支付宝"}}' | jq
+```
+
+**交易预检**（`precheck_transactions`）：
+
+- `input.format`：`"csv"`（需 `csv_text` 字符串，≤5 MB）或 `"items"`（数组，≤200 条）；可选 `channel_hint` 补全缺渠道的条目。
+- 每条经「基金识别 → 字段校验 → 重复检测」三步：`fund_code` 查账本 `funds` 表校验收录（离线可用）；`fund_name` 走基金池名称匹配（离线返回 `none`）。返回 `status`：`valid`/`invalid`/`duplicate`，附 `fund_resolution`、`duplicate`（`kind` 为 `ledger` 或 `pending_proposal`）、`issues`（`code` 含 `no_match`/`ambiguous_match`/`validation_error`/`invalid_params`/`missing_channel`/`missing_fee`）与 `proposal_ready` 标志。
+- 重复检测复用直记/提案的 `_duplicate_in_ledger`（同基金+渠道+日期+方向且金额或份额容差匹配）与 `_duplicate_pending_proposal`（待审批提案）。
+- 硬阻断仅：`date`/`action`/`fund_code`/`shares`(卖出)/`amount`(分红) 缺失或非法；`channel`/`fee` 缺失为 warning（条目仍 `valid`）。
+- 请求级错误（`format` 非法、`items` 非数组、超 200 条、CSV 超 5 MB）返回 `422`，`detail.code` 为 `validation_error`/`too_many_items`/`csv_too_large`。
+
+**对账预检**（`precheck_reconciliation`）：
+
+- `input.holdings`：`[{fund_code 或 fund_name, shares, market_value?}]`，≤100 条；可选 `channel` 按渠道过滤。
+- 先做基金识别 + `shares` 校验（非负有限数字），未收录或 shares 非法的条目进 `fund_resolution_errors`（含 `reason`：`fund_unresolved`/`invalid_shares`/`not_object`），不参与对账。
+- 合法条目复用 `analysis.reconcile_holdings` 生成差额表：`status` 为 `buy`/`sell`/`ok`/`new`/`maybe_sold`，附 `suggested_tx`（`nav` 取 `latest_nav` 估算，`note` 标注「请核实」）与 `proposal_ready` 标志。
+- 调用方据报告确认后，用 `create_operation_proposal`（`add_transaction`）逐条提交建议交易，仍需网页审批。
+
 ### MCP 适配层（可选）
 
 仓库内置一个 stdio MCP 桥接，把上述工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。

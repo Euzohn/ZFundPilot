@@ -666,6 +666,58 @@ async def record_transaction(
 
 
 @mcp.tool()
+async def precheck_transactions(payload: dict[str, Any]) -> dict[str, Any]:
+    """Pre-check transactions before proposing them. Read-only, never writes.
+
+    Validates CSV text or an items array: resolves funds (against the ledger's
+    registered funds), checks field validity, and detects duplicates against
+    both the ledger and pending proposals. Returns a structured report per item
+    with status valid/invalid/duplicate and a proposal_ready flag.
+
+    This does NOT write the ledger and does NOT create a proposal. Use it to
+    preview what create_operation_proposal would accept or reject, so the user
+    can fix issues first.
+
+    Args:
+        payload: The precheck input. Must contain "format" ("csv" or "items").
+            - csv: {"format": "csv", "csv_text": str, "channel_hint"?: str}
+            - items: {"format": "items", "items": [{fund_code or fund_name,
+              action, date, amount?, shares?, nav?, fee?, channel?, note?,
+              is_t1?}], "channel_hint"?: str}
+            At most 200 items. CSV text at most 5 MB.
+    """
+    if not isinstance(payload, dict):
+        raise ToolError("payload must be an object.")
+    return await _post(
+        "/api/agent/tools/precheck/transactions", {"input": payload})
+
+
+@mcp.tool()
+async def precheck_reconciliation(payload: dict[str, Any]) -> dict[str, Any]:
+    """Pre-check a holdings reconciliation against the ledger. Read-only.
+
+    Compares screenshot-parsed holdings against recorded positions by channel,
+    computes share differences, and suggests adjustment transactions (buy/sell)
+    with estimated NAV. Returns a diff table with a proposal_ready flag per
+    item. Funds not registered in the ledger are reported in
+    fund_resolution_errors and skipped.
+
+    This does NOT write the ledger and does NOT create a proposal. Use
+    create_operation_proposal to submit the suggested transactions after the
+    user confirms them.
+
+    Args:
+        payload: {"holdings": [{fund_code or fund_name, shares, market_value?}],
+          "channel"?: str}. At most 100 holdings. shares must be a
+          non-negative finite number.
+    """
+    if not isinstance(payload, dict):
+        raise ToolError("payload must be an object.")
+    return await _post(
+        "/api/agent/tools/precheck/reconciliation", {"input": payload})
+
+
+@mcp.tool()
 async def list_operation_proposals(
     status: str | None = None,
     limit: Annotated[int, Field(ge=1, le=200)] = 50,

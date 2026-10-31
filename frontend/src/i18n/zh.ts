@@ -594,7 +594,7 @@ const zh = {
     agentTokenScopePlans: "定投计划只读",
     agentTokenScopeWatchlistWrite: "自选维护（写入）",
     agentTokenScopeDataRefresh: "数据刷新（写入）",
-    agentTokenScopeTransactionsPropose: "交易提案：新增/修改/删除（需网页确认）",
+    agentTokenScopeTransactionsPropose: "交易提案：新增/修改/删除 + CSV/截图预检与对账（需网页确认写入）",
     agentTokenScopeTransactionsCreate: "可信单笔直记（直接写入账本）",
     agentTokenWriteHint: "写权限会修改真实自选、净值/元数据，或创建待审批的账本提案；提案仍需网页管理员确认后才会写入账本。仅在确认需要时勾选，并确保服务端已开启写能力开关。",
     agentTokenCreateRiskHint: "⚠️ 持有该令牌的调用方可在限额内直接写入账本，无需逐笔人工确认。仅授予完全可信的调用方；如需逐笔确认，请只授予「交易提案」并取消本项。",

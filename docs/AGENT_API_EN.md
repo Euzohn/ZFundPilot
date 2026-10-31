@@ -936,6 +936,48 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions" \
 - Quotas (env-overridable): single `ZFUNDPILOT_AGENT_TX_MAX_AMOUNT` (default 500000), daily count `ZFUNDPILOT_AGENT_TX_DAILY_COUNT` (default 10, includes downgrades), daily amount `ZFUNDPILOT_AGENT_TX_DAILY_AMOUNT` (default 1000000, direct writes only); route rate limit 10/min.
 - Transactions written by direct write carry `source="agent"` and show an "Agent" badge on the ledger page; the web/CSV/proposal-approval paths leave `source` empty. Audits record `agent_direct_add` (direct success), `agent_direct_downgraded` (downgrade), `agent_direct_rejected` (reject), plus the business `add_transaction` (detail includes `source`).
 
+### 5.25 CSV / screenshot precheck & reconciliation (read-only, off by default)
+
+**Read-only precheck**: before submitting transaction proposals, validate a CSV or items array for fund registration, field validity, and duplicates; or reconcile screenshot holdings against the ledger to produce suggested adjustment transactions. It does not write the ledger, call the network, or create proposals — it only returns a structured report for the caller and user to confirm before using `create_operation_proposal`. Scope: `transactions:propose`, gated by the write switch (`403 write_disabled` when off), route rate limit 10/min.
+
+| MCP tool | HTTP | Description |
+|---|---|---|
+| `precheck_transactions(payload)` | `POST /api/agent/tools/precheck/transactions` | Pre-check CSV text or an items array |
+| `precheck_reconciliation(payload)` | `POST /api/agent/tools/precheck/reconciliation` | Reconcile screenshot holdings; produce diff suggestions |
+
+```bash
+# Items precheck
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/precheck/transactions" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"input":{"format":"items","items":[
+    {"fund_code":"005827","action":"buy","date":"2026-10-30","amount":1000,"channel":"Alipay"}
+  ]}}' | jq
+# {"tool":"precheck_transactions","data":{"ok":true,"total":1,"valid":1,"invalid":0,
+#  "duplicate":0,"items":[{"index":0,"status":"valid","proposal_ready":true,...}],"parse_errors":[]}}
+
+# Holdings reconciliation precheck
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/precheck/reconciliation" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"input":{"holdings":[{"fund_code":"005827","shares":5932}],"channel":"Alipay"}}' | jq
+```
+
+**Transaction precheck** (`precheck_transactions`):
+
+- `input.format`: `"csv"` (requires `csv_text` string, ≤5 MB) or `"items"` (array, ≤200); optional `channel_hint` fills missing channels.
+- Each item goes through fund resolution → field validation → duplicate detection. `fund_code` is checked against the ledger `funds` table (works offline); `fund_name` uses the fund universe name matcher (returns `none` offline). Returns `status`: `valid`/`invalid`/`duplicate`, with `fund_resolution`, `duplicate` (`kind` is `ledger` or `pending_proposal`), `issues` (`code` includes `no_match`/`ambiguous_match`/`validation_error`/`invalid_params`/`missing_channel`/`missing_fee`), and a `proposal_ready` flag.
+- Duplicate detection reuses the direct-write/proposal `_duplicate_in_ledger` (same fund + channel + date + direction with amount or shares tolerance match) and `_duplicate_pending_proposal` (pending proposals).
+- Hard blocks only: missing/invalid `date`/`action`/`fund_code`/`shares`(sell)/`amount`(dividend); missing `channel`/`fee` are warnings (item stays `valid`).
+- Request-level errors (`format` invalid, `items` not an array, over 200 items, CSV over 5 MB) return `422` with `detail.code` of `validation_error`/`too_many_items`/`csv_too_large`.
+
+**Reconciliation precheck** (`precheck_reconciliation`):
+
+- `input.holdings`: `[{fund_code or fund_name, shares, market_value?}]`, ≤100; optional `channel` filters by channel.
+- Fund resolution + `shares` validation (non-negative finite number) run first; unregistered or invalid-shares items go to `fund_resolution_errors` (with `reason`: `fund_unresolved`/`invalid_shares`/`not_object`) and are skipped.
+- Valid items reuse `analysis.reconcile_holdings` to produce a diff table: `status` is `buy`/`sell`/`ok`/`new`/`maybe_sold`, with `suggested_tx` (`nav` uses `latest_nav` estimate, `note` flagged "please verify") and a `proposal_ready` flag.
+- After confirming the report, the caller submits suggested transactions one by one via `create_operation_proposal` (`add_transaction`); web approval still required.
+
 ### MCP adapter (optional)
 
 A stdio MCP bridge is bundled to expose the tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.

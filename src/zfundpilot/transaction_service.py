@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from . import agent_tokens, analysis, config, db
+from . import agent_tokens, analysis, config, data_io, db, fund_filter
 from .models import ACTION_BUY, ACTION_SELL, Transaction
 
 if TYPE_CHECKING:  # pragma: no cover - 仅类型检查，避免与 proposal_service 循环导入
@@ -1163,3 +1163,377 @@ def record_transaction_direct(principal: Principal, *, params: object,
 
     analysis.clear_analysis_cache()
     return result
+
+
+# ---------------------------------------------------------------------------
+# F3：CSV/截图预检与对账预检（只读，不写账本）
+# ---------------------------------------------------------------------------
+_MAX_PRECHECK_ITEMS = 200
+_MAX_RECONCILE_ITEMS = 100
+_MAX_CSV_BYTES = 5 * 1024 * 1024  # 5 MB，与网页 parse_csv 一致
+
+
+class PrecheckError(ValueError):
+    """预检请求级错误（映射为 HTTP 422/413）；不进入条目级 issues。"""
+
+    def __init__(self, code: str, message: str, field: str = "") -> None:
+        super().__init__(message)
+        self.code = code
+        self.field = field
+        self.message = message
+
+
+def _resolve_fund(conn: sqlite3.Connection, item: dict) -> dict:
+    """解析条目的基金：优先 fund_code 校验（查账本收录），否则 fund_name 匹配。
+
+    fund_code 走账本 ``funds`` 表校验，离线可用且与提案语义一致；
+    fund_name 走 ``fund_filter.resolve_fund_code``（依赖基金池，离线返回 none）。
+
+    返回 ``{"input": str, "status": str, "resolved_code": str|None,
+    "candidates": list, "fund_name": str}``。status ∈ exact/multiple/none/verified。
+    """
+    code = str(item.get("fund_code") or "").strip()
+    name = str(item.get("fund_name") or "").strip()
+    if code:
+        row = conn.execute(
+            "SELECT fund_name FROM funds WHERE fund_code=?", (code,)
+        ).fetchone()
+        if row is not None:
+            return {"input": code, "status": "verified",
+                    "resolved_code": code, "candidates": [],
+                    "fund_name": row["fund_name"] or code}
+        return {"input": code, "status": "none",
+                "resolved_code": None, "candidates": [],
+                "fund_name": ""}
+    if name:
+        result = fund_filter.resolve_fund_code(name)
+        resolved_code = result.get("code")
+        fund_name = name
+        if resolved_code:
+            row = conn.execute(
+                "SELECT fund_name FROM funds WHERE fund_code=?",
+                (resolved_code,)).fetchone()
+            if row is not None:
+                fund_name = row["fund_name"] or resolved_code
+        return {
+            "input": name,
+            "status": result.get("status", "none"),
+            "resolved_code": resolved_code,
+            "candidates": result.get("candidates", []),
+            "fund_name": fund_name,
+        }
+    return {"input": "", "status": "none",
+            "resolved_code": None, "candidates": [],
+            "fund_name": ""}
+
+
+def _tx_to_report_dict(tx: Transaction) -> dict:
+    """把 Transaction 对象转成预检报告中的展示字典。"""
+    return {
+        "fund_code": tx.fund_code,
+        "fund_name": "",
+        "action": tx.action,
+        "action_label": ACTION_LABELS.get(tx.action, tx.action),
+        "date": tx.date,
+        "amount": tx.amount,
+        "shares": tx.shares,
+        "nav": tx.nav,
+        "fee": tx.fee,
+        "channel": tx.channel,
+        "note": tx.note,
+        "is_t1": tx.is_t1,
+    }
+
+
+def precheck_transactions(input_data: dict) -> dict:
+    """预检交易条目：解析→基金识别→字段校验→重复检测，返回结构化报告。
+
+    不写账本、不联网。支持两种输入格式：
+    - ``{"format": "csv", "csv_text": str, "channel_hint"?: str}``
+    - ``{"format": "items", "items": list[dict], "channel_hint"?: str}``
+    """
+    fmt = input_data.get("format")
+    channel_hint = str(input_data.get("channel_hint") or "").strip()
+    now = datetime.now(config.TIMEZONE)
+
+    raw_items: list[dict] = []
+    parse_errors: list[dict] = []
+
+    if fmt == "csv":
+        csv_text = input_data.get("csv_text")
+        if not isinstance(csv_text, str):
+            raise PrecheckError("validation_error", "csv_text 必须是字符串")
+        if len(csv_text.encode("utf-8")) > _MAX_CSV_BYTES:
+            raise PrecheckError("csv_too_large", "CSV 文本超过 5 MB 限制")
+        transactions, errors = data_io.parse_transactions_csv(
+            csv_text.encode("utf-8"))
+        for err in errors:
+            parse_errors.append({"line": None, "message": err})
+        raw_items = [
+            {
+                "fund_code": tx.fund_code, "action": tx.action,
+                "date": tx.date, "amount": tx.amount, "shares": tx.shares,
+                "nav": tx.nav, "fee": tx.fee, "channel": tx.channel,
+                "note": tx.note, "is_t1": tx.is_t1,
+            }
+            for tx in transactions
+        ]
+    elif fmt == "items":
+        items = input_data.get("items")
+        if not isinstance(items, list):
+            raise PrecheckError("validation_error", "items 必须是数组")
+        if len(items) > _MAX_PRECHECK_ITEMS:
+            raise PrecheckError(
+                "too_many_items",
+                f"条目数超过 {_MAX_PRECHECK_ITEMS} 上限")
+        raw_items = items
+    else:
+        raise PrecheckError(
+            "validation_error", "format 必须是 csv 或 items", "format")
+
+    if len(raw_items) > _MAX_PRECHECK_ITEMS:
+        raise PrecheckError(
+            "too_many_items",
+            f"条目数超过 {_MAX_PRECHECK_ITEMS} 上限")
+
+    report_items: list[dict] = []
+    valid_count = 0
+    invalid_count = 0
+    duplicate_count = 0
+
+    with db.get_connection() as conn:
+        for idx, raw in enumerate(raw_items):
+            if not isinstance(raw, dict):
+                report_items.append({
+                    "index": idx, "status": "invalid",
+                    "transaction": None,
+                    "fund_resolution": {"input": "", "status": "none",
+                                        "resolved_code": None,
+                                        "candidates": []},
+                    "duplicate": None,
+                    "issues": [{"field": "item", "code": "not_object",
+                                "message": "条目必须是对象"}],
+                    "proposal_ready": False,
+                })
+                invalid_count += 1
+                continue
+
+            # 基金解析
+            resolution = _resolve_fund(conn, raw)
+            issues: list[dict] = []
+
+            if resolution["status"] in ("multiple", "none"):
+                code_label = ("ambiguous_match" if resolution["status"]
+                              == "multiple" else "no_match")
+                msg = ("基金名称匹配到多个候选，请确认"
+                       if code_label == "ambiguous_match"
+                       else "未找到匹配的基金，请确认代码或名称")
+                issues.append({"field": "fund_name", "code": code_label,
+                               "message": msg})
+                report_items.append({
+                    "index": idx, "status": "invalid",
+                    "transaction": None,
+                    "fund_resolution": resolution,
+                    "duplicate": None, "issues": issues,
+                    "proposal_ready": False,
+                })
+                invalid_count += 1
+                continue
+
+            # 用解析后的 code 构造校验输入
+            fund_code = resolution["resolved_code"]
+            validate_input = {**raw, "fund_code": fund_code}
+            validate_input.pop("fund_name", None)
+            if not validate_input.get("channel") and channel_hint:
+                validate_input["channel"] = channel_hint
+
+            # 字段校验
+            try:
+                clean = validate_add_transaction_params(validate_input)
+            except TransactionValidationError as exc:
+                issues.append({"field": exc.field,
+                               "code": "validation_error",
+                               "message": exc.message})
+                report_items.append({
+                    "index": idx, "status": "invalid",
+                    "transaction": None,
+                    "fund_resolution": resolution,
+                    "duplicate": None, "issues": issues,
+                    "proposal_ready": False,
+                })
+                invalid_count += 1
+                continue
+
+            # normalize + is_valid
+            tx = Transaction(
+                fund_code=clean["fund_code"], action=clean["action"],
+                date=clean["date"], amount=clean.get("amount"),
+                shares=clean.get("shares"), nav=clean.get("nav"),
+                fee=clean.get("fee") or 0.0,
+                channel=clean.get("channel", ""),
+                note=clean.get("note", ""),
+                is_t1=bool(clean.get("is_t1")),
+            )
+            tx.normalize()
+            if not tx.is_valid():
+                issues.append({"field": "params",
+                               "code": "invalid_params",
+                               "message": "交易信息不足（买入需金额、卖出需份额、分红需金额）"})
+                report_items.append({
+                    "index": idx, "status": "invalid",
+                    "transaction": None,
+                    "fund_resolution": resolution,
+                    "duplicate": None, "issues": issues,
+                    "proposal_ready": False,
+                })
+                invalid_count += 1
+                continue
+
+            # 重复检测
+            dup_ledger = _duplicate_in_ledger(conn, clean)
+            dup_pending = _duplicate_pending_proposal(conn, clean, now)
+            duplicate_info = None
+            if dup_ledger is not None:
+                duplicate_info = {
+                    "kind": "ledger", "tx_id": dup_ledger,
+                    "match_fields": ["fund_code", "action", "date",
+                                     "amount", "shares"],
+                }
+            elif dup_pending is not None:
+                duplicate_info = {
+                    "kind": "pending_proposal", "proposal_id": dup_pending,
+                    "match_fields": ["fund_code", "action", "date",
+                                     "amount", "shares"],
+                }
+
+            # warning 级 issues（不阻断）
+            if not tx.channel:
+                issues.append({"field": "channel", "code": "missing_channel",
+                               "message": "未提供渠道，将按空串记录"})
+            if not tx.fee:
+                issues.append({"field": "fee", "code": "missing_fee",
+                               "message": "未提供手续费，将按 0 记录"})
+
+            tx_dict = _tx_to_report_dict(tx)
+            # 补充基金名称（优先账本名称，否则回退代码）
+            tx_dict["fund_name"] = resolution.get("fund_name") or fund_code
+
+            if duplicate_info is not None:
+                report_items.append({
+                    "index": idx, "status": "duplicate",
+                    "transaction": tx_dict,
+                    "fund_resolution": resolution,
+                    "duplicate": duplicate_info, "issues": issues,
+                    "proposal_ready": False,
+                })
+                duplicate_count += 1
+            else:
+                report_items.append({
+                    "index": idx, "status": "valid",
+                    "transaction": tx_dict,
+                    "fund_resolution": resolution,
+                    "duplicate": None, "issues": issues,
+                    "proposal_ready": True,
+                })
+                valid_count += 1
+
+    return {
+        "ok": True,
+        "total": len(report_items),
+        "valid": valid_count,
+        "invalid": invalid_count,
+        "duplicate": duplicate_count,
+        "items": report_items,
+        "parse_errors": parse_errors,
+    }
+
+
+def precheck_reconciliation(input_data: dict) -> dict:
+    """持仓对账预检：基金解析→差额计算→建议交易，返回差额表。
+
+    不写账本、不联网。复用 ``analysis.reconcile_holdings``。
+    """
+    holdings = input_data.get("holdings")
+    if not isinstance(holdings, list):
+        raise PrecheckError("validation_error", "holdings 必须是数组")
+    if len(holdings) > _MAX_RECONCILE_ITEMS:
+        raise PrecheckError(
+            "too_many_items",
+            f"持仓条目数超过 {_MAX_RECONCILE_ITEMS} 上限")
+    channel = str(input_data.get("channel") or "").strip()
+
+    # 基金解析前置 + shares 校验：只保留 exact/verified 且 shares 合法的条目参与对账
+    resolved_items: list[dict] = []
+    resolution_errors: list[dict] = []
+    with db.get_connection() as conn:
+        for idx, raw in enumerate(holdings):
+            if not isinstance(raw, dict):
+                resolution_errors.append({
+                    "index": idx, "input": "",
+                    "status": "none", "candidates": [],
+                    "reason": "not_object"})
+                continue
+            resolution = _resolve_fund(conn, raw)
+            code = resolution["resolved_code"]
+            if code is None:
+                resolution_errors.append({
+                    "index": idx, "input": resolution["input"],
+                    "status": resolution["status"],
+                    "candidates": resolution["candidates"],
+                    "reason": "fund_unresolved"})
+                continue
+            # shares 校验：必须是非负有限数字
+            shares = raw.get("shares")
+            shares_error = ""
+            if shares is None:
+                shares_error = "缺少 shares"
+            elif isinstance(shares, bool) or not isinstance(shares, (int, float)):
+                shares_error = "shares 必须是数字"
+            else:
+                try:
+                    shares_num = float(shares)
+                    if not math.isfinite(shares_num):
+                        shares_error = "shares 必须是有限数字"
+                    elif shares_num < 0:
+                        shares_error = "shares 不能为负数"
+                except (TypeError, ValueError):
+                    shares_error = "shares 必须是数字"
+            if shares_error:
+                resolution_errors.append({
+                    "index": idx, "input": resolution["input"],
+                    "status": resolution["status"],
+                    "candidates": resolution["candidates"],
+                    "resolved_code": code,
+                    "reason": "invalid_shares",
+                    "message": shares_error})
+                continue
+            market_value = raw.get("market_value")
+            resolved_items.append({
+                "fund_code": code,
+                "shares": shares_num,
+                "market_value": market_value,
+            })
+
+    result = analysis.reconcile_holdings(resolved_items, channel=channel)
+
+    # 为每条补 fund_resolution + proposal_ready
+    enriched_items: list[dict] = []
+    for item in result["items"]:
+        code = item["fund_code"]
+        suggested = item.get("suggested_tx")
+        proposal_ready = (
+            item["status"] != "ok" and suggested is not None and bool(code))
+        enriched = {
+            **item,
+            "fund_resolution": {"status": "verified",
+                                "resolved_code": code, "candidates": []},
+            "proposal_ready": proposal_ready,
+        }
+        enriched_items.append(enriched)
+
+    return {
+        "ok": True,
+        "channel": result["channel"],
+        "items": enriched_items,
+        "fund_resolution_errors": resolution_errors,
+    }

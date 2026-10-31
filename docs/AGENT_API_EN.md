@@ -136,6 +136,7 @@ Standard FastAPI error shape:
 | `409` | Watchlist revision conflict, missing/existing object, unregistered fund, non-pending/expired proposal, or idempotency conflict |
 | `422` | Invalid body/parameters, or missing a valid `Idempotency-Key` |
 | `429` | Rate limit exceeded; see `Retry-After` |
+| `503` | Database busy (e.g. backup/restore holds the write lock); `detail.code="database_busy"`, retry after `Retry-After` seconds |
 
 > `/api/agent/tools/*` is protected by a dedicated Agent auth middleware. Even a nonexistent tool path returns `401` without a valid token, so route existence is not leaked.
 

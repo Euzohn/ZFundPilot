@@ -136,6 +136,7 @@ Authorization: Bearer zfag_xxxxxxxx
 | `409` | 自选版本冲突、对象已存在/不存在、基金未收录、提案非 `pending`/已过期，或幂等键冲突 |
 | `422` | 请求体/参数校验失败，或缺少合法的 `Idempotency-Key` |
 | `429` | 超过限流阈值，响应头含 `Retry-After` |
+| `503` | 数据库正忙（如备份/恢复持有写锁），`detail.code="database_busy"`，请按 `Retry-After` 秒数重试 |
 
 > `/api/agent/tools/*` 由独立的 Agent 鉴权中间件保护：即使访问一个不存在的工具路径，没有有效 token 也会先返回 `401`，不会暴露路由是否存在。
 

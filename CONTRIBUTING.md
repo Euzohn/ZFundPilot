@@ -48,6 +48,7 @@ docker compose up -d --build
 ### 前端
 
 - 使用 **TypeScript** 严格模式，提交前执行类型检查：`cd frontend && npx tsc --noEmit`
+- 测试：`cd frontend && npm test`（vitest + Testing Library + jsdom，测试文件为 `src/**/*.test.{ts,tsx}`）
 - 组件风格：shadcn/ui + Tailwind CSS，遵循现有组件命名与目录结构
 - 图表：Recharts（混合 Area + Line 时用 `ComposedChart`）
 

@@ -801,6 +801,13 @@ def validate_batch_import_params(params: object) -> dict[str, Any]:
     # 永不接受的字段：忽略并记录为 warning，不因笔误整体失败。
     ignore_keys = {"clear_existing", "fetch_meta"}
     carried = params.get("ignored_fields")
+    if carried is not None:
+        # 审批期重新校验会复读创建时回写的忽略清单；外部若直接传入，
+        # 必须是字符串数组，否则 set() 遇到不可哈希元素会抛未捕获 TypeError。
+        if (not isinstance(carried, list)
+                or not all(isinstance(v, str) for v in carried)):
+            raise ProposalValidationError(
+                "ignored_fields", "ignored_fields 必须是字符串数组")
     carried_keys = set(carried) if isinstance(carried, list) else set()
     ignored = sorted((set(params) & ignore_keys) | (carried_keys & ignore_keys))
     if ignored:

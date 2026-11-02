@@ -189,6 +189,18 @@ class TestCreate:
             _create_batch(
                 _propose_principal(), [BUY], extra={"clear_existng": True})
 
+    @pytest.mark.parametrize("malformed", [
+        [{"x": 1}],      # 不可哈希元素：曾触发未捕获 TypeError → 500
+        "clear_existing",  # 非数组
+        123,
+    ])
+    def test_rejects_malformed_ignored_fields(self, temp_db, malformed):
+        with pytest.raises(svc.ProposalValidationError) as exc_info:
+            _create_batch(
+                _propose_principal(), [BUY],
+                extra={"ignored_fields": malformed})
+        assert exc_info.value.field == "ignored_fields"
+
     def test_idempotent_replay(self, temp_db):
         principal = _propose_principal()
         first = _create_batch(principal, [BUY])

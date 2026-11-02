@@ -839,6 +839,28 @@ export interface ProposalSummary {
     to: ConversionLeg
   }
   conversion_id?: string
+  // F4 批量导入提案：摘要与逐条明细（batch_import 携带）。
+  count?: number
+  actions?: Record<string, number>
+  funds?: Array<{ fund_code: string; fund_name: string }>
+  date_range?: { from: string; to: string }
+  amount_total?: number
+  items?: BatchImportItem[]
+}
+
+export interface BatchImportItem {
+  fund_code: string
+  fund_name: string
+  action: string
+  action_label: string
+  date: string
+  amount: number | null
+  shares: number | null
+  nav: number | null
+  fee: number | null
+  channel: string
+  note: string
+  is_t1: boolean
 }
 
 export interface ProposalExecution {
@@ -854,6 +876,13 @@ export interface ProposalExecution {
   nav?: number | null
   fee?: number | null
   channel?: string
+  // F4 批量导入执行结果。
+  tx_ids?: number[]
+  count?: number
+  index?: number
+  other_index?: number
+  available?: number
+  executed_before_failure?: number
 }
 
 export interface OperationProposal {

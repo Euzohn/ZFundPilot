@@ -549,10 +549,15 @@ async def create_operation_proposal(
       - "delete_conversion": delete a whole conversion pair (both legs) at
         once. Requires conversion_id plus both legs' row_digest; use
         delete_transaction for non-conversion rows.
+      - "batch_import": append several transactions in one proposal. All items
+        are validated first and written atomically on approval: either every
+        row is inserted or none. Use this instead of many add_transaction
+        proposals when importing a batch of already-happened trades.
 
     Args:
         operation_type: "add_transaction", "update_transaction",
-            "delete_transaction", "add_conversion", or "delete_conversion".
+            "delete_transaction", "add_conversion", "delete_conversion", or
+            "batch_import".
         params: For add_transaction: fund_code, action (buy/sell/dividend/
             reinvest), date (YYYY-MM-DD), fee, channel, note, is_t1, optional
             dividend_alert_id (dividend/reinvest only), and the
@@ -573,16 +578,21 @@ async def create_operation_proposal(
             expected_to_digest (both row_digest values, e.g. from
             list_transactions?conversion_id=... then get_transaction), and an
             optional reason.
+            For batch_import: transactions (1-50 items), each with fund_code
+            (required, no fund_name), action, date, the amount/shares/nav
+            combination required by the action, and optional fee/channel/note/
+            is_t1; plus an optional overall note. Never clears existing rows.
         idempotency_key: Unique retry key (16-128 chars); same key+params
             returns the same proposal.
     """
     _validate_write_key(idempotency_key)
     if operation_type not in (
             "add_transaction", "update_transaction", "delete_transaction",
-            "add_conversion", "delete_conversion"):
+            "add_conversion", "delete_conversion", "batch_import"):
         raise ToolError(
             'operation_type must be "add_transaction", "update_transaction", '
-            '"delete_transaction", "add_conversion", or "delete_conversion".')
+            '"delete_transaction", "add_conversion", "delete_conversion", '
+            'or "batch_import".')
     if not isinstance(params, dict):
         raise ToolError("params must be an object.")
     return await _post(

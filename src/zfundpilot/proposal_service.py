@@ -32,7 +32,13 @@ from . import agent_tokens, analysis, config, db
 from .models import Transaction
 from .transaction_service import (
     ACTION_LABELS,
+    AMOUNT_TOLERANCE,
     CONTRACT_VERSION,
+    _duplicate_in_ledger,
+    _duplicate_pending_proposal,
+    _parse_pending_rows,
+    _pending_proposal_rows,
+    _same_number,
     build_conversion_legs,
     transaction_row_digest,
     validate_add_conversion_params,
@@ -54,12 +60,14 @@ OPERATION_UPDATE_TRANSACTION = "update_transaction"
 OPERATION_DELETE_TRANSACTION = "delete_transaction"
 OPERATION_ADD_CONVERSION = "add_conversion"
 OPERATION_DELETE_CONVERSION = "delete_conversion"
+OPERATION_BATCH_IMPORT = "batch_import"
 ALLOWED_OPERATIONS = frozenset({
     OPERATION_ADD_TRANSACTION,
     OPERATION_UPDATE_TRANSACTION,
     OPERATION_DELETE_TRANSACTION,
     OPERATION_ADD_CONVERSION,
     OPERATION_DELETE_CONVERSION,
+    OPERATION_BATCH_IMPORT,
 })
 OPERATION_LABELS = {
     OPERATION_ADD_TRANSACTION: "新增交易",
@@ -67,12 +75,14 @@ OPERATION_LABELS = {
     OPERATION_DELETE_TRANSACTION: "删除交易",
     OPERATION_ADD_CONVERSION: "基金转换",
     OPERATION_DELETE_CONVERSION: "删除转换",
+    OPERATION_BATCH_IMPORT: "批量导入",
 }
 
 PROPOSAL_TTL_DAYS = 7
 PROPOSAL_PURGE_DAYS = 30
 MAX_PENDING_PER_OWNER = 20
 REASON_MAX_LEN = 500
+MAX_BATCH_ITEMS = 50
 
 STATUS_PENDING = "pending"
 STATUS_SUCCEEDED = "succeeded"
@@ -95,6 +105,7 @@ OPERATION_SCOPE = {
     OPERATION_DELETE_TRANSACTION: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
     OPERATION_ADD_CONVERSION: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
     OPERATION_DELETE_CONVERSION: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+    OPERATION_BATCH_IMPORT: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
 }
 
 
@@ -169,7 +180,8 @@ def _digest(operation_type: str, params: dict) -> str:
 def _build_summary(fund_name: str, operation_type: str,
                    params: dict,
                    extra_warnings: list[str] | None = None,
-                   *, before: dict | sqlite3.Row | None = None) -> dict[str, Any]:
+                   *, before: dict | sqlite3.Row | None = None,
+                   fund_names: dict[str, str] | None = None) -> dict[str, Any]:
     warnings: list[str] = list(extra_warnings or [])
     if operation_type == OPERATION_ADD_TRANSACTION:
         action = params["action"]
@@ -338,10 +350,95 @@ def _build_summary(fund_name: str, operation_type: str,
             "before": before_pair,
             "warnings": warnings,
         }
+    if operation_type == OPERATION_BATCH_IMPORT:
+        items = params.get("transactions") or []
+        names = fund_names or {}
+        actions: dict[str, int] = {}
+        funds: dict[str, str] = {}
+        amount_total = 0.0
+        dates: list[str] = []
+        for item in items:
+            action = item.get("action", "")
+            actions[action] = actions.get(action, 0) + 1
+            code = item.get("fund_code", "")
+            if code and code not in funds:
+                funds[code] = names.get(code) or code
+            amount = item.get("amount")
+            if amount is not None:
+                amount_total += float(amount)
+            if item.get("date"):
+                dates.append(item["date"])
+        if any(item.get("nav") is None for item in items):
+            warnings.append("部分条目成交净值尚未确定，市值与收益可能暂时缺失")
+        if any(item.get("is_t1") for item in items):
+            warnings.append("部分条目为 T+1 确认：份额可能尚未到账，需后续核对")
+        if any(item.get("action") == "sell" for item in items):
+            warnings.append("请核对各卖出条目的份额是否超过对应渠道最终可用份额")
+        ignored = params.get("ignored_fields") or []
+        if ignored:
+            warnings.append(
+                "已忽略不支持的批量字段：" + "、".join(ignored)
+                + "（永不执行清空或联网拉取）")
+        return {
+            "operation_type": operation_type,
+            "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
+            "title": f"批量导入 {len(items)} 条交易",
+            "count": len(items),
+            "actions": actions,
+            "funds": [{"fund_code": code, "fund_name": name}
+                      for code, name in funds.items()],
+            "date_range": {
+                "from": min(dates) if dates else "",
+                "to": max(dates) if dates else "",
+            },
+            "amount_total": amount_total,
+            "note": params.get("note", ""),
+            "items": [_batch_item_view(item, names) for item in items],
+            "warnings": warnings,
+        }
     # 兜底：不应到达
     return {"operation_type": operation_type,
             "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
             "warnings": warnings}
+
+
+def _batch_item_view(item: dict, fund_names: dict[str, str]) -> dict[str, Any]:
+    """把批量条目渲染为展示字典（供提案详情逐条展示）。"""
+    action = item.get("action", "")
+    code = item.get("fund_code", "")
+    return {
+        "fund_code": code,
+        "fund_name": fund_names.get(code, ""),
+        "action": action,
+        "action_label": ACTION_LABELS.get(action, action),
+        "date": item.get("date", ""),
+        "amount": item.get("amount"),
+        "shares": item.get("shares"),
+        "nav": item.get("nav"),
+        "fee": item.get("fee"),
+        "channel": item.get("channel", ""),
+        "note": item.get("note", ""),
+        "is_t1": item.get("is_t1", False),
+    }
+
+
+def _batch_internal_duplicate(transactions: list[dict]) -> tuple[int, int] | None:
+    """检测批量条目间的重复：同基金+渠道+日期+方向且金额或份额相近。
+
+    返回首个重复对的 ``(index, other_index)``；无重复返回 ``None``。
+    """
+    for i, left in enumerate(transactions):
+        for j in range(i + 1, len(transactions)):
+            right = transactions[j]
+            if (left.get("fund_code") != right.get("fund_code")
+                    or (left.get("channel") or "") != (right.get("channel") or "")
+                    or left.get("date") != right.get("date")
+                    or left.get("action") != right.get("action")):
+                continue
+            if (_same_number(left.get("amount"), right.get("amount"))
+                    or _same_number(left.get("shares"), right.get("shares"))):
+                return i, j
+    return None
 
 
 def _norm_field(value: Any) -> Any:
@@ -509,7 +606,58 @@ def create_pending_proposal_conn(
     ``origin``/``reason`` 仅追加到 ``proposal_created`` 审计，复用既有 action。
     """
     resolved_fund_code = fund_code or clean.get("fund_code")
-    if operation_type == OPERATION_DELETE_TRANSACTION:
+    batch_fund_names: dict[str, str] = {}
+    if operation_type == OPERATION_BATCH_IMPORT:
+        # 批量：逐条校验基金已收录 + 批内重复硬拒绝；与账本/待审提案重复仅 warning。
+        transactions = clean.get("transactions") or []
+        for idx, item in enumerate(transactions):
+            code = item.get("fund_code")
+            name = fund_name_in_conn(conn, code) if code else None
+            if name is None:
+                _audit(conn, principal, ip, "proposal_create_rejected", {
+                    "reason": "fund_not_registered",
+                    "operation_type": operation_type,
+                    "index": idx, "fund_code": code})
+                return ProposalResult(
+                    409, "fund_not_registered",
+                    "基金尚未收录，请先在网页添加或刷新基金信息后再提案",
+                    {"index": idx, "fund_code": code})
+            batch_fund_names[code] = name
+        duplicate = _batch_internal_duplicate(transactions)
+        if duplicate is not None:
+            first, other = duplicate
+            _audit(conn, principal, ip, "proposal_create_rejected", {
+                "reason": "batch_internal_duplicate",
+                "operation_type": operation_type,
+                "index": first, "other_index": other})
+            return ProposalResult(
+                409, "batch_internal_duplicate",
+                "批量条目中存在重复交易，请检查后再提交",
+                {"index": first, "other_index": other})
+        parsed_pending = _parse_pending_rows(
+            _pending_proposal_rows(conn, now))
+        ledger_dups: list[int] = []
+        pending_dups: list[int] = []
+        for idx, item in enumerate(transactions):
+            if _duplicate_in_ledger(conn, item) is not None:
+                ledger_dups.append(idx)
+            if _duplicate_pending_proposal(
+                    conn, item, now, principal, parsed=parsed_pending) is not None:
+                pending_dups.append(idx)
+        extra = list(extra_warnings or [])
+        if ledger_dups:
+            extra.append(
+                "第 " + "、".join(str(i) for i in ledger_dups)
+                + " 条与账本已有流水疑似重复，请核对")
+        if pending_dups:
+            extra.append(
+                "第 " + "、".join(str(i) for i in pending_dups)
+                + " 条与待审提案疑似重复，请核对")
+        extra_warnings = extra
+        resolved_fund_code = (
+            transactions[0].get("fund_code") if transactions else None)
+        fund_name = batch_fund_names.get(resolved_fund_code, "")
+    elif operation_type == OPERATION_DELETE_TRANSACTION:
         # 删除不强制目标基金仍在 funds 表（历史流水可能来自已移除基金）。
         fund_name = (fund_name_in_conn(conn, resolved_fund_code)
                      or resolved_fund_code or "")
@@ -540,7 +688,8 @@ def create_pending_proposal_conn(
             {"pending": pending, "limit": MAX_PENDING_PER_OWNER})
 
     summary = _build_summary(
-        fund_name, operation_type, clean, extra_warnings, before=before)
+        fund_name, operation_type, clean, extra_warnings, before=before,
+        fund_names=batch_fund_names)
     params_json = json.dumps(clean, ensure_ascii=False, sort_keys=True)
     summary_json = json.dumps(summary, ensure_ascii=False, sort_keys=True)
     expires_at = (now + timedelta(days=PROPOSAL_TTL_DAYS)).isoformat()
@@ -564,6 +713,9 @@ def create_pending_proposal_conn(
         audit_detail["action"] = clean.get("action")
         audit_detail["amount"] = clean.get("amount")
         audit_detail["shares"] = clean.get("shares")
+    elif operation_type == OPERATION_BATCH_IMPORT:
+        audit_detail["count"] = len(clean.get("transactions") or [])
+        audit_detail.pop("fund_code", None)
     else:
         audit_detail["tx_id"] = clean.get("tx_id")
     if origin:
@@ -582,6 +734,80 @@ def create_pending_proposal_conn(
 # ---------------------------------------------------------------------------
 # 创建 / 查询 / 取消（Agent）
 # ---------------------------------------------------------------------------
+class BatchValidationError(ProposalValidationError):
+    """批量导入参数校验失败；携带首条出错条目的索引与逐条问题。
+
+    ``index`` 为出错条目在 ``transactions`` 数组中的下标；``item_issues``
+    为该条目的字段级问题列表（与单条 ``add_transaction`` 校验一致）。
+    """
+
+    def __init__(self, index: int, item_issues: list[dict],
+                 message: str = "") -> None:
+        self.index = index
+        self.item_issues = item_issues
+        super().__init__(
+            f"transactions[{index}]", message or "批量条目校验失败")
+
+
+def validate_batch_import_params(params: object) -> dict[str, Any]:
+    """校验 ``batch_import`` 参数：结构 + 逐条 ``add_transaction`` 校验。
+
+    返回 ``{"transactions": [clean, ...], "note": str}``。``clear_existing``
+    等不接受字段在调用方忽略并 warning（此处不报错）；``fund_name`` 不接受，
+    每条必须 ``fund_code``（由 ``validate_add_transaction_params`` 保证）。
+
+    任一条条目校验失败 → 抛 ``BatchValidationError``（首条出错条目）。
+    """
+    if not isinstance(params, dict):
+        raise ProposalValidationError("params", "params 必须是对象")
+    # 顶层仅接受 transactions/note；clear_existing/fetch_meta 识别后忽略，
+    # 其余字段视为笔误直接拒绝，避免拼写错误被静默吞掉。``ignored_fields``
+    # 是服务端回写的忽略清单，审批期重新校验时必须放行。
+    unknown = set(params) - {"transactions", "note", "clear_existing",
+                             "fetch_meta", "ignored_fields"}
+    if unknown:
+        raise ProposalValidationError(
+            "params", f"包含不支持的参数：{', '.join(sorted(unknown))}")
+    transactions = params.get("transactions")
+    if not isinstance(transactions, list):
+        raise ProposalValidationError(
+            "transactions", "transactions 必须是数组")
+    if not transactions:
+        raise ProposalValidationError(
+            "transactions", "transactions 不能为空")
+    if len(transactions) > MAX_BATCH_ITEMS:
+        raise ProposalValidationError(
+            "transactions",
+            f"批量条目数超过 {MAX_BATCH_ITEMS} 上限")
+    note = _clean_text(params.get("note"), "note", REASON_MAX_LEN)
+    cleaned: list[dict[str, Any]] = []
+    for idx, item in enumerate(transactions):
+        try:
+            clean = validate_add_transaction_params(item)
+        except ProposalValidationError as exc:
+            raise BatchValidationError(
+                idx, [{"field": exc.field, "code": "invalid_item",
+                       "message": exc.message}],
+                f"第 {idx} 条交易校验失败：{exc.message}") from exc
+        if "dividend_alert_id" in clean:
+            # 批量不支持分红提醒原子关联（见设计 §0/Q6），提示改用单条提案。
+            raise BatchValidationError(
+                idx, [{"field": "dividend_alert_id",
+                       "code": "unsupported_in_batch",
+                       "message": "批量导入不支持关联分红提醒，请改用单条分红提案"}],
+                f"第 {idx} 条不支持 dividend_alert_id")
+        cleaned.append(clean)
+    result: dict[str, Any] = {"transactions": cleaned, "note": note}
+    # 永不接受的字段：忽略并记录为 warning，不因笔误整体失败。
+    ignore_keys = {"clear_existing", "fetch_meta"}
+    carried = params.get("ignored_fields")
+    carried_keys = set(carried) if isinstance(carried, list) else set()
+    ignored = sorted((set(params) & ignore_keys) | (carried_keys & ignore_keys))
+    if ignored:
+        result["ignored_fields"] = ignored
+    return result
+
+
 def _validate_proposal_params(operation_type: str, params: object) -> dict:
     """按操作类型分派参数校验；返回规范化后的参数字典。"""
     if operation_type == OPERATION_ADD_TRANSACTION:
@@ -594,6 +820,8 @@ def _validate_proposal_params(operation_type: str, params: object) -> dict:
         return validate_add_conversion_params(params)
     if operation_type == OPERATION_DELETE_CONVERSION:
         return validate_delete_conversion_params(params)
+    if operation_type == OPERATION_BATCH_IMPORT:
+        return validate_batch_import_params(params)
     raise ProposalValidationError(
         "operation_type", f"操作类型不受支持：{operation_type}")
 
@@ -862,20 +1090,32 @@ def token_error(token_row: sqlite3.Row | None, now: datetime) -> str:
 
 def _mark_failure(conn: sqlite3.Connection, row: sqlite3.Row, reviewer: str,
                   now: datetime, ip: str | None, *, status: str, reason: str,
-                  message: str, http_status: int = 409) -> ProposalResult:
-    audit_id = _audit(conn, None, ip, f"proposal_{status}", {
+                  message: str, http_status: int = 409,
+                  extra: dict | None = None) -> ProposalResult:
+    execution: dict[str, Any] = {
+        "ok": False, "reason": reason, "message": message}
+    if extra:
+        execution.update(extra)
+    audit_detail: dict[str, Any] = {
         "proposal_id": row["id"], "operation_type": row["operation_type"],
-        "reason": reason}, reviewer=reviewer)
+        "reason": reason}
+    if extra:
+        for key in ("index", "other_index", "executed_before_failure"):
+            if key in extra:
+                audit_detail[key] = extra[key]
+    audit_id = _audit(conn, None, ip, f"proposal_{status}", audit_detail,
+                      reviewer=reviewer)
     db.update_proposal(
         conn, row["id"], status=status, reviewed_by=reviewer,
         reviewed_at=now.isoformat(),
-        execution_result_json=json.dumps(
-            {"ok": False, "reason": reason, "message": message},
-            ensure_ascii=False),
+        execution_result_json=json.dumps(execution, ensure_ascii=False),
         audit_id=audit_id, completed_at=now.isoformat())
     updated = db.get_proposal(conn, row["id"])
+    data = proposal_row_to_dict(updated, now)
+    if extra:
+        data.update(extra)
     return ProposalResult(
-        http_status, reason, message, proposal_row_to_dict(updated, now))
+        http_status, reason, message, data)
 
 
 def _net_shares_conn(
@@ -1012,6 +1252,76 @@ def _exec_add_transaction(conn: sqlite3.Connection, row: sqlite3.Row,
         "proposal_id": pid, "operation_type": row["operation_type"],
         "tx_id": tx_id, "fund_code": tx.fund_code,
         "action": tx.action}, reviewer=reviewer)
+    return execution, audit_id
+
+
+def _exec_batch_import(conn: sqlite3.Connection, row: sqlite3.Row,
+                       clean: dict, pid: int, reviewer: str,
+                       now: datetime, ip: str | None):
+    """执行批量导入：先整体校验，全部通过后再逐条写入（无半完成）。
+
+    任何一条校验失败（基金被删、参数失效、卖出导致最终余额为负）都在写入
+    前返回，因此无需依赖事务回滚即可保证「全部成功或全部不做」。份额按
+    「基金+渠道」最终累计余额口径校验，批内按数组顺序累加。
+    """
+    transactions = clean.get("transactions") or []
+    prepared: list[Transaction] = []
+    share_deltas: dict[tuple[str, str], float] = {}
+    for idx, item in enumerate(transactions):
+        fund_name = fund_name_in_conn(conn, item["fund_code"])
+        if fund_name is None:
+            return _mark_failure(
+                conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+                reason="fund_missing",
+                message="基金已不在当前账本中，请先在网页添加后再提交",
+                extra={"index": idx, "fund_code": item["fund_code"],
+                       "executed_before_failure": 0})
+        tx = Transaction(
+            fund_code=item["fund_code"], action=item["action"],
+            date=item["date"], amount=item.get("amount"),
+            shares=item.get("shares"), nav=item.get("nav"),
+            fee=item.get("fee") or 0.0, channel=item.get("channel", ""),
+            note=item.get("note", ""), is_t1=bool(item.get("is_t1")),
+        )
+        tx.normalize()
+        if not tx.is_valid():
+            return _mark_failure(
+                conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+                reason="invalid_params",
+                message="批量中某条交易信息不完整，不能执行",
+                extra={"index": idx, "executed_before_failure": 0})
+        key = (tx.fund_code, tx.channel or "")
+        base = _net_shares_conn(conn, tx.fund_code, tx.channel)
+        running = share_deltas.get(key, 0.0)
+        contribution = _share_contribution(tx.action, tx.shares)
+        if base + running + contribution < -AMOUNT_TOLERANCE:
+            return _mark_failure(
+                conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+                reason="insufficient_shares_after_change",
+                message="批量中某条卖出超过该渠道最终可用份额，请核对",
+                extra={"index": idx, "fund_code": tx.fund_code,
+                       "channel": tx.channel,
+                       "available": base + running,
+                       "executed_before_failure": 0})
+        share_deltas[key] = running + contribution
+        prepared.append(tx)
+
+    tx_ids: list[int] = []
+    for idx, tx in enumerate(prepared):
+        tx_id = db.insert_transaction(conn, tx)
+        tx_ids.append(tx_id)
+        db.log_audit(
+            "add_transaction", ip=ip, username=reviewer,
+            detail={"tx_id": tx_id, "fund_code": tx.fund_code,
+                    "action": tx.action, "date": tx.date,
+                    "amount": tx.amount, "shares": tx.shares,
+                    "proposal_id": pid, "batch_index": idx},
+            conn=conn,
+        )
+    execution = {"ok": True, "tx_ids": tx_ids, "count": len(tx_ids)}
+    audit_id = _audit(conn, None, ip, "proposal_approved", {
+        "proposal_id": pid, "operation_type": row["operation_type"],
+        "count": len(tx_ids), "tx_ids": tx_ids}, reviewer=reviewer)
     return execution, audit_id
 
 
@@ -1294,6 +1604,12 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
         try:
             clean = _validate_proposal_params(
                 row["operation_type"], json.loads(row["params_json"] or "{}"))
+        except BatchValidationError as exc:
+            return _mark_failure(
+                conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+                reason="invalid_params",
+                message=exc.message,
+                extra={"index": exc.index, "issues": exc.item_issues})
         except (ProposalValidationError, ValueError) as exc:
             return _mark_failure(
                 conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
@@ -1315,6 +1631,9 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
                 conn, row, clean, pid, reviewer, now, ip)
         elif operation_type == OPERATION_DELETE_CONVERSION:
             outcome = _exec_delete_conversion(
+                conn, row, clean, pid, reviewer, now, ip)
+        elif operation_type == OPERATION_BATCH_IMPORT:
+            outcome = _exec_batch_import(
                 conn, row, clean, pid, reviewer, now, ip)
         else:
             return _mark_failure(

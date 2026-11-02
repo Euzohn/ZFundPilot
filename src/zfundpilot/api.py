@@ -1905,6 +1905,12 @@ def _proposal_principal(
 def _proposal_validation_error(
     exc: proposal_service.ProposalValidationError,
 ) -> HTTPException:
+    if isinstance(exc, proposal_service.BatchValidationError):
+        return HTTPException(
+            status_code=422,
+            detail={"code": "batch_invalid_item", "index": exc.index,
+                    "issues": exc.item_issues, "message": exc.message},
+        )
     return HTTPException(
         status_code=422,
         detail={"code": "validation_error", "field": exc.field,

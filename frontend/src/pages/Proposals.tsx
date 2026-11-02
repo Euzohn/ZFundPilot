@@ -35,6 +35,7 @@ import ConfirmDialog from "@/components/ConfirmDialog"
 import { AlertTriangle, Check, Inbox, RefreshCw, X } from "lucide-react"
 import { useLang } from "@/i18n/LanguageContext"
 import { money, navStr } from "@/lib/format"
+import { actionLabel } from "@/lib/actionLabels"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -54,6 +55,23 @@ function formatDateTime(iso: string | null): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleString()
+}
+
+function isBatchSummary(summary: ProposalSummary): boolean {
+  return summary.operation_type === "batch_import"
+}
+
+function batchActionsText(summary: ProposalSummary): string {
+  const entries = Object.entries(summary.actions ?? {})
+  if (entries.length === 0) return "—"
+  return entries.map(([action, count]) => `${actionLabel(action)}×${count}`).join(" ")
+}
+
+function batchDateRange(summary: ProposalSummary): string {
+  const range = summary.date_range
+  if (!range?.from && !range?.to) return "—"
+  if (!range?.from || range.from === range.to) return range.from || range.to
+  return `${range.from} ~ ${range.to}`
 }
 
 function statusVariant(status: ProposalStatus): BadgeProps["variant"] {
@@ -243,19 +261,40 @@ export default function Proposals() {
                         {item.operation_label}
                       </TableCell>
                       <TableCell>
-                        <div className="font-medium">{item.summary.fund_name}</div>
-                        <div className="font-mono text-xs text-muted-foreground">
-                          {item.summary.fund_code}
-                        </div>
+                        {isBatchSummary(item.summary) ? (
+                          <>
+                            <div className="font-medium">
+                              {item.summary.count ?? 0} {t.proposals.batchItems}
+                            </div>
+                            <div className="font-mono text-xs text-muted-foreground">
+                              {batchDateRange(item.summary)}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="font-medium">{item.summary.fund_name}</div>
+                            <div className="font-mono text-xs text-muted-foreground">
+                              {item.summary.fund_code}
+                            </div>
+                          </>
+                        )}
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
-                        {item.summary.action_label}
+                        {isBatchSummary(item.summary)
+                          ? batchActionsText(item.summary)
+                          : item.summary.action_label}
                       </TableCell>
                       <TableCell className="hidden md:table-cell tabular-nums">
-                        {item.summary.date}
+                        {isBatchSummary(item.summary)
+                          ? batchDateRange(item.summary)
+                          : item.summary.date}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {money(item.summary.amount)}
+                        {money(
+                          isBatchSummary(item.summary)
+                            ? item.summary.amount_total
+                            : item.summary.amount,
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={statusVariant(item.status)}>
@@ -343,45 +382,49 @@ export default function Proposals() {
                   </div>
                 )}
 
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
-                  <DetailRow label={t.proposals.colFund}>
-                    {detail.summary.fund_name}
-                    <span className="ml-1 font-mono text-xs text-muted-foreground">
-                      {detail.summary.fund_code}
-                    </span>
-                  </DetailRow>
-                  <DetailRow label={t.proposals.colAction}>
-                    {detail.summary.action_label}
-                  </DetailRow>
-                  <DetailRow label={t.proposals.colDate}>{detail.summary.date}</DetailRow>
-                  <DetailRow label={t.proposals.colAmount}>
-                    {money(detail.summary.amount)}
-                  </DetailRow>
-                  <DetailRow label={t.proposals.shares}>
-                    {detail.summary.shares ?? "—"}
-                  </DetailRow>
-                  <DetailRow label={t.proposals.nav}>
-                    {navStr(detail.summary.nav)}
-                  </DetailRow>
-                  <DetailRow label={t.proposals.fee}>{money(detail.summary.fee)}</DetailRow>
-                  <DetailRow label={t.proposals.channel}>
-                    {detail.summary.channel || "—"}
-                  </DetailRow>
-                  <DetailRow label={t.proposals.isT1}>
-                    {detail.summary.is_t1 ? t.proposals.t1Yes : t.proposals.t1No}
-                  </DetailRow>
-                  <DetailRow label={t.proposals.expiresAt}>
-                    {formatDateTime(detail.expires_at)}
-                  </DetailRow>
-                  {detail.summary.note && (
-                    <DetailRow label={t.proposals.note} className="col-span-2">
-                      {detail.summary.note}
+                {isBatchSummary(detail.summary) ? (
+                  <BatchSection summary={detail.summary} />
+                ) : (
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    <DetailRow label={t.proposals.colFund}>
+                      {detail.summary.fund_name}
+                      <span className="ml-1 font-mono text-xs text-muted-foreground">
+                        {detail.summary.fund_code}
+                      </span>
                     </DetailRow>
-                  )}
-                  <DetailRow label={t.proposals.colCreated} className="col-span-2">
-                    {formatDateTime(detail.created_at)}
-                  </DetailRow>
-                </dl>
+                    <DetailRow label={t.proposals.colAction}>
+                      {detail.summary.action_label}
+                    </DetailRow>
+                    <DetailRow label={t.proposals.colDate}>{detail.summary.date}</DetailRow>
+                    <DetailRow label={t.proposals.colAmount}>
+                      {money(detail.summary.amount)}
+                    </DetailRow>
+                    <DetailRow label={t.proposals.shares}>
+                      {detail.summary.shares ?? "—"}
+                    </DetailRow>
+                    <DetailRow label={t.proposals.nav}>
+                      {navStr(detail.summary.nav)}
+                    </DetailRow>
+                    <DetailRow label={t.proposals.fee}>{money(detail.summary.fee)}</DetailRow>
+                    <DetailRow label={t.proposals.channel}>
+                      {detail.summary.channel || "—"}
+                    </DetailRow>
+                    <DetailRow label={t.proposals.isT1}>
+                      {detail.summary.is_t1 ? t.proposals.t1Yes : t.proposals.t1No}
+                    </DetailRow>
+                    <DetailRow label={t.proposals.expiresAt}>
+                      {formatDateTime(detail.expires_at)}
+                    </DetailRow>
+                    {detail.summary.note && (
+                      <DetailRow label={t.proposals.note} className="col-span-2">
+                        {detail.summary.note}
+                      </DetailRow>
+                    )}
+                    <DetailRow label={t.proposals.colCreated} className="col-span-2">
+                      {formatDateTime(detail.created_at)}
+                    </DetailRow>
+                  </dl>
+                )}
 
                 {/* F1：update/delete 的前后差异展示 */}
                 <DiffSection summary={detail.summary} />
@@ -413,12 +456,26 @@ export default function Proposals() {
                       {t.proposals.detailExecution}
                     </p>
                     {detail.execution_result.ok ? (
-                      <p className="text-xs">
-                        {t.proposals.txId}: {detail.execution_result.tx_id}
-                      </p>
+                      detail.execution_result.tx_ids ? (
+                        <p className="text-xs">
+                          {t.proposals.batchWritten.replace(
+                            "{count}",
+                            String(detail.execution_result.count ?? detail.execution_result.tx_ids.length),
+                          )}
+                          {" · "}
+                          {t.proposals.txId}: {detail.execution_result.tx_ids.join(", ")}
+                        </p>
+                      ) : (
+                        <p className="text-xs">
+                          {t.proposals.txId}: {detail.execution_result.tx_id}
+                        </p>
+                      )
                     ) : (
                       <p className="text-xs text-muted-foreground">
                         {detail.execution_result.message || detail.execution_result.reason}
+                        {detail.execution_result.executed_before_failure !== undefined && (
+                          <> · {t.proposals.batchRolledBack}</>
+                        )}
                       </p>
                     )}
                   </div>
@@ -463,10 +520,21 @@ export default function Proposals() {
         description={
           approveTarget ? (
             <div className="space-y-1">
-              <p>
-                {approveTarget.summary.title} · {money(approveTarget.summary.amount)} ·{" "}
-                {approveTarget.summary.date}
-              </p>
+              {isBatchSummary(approveTarget.summary) ? (
+                <>
+                  <p>
+                    {approveTarget.summary.title} ·{" "}
+                    {money(approveTarget.summary.amount_total)} ·{" "}
+                    {batchDateRange(approveTarget.summary)}
+                  </p>
+                  <p>{t.proposals.batchApproveHint}</p>
+                </>
+              ) : (
+                <p>
+                  {approveTarget.summary.title} · {money(approveTarget.summary.amount)} ·{" "}
+                  {approveTarget.summary.date}
+                </p>
+              )}
               <p>{t.proposals.approveDesc}</p>
             </div>
           ) : undefined
@@ -663,4 +731,80 @@ function DiffSection({ summary }: { summary: ProposalSummary }) {
     )
   }
   return null
+}
+
+function BatchSection({ summary }: { summary: ProposalSummary }) {
+  const { t } = useLang()
+  const items = summary.items ?? []
+  return (
+    <div className="space-y-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+        <DetailRow label={t.proposals.batchItems}>
+          {summary.count ?? items.length}
+        </DetailRow>
+        <DetailRow label={t.proposals.colAmount}>
+          {money(summary.amount_total)}
+        </DetailRow>
+        <DetailRow label={t.proposals.batchActions}>
+          {batchActionsText(summary)}
+        </DetailRow>
+        <DetailRow label={t.proposals.colDate}>
+          {batchDateRange(summary)}
+        </DetailRow>
+        <DetailRow label={t.proposals.batchFunds} className="col-span-2">
+          {(summary.funds ?? []).length > 0
+            ? (summary.funds ?? [])
+                .map((f) => `${f.fund_name || f.fund_code}(${f.fund_code})`)
+                .join("、")
+            : "—"}
+        </DetailRow>
+        {summary.note && (
+          <DetailRow label={t.proposals.note} className="col-span-2">
+            {summary.note}
+          </DetailRow>
+        )}
+      </dl>
+      <div className="rounded-md border border-border">
+        <div className="max-h-72 overflow-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>#</TableHead>
+                <TableHead>{t.proposals.colFund}</TableHead>
+                <TableHead>{t.proposals.colAction}</TableHead>
+                <TableHead className="hidden sm:table-cell">{t.proposals.colDate}</TableHead>
+                <TableHead className="text-right">{t.proposals.colAmount}</TableHead>
+                <TableHead className="text-right">{t.proposals.shares}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((item, idx) => (
+                <TableRow key={`${item.fund_code}-${idx}`}>
+                  <TableCell className="tabular-nums text-muted-foreground">
+                    {idx + 1}
+                  </TableCell>
+                  <TableCell>
+                    <div className="text-xs font-medium">{item.fund_name || item.fund_code}</div>
+                    <div className="font-mono text-[11px] text-muted-foreground">
+                      {item.fund_code}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs">{item.action_label || actionLabel(item.action)}</TableCell>
+                  <TableCell className="hidden sm:table-cell text-xs tabular-nums">
+                    {item.date}
+                  </TableCell>
+                  <TableCell className="text-right text-xs tabular-nums">
+                    {money(item.amount)}
+                  </TableCell>
+                  <TableCell className="text-right text-xs tabular-nums">
+                    {item.shares ?? "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </div>
+  )
 }

@@ -763,7 +763,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 ### 5.23 账本提案（写入需网页确认，默认关闭）
 
-本组工具只能提交**待审批提案**，不会直接写账本（可信直记见 §5.24）。scope：`transactions:propose`，同样受服务端写开关约束（见上文「写开关」说明）。开放五种 `operation_type`：`add_transaction`（新增）、`update_transaction`（修改单笔，须带 `expected_digest` 行版本前置）、`delete_transaction`（删除单笔，须带 `expected_digest`）、`add_conversion`（基金转换，成对写入卖出腿+买入腿并共享 `conversion_id`）、`delete_conversion`（按 `conversion_id` 整对删除转换，须带两腿各自的 `expected_digest`）；批准、拒绝、取消后的执行与状态迁移均由服务端完成，执行路径不联网。修改/删除均整笔处理；转换腿仍不支持单腿编辑，整对删除使用 `delete_conversion`。
+本组工具只能提交**待审批提案**，不会直接写账本（可信直记见 §5.24）。scope：`transactions:propose`，同样受服务端写开关约束（见上文「写开关」说明）。开放六种 `operation_type`：`add_transaction`（新增）、`update_transaction`（修改单笔，须带 `expected_digest` 行版本前置）、`delete_transaction`（删除单笔，须带 `expected_digest`）、`add_conversion`（基金转换，成对写入卖出腿+买入腿并共享 `conversion_id`）、`delete_conversion`（按 `conversion_id` 整对删除转换，须带两腿各自的 `expected_digest`）、`batch_import`（批量追加多条交易，单提案单次审批、事务内全部成功或全部回滚）；批准、拒绝、取消后的执行与状态迁移均由服务端完成，执行路径不联网。修改/删除均整笔处理；转换腿仍不支持单腿编辑，整对删除使用 `delete_conversion`。`batch_import` 仅追加，永不清空，也不支持批内 update/delete/conversion 或 `dividend_alert_id`。
 
 | MCP 工具 | HTTP | 说明 |
 |---|---|---|
@@ -892,7 +892,29 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
   }' | jq
 ```
 
+批量追加（单提案、单次审批、整批原子写入）：
+
+```bash
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: batch-0f6c2f9a-4b1e-4e2a" \
+  -d '{
+    "operation_type": "batch_import",
+    "params": {
+      "note": "10 月对账单补录",
+      "transactions": [
+        {"fund_code": "005827", "action": "buy", "date": "2026-10-08",
+         "amount": 1000, "fee": 1, "channel": "支付宝"},
+        {"fund_code": "005827", "action": "sell", "date": "2026-10-20",
+         "shares": 50, "nav": 2.15, "fee": 0.5, "channel": "支付宝"}
+      ]
+    }
+  }' | jq
+```
+
 - `add_transaction` 的 `params` 只接受白名单字段：`fund_code`（6 位数字、需已在网页收录）、`action`（`buy`/`sell`/`dividend`/`reinvest`）、`date`（`YYYY-MM-DD`）、`amount`/`shares`/`nav`（买/卖至少两项可推导，卖出必须有份额，分红必须有金额）、`fee`、`channel`、`note`、`is_t1`，以及可选的 `dividend_alert_id`（仅 `dividend`/`reinvest`）。未知字段返回 `422 validation_error`。
+- `batch_import` 的 `params` 为 `transactions`（1–50 条，每条字段集与 `add_transaction` 完全一致，但**必须**给 `fund_code`，不接受 `fund_name`）加可选 `note`。不支持 `dividend_alert_id`（返回 `422 batch_invalid_item`，`code=unsupported_in_batch`）；`clear_existing`/`fetch_meta` 会被忽略并在 `summary.warnings` 与 `params.ignored_fields` 中标注，永不执行清空或联网拉取。创建期硬拒绝结构错误、任一条目字段错误（`422 batch_invalid_item`，带 `index`/`issues`）、基金未收录（`409 fund_not_registered`，带 `index`/`fund_code`）、批内重复（`409 batch_internal_duplicate`，带 `index`/`other_index`）；与账本或他人待审提案重复只写 warning。审批时先整体校验（基金仍在、参数仍合法、按「基金+渠道最终累计余额」批内累加后非负），全部通过才逐条 `insert`，任一条失败整批不写、提案标记 `conflict` 并在 `execution_result` 带 `index`/`executed_before_failure=0`。响应 `summary` 含 `count`/`actions`/`funds`/`date_range`/`amount_total`/`items`，成功执行结果含 `tx_ids`/`count`。
 - `add_conversion` 的 `params`：`from_code`、`to_code`（均为 6 位数字、需已收录且不能相同）、`date`、`from_shares`（>0）、可选 `from_nav`/`from_fee`、可选 `to_amount`/`to_nav`/`to_fee`、`channel`、`note`、`is_t1`。非 T+1 须能推导转入腿金额/份额（未填 `to_amount` 时按卖出净到账推导）；T+1 可暂缺转入金额，审批不阻断，留待净值回填。审批在单事务内成对写入 `sell`/`buy` 两腿并共享新生成的 `conversion_id`，不联网抓净值；转出份额超过该渠道可用份额仅 warning，不阻断。响应 `summary.conversion` 含两腿明细。
 - `delete_conversion` 的 `params` 为 `conversion_id` + `expected_from_digest` + `expected_to_digest`（两腿各自 `row_digest`，取自 `GET /api/agent/tools/transactions/{tx_id}`）+ 可选 `reason`。创建期要求该 `conversion_id` 恰好关联两条流水且分别为卖出/买入标准对，否则 `404 conversion_not_found` / `409 conversion_leg_mismatch`；任一腿哈希不匹配返回 `409 target_changed` 并附 `leg=from|to`。审批期复读两腿并同事务整对删除；删除买入腿若令转入基金后续卖出超份额则 `insufficient_shares_after_change`，删除卖出腿恒放行。
 - `add_transaction` 的 `action=dividend`/`reinvest` 可携带 `dividend_alert_id`（正整数）：审批在同一事务内写入流水，并把对应提醒置为 `confirmed`、回填 `tx_id`。提醒不存在/已处理/类型不是 `dividend`/基金不一致，分别在审批期返回 `dividend_alert_not_found`、`dividend_alert_resolved`、`dividend_alert_type_mismatch`、`dividend_alert_fund_mismatch`（均为 `conflict`，不写流水）。
@@ -903,9 +925,9 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
 - 提案默认 7 天过期；过期后不可批准，也不能取消。每个 token 最多同时保留 20 个 `pending` 提案，超限返回 `409 too_many_pending`。
 - 基金尚未收录返回 `409 fund_not_registered`，避免审批路径联网补数据。
 - 状态机：`pending → succeeded / failed / conflict / rejected / cancelled / expired`。`failed` 表示创建者 token 失效或失去 scope；`conflict` 表示基金/参数在审批时已不合法。环境级阻断（`auth_disabled`、`write_disabled`）返回 `403` 且提案保持 `pending`，修复后可重试。
-- 网页管理员在「待确认提案」页面批准后，服务端在同一 SQLite 事务内复核实例认证、写开关、创建者 token 与业务规则，写入账本并记录 `proposal_approved` 与业务审计（`add_transaction`/`add_conversion`/`delete_conversion`，分红关联另记 `dividend_alert_confirm`）；并发审批只有一个能成功，重复审批返回 `409 not_pending`。
+- 网页管理员在「待确认提案」页面批准后，服务端在同一 SQLite 事务内复核实例认证、写开关、创建者 token 与业务规则，写入账本并记录 `proposal_approved` 与业务审计（`add_transaction`/`add_conversion`/`delete_conversion`，批量为每条 `add_transaction` 带 `batch_index`；分红关联另记 `dividend_alert_confirm`）；并发审批只有一个能成功，重复审批返回 `409 not_pending`。
 - 网页审批端点仅接受网页登录身份：`GET /api/proposals/count`、`GET /api/proposals`、`GET /api/proposals/{id}`、`POST /api/proposals/{id}/approve`、`POST /api/proposals/{id}/reject`。Agent token 调用这些路径返回 `401`。
-- 错误码：`write_disabled`、`validation_error`、`fund_not_registered`、`too_many_pending`、`not_pending`、`expired`、`not_found`、`target_changed`（目标行/转换腿哈希不匹配，`409`）、`target_not_found`（目标行不存在，`404`）、`conversion_leg_isolated`（转换腿单腿修改/删除被拒，`409`）、`conversion_not_found`（`conversion_id` 不存在或已非成对，`404`）、`conversion_leg_mismatch`（关联流水不是 sell/buy 标准对，`409`）、`insufficient_shares_after_change`（审批执行期：修改/删除令后续卖出超份额，`conflict`）、`fund_missing`（审批期基金已从账本移除）、`dividend_alert_not_found`/`dividend_alert_resolved`/`dividend_alert_type_mismatch`/`dividend_alert_fund_mismatch`（审批期分红提醒关联失败）、`idempotency_conflict`、`idempotency_expired`。审计记录 `proposal_created`、`proposal_create_rejected`、`proposal_cancelled`、`proposal_expired`、`proposal_approved`、`proposal_rejected`、`proposal_failed`、`proposal_conflict`，只记 token 前缀与提案摘要（update/delete 摘要含 `tx_id`/`before`/`after`/`changed_fields`/`reason`；转换摘要含 `conversion`/`conversion_id`）。
+- 错误码：`write_disabled`、`validation_error`、`fund_not_registered`、`too_many_pending`、`not_pending`、`expired`、`not_found`、`target_changed`（目标行/转换腿哈希不匹配，`409`）、`target_not_found`（目标行不存在，`404`）、`conversion_leg_isolated`（转换腿单腿修改/删除被拒，`409`）、`conversion_not_found`（`conversion_id` 不存在或已非成对，`404`）、`conversion_leg_mismatch`（关联流水不是 sell/buy 标准对，`409`）、`batch_invalid_item`（批量：某条字段错误，`422`，带 `index`/`issues`）、`batch_internal_duplicate`（批量：批内重复，`409`，带 `index`/`other_index`）、`insufficient_shares_after_change`（审批执行期：修改/删除/批量令后续卖出超份额，`conflict`）、`fund_missing`（审批期基金已从账本移除）、`dividend_alert_not_found`/`dividend_alert_resolved`/`dividend_alert_type_mismatch`/`dividend_alert_fund_mismatch`（审批期分红提醒关联失败）、`idempotency_conflict`、`idempotency_expired`。审计记录 `proposal_created`、`proposal_create_rejected`、`proposal_cancelled`、`proposal_expired`、`proposal_approved`、`proposal_rejected`、`proposal_failed`、`proposal_conflict`，只记 token 前缀与提案摘要（update/delete 摘要含 `tx_id`/`before`/`after`/`changed_fields`/`reason`；转换摘要含 `conversion`/`conversion_id`；批量摘要含 `count`/`actions`/`funds`/`date_range`/`amount_total`/`items`，审批成功逐条记 `add_transaction` 并带 `batch_index`）。
 - 创建/取消与自选写共用写总开关；提案不进入备份 ZIP，恢复备份时会清空未完成提案，避免旧提案指向已替换的数据。
 
 ### 5.24 可信单笔直记（写入，默认关闭）
@@ -1055,3 +1077,4 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 | 2026-10-31 | F2：新增 `add_conversion`/`delete_conversion` 提案（转换双腿原子写入；按 `conversion_id` 整对删除并校验两腿 `expected_digest`），`add_transaction` 支持可选 `dividend_alert_id` 原子关联分红提醒；均复用 `transactions:propose`，新增对应错误码与审计标签 |
 | 2026-11-01 | F3：新增 `precheck_transactions`/`precheck_reconciliation` 两个只读预检工具（复用 `transactions:propose`，受写总闸约束、限流 10 次/分钟）：交易预检支持 CSV 文本或条目数组，逐条做基金识别（查账本 `funds` 表）、字段校验与重复检测；对账预检先做基金识别 + `shares` 校验，合法条目复用 `reconcile_holdings` 生成差额与建议交易。均不写账本、不联网、不创建提案 |
 | 2026-11-01 | F3 加固：`fund_name` 改为只查账本已收录基金（离线、与提案收录要求一致）；命中他人待审提案只判重复不返回 `proposal_id`（新增 `own`）；对账 `maybe_sold` 不再标记可提案并附 `absent_from_input`，被剔除条目不再生成清仓建议；`channel` 增加 50 字符上限；CSV `parse_errors` 补行号；预检成功写审计（仅计数/格式/渠道） |
+| 2026-11-02 | F4：新增 `batch_import` operation_type（复用 `transactions:propose`），单提案最多 50 条追加交易、单次审批、单事务原子写入；创建期逐条校验并硬拒绝字段错误/未收录/批内重复，与账本或待审提案重复仅 warning；审批期先整体校验（基金仍在、参数合法、按渠道最终累计余额批内累加后非负）再写入，任一条失败整批回滚并标记 `conflict`；不支持 `dividend_alert_id`，`clear_existing`/`fetch_meta` 忽略并 warning |

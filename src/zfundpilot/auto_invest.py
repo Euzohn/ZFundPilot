@@ -42,9 +42,14 @@ def _is_qdii_fund_conn(
 
 
 def _is_qdii_fund(fund_code: str) -> bool:
-    """自开只读连接的薄包装（web 路径用）。"""
-    with db.get_connection() as conn:
-        return _is_qdii_fund_conn(conn, fund_code)
+    """自开只读连接的薄包装（web 路径用）。
+
+    走非连接感知的 ``db.get_fund``（自开只读连接），与现有 mock 测试兼容；
+    web 路径不在 ``BEGIN IMMEDIATE`` 事务内，自开连接安全。连接感知版本
+    ``_is_qdii_fund_conn`` 仅供 ``approve_proposal`` 事务内复用。
+    """
+    fund = db.get_fund(fund_code)
+    return fund is not None and fund.fund_type == "QDII"
 
 
 def _check_purchasable(fund_code: str, amount: float) -> tuple[bool, str, dict]:
@@ -116,9 +121,36 @@ def _next_trading_day_conn(
 
 
 def _next_trading_day(fund_code: str, from_date: str) -> str:
-    """自开只读连接的薄包装（web 路径用）。"""
-    with db.get_connection() as conn:
-        return _next_trading_day_conn(conn, fund_code, from_date)
+    """从 from_date 起找下一个可定投交易日（web 路径，自开只读连接）。
+
+    与 ``_next_trading_day_conn`` 口径完全一致，但走非连接感知的 db 函数
+    （``db.is_trading_day``/``db.get_nav_on_or_after``/``_is_qdii_fund``），
+    保持与现有 mock 测试兼容。连接感知版本 ``_next_trading_day_conn`` 仅供
+    ``approve_proposal`` 的 ``BEGIN IMMEDIATE`` 事务内复用。
+    """
+    d = datetime.strptime(from_date, "%Y-%m-%d").date()
+    qdii = _is_qdii_fund(fund_code)
+    for _ in range(20):
+        if d.weekday() >= 5:  # 周末
+            d += timedelta(days=1)
+            continue
+        if not db.is_trading_day(d.isoformat()):  # 国内法定节假日/调休
+            d += timedelta(days=1)
+            continue
+        if qdii and is_us_market_holiday(d):  # QDII 跳美股休市
+            d += timedelta(days=1)
+            continue
+        # d 是候选可投日；查净值推断实际交易日（覆盖中国节假日跳空）
+        nav = db.get_nav_on_or_after(fund_code, d.isoformat())
+        if nav and nav["date"] == d.isoformat():
+            return nav["date"]  # 命中当日净值 → 真实交易日
+        if nav and nav["date"] > d.isoformat():
+            # 中国节假日跳空：跳到净值日并重新校验（净值日可能落在美股休市日）
+            d = datetime.strptime(nav["date"], "%Y-%m-%d").date()
+            continue
+        # 无净值数据（将来日期）→ d 即为预测交易日
+        return d.isoformat()
+    return d.isoformat()
 
 
 def _next_weekday(from_date: str, target_dow: int) -> str:
@@ -191,13 +223,48 @@ def calculate_next_run_conn(
 
 
 def calculate_next_run(plan: dict, from_date: str | None = None) -> str | None:
-    """计算定投计划的下次执行日期。
+    """计算定投计划的下次执行日期（web 路径，自开只读连接）。
 
     遇非交易日顺延到下一个有净值数据的交易日。
     from_date 缺省时取 max(next_run, today)，跳过停机期间错过的期数。
+    口径与 ``calculate_next_run_conn`` 完全一致，但走非连接感知的
+    ``_next_trading_day``，保持与现有 mock 测试兼容；连接感知版本
+    ``calculate_next_run_conn`` 仅供 ``approve_proposal`` 的 ``BEGIN
+    IMMEDIATE`` 事务内复用。
     """
-    with db.get_connection() as conn:
-        return calculate_next_run_conn(conn, plan, from_date)
+    if from_date is None:
+        today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
+        from_date = max(plan.get("next_run") or today, today)
+    fund_code = plan["fund_code"]
+    cadence = plan["cadence"]
+
+    if cadence == "daily":
+        d = datetime.strptime(from_date, "%Y-%m-%d").date() + timedelta(days=1)
+        return _next_trading_day(fund_code, d.isoformat())
+
+    if cadence in ("week", "biweek"):
+        dow = plan.get("day_of_week")
+        if dow is None:
+            return None
+        next_date = _next_weekday(from_date, dow)
+        if cadence == "biweek":
+            last_run = plan.get("last_run")
+            if last_run:
+                gap = (datetime.strptime(next_date, "%Y-%m-%d") -
+                       datetime.strptime(last_run, "%Y-%m-%d")).days
+                if gap < 14:
+                    d = datetime.strptime(last_run, "%Y-%m-%d") + timedelta(days=14)
+                    next_date = _next_weekday(d.isoformat(), dow)
+        return _next_trading_day(fund_code, next_date)
+
+    if cadence == "month":
+        dom = plan.get("day_of_month")
+        if dom is None:
+            return None
+        next_date = _next_month_day(from_date, dom)
+        return _next_trading_day(fund_code, next_date)
+
+    return None
 
 
 def plan_row_digest(row: dict | sqlite3.Row) -> str:

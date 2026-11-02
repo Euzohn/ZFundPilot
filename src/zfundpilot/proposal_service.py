@@ -28,14 +28,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from . import agent_tokens, analysis, config, db
+from . import agent_tokens, analysis, auto_invest, config, db
 from .models import Transaction
 from .transaction_service import (
+    _DIGEST_RE,
     ACTION_LABELS,
     AMOUNT_TOLERANCE,
     CONTRACT_VERSION,
+    FUND_CODE_RE,
     _duplicate_in_ledger,
     _duplicate_pending_proposal,
+    _number,
     _parse_pending_rows,
     _pending_proposal_rows,
     _same_number,
@@ -61,6 +64,18 @@ OPERATION_DELETE_TRANSACTION = "delete_transaction"
 OPERATION_ADD_CONVERSION = "add_conversion"
 OPERATION_DELETE_CONVERSION = "delete_conversion"
 OPERATION_BATCH_IMPORT = "batch_import"
+# F5：定投计划维护。计划操作永不写 transactions 表，也不触发调度器执行；
+# 启停必须走显式 toggle_plan（不得藏在 create/update 的普通参数中）。
+OPERATION_CREATE_PLAN = "create_plan"
+OPERATION_UPDATE_PLAN = "update_plan"
+OPERATION_TOGGLE_PLAN = "toggle_plan"
+OPERATION_DELETE_PLAN = "delete_plan"
+PLAN_OPERATIONS = frozenset({
+    OPERATION_CREATE_PLAN,
+    OPERATION_UPDATE_PLAN,
+    OPERATION_TOGGLE_PLAN,
+    OPERATION_DELETE_PLAN,
+})
 ALLOWED_OPERATIONS = frozenset({
     OPERATION_ADD_TRANSACTION,
     OPERATION_UPDATE_TRANSACTION,
@@ -68,6 +83,7 @@ ALLOWED_OPERATIONS = frozenset({
     OPERATION_ADD_CONVERSION,
     OPERATION_DELETE_CONVERSION,
     OPERATION_BATCH_IMPORT,
+    *PLAN_OPERATIONS,
 })
 OPERATION_LABELS = {
     OPERATION_ADD_TRANSACTION: "新增交易",
@@ -76,7 +92,24 @@ OPERATION_LABELS = {
     OPERATION_ADD_CONVERSION: "基金转换",
     OPERATION_DELETE_CONVERSION: "删除转换",
     OPERATION_BATCH_IMPORT: "批量导入",
+    OPERATION_CREATE_PLAN: "创建定投",
+    OPERATION_UPDATE_PLAN: "修改定投",
+    OPERATION_TOGGLE_PLAN: "启停定投",
+    OPERATION_DELETE_PLAN: "删除定投",
 }
+
+# 计划展示标签（summary_json 与既有中文标题口径一致）。
+CADENCE_LABELS = {
+    "daily": "每日",
+    "week": "每周",
+    "biweek": "每两周",
+    "month": "每月",
+}
+_WEEKDAY_CHARS = "一二三四五六日"  # day_of_week 0=周一
+PLAN_CONFIG_FIELDS = (
+    "fund_code", "amount", "cadence", "day_of_week", "day_of_month",
+    "channel", "note",
+)
 
 PROPOSAL_TTL_DAYS = 7
 PROPOSAL_PURGE_DAYS = 30
@@ -98,7 +131,8 @@ TERMINAL_STATUSES = frozenset({
 })
 
 # 提案 scope 与操作类型的对应关系：服务端同时校验，不接受任意操作。
-# update/delete 复用 transactions:propose（提议，非执行），不扩大 F0 直记 scope。
+# 账本提案复用 transactions:propose（提议，非执行），不扩大 F0 直记 scope；
+# 定投计划提案使用独立的 plans:propose（F5），与账本授权可分离签发。
 OPERATION_SCOPE = {
     OPERATION_ADD_TRANSACTION: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
     OPERATION_UPDATE_TRANSACTION: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
@@ -106,6 +140,10 @@ OPERATION_SCOPE = {
     OPERATION_ADD_CONVERSION: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
     OPERATION_DELETE_CONVERSION: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
     OPERATION_BATCH_IMPORT: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+    OPERATION_CREATE_PLAN: agent_tokens.SCOPE_PLANS_PROPOSE,
+    OPERATION_UPDATE_PLAN: agent_tokens.SCOPE_PLANS_PROPOSE,
+    OPERATION_TOGGLE_PLAN: agent_tokens.SCOPE_PLANS_PROPOSE,
+    OPERATION_DELETE_PLAN: agent_tokens.SCOPE_PLANS_PROPOSE,
 }
 
 
@@ -181,7 +219,8 @@ def _build_summary(fund_name: str, operation_type: str,
                    params: dict,
                    extra_warnings: list[str] | None = None,
                    *, before: dict | sqlite3.Row | None = None,
-                   fund_names: dict[str, str] | None = None) -> dict[str, Any]:
+                   fund_names: dict[str, str] | None = None,
+                   plan_context: dict | None = None) -> dict[str, Any]:
     warnings: list[str] = list(extra_warnings or [])
     if operation_type == OPERATION_ADD_TRANSACTION:
         action = params["action"]
@@ -396,6 +435,139 @@ def _build_summary(fund_name: str, operation_type: str,
             "items": [_batch_item_view(item, names) for item in items],
             "warnings": warnings,
         }
+    if operation_type == OPERATION_CREATE_PLAN:
+        schedule = _plan_schedule_label(
+            params["cadence"], params.get("day_of_week"),
+            params.get("day_of_month"))
+        return {
+            "operation_type": operation_type,
+            "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
+            "title": f"创建定投计划 {params['fund_code']}（默认停用）",
+            "fund_code": params["fund_code"],
+            "fund_name": fund_name,
+            "amount": params.get("amount"),
+            "cadence": params["cadence"],
+            "cadence_label": CADENCE_LABELS.get(
+                params["cadence"], params["cadence"]),
+            "schedule": schedule,
+            "day_of_week": params.get("day_of_week"),
+            "day_of_month": params.get("day_of_month"),
+            "channel": params.get("channel", ""),
+            "note": params.get("note", ""),
+            "enabled": False,
+            "next_run": (plan_context or {}).get("next_run"),
+            "scheduler_hint": (
+                "计划创建后为停用状态，调度器不会执行；"
+                "启用需另行提交 toggle_plan 提案"),
+            "warnings": warnings,
+        }
+    if operation_type == OPERATION_UPDATE_PLAN:
+        before_fields = _plan_snapshot(before) if before is not None else {}
+        merged = _merge_plan_patch(before_fields, params)
+        next_preview = (plan_context or {}).get("next_run")
+        after_fields = {
+            **{key: merged.get(key) for key in PLAN_CONFIG_FIELDS},
+            "cadence_label": CADENCE_LABELS.get(merged.get("cadence") or "", ""),
+            "enabled": bool(before_fields.get("enabled")),
+            "next_run": next_preview,
+            "last_run": before_fields.get("last_run"),
+        }
+        changed = sorted(
+            key for key in PLAN_CONFIG_FIELDS
+            if _norm_field(before_fields.get(key))
+            != _norm_field(merged.get(key)))
+        return {
+            "operation_type": operation_type,
+            "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
+            "title": f"修改定投计划 #{params['plan_id']}",
+            "plan_id": params["plan_id"],
+            "fund_code": merged.get("fund_code") or "",
+            "fund_name": fund_name,
+            "amount": merged.get("amount"),
+            "cadence": merged.get("cadence"),
+            "cadence_label": CADENCE_LABELS.get(
+                merged.get("cadence") or "", merged.get("cadence") or ""),
+            "schedule": _plan_schedule_label(
+                merged.get("cadence") or "", merged.get("day_of_week"),
+                merged.get("day_of_month")),
+            "day_of_week": merged.get("day_of_week"),
+            "day_of_month": merged.get("day_of_month"),
+            "channel": merged.get("channel") or "",
+            "note": merged.get("note") or "",
+            "enabled": bool(before_fields.get("enabled")),
+            "next_run": next_preview,
+            "before": before_fields,
+            "after": after_fields,
+            "changed_fields": changed,
+            "scheduler_hint": (
+                "计划启用中：批准后下次执行日期将按新配置重算"
+                if before_fields.get("enabled")
+                else "计划停用中：调度器不受影响"),
+            "warnings": warnings,
+        }
+    if operation_type == OPERATION_TOGGLE_PLAN:
+        before_fields = _plan_snapshot(before) if before is not None else {}
+        target_enabled = bool(params["enable"])
+        next_run = before_fields.get("next_run")
+        due_now = bool((plan_context or {}).get("backfill_due"))
+        if target_enabled and due_now:
+            scheduler_hint = "启用后调度器将尽快补投一期（与网页启停行为一致）"
+        elif target_enabled and next_run:
+            scheduler_hint = f"启用后下次执行 {next_run}"
+        elif target_enabled:
+            scheduler_hint = "启用后调度器将按频率重新排期"
+        else:
+            scheduler_hint = "停用后调度器不再执行该计划"
+        return {
+            "operation_type": operation_type,
+            "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
+            "title": (
+                f"{'启用' if target_enabled else '停用'}定投计划 "
+                f"#{params['plan_id']}"),
+            "plan_id": params["plan_id"],
+            "fund_code": before_fields.get("fund_code", ""),
+            "fund_name": fund_name,
+            "amount": before_fields.get("amount"),
+            "cadence": before_fields.get("cadence", ""),
+            "cadence_label": before_fields.get("cadence_label", ""),
+            "schedule": _plan_schedule_label(
+                before_fields.get("cadence", ""),
+                before_fields.get("day_of_week"),
+                before_fields.get("day_of_month")),
+            "channel": before_fields.get("channel", ""),
+            "note": before_fields.get("note", ""),
+            "enabled_before": bool(before_fields.get("enabled")),
+            "enabled_after": target_enabled,
+            "next_run": next_run,
+            "scheduler_hint": scheduler_hint,
+            "warnings": warnings,
+        }
+    if operation_type == OPERATION_DELETE_PLAN:
+        before_fields = _plan_snapshot(before) if before is not None else {}
+        return {
+            "operation_type": operation_type,
+            "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
+            "title": f"删除定投计划 #{params['plan_id']}",
+            "plan_id": params["plan_id"],
+            "fund_code": before_fields.get("fund_code", ""),
+            "fund_name": fund_name,
+            "amount": before_fields.get("amount"),
+            "cadence": before_fields.get("cadence", ""),
+            "cadence_label": before_fields.get("cadence_label", ""),
+            "schedule": _plan_schedule_label(
+                before_fields.get("cadence", ""),
+                before_fields.get("day_of_week"),
+                before_fields.get("day_of_month")),
+            "channel": before_fields.get("channel", ""),
+            "note": before_fields.get("note", ""),
+            "enabled": bool(before_fields.get("enabled")),
+            "next_run": before_fields.get("next_run"),
+            "last_run": before_fields.get("last_run"),
+            "scheduler_hint": (
+                "删除后调度器不再执行该计划；历史交易不受影响"),
+            "before": before_fields,
+            "warnings": warnings,
+        }
     # 兜底：不应到达
     return {"operation_type": operation_type,
             "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
@@ -607,6 +779,7 @@ def create_pending_proposal_conn(
     """
     resolved_fund_code = fund_code or clean.get("fund_code")
     batch_fund_names: dict[str, str] = {}
+    plan_context: dict[str, Any] = {}
     if operation_type == OPERATION_BATCH_IMPORT:
         # 批量：逐条校验基金已收录 + 批内重复硬拒绝；与账本/待审提案重复仅 warning。
         transactions = clean.get("transactions") or []
@@ -661,6 +834,82 @@ def create_pending_proposal_conn(
         # 删除不强制目标基金仍在 funds 表（历史流水可能来自已移除基金）。
         fund_name = (fund_name_in_conn(conn, resolved_fund_code)
                      or resolved_fund_code or "")
+    elif operation_type in PLAN_OPERATIONS:
+        extra = list(extra_warnings or [])
+        if operation_type == OPERATION_CREATE_PLAN:
+            fund_name = fund_name_in_conn(conn, resolved_fund_code)
+            if fund_name is None:
+                _audit(conn, principal, ip, "proposal_create_rejected", {
+                    "reason": "fund_not_registered",
+                    "operation_type": operation_type,
+                    "fund_code": resolved_fund_code})
+                return ProposalResult(
+                    409, "fund_not_registered",
+                    "基金尚未收录，请先在网页添加或刷新基金信息后再提案",
+                    {"fund_code": resolved_fund_code})
+            duplicate = conn.execute(
+                "SELECT id FROM auto_invest_plans WHERE fund_code=? "
+                "AND cadence=? AND COALESCE(channel,'')=? "
+                "AND ROUND(amount,4)=ROUND(?,4) ORDER BY id LIMIT 1",
+                (clean["fund_code"], clean["cadence"],
+                 clean.get("channel", ""), clean["amount"])).fetchone()
+            if duplicate is not None:
+                extra.append(
+                    f"已存在相同配置的定投计划 #{duplicate['id']}，"
+                    "请确认是否重复创建")
+            pending_dup = conn.execute(
+                "SELECT 1 FROM operation_proposals WHERE operation_type=? "
+                "AND status='pending' AND params_digest=? LIMIT 1",
+                (OPERATION_CREATE_PLAN, digest)).fetchone()
+            if pending_dup is not None:
+                extra.append(
+                    "已存在相同配置的待审创建提案，审批时可能互相冲突")
+            plan_context["next_run"] = auto_invest.calculate_next_run_conn(
+                conn, {
+                    "fund_code": clean["fund_code"],
+                    "cadence": clean["cadence"],
+                    "day_of_week": clean.get("day_of_week"),
+                    "day_of_month": clean.get("day_of_month"),
+                    "next_run": None, "last_run": None,
+                })
+        else:
+            # 计划行可能引用已被移除的基金：展示尽力取名称，不阻断操作。
+            fund_name = (fund_name_in_conn(conn, resolved_fund_code)
+                         or resolved_fund_code or "")
+            before_data = _plan_snapshot(before) if before is not None else {}
+            plan_id = clean.get("plan_id")
+            rows = conn.execute(
+                "SELECT id, params_json FROM operation_proposals "
+                "WHERE status='pending' AND operation_type IN (?,?,?,?)",
+                tuple(PLAN_OPERATIONS)).fetchall()
+            related = 0
+            for other in rows:
+                try:
+                    other_params = json.loads(other["params_json"] or "{}")
+                except ValueError:
+                    continue
+                if other_params.get("plan_id") == plan_id:
+                    related += 1
+            if related:
+                extra.append(
+                    f"该计划已有 {related} 个待审提案，建议先处理再提交新提案")
+            if operation_type == OPERATION_UPDATE_PLAN:
+                merged = _merge_plan_patch(before_data, clean)
+                # 仅用于展示预览；缺基金/频率时跳过（不应发生，防御）。
+                if merged.get("fund_code") and merged.get("cadence"):
+                    plan_context["next_run"] = (
+                        auto_invest.calculate_next_run_conn(
+                            conn, {
+                                **merged,
+                                "next_run": before_data.get("next_run"),
+                                "last_run": before_data.get("last_run"),
+                            }))
+            elif operation_type == OPERATION_TOGGLE_PLAN:
+                today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
+                plan_context["backfill_due"] = bool(
+                    clean["enable"] and before_data.get("next_run")
+                    and before_data["next_run"] <= today)
+        extra_warnings = extra
     else:
         fund_name = (fund_name_in_conn(conn, resolved_fund_code)
                      if resolved_fund_code else None)
@@ -689,7 +938,7 @@ def create_pending_proposal_conn(
 
     summary = _build_summary(
         fund_name, operation_type, clean, extra_warnings, before=before,
-        fund_names=batch_fund_names)
+        fund_names=batch_fund_names, plan_context=plan_context)
     params_json = json.dumps(clean, ensure_ascii=False, sort_keys=True)
     summary_json = json.dumps(summary, ensure_ascii=False, sort_keys=True)
     expires_at = (now + timedelta(days=PROPOSAL_TTL_DAYS)).isoformat()
@@ -716,6 +965,12 @@ def create_pending_proposal_conn(
     elif operation_type == OPERATION_BATCH_IMPORT:
         audit_detail["count"] = len(clean.get("transactions") or [])
         audit_detail.pop("fund_code", None)
+    elif operation_type in PLAN_OPERATIONS:
+        if clean.get("plan_id") is not None:
+            audit_detail["plan_id"] = clean.get("plan_id")
+        if operation_type == OPERATION_CREATE_PLAN:
+            audit_detail["amount"] = clean.get("amount")
+            audit_detail["cadence"] = clean.get("cadence")
     else:
         audit_detail["tx_id"] = clean.get("tx_id")
     if origin:
@@ -815,6 +1070,276 @@ def validate_batch_import_params(params: object) -> dict[str, Any]:
     return result
 
 
+# ---------------------------------------------------------------------------
+# F5：定投计划参数校验
+# ---------------------------------------------------------------------------
+# 计划操作永不接受的字段：启停必须显式走 toggle_plan；调度器簿记由服务端
+# 维护。显式拒绝避免外部把状态藏进普通参数（roadmap 硬约束）。
+PLAN_FORBIDDEN_FIELDS = {
+    "enabled": "启停必须提交独立的 toggle_plan 提案，不能藏在其他操作参数中",
+    "next_run": "next_run 由服务端/调度器维护，不接受外部指定",
+    "last_run": "last_run 由调度器维护，不接受外部指定",
+    "last_tx_id": "last_tx_id 由调度器维护，不接受外部指定",
+}
+
+
+def _reject_plan_forbidden_fields(params: dict) -> None:
+    for key, message in PLAN_FORBIDDEN_FIELDS.items():
+        if key in params:
+            raise ProposalValidationError(key, message)
+
+
+def _validate_plan_ref(params: dict) -> tuple[int, str]:
+    """校验并返回 (plan_id, expected_digest)；计划版 update/toggle/delete 共用。"""
+    plan_id = params.get("plan_id")
+    if isinstance(plan_id, bool) or not isinstance(plan_id, int) or plan_id <= 0:
+        raise ProposalValidationError("plan_id", "plan_id 必须是正整数")
+    expected_digest = params.get("expected_digest")
+    if not isinstance(expected_digest, str) or not _DIGEST_RE.fullmatch(
+            expected_digest.strip().lower()):
+        raise ProposalValidationError(
+            "expected_digest",
+            "expected_digest 必须是 64 位十六进制"
+            "（取自 list_auto_invest_plans 返回的 row_digest）")
+    return plan_id, expected_digest.strip().lower()
+
+
+def _validate_plan_day(field: str, value: object,
+                       low: int, high: int, hint: str = "") -> None:
+    """day_of_week/day_of_month 校验；None 表示不适用（或显式清除）。"""
+    if value is None:
+        return
+    if (isinstance(value, bool) or not isinstance(value, int)
+            or not low <= value <= high):
+        raise ProposalValidationError(field, f"{field} 范围 {low}-{high}{hint}")
+
+
+def _validate_plan_config(config: dict) -> None:
+    """校验一份**完整**计划配置（create 原样；update 为当前行 ∪ patch）。
+
+    与网页 ``AutoInvestPlanCreate`` 交叉规则一致并更严格：非对应频率的
+    day 字段必须为 None（update 可用显式 null 清除），避免残留字段歧义。
+    """
+    fund_code = config.get("fund_code")
+    if not isinstance(fund_code, str) or not FUND_CODE_RE.fullmatch(
+            fund_code.strip()):
+        raise ProposalValidationError("fund_code", "基金代码必须是 6 位数字")
+    amount = _number(config.get("amount"), "amount")
+    if amount is None or amount <= 0:
+        raise ProposalValidationError("amount", "定投金额必须大于 0")
+    cadence = config.get("cadence")
+    if cadence not in auto_invest.CADENCES:
+        raise ProposalValidationError(
+            "cadence", f"频率仅支持 {' / '.join(auto_invest.CADENCES)}")
+    _validate_plan_day("day_of_week", config.get("day_of_week"), 0, 6,
+                       "（0=周一）")
+    _validate_plan_day("day_of_month", config.get("day_of_month"), 1, 31)
+    dow = config.get("day_of_week")
+    dom = config.get("day_of_month")
+    if cadence in ("week", "biweek"):
+        if dow is None:
+            raise ProposalValidationError(
+                "day_of_week",
+                "week/biweek 频率需指定 day_of_week（0-6，0=周一）")
+        if dom is not None:
+            raise ProposalValidationError(
+                "day_of_month",
+                "week/biweek 频率不支持 day_of_month，请显式置为 null")
+    elif cadence == "month":
+        if dom is None:
+            raise ProposalValidationError(
+                "day_of_month", "month 频率需指定 day_of_month（1-31）")
+        if dow is not None:
+            raise ProposalValidationError(
+                "day_of_week",
+                "month 频率不支持 day_of_week，请显式置为 null")
+    else:  # daily
+        if dow is not None:
+            raise ProposalValidationError(
+                "day_of_week",
+                "daily 频率不支持 day_of_week，请显式置为 null")
+        if dom is not None:
+            raise ProposalValidationError(
+                "day_of_month",
+                "daily 频率不支持 day_of_month，请显式置为 null")
+
+
+def _plan_config_from_params(params: dict) -> dict[str, Any]:
+    """提取计划配置字段；缺省 None 交由 ``_validate_plan_config`` 判定。"""
+    return {
+        "fund_code": params.get("fund_code"),
+        "amount": params.get("amount"),
+        "cadence": params.get("cadence"),
+        "day_of_week": params.get("day_of_week"),
+        "day_of_month": params.get("day_of_month"),
+        "channel": params.get("channel", ""),
+        "note": params.get("note", "定投"),
+    }
+
+
+def validate_create_plan_params(params: object) -> dict[str, Any]:
+    """校验 ``create_plan``：完整计划配置；新计划强制停用（不接受 enabled）。"""
+    if not isinstance(params, dict):
+        raise ProposalValidationError("params", "params 必须是对象")
+    _reject_plan_forbidden_fields(params)
+    unknown = set(params) - set(PLAN_CONFIG_FIELDS)
+    if unknown:
+        raise ProposalValidationError(
+            "params", f"包含不支持的参数：{', '.join(sorted(unknown))}")
+    config = _plan_config_from_params(params)
+    _validate_plan_config(config)
+    return {
+        "fund_code": config["fund_code"].strip(),
+        "amount": round(float(config["amount"]), 4),
+        "cadence": config["cadence"],
+        "day_of_week": config["day_of_week"],
+        "day_of_month": config["day_of_month"],
+        "channel": _clean_text(config["channel"], "channel", REASON_MAX_LEN),
+        "note": _clean_text(config["note"], "note", REASON_MAX_LEN),
+    }
+
+
+def validate_update_plan_params(params: object) -> dict[str, Any]:
+    """校验 ``update_plan``：部分字段 patch + 版本前置；不含启停字段。
+
+    patch 中显式 null 表示清除 day 字段；合并后的完整配置必须满足
+    ``_validate_plan_config``（由调用方在读取当前行后执行）。
+    """
+    if not isinstance(params, dict):
+        raise ProposalValidationError("params", "params 必须是对象")
+    _reject_plan_forbidden_fields(params)
+    allowed = {"plan_id", "expected_digest", *PLAN_CONFIG_FIELDS}
+    unknown = set(params) - allowed
+    if unknown:
+        raise ProposalValidationError(
+            "params", f"包含不支持的参数：{', '.join(sorted(unknown))}")
+    plan_id, expected_digest = _validate_plan_ref(params)
+    patch: dict[str, Any] = {}
+    if "fund_code" in params:
+        value = params["fund_code"]
+        if not isinstance(value, str) or not FUND_CODE_RE.fullmatch(
+                value.strip()):
+            raise ProposalValidationError("fund_code", "基金代码必须是 6 位数字")
+        patch["fund_code"] = value.strip()
+    if "amount" in params:
+        amount = _number(params["amount"], "amount")
+        if amount is None or amount <= 0:
+            raise ProposalValidationError("amount", "定投金额必须大于 0")
+        patch["amount"] = round(float(amount), 4)
+    if "cadence" in params:
+        if params["cadence"] not in auto_invest.CADENCES:
+            raise ProposalValidationError(
+                "cadence", f"频率仅支持 {' / '.join(auto_invest.CADENCES)}")
+        patch["cadence"] = params["cadence"]
+    if "day_of_week" in params:
+        _validate_plan_day("day_of_week", params["day_of_week"], 0, 6,
+                           "（0=周一）")
+        patch["day_of_week"] = params["day_of_week"]
+    if "day_of_month" in params:
+        _validate_plan_day("day_of_month", params["day_of_month"], 1, 31)
+        patch["day_of_month"] = params["day_of_month"]
+    if "channel" in params:
+        patch["channel"] = _clean_text(
+            params["channel"], "channel", REASON_MAX_LEN)
+    if "note" in params:
+        patch["note"] = _clean_text(params["note"], "note", REASON_MAX_LEN)
+    if not patch:
+        raise ProposalValidationError("params", "至少需要一个可修改字段")
+    return {"plan_id": plan_id, "expected_digest": expected_digest, **patch}
+
+
+def validate_toggle_plan_params(params: object) -> dict[str, Any]:
+    """校验 ``toggle_plan``：显式 enable 布尔 + 版本前置。"""
+    if not isinstance(params, dict):
+        raise ProposalValidationError("params", "params 必须是对象")
+    allowed = {"plan_id", "expected_digest", "enable"}
+    unknown = set(params) - allowed
+    if unknown:
+        raise ProposalValidationError(
+            "params", f"包含不支持的参数：{', '.join(sorted(unknown))}")
+    plan_id, expected_digest = _validate_plan_ref(params)
+    if "enable" not in params:
+        raise ProposalValidationError(
+            "enable", "enable 必填（true=启用，false=停用）")
+    enable = params["enable"]
+    if not isinstance(enable, bool):
+        raise ProposalValidationError("enable", "enable 必须是布尔值")
+    return {"plan_id": plan_id, "expected_digest": expected_digest,
+            "enable": enable}
+
+
+def validate_delete_plan_params(params: object) -> dict[str, Any]:
+    """校验 ``delete_plan``：版本前置即可（不删历史交易）。"""
+    if not isinstance(params, dict):
+        raise ProposalValidationError("params", "params 必须是对象")
+    allowed = {"plan_id", "expected_digest"}
+    unknown = set(params) - allowed
+    if unknown:
+        raise ProposalValidationError(
+            "params", f"包含不支持的参数：{', '.join(sorted(unknown))}")
+    plan_id, expected_digest = _validate_plan_ref(params)
+    return {"plan_id": plan_id, "expected_digest": expected_digest}
+
+
+def _merge_plan_patch(row: dict | sqlite3.Row, clean: dict) -> dict[str, Any]:
+    """把 update patch 合并到当前行配置；patch 显式 null 表示清除该字段。"""
+    base = dict(row) if isinstance(row, sqlite3.Row) else row
+    return {
+        key: clean[key] if key in clean else base.get(key)
+        for key in PLAN_CONFIG_FIELDS
+    }
+
+
+def _plan_snapshot(row: dict | sqlite3.Row) -> dict[str, Any]:
+    """从计划行生成展示快照（配置字段 + 调度器状态，用于前后对比）。"""
+    data = dict(row) if isinstance(row, sqlite3.Row) else row
+    return {
+        "fund_code": data.get("fund_code") or "",
+        "amount": data.get("amount"),
+        "cadence": data.get("cadence") or "",
+        "cadence_label": CADENCE_LABELS.get(data.get("cadence") or "", ""),
+        "day_of_week": data.get("day_of_week"),
+        "day_of_month": data.get("day_of_month"),
+        "channel": data.get("channel") or "",
+        "note": data.get("note") or "",
+        "enabled": bool(data.get("enabled")),
+        "next_run": data.get("next_run"),
+        "last_run": data.get("last_run"),
+    }
+
+
+def _plan_schedule_label(
+        cadence: str, day_of_week: int | None,
+        day_of_month: int | None) -> str:
+    """人类可读的排期标签：每日 / 每周四 / 每两周的周四 / 每月15日。"""
+    if cadence == "week" and day_of_week is not None:
+        return f"每周{_WEEKDAY_CHARS[day_of_week]}"
+    if cadence == "biweek" and day_of_week is not None:
+        return f"每两周的周{_WEEKDAY_CHARS[day_of_week]}"
+    if cadence == "month" and day_of_month is not None:
+        return f"每月{day_of_month}日"
+    return CADENCE_LABELS.get(cadence, cadence)
+
+
+def _resolve_plan_row(
+        conn: sqlite3.Connection, clean: dict,
+) -> tuple[sqlite3.Row | None, ProposalResult | None]:
+    """定位 update/toggle/delete 的目标计划并校验版本；返回 (row, error)。"""
+    plan_id = int(clean["plan_id"])
+    row = db.get_auto_invest_plan_conn(conn, plan_id)
+    if row is None:
+        return None, ProposalResult(
+            404, "target_not_found", f"未找到定投计划 {plan_id}",
+            {"plan_id": plan_id})
+    if auto_invest.plan_row_digest(row) != clean["expected_digest"]:
+        return None, ProposalResult(
+            409, "target_changed",
+            "目标定投计划已被修改，请通过 list_auto_invest_plans 重新读取"
+            "row_digest 后再提案",
+            {"plan_id": plan_id})
+    return row, None
+
+
 def _validate_proposal_params(operation_type: str, params: object) -> dict:
     """按操作类型分派参数校验；返回规范化后的参数字典。"""
     if operation_type == OPERATION_ADD_TRANSACTION:
@@ -829,6 +1354,14 @@ def _validate_proposal_params(operation_type: str, params: object) -> dict:
         return validate_delete_conversion_params(params)
     if operation_type == OPERATION_BATCH_IMPORT:
         return validate_batch_import_params(params)
+    if operation_type == OPERATION_CREATE_PLAN:
+        return validate_create_plan_params(params)
+    if operation_type == OPERATION_UPDATE_PLAN:
+        return validate_update_plan_params(params)
+    if operation_type == OPERATION_TOGGLE_PLAN:
+        return validate_toggle_plan_params(params)
+    if operation_type == OPERATION_DELETE_PLAN:
+        return validate_delete_plan_params(params)
     raise ProposalValidationError(
         "operation_type", f"操作类型不受支持：{operation_type}")
 
@@ -945,6 +1478,37 @@ def create_proposal(principal: Principal, *, operation_type: object,
             fund_code = from_row["fund_code"]
             before = {"from": _row_snapshot(from_row),
                       "to": _row_snapshot(to_row)}
+        elif operation_type in PLAN_OPERATIONS:
+            if operation_type == OPERATION_CREATE_PLAN:
+                fund_code = clean["fund_code"]
+            else:
+                row, error = _resolve_plan_row(conn, clean)
+                if error is not None:
+                    return error
+                before = _plan_snapshot(row)
+                fund_code = clean.get("fund_code") or row["fund_code"]
+                if operation_type == OPERATION_UPDATE_PLAN:
+                    if ("fund_code" in clean
+                            and fund_name_in_conn(
+                                conn, clean["fund_code"]) is None):
+                        _audit(conn, principal, ip,
+                               "proposal_create_rejected", {
+                                   "reason": "fund_not_registered",
+                                   "operation_type": operation_type,
+                                   "fund_code": clean["fund_code"],
+                                   "plan_id": clean["plan_id"]})
+                        return ProposalResult(
+                            409, "fund_not_registered",
+                            "基金尚未收录，请先在网页添加或刷新基金信息后再提案",
+                            {"fund_code": clean["fund_code"],
+                             "plan_id": clean["plan_id"]})
+                    # 合并后整体校验：patch 与当前行必须构成合法完整配置。
+                    _validate_plan_config(_merge_plan_patch(row, clean))
+                elif operation_type == OPERATION_TOGGLE_PLAN:
+                    if clean["enable"] == bool(row["enabled"]):
+                        raise ProposalValidationError(
+                            "enable", "计划已处于该状态，无需启停（请核对 "
+                            "row_digest 是否为最新）")
 
         created = create_pending_proposal_conn(
             conn, principal, clean=clean, digest=digest, now=now, ip=ip,
@@ -1332,6 +1896,197 @@ def _exec_batch_import(conn: sqlite3.Connection, row: sqlite3.Row,
     return execution, audit_id
 
 
+def _plan_target_or_failure(
+        conn: sqlite3.Connection, proposal_row: sqlite3.Row, clean: dict,
+        reviewer: str, now: datetime, ip: str | None, *, action: str):
+    """审批期复读计划行并校验配置摘要；返回 (row, failure)。
+
+    ``action`` 用于失败文案（修改/启停/删除）。计划已被删除或配置/启停
+    已变（摘要失配）时返回 conflict，不覆盖他人的改动。
+    """
+    plan_id = int(clean["plan_id"])
+    target = db.get_auto_invest_plan_conn(conn, plan_id)
+    if target is None:
+        return None, _mark_failure(
+            conn, proposal_row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="target_deleted",
+            message=f"目标定投计划已被删除，无需再{action}",
+            extra={"plan_id": plan_id})
+    if auto_invest.plan_row_digest(target) != clean["expected_digest"]:
+        return None, _mark_failure(
+            conn, proposal_row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="target_changed",
+            message="目标定投计划已被修改，请重新读取 row_digest 后再提案",
+            extra={"plan_id": plan_id})
+    return target, None
+
+
+def _exec_create_plan(conn: sqlite3.Connection, row: sqlite3.Row,
+                      clean: dict, pid: int, reviewer: str,
+                      now: datetime, ip: str | None):
+    """执行 create_plan：强制 enabled=0，next_run 按执行时点计算。
+
+    F5 永不写 transactions 表，也不触发调度器执行；新计划必须由管理员另行
+    批准 toggle_plan 才会被调度器捡起。
+    """
+    fund_name = fund_name_in_conn(conn, clean["fund_code"])
+    if fund_name is None:
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="fund_missing",
+            message="基金已不在当前账本中，请先在网页添加后再提案")
+    plan_config = {
+        "fund_code": clean["fund_code"], "amount": clean["amount"],
+        "cadence": clean["cadence"],
+        "day_of_week": clean.get("day_of_week"),
+        "day_of_month": clean.get("day_of_month"),
+    }
+    next_run = auto_invest.calculate_next_run_conn(
+        conn, {**plan_config, "next_run": None, "last_run": None})
+    plan_id = db.add_auto_invest_plan_conn(
+        conn, fund_code=clean["fund_code"], amount=clean["amount"],
+        cadence=clean["cadence"], day_of_week=clean.get("day_of_week"),
+        day_of_month=clean.get("day_of_month"),
+        channel=clean.get("channel", ""), note=clean.get("note", "定投"),
+        next_run=next_run, enabled=0)
+    db.log_audit(
+        "auto_invest_plan_create", ip=ip, username=reviewer,
+        detail={"plan_id": plan_id, "fund_code": clean["fund_code"],
+                "cadence": clean["cadence"], "amount": clean["amount"],
+                "enabled": 0, "proposal_id": pid},
+        conn=conn,
+    )
+    execution = {
+        "ok": True, "plan_id": plan_id, "enabled": False,
+        "fund_code": clean["fund_code"], "amount": clean["amount"],
+        "cadence": clean["cadence"], "next_run": next_run,
+    }
+    audit_id = _audit(conn, None, ip, "proposal_approved", {
+        "proposal_id": pid, "operation_type": row["operation_type"],
+        "plan_id": plan_id}, reviewer=reviewer)
+    return execution, audit_id
+
+
+def _exec_update_plan(conn: sqlite3.Connection, row: sqlite3.Row,
+                      clean: dict, pid: int, reviewer: str,
+                      now: datetime, ip: str | None):
+    """执行 update_plan：复读目标、校验摘要，写 patch 后重算 next_run。"""
+    target, failure = _plan_target_or_failure(
+        conn, row, clean, reviewer, now, ip, action="修改")
+    if failure is not None:
+        return failure
+    if ("fund_code" in clean
+            and fund_name_in_conn(conn, clean["fund_code"]) is None):
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="fund_missing",
+            message="基金已不在当前账本中，请先在网页添加后再提案",
+            extra={"plan_id": int(clean["plan_id"])})
+    try:
+        merged = _merge_plan_patch(target, clean)
+        _validate_plan_config(merged)
+    except ProposalValidationError as exc:
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="invalid_params", message=exc.message,
+            extra={"plan_id": int(clean["plan_id"]), "field": exc.field})
+    before = _plan_snapshot(target)
+    next_run = auto_invest.calculate_next_run_conn(
+        conn, {
+            **merged,
+            "next_run": before.get("next_run"),
+            "last_run": before.get("last_run"),
+        })
+    db.update_auto_invest_plan_conn(
+        conn, int(clean["plan_id"]),
+        **{key: merged[key] for key in PLAN_CONFIG_FIELDS},
+        next_run=next_run)
+    after = _plan_snapshot({
+        **merged, "enabled": target["enabled"], "next_run": next_run,
+        "last_run": before.get("last_run"),
+    })
+    db.log_audit(
+        "auto_invest_plan_update", ip=ip, username=reviewer,
+        detail={"plan_id": int(clean["plan_id"]), "before": before,
+                "after": after, "proposal_id": pid},
+        conn=conn,
+    )
+    execution = {
+        "ok": True, "plan_id": int(clean["plan_id"]),
+        "before": before, "after": after,
+    }
+    audit_id = _audit(conn, None, ip, "proposal_approved", {
+        "proposal_id": pid, "operation_type": row["operation_type"],
+        "plan_id": int(clean["plan_id"])}, reviewer=reviewer)
+    return execution, audit_id
+
+
+def _exec_toggle_plan(conn: sqlite3.Connection, row: sqlite3.Row,
+                      clean: dict, pid: int, reviewer: str,
+                      now: datetime, ip: str | None):
+    """执行 toggle_plan：只翻转 enabled，不重算 next_run（网页一致）。
+
+    启用后若 next_run 已过期，调度器会尽快补投一期；执行结果附带 warning
+    提示，避免管理员在审批后被补投意外。
+    """
+    target, failure = _plan_target_or_failure(
+        conn, row, clean, reviewer, now, ip, action="启停")
+    if failure is not None:
+        return failure
+    plan_id = int(clean["plan_id"])
+    enable = bool(clean["enable"])
+    if enable == bool(target["enabled"]):
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="invalid_params",
+            message="计划已处于目标状态，请重新读取 row_digest 后再提案",
+            extra={"plan_id": plan_id})
+    db.update_auto_invest_plan_conn(
+        conn, plan_id, enabled=1 if enable else 0)
+    today = now.strftime("%Y-%m-%d")
+    warnings: list[str] = []
+    if enable and target["next_run"] and target["next_run"] <= today:
+        warnings.append(
+            "next_run 已到期，调度器将尽快补投一期（与网页启停行为一致）")
+    db.log_audit(
+        "auto_invest_plan_toggle", ip=ip, username=reviewer,
+        detail={"plan_id": plan_id, "enabled": 1 if enable else 0,
+                "proposal_id": pid},
+        conn=conn,
+    )
+    execution = {
+        "ok": True, "plan_id": plan_id, "enabled": enable,
+        "next_run": target["next_run"], "warnings": warnings,
+    }
+    audit_id = _audit(conn, None, ip, "proposal_approved", {
+        "proposal_id": pid, "operation_type": row["operation_type"],
+        "plan_id": plan_id, "enabled": enable}, reviewer=reviewer)
+    return execution, audit_id
+
+
+def _exec_delete_plan(conn: sqlite3.Connection, row: sqlite3.Row,
+                      clean: dict, pid: int, reviewer: str,
+                      now: datetime, ip: str | None):
+    """执行 delete_plan：只删计划行，历史交易与调度器簿记不动。"""
+    target, failure = _plan_target_or_failure(
+        conn, row, clean, reviewer, now, ip, action="删除")
+    if failure is not None:
+        return failure
+    plan_id = int(clean["plan_id"])
+    before = _plan_snapshot(target)
+    db.delete_auto_invest_plan_conn(conn, plan_id)
+    db.log_audit(
+        "auto_invest_plan_delete", ip=ip, username=reviewer,
+        detail={"plan_id": plan_id, "before": before, "proposal_id": pid},
+        conn=conn,
+    )
+    execution = {"ok": True, "plan_id": plan_id, "before": before}
+    audit_id = _audit(conn, None, ip, "proposal_approved", {
+        "proposal_id": pid, "operation_type": row["operation_type"],
+        "plan_id": plan_id}, reviewer=reviewer)
+    return execution, audit_id
+
+
 def _exec_update_transaction(conn: sqlite3.Connection, row: sqlite3.Row,
                              clean: dict, pid: int, reviewer: str,
                              now: datetime, ip: str | None):
@@ -1641,6 +2396,18 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
                 conn, row, clean, pid, reviewer, now, ip)
         elif operation_type == OPERATION_BATCH_IMPORT:
             outcome = _exec_batch_import(
+                conn, row, clean, pid, reviewer, now, ip)
+        elif operation_type == OPERATION_CREATE_PLAN:
+            outcome = _exec_create_plan(
+                conn, row, clean, pid, reviewer, now, ip)
+        elif operation_type == OPERATION_UPDATE_PLAN:
+            outcome = _exec_update_plan(
+                conn, row, clean, pid, reviewer, now, ip)
+        elif operation_type == OPERATION_TOGGLE_PLAN:
+            outcome = _exec_toggle_plan(
+                conn, row, clean, pid, reviewer, now, ip)
+        elif operation_type == OPERATION_DELETE_PLAN:
+            outcome = _exec_delete_plan(
                 conn, row, clean, pid, reviewer, now, ip)
         else:
             return _mark_failure(

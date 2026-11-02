@@ -833,23 +833,44 @@ def require_agent_scope(required_scope: str | None):
     失败语义：无/错误/过期/撤销 token → 401；有效 token 但缺 scope → 403；
     超限 → 429。审计记录 token 前缀与端点，不记录明文或响应内容。
     """
-    if required_scope is not None and required_scope not in agent_tokens.ALLOWED_SCOPES:
-        raise ValueError(f"未定义的 Agent scope：{required_scope}")
+    scopes = None if required_scope is None else (required_scope,)
+    return _require_agent_scopes(scopes)
+
+
+def require_any_agent_scope(required_scopes: tuple[str, ...]):
+    """构造 FastAPI 依赖：任一 scope 命中即通过（如提案工具双域授权）。
+
+    失败语义、审计与限流与 ``require_agent_scope`` 完全一致；403 文案列出
+    全部可接受 scope，便于客户端修正授权。
+    """
+    return _require_agent_scopes(tuple(required_scopes))
+
+
+def _require_agent_scopes(required_scopes: tuple[str, ...] | None):
+    """``require_agent_scope``/``require_any_agent_scope`` 的共享实现。"""
+    if required_scopes is not None:
+        for scope in required_scopes:
+            if scope not in agent_tokens.ALLOWED_SCOPES:
+                raise ValueError(f"未定义的 Agent scope：{scope}")
+    scope_label = (
+        "any" if required_scopes is None
+        else "|".join(required_scopes))
 
     def _dependency(request: Request) -> agent_tokens.AgentTokenContext:
         ctx = getattr(request.state, "agent_ctx", None)
         if ctx is None:
             ctx = _authenticate_agent_token(request)
-        if required_scope is not None and required_scope not in ctx.scopes:
+        if (required_scopes is not None
+                and not any(s in ctx.scopes for s in required_scopes)):
             db.log_audit(
                 "agent_auth_failed", ip=_get_client_ip(request),
-                detail={"path": request.url.path, "scope": required_scope,
+                detail={"path": request.url.path, "scope": scope_label,
                         "reason": "insufficient_scope",
                         "token_id": ctx.id, "token_prefix": ctx.prefix},
             )
             raise HTTPException(
                 status_code=403,
-                detail=f"Agent token 缺少权限：{required_scope}",
+                detail=f"Agent token 缺少权限：{' / '.join(required_scopes)}",
             )
 
         allowed, retry_after = _check_agent_rate_limit(
@@ -869,8 +890,7 @@ def require_agent_scope(required_scope: str | None):
         db.log_audit(
             "agent_auth_ok", ip=_get_client_ip(request),
             detail={"path": request.url.path, "token_id": ctx.id,
-                    "token_prefix": ctx.prefix,
-                    "scope": required_scope or "any"},
+                    "token_prefix": ctx.prefix, "scope": scope_label},
         )
         return ctx
 
@@ -1936,7 +1956,7 @@ def _proposal_result_data(
 
 
 @app.post("/api/agent/tools/proposals", tags=["agent"], status_code=201,
-          summary="创建账本操作提案（需网页确认）",
+          summary="创建账本/定投计划操作提案（需网页确认）",
           responses={**_AGENT_WRITE_ERROR_RESPONSES,
                      201: {"description": "提案已创建，等待网页管理员确认"}},
           dependencies=[Security(_agent_bearer_scheme)])
@@ -1946,11 +1966,32 @@ def agent_create_proposal(
     response: Response,
     ctx: Annotated[
         agent_tokens.AgentTokenContext,
-        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_PROPOSE)),
+        Depends(require_any_agent_scope(
+            (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+             agent_tokens.SCOPE_PLANS_PROPOSE))),
     ],
 ) -> dict[str, Any]:
-    """创建待审批提案；不写账本，管理员确认后才由服务端执行。"""
+    """创建待审批提案；不写账本/计划，管理员确认后才由服务端执行。
+
+    双域授权：账本类操作（add/update/delete_transaction、conversion、
+    batch_import）需 transactions:propose；定投计划类操作
+    （create/update/toggle/delete_plan）需 plans:propose。端点先接受任一
+    scope 进入，再按 operation_type 精确复核，避免跨域越权。
+    """
     _require_agent_write_enabled(request, ctx)
+    required_scope = proposal_service.OPERATION_SCOPE.get(body.operation_type)
+    if required_scope is not None and required_scope not in ctx.scopes:
+        db.log_audit(
+            "agent_auth_failed", ip=_get_client_ip(request),
+            detail={"path": request.url.path, "scope": required_scope,
+                    "reason": "insufficient_scope",
+                    "token_id": ctx.id, "token_prefix": ctx.prefix,
+                    "operation_type": body.operation_type})
+        raise HTTPException(
+            status_code=403,
+            detail=(f"Agent token 缺少权限：{required_scope}"
+                    f"（操作 {body.operation_type} 需要）"),
+        )
     try:
         result = proposal_service.create_proposal(
             _proposal_principal(ctx),
@@ -2048,7 +2089,9 @@ def agent_precheck_reconciliation(
 def agent_list_proposals(
     ctx: Annotated[
         agent_tokens.AgentTokenContext,
-        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_PROPOSE)),
+        Depends(require_any_agent_scope(
+            (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+             agent_tokens.SCOPE_PLANS_PROPOSE))),
     ],
     status: str | None = None,
     limit: int = Query(50, ge=1, le=200),
@@ -2074,7 +2117,9 @@ def agent_get_proposal(
     proposal_id: int,
     ctx: Annotated[
         agent_tokens.AgentTokenContext,
-        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_PROPOSE)),
+        Depends(require_any_agent_scope(
+            (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+             agent_tokens.SCOPE_PLANS_PROPOSE))),
     ],
 ) -> dict[str, Any]:
     """仅创建者 token 可读；他人提案返回 404。"""
@@ -2097,7 +2142,9 @@ def agent_cancel_proposal(
     proposal_id: int,
     ctx: Annotated[
         agent_tokens.AgentTokenContext,
-        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_PROPOSE)),
+        Depends(require_any_agent_scope(
+            (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+             agent_tokens.SCOPE_PLANS_PROPOSE))),
     ],
 ) -> dict[str, Any]:
     """只能取消自己未处理的提案；已批准/拒绝/过期不可取消。"""
@@ -2192,6 +2239,9 @@ def agent_list_auto_invest_plans(
         item = dict(row)
         item["enabled"] = bool(item.get("enabled"))
         item["fund_name"] = names.get(item.get("fund_code", ""))
+        # 配置摘要：update/toggle/delete 提案的版本前置（expected_digest），
+        # 取自原始行（不含派生字段），与 proposal_service 校验口径一致。
+        item["row_digest"] = auto_invest.plan_row_digest(row)
         next_run = item.get("next_run")
         if not item["enabled"]:
             item["status"] = "paused"
@@ -2810,7 +2860,8 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
      "scope": agent_tokens.SCOPE_DATA_REFRESH},
     {"name": "create_operation_proposal", "method": "POST",
      "path": "/api/agent/tools/proposals",
-     "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+     "any_of_scopes": (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+                       agent_tokens.SCOPE_PLANS_PROPOSE),
      "risk": "propose", "requires_confirmation": True},
     {"name": "record_transaction", "method": "POST",
      "path": "/api/agent/tools/transactions",
@@ -2819,13 +2870,16 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
      "fallback_tool": "create_operation_proposal"},
     {"name": "list_operation_proposals", "method": "GET",
      "path": "/api/agent/tools/proposals",
-     "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE},
+     "any_of_scopes": (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+                       agent_tokens.SCOPE_PLANS_PROPOSE)},
     {"name": "get_operation_proposal", "method": "GET",
      "path": "/api/agent/tools/proposals/{proposal_id}",
-     "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE},
+     "any_of_scopes": (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+                       agent_tokens.SCOPE_PLANS_PROPOSE)},
     {"name": "cancel_operation_proposal", "method": "DELETE",
      "path": "/api/agent/tools/proposals/{proposal_id}",
-     "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+     "any_of_scopes": (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+                       agent_tokens.SCOPE_PLANS_PROPOSE),
      "risk": "write", "requires_confirmation": False},
     {"name": "precheck_transactions", "method": "POST",
      "path": "/api/agent/tools/precheck/transactions",
@@ -2836,6 +2890,19 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
      "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
      "risk": "propose", "requires_confirmation": False},
 )
+
+
+def _agent_tool_visible(tool: dict[str, Any], scopes: object) -> bool:
+    """能力发现过滤：any_of_scopes 任一命中，或单一 scope 命中。
+
+    两者都缺失（scope=None 且无 any_of_scopes）表示只要求有效 Agent
+    token（如能力发现本身）。
+    """
+    any_of = tool.get("any_of_scopes")
+    if any_of:
+        return any(s in scopes for s in any_of)  # type: ignore[operator]
+    scope = tool.get("scope")
+    return scope is None or scope in scopes  # type: ignore[operator]
 
 
 @app.get("/api/agent/tools/capabilities", tags=["agent"],
@@ -2859,7 +2926,7 @@ def agent_get_capabilities(
             ),
         }
         for tool in _AGENT_TOOL_REGISTRY
-        if tool["scope"] is None or tool["scope"] in ctx.scopes
+        if _agent_tool_visible(tool, ctx.scopes)
     ]
     return _agent_tool_response("get_agent_capabilities", {
         "server_version": APP_VERSION,

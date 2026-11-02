@@ -9,7 +9,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import sqlite3
 import threading
 from datetime import datetime, timedelta
 from typing import Any
@@ -27,14 +30,21 @@ _SUSPENDED_STATUSES = ("暂停申购", "封闭期")
 _execute_lock = threading.Lock()
 
 
-def _is_qdii_fund(fund_code: str) -> bool:
+def _is_qdii_fund_conn(
+        conn: sqlite3.Connection, fund_code: str) -> bool:
     """判断基金是否为 QDII（海外）基金，需跳过美股休市日。
 
     口径与 risk.py / config.EQUITY_LIKE_TYPES 一致：fund_type == "QDII"。
     基金不在库中或类型未知时返回 False，不影响国内基金定投。
     """
-    fund = db.get_fund(fund_code)
+    fund = db.get_fund_conn(conn, fund_code)
     return fund is not None and fund.fund_type == "QDII"
+
+
+def _is_qdii_fund(fund_code: str) -> bool:
+    """自开只读连接的薄包装（web 路径用）。"""
+    with db.get_connection() as conn:
+        return _is_qdii_fund_conn(conn, fund_code)
 
 
 def _check_purchasable(fund_code: str, amount: float) -> tuple[bool, str, dict]:
@@ -68,8 +78,9 @@ def _check_purchasable(fund_code: str, amount: float) -> tuple[bool, str, dict]:
     return True, "", {}
 
 
-def _next_trading_day(fund_code: str, from_date: str) -> str:
-    """从 from_date 起找下一个可定投交易日。
+def _next_trading_day_conn(
+        conn: sqlite3.Connection, fund_code: str, from_date: str) -> str:
+    """从 from_date 起找下一个可定投交易日（连接感知）。
 
     跳过周末（所有基金）、国内法定节假日/调休（A 股交易日历，所有基金）
     和美股休市日（仅 QDII 基金）。
@@ -80,19 +91,19 @@ def _next_trading_day(fund_code: str, from_date: str) -> str:
     美股是否开市，必须用独立的美国市场日历校验。
     """
     d = datetime.strptime(from_date, "%Y-%m-%d").date()
-    qdii = _is_qdii_fund(fund_code)
+    qdii = _is_qdii_fund_conn(conn, fund_code)
     for _ in range(20):
         if d.weekday() >= 5:  # 周末
             d += timedelta(days=1)
             continue
-        if not db.is_trading_day(d.isoformat()):  # 国内法定节假日/调休
+        if not db.is_trading_day_conn(conn, d.isoformat()):  # 国内法定节假日/调休
             d += timedelta(days=1)
             continue
         if qdii and is_us_market_holiday(d):  # QDII 跳美股休市
             d += timedelta(days=1)
             continue
         # d 是候选可投日；查净值推断实际交易日（覆盖中国节假日跳空）
-        nav = db.get_nav_on_or_after(fund_code, d.isoformat())
+        nav = db.get_nav_on_or_after_conn(conn, fund_code, d.isoformat())
         if nav and nav["date"] == d.isoformat():
             return nav["date"]  # 命中当日净值 → 真实交易日
         if nav and nav["date"] > d.isoformat():
@@ -102,6 +113,12 @@ def _next_trading_day(fund_code: str, from_date: str) -> str:
         # 无净值数据（将来日期）→ d 即为预测交易日
         return d.isoformat()
     return d.isoformat()
+
+
+def _next_trading_day(fund_code: str, from_date: str) -> str:
+    """自开只读连接的薄包装（web 路径用）。"""
+    with db.get_connection() as conn:
+        return _next_trading_day_conn(conn, fund_code, from_date)
 
 
 def _next_weekday(from_date: str, target_dow: int) -> str:
@@ -129,11 +146,14 @@ def _next_month_day(from_date: str, target_day: int) -> str:
     return f"{year:04d}-{month:02d}-{min(target_day, max_day):02d}"
 
 
-def calculate_next_run(plan: dict, from_date: str | None = None) -> str | None:
-    """计算定投计划的下次执行日期。
+def calculate_next_run_conn(
+        conn: sqlite3.Connection, plan: dict,
+        from_date: str | None = None) -> str | None:
+    """连接感知版本：在 BEGIN IMMEDIATE 事务内复用传入连接。
 
-    遇非交易日顺延到下一个有净值数据的交易日。
-    from_date 缺省时取 max(next_run, today)，跳过停机期间错过的期数。
+    口径与 ``calculate_next_run`` 完全一致（遇非交易日顺延到下一个有净值
+    数据的交易日；from_date 缺省取 max(next_run, today)，跳过停机期间错过的
+    期数）。
     """
     if from_date is None:
         today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
@@ -143,7 +163,7 @@ def calculate_next_run(plan: dict, from_date: str | None = None) -> str | None:
 
     if cadence == "daily":
         d = datetime.strptime(from_date, "%Y-%m-%d").date() + timedelta(days=1)
-        return _next_trading_day(fund_code, d.isoformat())
+        return _next_trading_day_conn(conn, fund_code, d.isoformat())
 
     if cadence in ("week", "biweek"):
         dow = plan.get("day_of_week")
@@ -158,16 +178,52 @@ def calculate_next_run(plan: dict, from_date: str | None = None) -> str | None:
                 if gap < 14:
                     d = datetime.strptime(last_run, "%Y-%m-%d") + timedelta(days=14)
                     next_date = _next_weekday(d.isoformat(), dow)
-        return _next_trading_day(fund_code, next_date)
+        return _next_trading_day_conn(conn, fund_code, next_date)
 
     if cadence == "month":
         dom = plan.get("day_of_month")
         if dom is None:
             return None
         next_date = _next_month_day(from_date, dom)
-        return _next_trading_day(fund_code, next_date)
+        return _next_trading_day_conn(conn, fund_code, next_date)
 
     return None
+
+
+def calculate_next_run(plan: dict, from_date: str | None = None) -> str | None:
+    """计算定投计划的下次执行日期。
+
+    遇非交易日顺延到下一个有净值数据的交易日。
+    from_date 缺省时取 max(next_run, today)，跳过停机期间错过的期数。
+    """
+    with db.get_connection() as conn:
+        return calculate_next_run_conn(conn, plan, from_date)
+
+
+def plan_row_digest(row: dict | sqlite3.Row) -> str:
+    """对定投计划行的**配置字段**做规范 SHA-256 摘要（F5 版本前置条件）。
+
+    与 ``transaction_row_digest`` 的口径差异是刻意的：``next_run`` /
+    ``last_run`` / ``last_tx_id`` 是调度器簿记字段，每次定投执行都会推进；
+    若入摘要，对启用中的计划，任何待审 update/toggle/delete 都会在下一次
+    执行后失配，功能不可用。配置摘要保证「人改配置（含启停）→ 失配冲突；
+    调度器自推进 → 不失配」。
+    """
+    if isinstance(row, sqlite3.Row):
+        row = dict(row)
+    payload = {
+        "fund_code": row.get("fund_code") or "",
+        "amount": round(float(row.get("amount") or 0.0), 4),
+        "cadence": row.get("cadence") or "",
+        "day_of_week": row.get("day_of_week"),
+        "day_of_month": row.get("day_of_month"),
+        "channel": row.get("channel") or "",
+        "note": row.get("note") or "",
+        "enabled": 1 if row.get("enabled") else 0,
+    }
+    canonical = json.dumps(
+        payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:

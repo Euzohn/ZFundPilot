@@ -86,6 +86,7 @@ const AGENT_SCOPE_KEYS = [
   "watchlist:write",
   "data:refresh",
   "transactions:propose",
+  "plans:propose",
   "transactions:create",
 ] as const
 
@@ -269,6 +270,7 @@ function AgentTokenPanel() {
     "watchlist:write": t.settings.agentTokenScopeWatchlistWrite,
     "data:refresh": t.settings.agentTokenScopeDataRefresh,
     "transactions:propose": t.settings.agentTokenScopeTransactionsPropose,
+    "plans:propose": t.settings.agentTokenScopePlansPropose,
     "transactions:create": t.settings.agentTokenScopeTransactionsCreate,
   }
 
@@ -443,7 +445,7 @@ function AgentTokenPanel() {
               </label>
             ))}
           </div>
-          {(scopes.includes("watchlist:write") || scopes.includes("data:refresh") || scopes.includes("transactions:propose")) && (
+          {(scopes.includes("watchlist:write") || scopes.includes("data:refresh") || scopes.includes("transactions:propose") || scopes.includes("plans:propose")) && (
             <p className="text-xs text-warning">{t.settings.agentTokenWriteHint}</p>
           )}
           {scopes.includes("transactions:create") && (

@@ -42,6 +42,9 @@ SCOPE_WATCHLIST_WRITE = "watchlist:write"
 SCOPE_DATA_REFRESH = "data:refresh"
 # 提案 scope：只允许创建/查看/取消自己的待审批提案，不能直写账本。
 SCOPE_TRANSACTIONS_PROPOSE = "transactions:propose"
+# 定投计划提案 scope（F5）：创建/修改/启停/删除定投计划提案，与账本提案
+# 相互独立，不自动附带；默认不勾选，旧 token 不扩权。
+SCOPE_PLANS_PROPOSE = "plans:propose"
 # 可信直记 scope：仅授权新增单笔普通买入/卖出，直接写账本（F0）。
 # 与提案 scope 相互独立，不自动附带；默认不勾选，旧 token 不扩权。
 SCOPE_TRANSACTIONS_CREATE = "transactions:create"
@@ -60,6 +63,7 @@ ALLOWED_SCOPES = frozenset({
     SCOPE_WATCHLIST_WRITE,
     SCOPE_DATA_REFRESH,
     SCOPE_TRANSACTIONS_PROPOSE,
+    SCOPE_PLANS_PROPOSE,
     SCOPE_TRANSACTIONS_CREATE,
 })
 
@@ -68,11 +72,12 @@ WRITE_SCOPES = frozenset({
     SCOPE_WATCHLIST_WRITE,
     SCOPE_DATA_REFRESH,
     SCOPE_TRANSACTIONS_PROPOSE,
+    SCOPE_PLANS_PROPOSE,
     SCOPE_TRANSACTIONS_CREATE,
 })
 
 # 提案 scope 集合：仅可提交待审批提案，执行权限只属于网页管理员。
-PROPOSE_SCOPES = frozenset({SCOPE_TRANSACTIONS_PROPOSE})
+PROPOSE_SCOPES = frozenset({SCOPE_TRANSACTIONS_PROPOSE, SCOPE_PLANS_PROPOSE})
 
 # 新 scope 默认不勾选：签发页面需显式选择，避免存量流程静默扩权。
 DEFAULT_SCOPES: tuple[str, ...] = (

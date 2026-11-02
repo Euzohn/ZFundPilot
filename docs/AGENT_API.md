@@ -79,14 +79,15 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 | `plans:read` | `auto-invest-plans` |
 | `watchlist:write` | `watchlist`（新增/更新/删除自选，需同时开启服务端写开关） |
 | `data:refresh` | `refresh`（启动/查询任务化数据刷新，仅净值/元数据，需开启写开关） |
-| `transactions:propose` | `proposals`（创建/查看/取消自己的待审批账本提案，需开启写开关；执行权只属于网页管理员） |
+| `transactions:propose` | `proposals`（创建/查看/取消自己的待审批**账本**提案，需开启写开关；执行权只属于网页管理员） |
+| `plans:propose` | `proposals`（创建/查看/取消自己的待审批**定投计划**提案，需开启写开关；执行权只属于网页管理员；新计划默认停用） |
 | `transactions:create` | `POST /api/agent/tools/transactions`（可信单笔直记买入/卖出，需开启写开关；预检异常时按策略降级为提案或拒绝） |
 
-写 scope 目前有 `watchlist:write`、`data:refresh`、`transactions:propose` 与 `transactions:create`，均默认不勾选，且受服务端写开关约束（默认关闭）。写开关的日常开启/关闭由管理员在网页「设置 → Agent 接入 → Agent 写能力」完成（`GET/PUT /api/settings/agent-write`，开启需输入当前登录密码确认，状态持久化在数据库，多 worker 部署以数据库为权威值）；环境变量 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 只在两种情况下生效：显式设为 `0`/`false`/`no`/`off` 是**紧急刹车**（强制关闭且设置页无法开启），设为 `1`/`true`/`yes`/`on` 仅作为数据库无记录时的首次启动默认值。调用未授权工具返回 **403**。前两者是低风险直接写入；`transactions:propose` 只允许提交提案，**不能直接写账本**；`transactions:create` 允许在限额内直接写入账本，是与提案**相互独立**的预授权——仅有 `transactions:create` 而无 `transactions:propose` 时预检异常直接拒绝（不会降级）。
+写 scope 目前有 `watchlist:write`、`data:refresh`、`transactions:propose`、`plans:propose` 与 `transactions:create`，均默认不勾选，且受服务端写开关约束（默认关闭）。写开关的日常开启/关闭由管理员在网页「设置 → Agent 接入 → Agent 写能力」完成（`GET/PUT /api/settings/agent-write`，开启需输入当前登录密码确认，状态持久化在数据库，多 worker 部署以数据库为权威值）；环境变量 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 只在两种情况下生效：显式设为 `0`/`false`/`no`/`off` 是**紧急刹车**（强制关闭且设置页无法开启），设为 `1`/`true`/`yes`/`on` 仅作为数据库无记录时的首次启动默认值。调用未授权工具返回 **403**。前两者是低风险直接写入；`transactions:propose` 只允许提交账本提案，`plans:propose` 只允许提交定投计划提案，二者都**不能直接写账本或计划**；`transactions:create` 允许在限额内直接写入账本，是与提案**相互独立**的预授权——仅有 `transactions:create` 而无 `transactions:propose` 时预检异常直接拒绝（不会降级）。
 
-`capabilities` 只要求有效 token，不要求特定 scope；它只返回当前 token 已获授权的工具，写工具会标注 `risk="write"`、提案工具标注 `risk="propose"`，并以 `enabled` 反映服务端写开关状态；顶层 `write_enabled` 为当前开关值，`write_locked` 为 `true` 时表示环境变量紧急刹车已锁死，设置页也无法开启。
+`capabilities` 只要求有效 token，不要求特定 scope；它只返回当前 token 已获授权的工具，写工具会标注 `risk="write"`、提案工具标注 `risk="propose"`，并以 `enabled` 反映服务端写开关状态；顶层 `write_enabled` 为当前开关值，`write_locked` 为 `true` 时表示环境变量紧急刹车已锁死，设置页也无法开启。提案类工具（`create_operation_proposal`、`list_operation_proposals`、`get_operation_proposal`、`cancel_operation_proposal`）采用**双域授权**：持有 `transactions:propose` 或 `plans:propose` 任一即可进入，但创建时按 `operation_type` 精确复核（账本类需 `transactions:propose`，计划类需 `plans:propose`），跨域操作返回 **403**；`capabilities` 中任一 scope 命中即列出这些工具。
 
-> 前三个 scope 是签发页面的默认勾选项；`transactions:read`、`watchlist:read`、`alerts:read`、`plans:read`、`watchlist:write`、`data:refresh`、`transactions:propose`、`transactions:create` 默认不勾选，需要读取或写入对应数据时请显式勾选，避免存量流程静默扩权。
+> 前三个 scope 是签发页面的默认勾选项；`transactions:read`、`watchlist:read`、`alerts:read`、`plans:read`、`watchlist:write`、`data:refresh`、`transactions:propose`、`plans:propose`、`transactions:create` 默认不勾选，需要读取或写入对应数据时请显式勾选，避免存量流程静默扩权。
 
 ---
 
@@ -495,6 +496,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 |---|---|
 | `fund_name` | 基金名称，未入库时 `null` |
 | `enabled` | 统一为布尔值 |
+| `row_digest` | 计划配置 SHA-256（覆盖 `fund_code/amount/cadence/day_of_week/day_of_month/channel/note/enabled`，`amount` 取 `round(_,4)`，`enabled` 归一为 0/1；**不含** `next_run/last_run/last_tx_id` 等调度器簿记字段，避免活跃计划每次执行后摘要失配）。作为 `update_plan`/`toggle_plan`/`delete_plan` 提案的 `expected_digest` 版本前置 |
 | `status` | 派生状态：`paused`（已暂停）/ `due`（`next_run` 已到期）/ `active`（启用且未到期） |
 
 > 跳过原因（例如余额不足、非交易日）**未按计划持久化**，因此不会返回 `skip_reason` 之类的推测字段。
@@ -761,9 +763,9 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 - 错误码：`write_disabled`、`validation_error`、`refresh_busy`、`not_found`、`idempotency_conflict`、`idempotency_expired`。审计记录 `data_refresh_started/succeeded/failed/busy/rejected`，仅记计数与 token 前缀。
 - 单任务基金数上限 50，`POST refresh` 限流 10 次/分钟（`GET refresh/{job_id}` 走默认 120 次/分钟）。
 
-### 5.23 账本提案（写入需网页确认，默认关闭）
+### 5.23 账本与定投计划提案（写入需网页确认，默认关闭）
 
-本组工具只能提交**待审批提案**，不会直接写账本（可信直记见 §5.24）。scope：`transactions:propose`，同样受服务端写开关约束（见上文「写开关」说明）。开放六种 `operation_type`：`add_transaction`（新增）、`update_transaction`（修改单笔，须带 `expected_digest` 行版本前置）、`delete_transaction`（删除单笔，须带 `expected_digest`）、`add_conversion`（基金转换，成对写入卖出腿+买入腿并共享 `conversion_id`）、`delete_conversion`（按 `conversion_id` 整对删除转换，须带两腿各自的 `expected_digest`）、`batch_import`（批量追加多条交易，单提案单次审批、事务内全部成功或全部回滚）；批准、拒绝、取消后的执行与状态迁移均由服务端完成，执行路径不联网。修改/删除均整笔处理；转换腿仍不支持单腿编辑，整对删除使用 `delete_conversion`。`batch_import` 仅追加，永不清空，也不支持批内 update/delete/conversion 或 `dividend_alert_id`。
+本组工具只能提交**待审批提案**，不会直接写账本或计划（可信直记见 §5.24）。提案工具采用**双域授权**：持有 `transactions:propose` 或 `plans:propose` 任一即可调用 `list/get/cancel`，但 `create` 时按 `operation_type` 精确复核（账本类需 `transactions:propose`，计划类需 `plans:propose`），跨域操作返回 **403**；`capabilities` 中任一 scope 命中即列出这些工具。同样受服务端写开关约束（见上文「写开关」说明）。开放十种 `operation_type`：`add_transaction`（新增）、`update_transaction`（修改单笔，须带 `expected_digest` 行版本前置）、`delete_transaction`（删除单笔，须带 `expected_digest`）、`add_conversion`（基金转换，成对写入卖出腿+买入腿并共享 `conversion_id`）、`delete_conversion`（按 `conversion_id` 整对删除转换，须带两腿各自的 `expected_digest`）、`batch_import`（批量追加多条交易，单提案单次审批、事务内全部成功或全部回滚），以及 F5 定投计划维护四种：`create_plan`（创建计划，强制 `enabled=0`）、`update_plan`（部分字段 patch + 版本前置 `expected_digest`）、`toggle_plan`（显式 `enable` 布尔启停）、`delete_plan`（删除计划行，历史交易不动）；批准、拒绝、取消后的执行与状态迁移均由服务端完成，执行路径不联网。修改/删除均整笔处理；转换腿仍不支持单腿编辑，整对删除使用 `delete_conversion`。`batch_import` 仅追加，永不清空，也不支持批内 update/delete/conversion 或 `dividend_alert_id`。**计划操作永不写 transactions 表，也不触发调度器执行**；新计划默认停用，启用必须另行提交 `toggle_plan` 提案。
 
 | MCP 工具 | HTTP | 说明 |
 |---|---|---|
@@ -913,6 +915,63 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
   }' | jq
 ```
 
+定投计划维护（F5，scope `plans:propose`）。先取 `row_digest`，再带 `expected_digest` 提交：
+
+```bash
+# 1) 取目标计划的 row_digest（list_auto_invest_plans 每项均带）
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/auto-invest-plans" | jq '.data.plans[] | {id, row_digest}'
+
+# 2a) 创建定投计划（默认停用，不会被执行）
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: plan-create-1a2b3c4d-5e6f" \
+  -d '{
+    "operation_type": "create_plan",
+    "params": {
+      "fund_code": "005827", "amount": 500, "cadence": "week",
+      "day_of_week": 0, "channel": "支付宝", "note": "工资定投"
+    }
+  }' | jq
+# data.summary 含 fund_code / amount / cadence / schedule / enabled=false / next_run / scheduler_hint
+
+# 2b) 修改定投计划（部分 patch；显式 null 清除 day 字段）
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: plan-upd-1a2b3c4d-5e6f" \
+  -d '{
+    "operation_type": "update_plan",
+    "params": {
+      "plan_id": 3, "expected_digest": "<row_digest>",
+      "amount": 800
+    }
+  }' | jq
+# data.summary 含 plan_id / before / after / changed_fields（如 ["amount"]） / scheduler_hint
+
+# 2c) 启停定投计划（显式 enable 布尔，动作语义）
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: plan-toggle-1a2b3c4d-5e6f" \
+  -d '{
+    "operation_type": "toggle_plan",
+    "params": {"plan_id": 3, "expected_digest": "<row_digest>", "enable": true}
+  }' | jq
+# data.summary 含 enabled_before / enabled_after / next_run / scheduler_hint
+
+# 2d) 删除定投计划（只删计划行，历史交易不受影响）
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: plan-del-1a2b3c4d-5e6f" \
+  -d '{
+    "operation_type": "delete_plan",
+    "params": {"plan_id": 3, "expected_digest": "<row_digest>"}
+  }' | jq
+```
+
 - `add_transaction` 的 `params` 只接受白名单字段：`fund_code`（6 位数字、需已在网页收录）、`action`（`buy`/`sell`/`dividend`/`reinvest`）、`date`（`YYYY-MM-DD`）、`amount`/`shares`/`nav`（买/卖至少两项可推导，卖出必须有份额，分红必须有金额）、`fee`、`channel`、`note`、`is_t1`，以及可选的 `dividend_alert_id`（仅 `dividend`/`reinvest`）。未知字段返回 `422 validation_error`。
 - `batch_import` 的 `params` 为 `transactions`（1–50 条，每条字段集与 `add_transaction` 完全一致，但**必须**给 `fund_code`，不接受 `fund_name`）加可选 `note`。不支持 `dividend_alert_id`（返回 `422 batch_invalid_item`，`code=unsupported_in_batch`）；`clear_existing`/`fetch_meta` 会被忽略并在 `summary.warnings` 与 `params.ignored_fields` 中标注，永不执行清空或联网拉取。创建期硬拒绝结构错误、任一条目字段错误（`422 batch_invalid_item`，带 `index`/`issues`）、基金未收录（`409 fund_not_registered`，带 `index`/`fund_code`）、批内重复（`409 batch_internal_duplicate`，带 `index`/`other_index`）；与账本或待审提案（无论同主体还是他人）重复只写 warning；批量提案之间不互相判定重复（重复检测只比对单条 `add_transaction` 提案，属已知限制，请在提交前用 `precheck_transactions` 自查）。审批时先整体校验（基金仍在、参数仍合法、按「基金+渠道最终累计余额」批内累加后非负），全部通过才逐条 `insert`，任一条失败整批不写、提案标记 `conflict` 并在 `execution_result` 带 `index`/`executed_before_failure=0`。响应 `summary` 含 `count`/`actions`/`funds`/`date_range`/`amount_total`（买入金额与卖出净额合计，不是净投入）/`items`，成功执行结果含 `tx_ids`/`count`。
 - `add_conversion` 的 `params`：`from_code`、`to_code`（均为 6 位数字、需已收录且不能相同）、`date`、`from_shares`（>0）、可选 `from_nav`/`from_fee`、可选 `to_amount`/`to_nav`/`to_fee`、`channel`、`note`、`is_t1`。非 T+1 须能推导转入腿金额/份额（未填 `to_amount` 时按卖出净到账推导）；T+1 可暂缺转入金额，审批不阻断，留待净值回填。审批在单事务内成对写入 `sell`/`buy` 两腿并共享新生成的 `conversion_id`，不联网抓净值；转出份额超过该渠道可用份额仅 warning，不阻断。响应 `summary.conversion` 含两腿明细。
@@ -921,11 +980,16 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
 - `update_transaction` 的 `params` 须带 `tx_id`（目标交易 id）与 `expected_digest`（目标行内容哈希，取自 `GET /api/agent/tools/transactions/{tx_id}` 响应的 `row_digest`），再加与 `add_transaction` 相同的**完整字段集**（非部分更新，缺省字段按规则补默认）。哈希覆盖 `fund_code/action/date/amount/shares/nav/fee/channel/note/is_t1`（数值 `round(_,4)`，`None` 保留）。目标行内容已变（`409 target_changed`）或已删（`404 target_not_found`）时创建被拒；审批期再行复核，已变/已删则 `conflict`（`target_changed`/`target_deleted`），不覆盖。改 `fund_code`/`channel` 时双侧份额校验，改基金给出 warning。
 - `delete_transaction` 的 `params` 为 `tx_id` + `expected_digest` + 可选 `reason`。审批期复核哈希，通过后删除目标行；删除买入若令后续卖出超份额则 `insufficient_shares_after_change`（不删），删除卖出恒放行。
 - **转换腿**（`conversion_id` 非空）的单腿修改/删除一律 `409 conversion_leg_isolated`；整对删除请使用 `delete_conversion`，不要逐腿操作。
-- 必须带 `Idempotency-Key`（16–128 安全 ASCII）。同键同参数返回原提案（`200` + `replayed=true`）；同键异参数/跨操作返回 `409 idempotency_conflict`，过期键返回 `409 idempotency_expired`。`tx_id`+`expected_digest`+完整字段集视作 update 的完整参数参与重放比对。
+- `create_plan` 的 `params`（scope `plans:propose`）：`fund_code`（6 位数字、需已收录）、`amount`（>0）、`cadence`（`daily`/`week`/`biweek`/`month`）、`day_of_week`（0–6，0=周一；`week`/`biweek` 必填、其余禁填）、`day_of_month`（1–31；`month` 必填、其余禁填）、可选 `channel`/`note`。**硬拒** `enabled`/`next_run`/`last_run`/`last_tx_id`（`422 validation_error`，启停必须走独立 `toggle_plan`，调度器簿记由服务端维护）。新计划强制 `enabled=0`，审批写入后 `next_run` 按执行时点计算。重复检测只 warning：同配置既有计划、同摘要待审 `create_plan`。
+- `update_plan` 的 `params`（scope `plans:propose`）：`plan_id` + `expected_digest`（取自 `list_auto_invest_plans` 的 `row_digest`）+ 任意 `create_plan` 配置字段子集（**部分 patch**；显式 `null` 表示清除 `day_of_week`/`day_of_month`）。合并后的完整配置必须通过 `_validate_plan_config`（交叉规则与网页一致：非对应频率的 day 字段必须为 `None`）。目标计划不存在 `404 target_not_found`（带 `plan_id`）；摘要失配 `409 target_changed`；合并校验失败 `422 validation_error`（事务回滚）。响应 `summary` 含 `before`/`after`/`changed_fields`/`scheduler_hint`。
+- `toggle_plan` 的 `params`（scope `plans:propose`）：`plan_id` + `expected_digest` + `enable`（布尔，必填）。**不重算 `next_run`**（与网页启停一致）；启用而 `next_run` 已过期时 `summary.scheduler_hint` 提示调度器将尽快补投一期。同状态拒绝（`422 validation_error`，提示重新读取 `row_digest`）。目标缺失/失配错误码同 `update_plan`。摘要覆盖 `enabled`，故启停也算配置变更。
+- `delete_plan` 的 `params`（scope `plans:propose`）：`plan_id` + `expected_digest`。审批期复核后只删计划行，历史交易与调度器簿记不动。响应 `summary` 含 `before`。
+- 计划操作的审计事件与网页对齐：`auto_invest_plan_create`/`update`/`toggle`/`delete`，`detail` 带 `plan_id` + `proposal_id`（`toggle` 另带 `enabled`）。计划操作永不写 transactions 表、不触发调度器执行。
+- 必须带 `Idempotency-Key`（16–128 安全 ASCII）。同键同参数返回原提案（`200` + `replayed=true`）；同键异参数/跨操作返回 `409 idempotency_conflict`，过期键返回 `409 idempotency_expired`。`tx_id`+`expected_digest`+完整字段集视作 update 的完整参数参与重放比对。`plan_id`+`expected_digest` 视作 plan 类 update/toggle/delete 的完整参数参与重放比对。
 - 提案默认 7 天过期；过期后不可批准，也不能取消。每个 token 最多同时保留 20 个 `pending` 提案，超限返回 `409 too_many_pending`（`batch_import` 提案按 1 条计）。
-- 基金尚未收录返回 `409 fund_not_registered`，避免审批路径联网补数据。
-- 状态机：`pending → succeeded / failed / conflict / rejected / cancelled / expired`。`failed` 表示创建者 token 失效或失去 scope；`conflict` 表示基金/参数在审批时已不合法。环境级阻断（`auth_disabled`、`write_disabled`）返回 `403` 且提案保持 `pending`，修复后可重试。
-- 网页管理员在「待确认提案」页面批准后，服务端在同一 SQLite 事务内复核实例认证、写开关、创建者 token 与业务规则，写入账本并记录 `proposal_approved` 与业务审计（`add_transaction`/`add_conversion`/`delete_conversion`，批量为每条 `add_transaction` 带 `batch_index`；分红关联另记 `dividend_alert_confirm`）；并发审批只有一个能成功，重复审批返回 `409 not_pending`。
+- 基金尚未收录返回 `409 fund_not_registered`，避免审批路径联网补数据。计划类操作的目标计划不存在返回 `404 target_not_found`（带 `plan_id`），配置摘要失配返回 `409 target_changed`（带 `plan_id`）；审批期复核同样产出 `conflict`（`target_deleted`/`target_changed`），不覆盖他人改动。
+- 状态机：`pending → succeeded / failed / conflict / rejected / cancelled / expired`。`failed` 表示创建者 token 失效或失去 scope；`conflict` 表示基金/参数/计划在审批时已不合法（含目标被删/被改）。环境级阻断（`auth_disabled`、`write_disabled`）返回 `403` 且提案保持 `pending`，修复后可重试。
+- 网页管理员在「待确认提案」页面批准后，服务端在同一 SQLite 事务内复核实例认证、写开关、创建者 token 与业务规则，写入账本/计划并记录 `proposal_approved` 与业务审计（账本类：`add_transaction`/`add_conversion`/`delete_conversion`，批量为每条 `add_transaction` 带 `batch_index`，分红关联另记 `dividend_alert_confirm`；计划类：`auto_invest_plan_create`/`update`/`toggle`/`delete`，均带 `plan_id`+`proposal_id`）；并发审批只有一个能成功，重复审批返回 `409 not_pending`。
 - 网页审批端点仅接受网页登录身份：`GET /api/proposals/count`、`GET /api/proposals`、`GET /api/proposals/{id}`、`POST /api/proposals/{id}/approve`、`POST /api/proposals/{id}/reject`。Agent token 调用这些路径返回 `401`。
 - 错误码：`write_disabled`、`validation_error`、`fund_not_registered`、`too_many_pending`、`not_pending`、`expired`、`not_found`、`target_changed`（目标行/转换腿哈希不匹配，`409`）、`target_not_found`（目标行不存在，`404`）、`conversion_leg_isolated`（转换腿单腿修改/删除被拒，`409`）、`conversion_not_found`（`conversion_id` 不存在或已非成对，`404`）、`conversion_leg_mismatch`（关联流水不是 sell/buy 标准对，`409`）、`batch_invalid_item`（批量：某条字段错误，`422`，带 `index`/`issues`）、`batch_internal_duplicate`（批量：批内重复，`409`，带 `index`/`other_index`）、`insufficient_shares_after_change`（审批执行期：修改/删除/批量令后续卖出超份额，`conflict`）、`fund_missing`（审批期基金已从账本移除）、`dividend_alert_not_found`/`dividend_alert_resolved`/`dividend_alert_type_mismatch`/`dividend_alert_fund_mismatch`（审批期分红提醒关联失败）、`idempotency_conflict`、`idempotency_expired`。审计记录 `proposal_created`、`proposal_create_rejected`、`proposal_cancelled`、`proposal_expired`、`proposal_approved`、`proposal_rejected`、`proposal_failed`、`proposal_conflict`，只记 token 前缀与提案摘要（update/delete 摘要含 `tx_id`/`before`/`after`/`changed_fields`/`reason`；转换摘要含 `conversion`/`conversion_id`；批量摘要含 `count`/`actions`/`funds`/`date_range`/`amount_total`/`items`，审批成功逐条记 `add_transaction` 并带 `batch_index`）。
 - 创建/取消与自选写共用写总开关；提案不进入备份 ZIP，恢复备份时会清空未完成提案，避免旧提案指向已替换的数据。
@@ -1055,7 +1119,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 - **撤销**：设置页可随时撤销；撤销立即生效。建议为每个 Agent 单独签发，便于定位和回收。
 - **审计**：签发、撤销、鉴权成功/失败、限流都会写审计日志，只记录 token 前缀，不记录明文或完整响应。
 - **网络**：远程访问必须经 HTTPS 反向代理；不要把端口直接暴露到公网。token 泄漏时先撤销再重新签发。
-- **范围**：只读 scope 覆盖组合、组合曲线、基准、风险、行业敞口、基金、数据状态、交易流水、自选、提醒与定投计划；写 scope 仅开放自选维护、任务化数据刷新、账本提案与可信单笔直记。账本提案必须经网页管理员确认；可信直记需显式签发 `transactions:create`，仅在单笔/每日额度内直接写入普通买入/卖出，预检异常时降级为提案或拒绝，不能修改/删除/转换/定投；`transactions:propose` 另含两个只读预检工具（CSV/条目交易预检与持仓对账预检），受写总闸约束、不写账本，仅返回报告供确认后再提交提案。设置、导入导出与资金划转接口不会开放给 Agent token。
+- **范围**：只读 scope 覆盖组合、组合曲线、基准、风险、行业敞口、基金、数据状态、交易流水、自选、提醒与定投计划；写 scope 仅开放自选维护、任务化数据刷新、账本提案、定投计划提案与可信单笔直记。账本/定投计划提案必须经网页管理员确认；可信直记需显式签发 `transactions:create`，仅在单笔/每日额度内直接写入普通买入/卖出，预检异常时降级为提案或拒绝，不能修改/删除/转换/定投；`transactions:propose` 另含两个只读预检工具（CSV/条目交易预检与持仓对账预检），受写总闸约束、不写账本，仅返回报告供确认后再提交提案。设置、导入导出与资金划转接口不会开放给 Agent token。
 
 ---
 
@@ -1078,3 +1142,4 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 | 2026-11-01 | F3：新增 `precheck_transactions`/`precheck_reconciliation` 两个只读预检工具（复用 `transactions:propose`，受写总闸约束、限流 10 次/分钟）：交易预检支持 CSV 文本或条目数组，逐条做基金识别（查账本 `funds` 表）、字段校验与重复检测；对账预检先做基金识别 + `shares` 校验，合法条目复用 `reconcile_holdings` 生成差额与建议交易。均不写账本、不联网、不创建提案 |
 | 2026-11-01 | F3 加固：`fund_name` 改为只查账本已收录基金（离线、与提案收录要求一致）；命中他人待审提案只判重复不返回 `proposal_id`（新增 `own`）；对账 `maybe_sold` 不再标记可提案并附 `absent_from_input`，被剔除条目不再生成清仓建议；`channel` 增加 50 字符上限；CSV `parse_errors` 补行号；预检成功写审计（仅计数/格式/渠道） |
 | 2026-11-02 | F4：新增 `batch_import` operation_type（复用 `transactions:propose`），单提案最多 50 条追加交易、单次审批、单事务原子写入；创建期逐条校验并硬拒绝字段错误/未收录/批内重复，与账本或待审提案重复仅 warning；审批期先整体校验（基金仍在、参数合法、按渠道最终累计余额批内累加后非负）再写入，任一条失败整批回滚并标记 `conflict`；不支持 `dividend_alert_id`，`clear_existing`/`fetch_meta` 忽略并 warning |
+| 2026-11-02 | F5：新增 `plans:propose` scope 与四种定投计划维护 operation_type（`create_plan`/`update_plan`/`toggle_plan`/`delete_plan`），与 `transactions:propose` 域对称、独立签发；提案工具（`create`/`list`/`get`/`cancel`）改为双域授权（任一 scope 进入、按 `operation_type` 精确复核、`capabilities` 任一命中即列出）。计划操作永不写 transactions 表、不触发调度器执行；新计划强制停用，启停必须走独立 `toggle_plan`；`update`/`toggle`/`delete` 用 `expected_digest`（计划配置摘要，覆盖 `fund_code/amount/cadence/day_of_week/day_of_month/channel/note/enabled`，排除 `next_run`/`last_run`/`last_tx_id`）做版本前置，目标缺失 `404 target_not_found`、失配 `409 target_changed`。`list_auto_invest_plans` 每项新增 `row_digest` 字段。审计事件与网页对齐（`auto_invest_plan_create/update/toggle/delete`，带 `plan_id`+`proposal_id`） |

@@ -4,6 +4,7 @@ import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type {
   OperationProposal,
+  PlanSnapshot,
   ProposalActionResult,
   ProposalStatus,
   ProposalSummary,
@@ -59,6 +60,17 @@ function formatDateTime(iso: string | null): string {
 
 function isBatchSummary(summary: ProposalSummary): boolean {
   return summary.operation_type === "batch_import"
+}
+
+const PLAN_OPERATIONS = new Set([
+  "create_plan",
+  "update_plan",
+  "toggle_plan",
+  "delete_plan",
+])
+
+function isPlanSummary(summary: ProposalSummary): boolean {
+  return PLAN_OPERATIONS.has(summary.operation_type)
 }
 
 function batchActionsText(summary: ProposalSummary): string {
@@ -282,12 +294,16 @@ export default function Proposals() {
                       <TableCell className="hidden md:table-cell">
                         {isBatchSummary(item.summary)
                           ? batchActionsText(item.summary)
-                          : item.summary.action_label}
+                          : isPlanSummary(item.summary)
+                            ? item.summary.schedule ?? item.summary.cadence_label ?? "—"
+                            : item.summary.action_label}
                       </TableCell>
                       <TableCell className="hidden md:table-cell tabular-nums">
                         {isBatchSummary(item.summary)
                           ? batchDateRange(item.summary)
-                          : item.summary.date}
+                          : isPlanSummary(item.summary)
+                            ? item.summary.next_run ?? "—"
+                            : item.summary.date}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {money(
@@ -384,6 +400,8 @@ export default function Proposals() {
 
                 {isBatchSummary(detail.summary) ? (
                   <BatchSection summary={detail.summary} />
+                ) : isPlanSummary(detail.summary) ? (
+                  <PlanSection summary={detail.summary} />
                 ) : (
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
                     <DetailRow label={t.proposals.colFund}>
@@ -465,6 +483,25 @@ export default function Proposals() {
                           {" · "}
                           {t.proposals.txId}: {detail.execution_result.tx_ids.join(", ")}
                         </p>
+                      ) : detail.execution_result.plan_id !== undefined ? (
+                        <div className="space-y-1">
+                          <p className="text-xs">
+                            {t.proposals.planId}: #{detail.execution_result.plan_id}
+                            {detail.execution_result.enabled !== undefined && (
+                              <>
+                                {" · "}
+                                {detail.execution_result.enabled
+                                  ? t.proposals.planStateEnabled
+                                  : t.proposals.planStateDisabled}
+                              </>
+                            )}
+                          </p>
+                          {(detail.execution_result.warnings ?? []).map((w) => (
+                            <p key={w} className="text-xs text-warning">
+                              {w}
+                            </p>
+                          ))}
+                        </div>
                       ) : (
                         <p className="text-xs">
                           {t.proposals.txId}: {detail.execution_result.tx_id}
@@ -528,6 +565,19 @@ export default function Proposals() {
                     {batchDateRange(approveTarget.summary)}
                   </p>
                   <p>{t.proposals.batchApproveHint}</p>
+                </>
+              ) : isPlanSummary(approveTarget.summary) ? (
+                <>
+                  <p>
+                    {approveTarget.summary.title} ·{" "}
+                    {money(approveTarget.summary.amount)} ·{" "}
+                    {approveTarget.summary.schedule ?? approveTarget.summary.cadence_label ?? "—"}
+                  </p>
+                  {approveTarget.summary.scheduler_hint && (
+                    <p className="text-xs text-muted-foreground">
+                      {approveTarget.summary.scheduler_hint}
+                    </p>
+                  )}
                 </>
               ) : (
                 <p>
@@ -805,6 +855,151 @@ function BatchSection({ summary }: { summary: ProposalSummary }) {
           </Table>
         </div>
       </div>
+    </div>
+  )
+}
+
+const PLAN_CADENCE_LABELS: Record<string, (t: {
+  transactions: { daily: string; weekly: string; biweekly: string; monthly: string }
+}) => string> = {
+  daily: (t) => t.transactions.daily,
+  week: (t) => t.transactions.weekly,
+  biweek: (t) => t.transactions.biweekly,
+  month: (t) => t.transactions.monthly,
+}
+
+function planFieldLabel(field: string, t: {
+  proposals: { colFund: string; colAmount: string; channel: string; note: string; planCadence: string; planDayOfWeek: string; planDayOfMonth: string }
+  transactions: { daily: string; weekly: string; biweekly: string; monthly: string }
+}): string {
+  switch (field) {
+    case "fund_code": return t.proposals.colFund
+    case "amount": return t.proposals.colAmount
+    case "cadence": return t.proposals.planCadence
+    case "day_of_week": return t.proposals.planDayOfWeek
+    case "day_of_month": return t.proposals.planDayOfMonth
+    case "channel": return t.proposals.channel
+    case "note": return t.proposals.note
+    default: return field
+  }
+}
+
+function formatPlanField(field: string, value: unknown, t: {
+  transactions: { daily: string; weekly: string; biweekly: string; monthly: string; weekdays: string[] }
+}): string {
+  if (value === null || value === undefined || value === "") return "—"
+  if (field === "amount" && typeof value === "number") return money(value)
+  if (field === "cadence" && typeof value === "string") {
+    return PLAN_CADENCE_LABELS[value]?.(t) ?? value
+  }
+  if (field === "day_of_week" && typeof value === "number") {
+    const weekdays = t.transactions.weekdays
+    return weekdays ? weekdays[value] ?? String(value) : String(value)
+  }
+  return String(value)
+}
+
+function PlanSection({ summary }: { summary: ProposalSummary }) {
+  const { t } = useLang()
+  const op = summary.operation_type
+  const enabledText = (v: boolean | undefined) =>
+    v ? t.proposals.planStateEnabled : t.proposals.planStateDisabled
+  const before = summary.before as PlanSnapshot | undefined
+  const after = summary.after as PlanSnapshot | undefined
+  const changed = summary.changed_fields ?? []
+  return (
+    <div className="space-y-3">
+      {op === "delete_plan" && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3">
+          <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {t.proposals.planDeleteWarn}
+          </p>
+        </div>
+      )}
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+        <DetailRow label={t.proposals.colFund}>
+          {summary.fund_name}
+          <span className="ml-1 font-mono text-xs text-muted-foreground">
+            {summary.fund_code}
+          </span>
+        </DetailRow>
+        {summary.plan_id !== undefined && (
+          <DetailRow label={t.proposals.planId}>#{summary.plan_id}</DetailRow>
+        )}
+        <DetailRow label={t.proposals.colAmount}>{money(summary.amount)}</DetailRow>
+        <DetailRow label={t.proposals.planSchedule}>
+          {summary.schedule || summary.cadence_label || "—"}
+        </DetailRow>
+        {op === "toggle_plan" ? (
+          <DetailRow label={t.proposals.planState}>
+            <span className="line-through text-muted-foreground">
+              {enabledText(summary.enabled_before)}
+            </span>
+            {" → "}
+            <span className="font-medium">{enabledText(summary.enabled_after)}</span>
+          </DetailRow>
+        ) : op === "create_plan" ? (
+          <DetailRow label={t.proposals.planState}>{enabledText(false)}</DetailRow>
+        ) : (
+          <DetailRow label={t.proposals.planState}>
+            {enabledText(summary.enabled)}
+          </DetailRow>
+        )}
+        <DetailRow label={t.proposals.planNextRun}>
+          {summary.next_run || "—"}
+        </DetailRow>
+        {op === "delete_plan" && (
+          <DetailRow label={t.proposals.planLastRun}>
+            {before?.last_run || "—"}
+          </DetailRow>
+        )}
+        <DetailRow label={t.proposals.channel}>
+          {summary.channel || "—"}
+        </DetailRow>
+        {summary.note && (
+          <DetailRow label={t.proposals.note} className="col-span-2">
+            {summary.note}
+          </DetailRow>
+        )}
+      </dl>
+      {op === "update_plan" && before && after && changed.length > 0 && (
+        <div className="rounded-md border border-border p-3">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">
+            {t.proposals.changedFields}：{changed.map((f) => planFieldLabel(f, t)).join("、")}
+          </p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+            <span className="font-medium text-muted-foreground">{t.proposals.diffBefore}</span>
+            <span className="font-medium text-muted-foreground">{t.proposals.diffAfter}</span>
+            {changed.map((field) => {
+              const beforeVal = (before as unknown as Record<string, unknown>)[field]
+              const afterVal = (after as unknown as Record<string, unknown>)[field]
+              const label = planFieldLabel(field, t)
+              return (
+                <Fragment key={field}>
+                  <div>
+                    <span className="text-muted-foreground">{label}：</span>
+                    <span className="line-through text-muted-foreground">
+                      {formatPlanField(field, beforeVal, t)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">{label}：</span>
+                    <span className="font-medium">
+                      {formatPlanField(field, afterVal, t)}
+                    </span>
+                  </div>
+                </Fragment>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {summary.scheduler_hint && (
+        <p className="rounded-md border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground">
+          {summary.scheduler_hint}
+        </p>
+      )}
     </div>
   )
 }

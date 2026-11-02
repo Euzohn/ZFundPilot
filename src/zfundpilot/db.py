@@ -1582,6 +1582,112 @@ def get_due_auto_invest_plans(today: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# 连接感知变体（F5 计划提案）：在 approve_proposal 的 BEGIN IMMEDIATE 事务内
+# 调用，不得自开连接（避免与已持写事务争锁）。语义与非 conn 版本一致。
+# ---------------------------------------------------------------------------
+def get_auto_invest_plan_conn(
+        conn: sqlite3.Connection, plan_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM auto_invest_plans WHERE id=?", (plan_id,)).fetchone()
+
+
+def add_auto_invest_plan_conn(
+        conn: sqlite3.Connection, *,
+        fund_code: str, amount: float, cadence: str,
+        day_of_week: int | None = None,
+        day_of_month: int | None = None,
+        channel: str = "", note: str = "定投",
+        next_run: str | None = None,
+        enabled: int = 1) -> int:
+    """事务内插入定投计划；``enabled`` 显式传入（默认 1 兼容 web 路径，
+    F5 ``create_plan`` 提案传 0 保证「默认不启用」）。"""
+    cur = conn.execute(
+        """INSERT INTO auto_invest_plans
+           (fund_code,amount,cadence,day_of_week,day_of_month,channel,
+            note,enabled,next_run)
+           VALUES(?,?,?,?,?,?,?,?,?)""",
+        (fund_code.strip(), amount, cadence, day_of_week, day_of_month,
+         channel, note, enabled, next_run),
+    )
+    return int(cur.lastrowid)
+
+
+def update_auto_invest_plan_conn(
+        conn: sqlite3.Connection, plan_id: int, **kwargs) -> None:
+    """事务内更新定投计划字段；白名单与 ``update_auto_invest_plan`` 一致。"""
+    allowed = {
+        "fund_code", "amount", "cadence", "day_of_week", "day_of_month",
+        "channel", "note", "enabled", "next_run", "last_run", "last_tx_id",
+    }
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        conn.execute(
+            "UPDATE auto_invest_plans "
+            "SET updated_at=datetime('now','localtime') WHERE id=?",
+            (plan_id,))
+        return
+    fields = ", ".join(f"{k}=?" for k in updates)
+    vals = list(updates.values()) + [plan_id]
+    conn.execute(
+        f"UPDATE auto_invest_plans SET {fields}, "
+        "updated_at=datetime('now','localtime') WHERE id=?",
+        vals,
+    )
+
+
+def delete_auto_invest_plan_conn(
+        conn: sqlite3.Connection, plan_id: int) -> None:
+    conn.execute("DELETE FROM auto_invest_plans WHERE id=?", (plan_id,))
+
+
+# ---------------------------------------------------------------------------
+# 连接感知的交易日历/净值/基金读取（calculate_next_run_conn 的依赖）：
+# 在 BEGIN IMMEDIATE 事务内复用，避免开新连接；缓存口径与非 conn 版本一致。
+# ---------------------------------------------------------------------------
+def get_fund_conn(
+        conn: sqlite3.Connection, fund_code: str) -> Fund | None:
+    row = conn.execute(
+        "SELECT * FROM funds WHERE fund_code=?", (fund_code,)).fetchone()
+    return Fund.from_row(row) if row else None
+
+
+def get_nav_on_or_after_conn(
+        conn: sqlite3.Connection,
+        fund_code: str, date_str: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM nav_history WHERE fund_code=? AND date>=? "
+        "ORDER BY date ASC LIMIT 1",
+        (fund_code, date_str),
+    ).fetchone()
+
+
+def is_trading_day_conn(
+        conn: sqlite3.Connection, date_str: str) -> bool:
+    """连接感知版本：缓存命中直接返回，缓存未命中时用传入连接加载日历。
+
+    口径与 ``is_trading_day`` 完全一致（trade_calendar 表为准，fail-open
+    退化周末判断）。交易日历在提案事务内不会变化，缓存复用安全。
+    """
+    global _trade_cal_cache, _trade_cal_max
+    cal = _trade_cal_cache
+    cal_max = _trade_cal_max
+    if cal is None:
+        rows = conn.execute("SELECT date FROM trade_calendar").fetchall()
+        cal = frozenset(r["date"] for r in rows)
+        cal_max = max(cal) if cal else None
+        _trade_cal_cache, _trade_cal_max = cal, cal_max
+    if not cal:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        return d.weekday() < 5
+    if date_str in cal:
+        return True
+    if cal_max and date_str > cal_max:
+        d = datetime.strptime(date_str, "%Y-%m-%d").date()
+        return d.weekday() < 5
+    return False
+
+
+# ---------------------------------------------------------------------------
 # 自选关注列表
 # ---------------------------------------------------------------------------
 def add_to_watchlist(fund_code: str, note: str = "", group_name: str = "") -> None:

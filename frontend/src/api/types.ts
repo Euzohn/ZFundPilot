@@ -809,6 +809,21 @@ export interface ConversionLeg {
   fee?: number | null
 }
 
+export interface PlanSnapshot {
+  // F5 计划提案：update/toggle/delete 的 before/after 快照形状。
+  fund_code: string
+  amount: number | null
+  cadence: string
+  cadence_label: string
+  day_of_week: number | null
+  day_of_month: number | null
+  channel: string
+  note: string
+  enabled: boolean
+  next_run: string | null
+  last_run: string | null
+}
+
 export interface ProposalSummary {
   operation_type: string
   operation_label: string
@@ -829,8 +844,8 @@ export interface ProposalSummary {
   // F1 update/delete: 目标行快照与修改后值（仅 update_transaction /
   // delete_transaction 提案携带）。
   tx_id?: number
-  before?: TransactionSnapshot
-  after?: TransactionSnapshot
+  before?: TransactionSnapshot | PlanSnapshot
+  after?: TransactionSnapshot | PlanSnapshot
   changed_fields?: string[]
   reason?: string
   // F2 转换提案：两腿明细（add_conversion / delete_conversion 携带）。
@@ -846,6 +861,19 @@ export interface ProposalSummary {
   date_range?: { from: string; to: string }
   amount_total?: number
   items?: BatchImportItem[]
+  // F5 定投计划提案（create_plan / update_plan / toggle_plan / delete_plan
+  // 携带）。before/after 复用 PlanSnapshot 形状。
+  plan_id?: number
+  cadence?: string
+  cadence_label?: string
+  schedule?: string
+  day_of_week?: number | null
+  day_of_month?: number | null
+  enabled?: boolean
+  enabled_before?: boolean
+  enabled_after?: boolean
+  next_run?: string | null
+  scheduler_hint?: string
 }
 
 export interface BatchImportItem {
@@ -883,6 +911,12 @@ export interface ProposalExecution {
   other_index?: number
   available?: number
   executed_before_failure?: number
+  // F5 定投计划执行结果（create/update/toggle/delete_plan 携带）。
+  plan_id?: number
+  enabled?: boolean
+  next_run?: string | null
+  cadence?: string
+  warnings?: string[]
 }
 
 export interface OperationProposal {

@@ -65,6 +65,9 @@ mcp = FastMCP(
         "Watchlist writes and data refresh are direct low-risk writes. "
         "Ledger changes are proposal-only by default: create_operation_proposal "
         "never writes the ledger; an administrator must approve it in the web UI. "
+        "Auto-invest plan maintenance (create_plan/update_plan/toggle_plan/"
+        "delete_plan) goes through the same proposal tool and requires the "
+        "plans:propose scope; new plans are always created disabled. "
         "record_transaction is a separately authorized direct-write path for a "
         "single buy/sell the user explicitly says already happened elsewhere; it "
         "requires transactions:create and may still be downgraded to a proposal "
@@ -553,11 +556,26 @@ async def create_operation_proposal(
         are validated first and written atomically on approval: either every
         row is inserted or none. Use this instead of many add_transaction
         proposals when importing a batch of already-happened trades.
+      - "create_plan": create an auto-invest (DCA) plan. New plans are always
+        created disabled; the scheduler never runs them until an admin
+        approves a separate toggle_plan proposal. Plan operations never write
+        transactions.
+      - "update_plan": modify plan config fields (partial patch). Requires
+        plan_id and its current row_digest (from list_auto_invest_plans).
+        Explicit null clears day_of_week/day_of_month; the merged config is
+        re-validated as a whole.
+      - "toggle_plan": enable or disable a plan. Requires plan_id,
+        row_digest, and an explicit enable boolean. next_run is not
+        recomputed (same behavior as the web UI toggle); enabling a plan
+        whose next_run is overdue lets the scheduler catch up one run soon.
+      - "delete_plan": delete a plan. Requires plan_id and row_digest.
+        Historical transactions are kept.
 
     Args:
         operation_type: "add_transaction", "update_transaction",
-            "delete_transaction", "add_conversion", "delete_conversion", or
-            "batch_import".
+            "delete_transaction", "add_conversion", "delete_conversion",
+            "batch_import", "create_plan", "update_plan", "toggle_plan", or
+            "delete_plan".
         params: For add_transaction: fund_code, action (buy/sell/dividend/
             reinvest), date (YYYY-MM-DD), fee, channel, note, is_t1, optional
             dividend_alert_id (dividend/reinvest only), and the
@@ -582,17 +600,29 @@ async def create_operation_proposal(
             (required, no fund_name), action, date, the amount/shares/nav
             combination required by the action, and optional fee/channel/note/
             is_t1; plus an optional overall note. Never clears existing rows.
+            For create_plan: fund_code, amount (>0), cadence (daily/week/
+            biweek/month), day_of_week (0-6, 0=Monday; required for week/
+            biweek, forbidden otherwise), day_of_month (1-31; required for
+            month, forbidden otherwise), optional channel/note. enabled,
+            next_run, last_run and last_tx_id are rejected.
+            For update_plan: plan_id, expected_digest (the row_digest from
+            list_auto_invest_plans), plus any subset of the create_plan
+            config fields to change.
+            For toggle_plan: plan_id, expected_digest, enable (bool).
+            For delete_plan: plan_id, expected_digest.
         idempotency_key: Unique retry key (16-128 chars); same key+params
             returns the same proposal.
     """
     _validate_write_key(idempotency_key)
     if operation_type not in (
             "add_transaction", "update_transaction", "delete_transaction",
-            "add_conversion", "delete_conversion", "batch_import"):
+            "add_conversion", "delete_conversion", "batch_import",
+            "create_plan", "update_plan", "toggle_plan", "delete_plan"):
         raise ToolError(
             'operation_type must be "add_transaction", "update_transaction", '
             '"delete_transaction", "add_conversion", "delete_conversion", '
-            'or "batch_import".')
+            '"batch_import", "create_plan", "update_plan", "toggle_plan", '
+            'or "delete_plan".')
     if not isinstance(params, dict):
         raise ToolError("params must be an object.")
     return await _post(
@@ -813,6 +843,11 @@ async def list_auto_invest_plans(
     offset: Annotated[int, Field(ge=0)] = 0,
 ) -> dict[str, Any]:
     """List auto-invest plans with derived status (active/paused/due).
+
+    Each plan carries a row_digest: the config fingerprint required as
+    expected_digest by update_plan/toggle_plan/delete_plan proposals
+    (create_operation_proposal). Re-read it before proposing if the plan
+    may have changed.
 
     Skip reasons are not persisted per plan, so they are not reported.
 

@@ -252,13 +252,14 @@ class TestUpdatePlan:
         assert result.data["plan_id"] == pid
 
     def test_update_merge_validates_cross_rules(self, temp_db):
-        # 原为 week+day_of_week=0；patch 改 cadence=month 但未清 day_of_week。
+        # 原为 week+day_of_week=0；patch 改 cadence=month、补 day_of_month，
+        # 但未清 day_of_week → 合并后 month 频率仍带 day_of_week，应拒绝。
         pid = _make_existing_plan()
         with pytest.raises(svc.ProposalValidationError) as exc_info:
             svc.create_proposal(
                 _plans_principal(), operation_type=svc.OPERATION_UPDATE_PLAN,
                 params={"plan_id": pid, "expected_digest": _digest(pid),
-                        "cadence": "month"},
+                        "cadence": "month", "day_of_month": 15},
                 idempotency_key=KEY_A)
         assert exc_info.value.field == "day_of_week"
 
@@ -418,15 +419,32 @@ class TestHttp:
         assert r.status_code == 403
 
     def test_list_get_cancel_work_with_either_scope(self, client):
-        pid = _create_plan(_plans_principal(), WEEKLY).data["proposal_id"]
-        for scopes in ([agent_tokens.SCOPE_TRANSACTIONS_PROPOSE],
-                       [agent_tokens.SCOPE_PLANS_PROPOSE]):
-            headers = _headers(list(scopes))
+        # list/get/cancel 是双域工具：任一 scope 均可操作**自己**创建的提案。
+        # 提案按 principal 隔离，故必须用同一 token 创建后再读取。
+        cases = [
+            ([agent_tokens.SCOPE_TRANSACTIONS_PROPOSE], "add_transaction",
+             {"fund_code": "005827", "action": "buy", "date": "2026-01-02",
+              "amount": 1000.0, "shares": 100.0, "nav": 10.0, "fee": 1.0,
+              "channel": "支付宝"},
+             "list-key-ledger-0123456789"),
+            ([agent_tokens.SCOPE_PLANS_PROPOSE], "create_plan", WEEKLY,
+             "list-key-plan-0123456789"),
+        ]
+        for scopes, op_type, params, key in cases:
+            headers = _headers(list(scopes), key=key)
+            r = client.post(PROPOSALS_PATH, headers=headers, json={
+                "operation_type": op_type, "params": params})
+            assert r.status_code == 201, r.text
+            pid = r.json()["data"]["proposal_id"]
             r = client.get("/api/agent/tools/proposals", headers=headers)
             assert r.status_code == 200
+            assert [p["proposal_id"] for p in r.json()["data"]["items"]] == [pid]
             r = client.get(f"{PROPOSALS_PATH}/{pid}", headers=headers)
             assert r.status_code == 200
             assert r.json()["data"]["proposal_id"] == pid
+            r = client.delete(f"{PROPOSALS_PATH}/{pid}", headers=headers)
+            assert r.status_code == 200
+            assert r.json()["data"]["status"] == svc.STATUS_CANCELLED
 
     def test_write_disabled_blocks(self, client, monkeypatch):
         monkeypatch.setattr(config, "AGENT_WRITE_ENABLED", False)

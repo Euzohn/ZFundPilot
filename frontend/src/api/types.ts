@@ -874,6 +874,22 @@ export interface ProposalSummary {
   enabled_after?: boolean
   next_run?: string | null
   scheduler_hint?: string
+  // F6.1 提醒处理提案（resolve_alert 携带）。只推进提醒状态机，不写账本。
+  alert_id?: number
+  alert_type?: string
+  alert_type_label?: string
+  before_status?: string | null
+  after_status?: string
+  linked_tx_id?: number | null
+  record_date?: string | null
+  ex_date?: string | null
+  pay_date?: string | null
+  per_share?: number | null
+  held_shares?: number | null
+  estimated_amount?: number | null
+  dividend_method?: string | null
+  triggered_return?: number | null
+  threshold?: number | null
 }
 
 export interface BatchImportItem {

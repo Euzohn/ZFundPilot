@@ -48,6 +48,9 @@ SCOPE_PLANS_PROPOSE = "plans:propose"
 # 可信直记 scope：仅授权新增单笔普通买入/卖出，直接写账本（F0）。
 # 与提案 scope 相互独立，不自动附带；默认不勾选，旧 token 不扩权。
 SCOPE_TRANSACTIONS_CREATE = "transactions:create"
+# 提醒处理提案 scope（F6.1）：确认/忽略分红与止盈止损提醒，只提交待审批
+# 提案；提醒状态机独立于账本，与 transactions:propose 互不附带。
+SCOPE_ALERTS_PROPOSE = "alerts:propose"
 
 # 写 scope 仅开放低风险自选维护、任务化数据刷新、账本提案与可信单笔直记；
 # 均受 config.AGENT_WRITE_ENABLED 总开关约束。直记是管理员对特定 token 的
@@ -65,6 +68,7 @@ ALLOWED_SCOPES = frozenset({
     SCOPE_TRANSACTIONS_PROPOSE,
     SCOPE_PLANS_PROPOSE,
     SCOPE_TRANSACTIONS_CREATE,
+    SCOPE_ALERTS_PROPOSE,
 })
 
 # 写 scope 集合：用于能力发现、审计与前端风险提示，避免把写权限当只读展示。
@@ -74,10 +78,15 @@ WRITE_SCOPES = frozenset({
     SCOPE_TRANSACTIONS_PROPOSE,
     SCOPE_PLANS_PROPOSE,
     SCOPE_TRANSACTIONS_CREATE,
+    SCOPE_ALERTS_PROPOSE,
 })
 
 # 提案 scope 集合：仅可提交待审批提案，执行权限只属于网页管理员。
-PROPOSE_SCOPES = frozenset({SCOPE_TRANSACTIONS_PROPOSE, SCOPE_PLANS_PROPOSE})
+PROPOSE_SCOPES = frozenset({
+    SCOPE_TRANSACTIONS_PROPOSE,
+    SCOPE_PLANS_PROPOSE,
+    SCOPE_ALERTS_PROPOSE,
+})
 
 # 新 scope 默认不勾选：签发页面需显式选择，避免存量流程静默扩权。
 DEFAULT_SCOPES: tuple[str, ...] = (

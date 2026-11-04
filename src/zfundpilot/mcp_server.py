@@ -68,6 +68,9 @@ mcp = FastMCP(
         "Auto-invest plan maintenance (create_plan/update_plan/toggle_plan/"
         "delete_plan) goes through the same proposal tool and requires the "
         "plans:propose scope; new plans are always created disabled. "
+        "Alert resolution (resolve_alert) also goes through the same tool and "
+        "requires alerts:propose; it only advances the alert state and never "
+        "writes the transactions table. "
         "record_transaction is a separately authorized direct-write path for a "
         "single buy/sell the user explicitly says already happened elsewhere; it "
         "requires transactions:create and may still be downgraded to a proposal "
@@ -529,7 +532,7 @@ async def create_operation_proposal(
     params: dict[str, Any],
     idempotency_key: str,
 ) -> dict[str, Any]:
-    """Create a ledger proposal for a human to approve in the web UI.
+    """Create a ledger/plan/alert proposal for a human to approve in the web UI.
 
     This does NOT write the ledger. It only creates a pending proposal; the
     administrator must approve it on the Proposals page in the ZFundPilot web
@@ -570,12 +573,20 @@ async def create_operation_proposal(
         whose next_run is overdue lets the scheduler catch up one run soon.
       - "delete_plan": delete a plan. Requires plan_id and row_digest.
         Historical transactions are kept.
+      - "resolve_alert": advance a pending dividend or take-profit/stop-loss
+        alert to confirmed or ignored. Requires the alert's alert_type,
+        alert_id, expected_digest (the row_digest from list_alerts), and
+        status (confirmed/ignored; no rollback to pending). A dividend alert
+        confirmed with status=confirmed may optionally carry tx_id to link one
+        existing dividend/reinvestment transaction; no new transaction is
+        created. This operation only advances the alert state and never
+        writes the transactions table.
 
     Args:
         operation_type: "add_transaction", "update_transaction",
             "delete_transaction", "add_conversion", "delete_conversion",
-            "batch_import", "create_plan", "update_plan", "toggle_plan", or
-            "delete_plan".
+            "batch_import", "create_plan", "update_plan", "toggle_plan",
+            "delete_plan", or "resolve_alert".
         params: For add_transaction: fund_code, action (buy/sell/dividend/
             reinvest), date (YYYY-MM-DD), fee, channel, note, is_t1, optional
             dividend_alert_id (dividend/reinvest only), and the
@@ -610,6 +621,11 @@ async def create_operation_proposal(
             config fields to change.
             For toggle_plan: plan_id, expected_digest, enable (bool).
             For delete_plan: plan_id, expected_digest.
+            For resolve_alert: alert_type (dividend/take_profit/stop_loss),
+            alert_id, expected_digest (the row_digest from list_alerts),
+            status (confirmed/ignored; no rollback to pending), and an
+            optional tx_id (dividend + confirmed only; links one existing
+            dividend/reinvestment transaction, does not create one).
         idempotency_key: Unique retry key (16-128 chars); same key+params
             returns the same proposal.
     """
@@ -617,12 +633,13 @@ async def create_operation_proposal(
     if operation_type not in (
             "add_transaction", "update_transaction", "delete_transaction",
             "add_conversion", "delete_conversion", "batch_import",
-            "create_plan", "update_plan", "toggle_plan", "delete_plan"):
+            "create_plan", "update_plan", "toggle_plan", "delete_plan",
+            "resolve_alert"):
         raise ToolError(
             'operation_type must be "add_transaction", "update_transaction", '
             '"delete_transaction", "add_conversion", "delete_conversion", '
             '"batch_import", "create_plan", "update_plan", "toggle_plan", '
-            'or "delete_plan".')
+            '"delete_plan", or "resolve_alert".')
     if not isinstance(params, dict):
         raise ToolError("params must be an object.")
     return await _post(
@@ -816,6 +833,10 @@ async def list_alerts(
     """List dividend and take-profit/stop-loss alerts.
 
     status is a business processing state (pending/confirmed/ignored), not read/unread.
+
+    Each alert includes row_digest: use it as the expected_digest for
+    resolve_alert proposals (it covers the alert's business fields plus
+    status/resolved_at/tx_id, so any state change alters it).
 
     Args:
         type: Optional dividend/take_profit/stop_loss/tp_sl.

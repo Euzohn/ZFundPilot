@@ -76,6 +76,9 @@ PLAN_OPERATIONS = frozenset({
     OPERATION_TOGGLE_PLAN,
     OPERATION_DELETE_PLAN,
 })
+# F6.1：提醒处理。只推进提醒状态机（pending → confirmed/ignored），
+# 不写 transactions 表，也不支持 pending 回滚（人工走网页更正）。
+OPERATION_RESOLVE_ALERT = "resolve_alert"
 ALLOWED_OPERATIONS = frozenset({
     OPERATION_ADD_TRANSACTION,
     OPERATION_UPDATE_TRANSACTION,
@@ -84,6 +87,7 @@ ALLOWED_OPERATIONS = frozenset({
     OPERATION_DELETE_CONVERSION,
     OPERATION_BATCH_IMPORT,
     *PLAN_OPERATIONS,
+    OPERATION_RESOLVE_ALERT,
 })
 OPERATION_LABELS = {
     OPERATION_ADD_TRANSACTION: "新增交易",
@@ -96,6 +100,7 @@ OPERATION_LABELS = {
     OPERATION_UPDATE_PLAN: "修改定投",
     OPERATION_TOGGLE_PLAN: "启停定投",
     OPERATION_DELETE_PLAN: "删除定投",
+    OPERATION_RESOLVE_ALERT: "处理提醒",
 }
 
 # 计划展示标签（summary_json 与既有中文标题口径一致）。
@@ -144,6 +149,7 @@ OPERATION_SCOPE = {
     OPERATION_UPDATE_PLAN: agent_tokens.SCOPE_PLANS_PROPOSE,
     OPERATION_TOGGLE_PLAN: agent_tokens.SCOPE_PLANS_PROPOSE,
     OPERATION_DELETE_PLAN: agent_tokens.SCOPE_PLANS_PROPOSE,
+    OPERATION_RESOLVE_ALERT: agent_tokens.SCOPE_ALERTS_PROPOSE,
 }
 
 
@@ -568,6 +574,42 @@ def _build_summary(fund_name: str, operation_type: str,
             "before": before_fields,
             "warnings": warnings,
         }
+    if operation_type == OPERATION_RESOLVE_ALERT:
+        before_fields = _alert_snapshot(before) if before is not None else {}
+        alert_type = params["alert_type"]
+        alert_label = {
+            "dividend": "分红提醒",
+            "take_profit": "止盈提醒",
+            "stop_loss": "止损提醒",
+        }.get(alert_type, alert_type)
+        target_status = params["status"]
+        if alert_type == "dividend" and target_status == "confirmed" and (
+                params.get("tx_id") is None):
+            warnings.append(
+                "未关联分红流水：仅把提醒标记为已处理，不写入或匹配交易")
+        return {
+            "operation_type": operation_type,
+            "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
+            "title": f"处理{alert_label} #{params['alert_id']}",
+            "alert_id": params["alert_id"],
+            "alert_type": alert_type,
+            "alert_type_label": alert_label,
+            "fund_code": before_fields.get("fund_code", ""),
+            "fund_name": fund_name,
+            "before_status": before_fields.get("status"),
+            "after_status": target_status,
+            "linked_tx_id": params.get("tx_id"),
+            "record_date": before_fields.get("record_date"),
+            "ex_date": before_fields.get("ex_date"),
+            "pay_date": before_fields.get("pay_date"),
+            "per_share": before_fields.get("per_share"),
+            "held_shares": before_fields.get("held_shares"),
+            "estimated_amount": before_fields.get("estimated_amount"),
+            "dividend_method": before_fields.get("dividend_method"),
+            "triggered_return": before_fields.get("triggered_return"),
+            "threshold": before_fields.get("threshold"),
+            "warnings": warnings,
+        }
     # 兜底：不应到达
     return {"operation_type": operation_type,
             "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
@@ -647,6 +689,47 @@ def _row_snapshot(row: dict | sqlite3.Row | Transaction | None) -> dict[str, Any
         "note": row.get("note") or "",
         "is_t1": bool(row.get("is_t1", False)),
     }
+
+
+ALERT_TYPES = frozenset({"dividend", "take_profit", "stop_loss"})
+# 提醒摘要覆盖「可变更业务字段」：任何状态推进或 tx 关联都会改变摘要，
+# 供 resolve_alert 的 expected_digest 做版本前置（防并发覆盖）。
+ALERT_DIGEST_FIELDS = (
+    "status", "resolved_at", "tx_id",
+    "record_date", "ex_date", "per_share", "pay_date", "held_shares",
+    "estimated_amount", "dividend_method", "triggered_return", "threshold",
+)
+ALERT_DISPLAY_FIELDS = (
+    "id", "alert_type", "fund_code", "fund_name", "status",
+    "record_date", "ex_date", "pay_date", "per_share", "held_shares",
+    "estimated_amount", "dividend_method", "triggered_return", "threshold",
+    "resolved_at", "tx_id",
+)
+
+
+def alert_row_digest(row: sqlite3.Row | dict) -> str:
+    """对提醒行的业务字段做规范 SHA-256（F6.1 版本前置）。
+
+    分红与止盈止损同表（``dividend_alerts``）；``alert_type`` 为 NULL 的旧行
+    按 ``dividend`` 归一，与 ``list_alerts`` 输出口径一致。
+    """
+    data = dict(row) if isinstance(row, sqlite3.Row) else row
+    payload: dict[str, Any] = {
+        "id": int(data.get("id") or 0),
+        "alert_type": data.get("alert_type") or "dividend",
+        "fund_code": data.get("fund_code") or "",
+    }
+    for name in ALERT_DIGEST_FIELDS:
+        payload[name] = _norm_field(data.get(name))
+    return hashlib.sha256(_canonical(payload).encode("utf-8")).hexdigest()
+
+
+def _alert_snapshot(row: sqlite3.Row | dict) -> dict[str, Any]:
+    """提醒展示快照（只含可读字段，不含内部 token/审计信息）。"""
+    data = dict(row) if isinstance(row, sqlite3.Row) else row
+    snapshot = {field: data.get(field) for field in ALERT_DISPLAY_FIELDS}
+    snapshot["alert_type"] = data.get("alert_type") or "dividend"
+    return snapshot
 
 
 def fund_name_in_conn(conn: sqlite3.Connection, fund_code: str) -> str | None:
@@ -910,6 +993,19 @@ def create_pending_proposal_conn(
                     clean["enable"] and before_data.get("next_run")
                     and before_data["next_run"] <= today)
         extra_warnings = extra
+    elif operation_type == OPERATION_RESOLVE_ALERT:
+        # 提醒可能引用已从 funds 表移除的基金：展示尽力取名称，不阻断处理。
+        fund_name = (fund_name_in_conn(conn, resolved_fund_code)
+                     or resolved_fund_code or "")
+        extra = list(extra_warnings or [])
+        related = conn.execute(
+            "SELECT COUNT(*) FROM operation_proposals "
+            "WHERE status='pending' AND operation_type=?",
+            (OPERATION_RESOLVE_ALERT,)).fetchone()[0]
+        if related:
+            extra.append(
+                f"当前有 {related} 个待审提醒处理提案，建议先处理再提交新提案")
+        extra_warnings = extra
     else:
         fund_name = (fund_name_in_conn(conn, resolved_fund_code)
                      if resolved_fund_code else None)
@@ -971,6 +1067,12 @@ def create_pending_proposal_conn(
         if operation_type == OPERATION_CREATE_PLAN:
             audit_detail["amount"] = clean.get("amount")
             audit_detail["cadence"] = clean.get("cadence")
+    elif operation_type == OPERATION_RESOLVE_ALERT:
+        audit_detail["alert_id"] = clean.get("alert_id")
+        audit_detail["alert_type"] = clean.get("alert_type")
+        audit_detail["status"] = clean.get("status")
+        if clean.get("tx_id") is not None:
+            audit_detail["tx_id"] = clean.get("tx_id")
     else:
         audit_detail["tx_id"] = clean.get("tx_id")
     if origin:
@@ -1281,6 +1383,55 @@ def validate_delete_plan_params(params: object) -> dict[str, Any]:
     return {"plan_id": plan_id, "expected_digest": expected_digest}
 
 
+def validate_resolve_alert_params(params: object) -> dict[str, Any]:
+    """校验 ``resolve_alert``：提醒类型/ID/目标状态 + 版本前置 + 可选 tx_id。
+
+    只允许 ``pending -> confirmed|ignored`` 单向推进，不支持回滚到 pending。
+    ``tx_id`` 仅用于把**已存在**的分红/再投资流水关联到分红提醒；止盈止损
+    提醒不接受 tx_id。
+    """
+    if not isinstance(params, dict):
+        raise ProposalValidationError("params", "params 必须是对象")
+    allowed = {"alert_type", "alert_id", "expected_digest", "status", "tx_id"}
+    unknown = set(params) - allowed
+    if unknown:
+        raise ProposalValidationError(
+            "params", f"包含不支持的参数：{', '.join(sorted(unknown))}")
+    alert_type = params.get("alert_type")
+    if alert_type not in ALERT_TYPES:
+        raise ProposalValidationError(
+            "alert_type", f"alert_type 仅支持 {' / '.join(sorted(ALERT_TYPES))}")
+    alert_id = params.get("alert_id")
+    if isinstance(alert_id, bool) or not isinstance(alert_id, int) or alert_id <= 0:
+        raise ProposalValidationError("alert_id", "alert_id 必须是正整数")
+    expected_digest = params.get("expected_digest")
+    if not isinstance(expected_digest, str) or not _DIGEST_RE.fullmatch(
+            expected_digest.strip().lower()):
+        raise ProposalValidationError(
+            "expected_digest",
+            "expected_digest 必须是 64 位十六进制"
+            "（取自 list_alerts 返回的 row_digest）")
+    status = params.get("status")
+    if status not in ("confirmed", "ignored"):
+        raise ProposalValidationError(
+            "status", "status 仅支持 confirmed / ignored"
+            "（不支持回滚为 pending，误处理请走网页更正）")
+    tx_id = params.get("tx_id")
+    if tx_id is not None:
+        if isinstance(tx_id, bool) or not isinstance(tx_id, int) or tx_id <= 0:
+            raise ProposalValidationError("tx_id", "tx_id 必须是正整数")
+        if alert_type != "dividend" or status != "confirmed":
+            raise ProposalValidationError(
+                "tx_id", "tx_id 仅支持分红提醒且 status=confirmed 时关联")
+    return {
+        "alert_type": alert_type,
+        "alert_id": alert_id,
+        "expected_digest": expected_digest.strip().lower(),
+        "status": status,
+        "tx_id": tx_id,
+    }
+
+
 def _merge_plan_patch(row: dict | sqlite3.Row, clean: dict) -> dict[str, Any]:
     """把 update patch 合并到当前行配置；patch 显式 null 表示清除该字段。"""
     base = dict(row) if isinstance(row, sqlite3.Row) else row
@@ -1340,6 +1491,36 @@ def _resolve_plan_row(
     return row, None
 
 
+def _validate_alert_tx_link(
+        conn: sqlite3.Connection, alert: sqlite3.Row,
+        tx_id: int) -> ProposalResult | None:
+    """校验分红提醒关联的流水：存在、分红/再投资、同基金、未被占用。"""
+    tx = db.get_transaction_conn(conn, tx_id)
+    if tx is None:
+        return ProposalResult(
+            409, "tx_not_found", f"未找到要关联的交易 {tx_id}",
+            {"alert_id": alert["id"], "tx_id": tx_id})
+    if tx["action"] not in ("dividend", "reinvest"):
+        return ProposalResult(
+            409, "tx_mismatch",
+            "关联流水必须是分红或红利再投资交易",
+            {"alert_id": alert["id"], "tx_id": tx_id, "action": tx["action"]})
+    if (tx["fund_code"] or "").strip() != (alert["fund_code"] or "").strip():
+        return ProposalResult(
+            409, "tx_mismatch", "关联流水与提醒的基金不一致",
+            {"alert_id": alert["id"], "tx_id": tx_id})
+    linked = conn.execute(
+        "SELECT id FROM dividend_alerts WHERE tx_id=? AND id<>? LIMIT 1",
+        (tx_id, alert["id"])).fetchone()
+    if linked is not None:
+        return ProposalResult(
+            409, "tx_already_linked",
+            f"该流水已关联提醒 #{linked['id']}，不能重复关联",
+            {"alert_id": alert["id"], "tx_id": tx_id,
+             "linked_alert_id": linked["id"]})
+    return None
+
+
 def _validate_proposal_params(operation_type: str, params: object) -> dict:
     """按操作类型分派参数校验；返回规范化后的参数字典。"""
     if operation_type == OPERATION_ADD_TRANSACTION:
@@ -1362,6 +1543,8 @@ def _validate_proposal_params(operation_type: str, params: object) -> dict:
         return validate_toggle_plan_params(params)
     if operation_type == OPERATION_DELETE_PLAN:
         return validate_delete_plan_params(params)
+    if operation_type == OPERATION_RESOLVE_ALERT:
+        return validate_resolve_alert_params(params)
     raise ProposalValidationError(
         "operation_type", f"操作类型不受支持：{operation_type}")
 
@@ -1509,6 +1692,34 @@ def create_proposal(principal: Principal, *, operation_type: object,
                         raise ProposalValidationError(
                             "enable", "计划已处于该状态，无需启停（请核对 "
                             "row_digest 是否为最新）")
+        elif operation_type == OPERATION_RESOLVE_ALERT:
+            alert = db.get_dividend_alert_conn(conn, int(clean["alert_id"]))
+            if alert is None:
+                return ProposalResult(
+                    404, "target_not_found", "未找到该提醒，可能已被删除",
+                    {"alert_id": clean["alert_id"]})
+            actual_type = alert["alert_type"] or "dividend"
+            if actual_type != clean["alert_type"]:
+                raise ProposalValidationError(
+                    "alert_type",
+                    f"提醒类型不匹配：该提醒实际为 {actual_type}")
+            if (alert["status"] or "pending") != "pending":
+                return ProposalResult(
+                    409, "not_pending", "该提醒已处理，无需重复提案",
+                    {"alert_id": alert["id"], "status": alert["status"]})
+            if alert_row_digest(alert) != clean["expected_digest"]:
+                return ProposalResult(
+                    409, "target_changed",
+                    "提醒内容已变化，请通过 list_alerts 重新读取 "
+                    "row_digest 后再提案",
+                    {"alert_id": alert["id"]})
+            tx_id = clean.get("tx_id")
+            if tx_id is not None:
+                error = _validate_alert_tx_link(conn, alert, tx_id)
+                if error is not None:
+                    return error
+            before = _alert_snapshot(alert)
+            fund_code = alert["fund_code"]
 
         created = create_pending_proposal_conn(
             conn, principal, clean=clean, digest=digest, now=now, ip=ip,
@@ -2087,6 +2298,75 @@ def _exec_delete_plan(conn: sqlite3.Connection, row: sqlite3.Row,
     return execution, audit_id
 
 
+def _exec_resolve_alert(conn: sqlite3.Connection, row: sqlite3.Row,
+                        clean: dict, pid: int, reviewer: str,
+                        now: datetime, ip: str | None):
+    """执行 resolve_alert：只推进提醒状态机，不写账本。"""
+    alert_id = int(clean["alert_id"])
+    target = db.get_dividend_alert_conn(conn, alert_id)
+    if target is None:
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="target_deleted", message="目标提醒已被删除，无需再处理",
+            extra={"alert_id": alert_id})
+    actual_type = target["alert_type"] or "dividend"
+    if actual_type != clean["alert_type"]:
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="alert_type_changed",
+            message="提醒类型已变化，请重新读取后再提案",
+            extra={"alert_id": alert_id})
+    # 先判状态：任何状态推进都会改变摘要，若先比摘要只会得到笼统的
+    # target_changed，反而丢失「已处理」这一更可操作的提示。
+    if (target["status"] or "pending") != "pending":
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="not_pending", message="提醒已处理，不能重复审批",
+            extra={"alert_id": alert_id, "status": target["status"]})
+    if alert_row_digest(target) != clean["expected_digest"]:
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="target_changed",
+            message="提醒已被处理或修改，请重新读取 row_digest 后再提案",
+            extra={"alert_id": alert_id})
+
+    tx_id = clean.get("tx_id")
+    if tx_id is not None:
+        error = _validate_alert_tx_link(conn, target, int(tx_id))
+        if error is not None:
+            return _mark_failure(
+                conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+                reason=error.code, message=error.message,
+                extra={"alert_id": alert_id, "tx_id": int(tx_id)})
+
+    before = _alert_snapshot(target)
+    status = clean["status"]
+    resolved_at = now.isoformat()
+    db.update_dividend_alert_conn(
+        conn, alert_id, status=status, resolved_at=resolved_at, tx_id=tx_id)
+    # 审计事件与网页对齐：分红归 dividend_alert_update，止盈止损归
+    # tp_sl_alert_update；detail 带 proposal_id 区分来源。
+    web_action = (
+        "dividend_alert_update" if actual_type == "dividend"
+        else "tp_sl_alert_update")
+    db.log_audit(
+        web_action, ip=ip, username=reviewer,
+        detail={"id": alert_id, "status": status, "tx_id": tx_id,
+                "proposal_id": pid},
+        conn=conn,
+    )
+    execution = {
+        "ok": True, "alert_id": alert_id, "alert_type": actual_type,
+        "before_status": before.get("status"), "status": status,
+        "resolved_at": resolved_at, "tx_id": tx_id,
+    }
+    audit_id = _audit(conn, None, ip, "proposal_approved", {
+        "proposal_id": pid, "operation_type": row["operation_type"],
+        "alert_id": alert_id, "alert_type": actual_type,
+        "status": status}, reviewer=reviewer)
+    return execution, audit_id
+
+
 def _exec_update_transaction(conn: sqlite3.Connection, row: sqlite3.Row,
                              clean: dict, pid: int, reviewer: str,
                              now: datetime, ip: str | None):
@@ -2409,6 +2689,9 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
         elif operation_type == OPERATION_DELETE_PLAN:
             outcome = _exec_delete_plan(
                 conn, row, clean, pid, reviewer, now, ip)
+        elif operation_type == OPERATION_RESOLVE_ALERT:
+            outcome = _exec_resolve_alert(
+                conn, row, clean, pid, reviewer, now, ip)
         else:
             return _mark_failure(
                 conn, row, reviewer, now, ip, status=STATUS_FAILED,
@@ -2425,8 +2708,11 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
         updated = db.get_proposal(conn, pid)
 
     analysis.clear_analysis_cache()
+    message = ("提案已批准，提醒状态已更新"
+               if operation_type == OPERATION_RESOLVE_ALERT
+               else "提案已批准并写入账本")
     return ProposalResult(
-        200, "succeeded", "提案已批准并写入账本",
+        200, "succeeded", message,
         proposal_row_to_dict(updated, now))
 
 

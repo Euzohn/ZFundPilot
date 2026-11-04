@@ -838,7 +838,7 @@ def require_agent_scope(required_scope: str | None):
 
 
 def require_any_agent_scope(required_scopes: tuple[str, ...]):
-    """构造 FastAPI 依赖：任一 scope 命中即通过（如提案工具双域授权）。
+    """构造 FastAPI 依赖：任一 scope 命中即通过（如提案工具多域授权）。
 
     失败语义、审计与限流与 ``require_agent_scope`` 完全一致；403 文案列出
     全部可接受 scope，便于客户端修正授权。
@@ -1407,6 +1407,8 @@ def _agent_alert_item(row: dict) -> dict[str, Any]:
     item = {field: row.get(field) for field in _AGENT_ALERT_FIELDS}
     if item["alert_type"] is None:
         item["alert_type"] = "dividend"
+    # F6.1：提醒版本前置摘要（resolve_alert 的 expected_digest）。
+    item["row_digest"] = proposal_service.alert_row_digest(row)
     return item
 
 
@@ -1968,15 +1970,17 @@ def agent_create_proposal(
         agent_tokens.AgentTokenContext,
         Depends(require_any_agent_scope(
             (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
-             agent_tokens.SCOPE_PLANS_PROPOSE))),
+             agent_tokens.SCOPE_PLANS_PROPOSE,
+             agent_tokens.SCOPE_ALERTS_PROPOSE))),
     ],
 ) -> dict[str, Any]:
     """创建待审批提案；不写账本/计划，管理员确认后才由服务端执行。
 
-    双域授权：账本类操作（add/update/delete_transaction、conversion、
+    多域授权：账本类操作（add/update/delete_transaction、conversion、
     batch_import）需 transactions:propose；定投计划类操作
-    （create/update/toggle/delete_plan）需 plans:propose。端点先接受任一
-    scope 进入，再按 operation_type 精确复核，避免跨域越权。
+    （create/update/toggle/delete_plan）需 plans:propose；提醒处理操作
+    （resolve_alert）需 alerts:propose。端点先接受任一提案 scope 进入，
+    再按 operation_type 精确复核，避免跨域越权。
     """
     _require_agent_write_enabled(request, ctx)
     required_scope = proposal_service.OPERATION_SCOPE.get(body.operation_type)
@@ -2091,7 +2095,8 @@ def agent_list_proposals(
         agent_tokens.AgentTokenContext,
         Depends(require_any_agent_scope(
             (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
-             agent_tokens.SCOPE_PLANS_PROPOSE))),
+             agent_tokens.SCOPE_PLANS_PROPOSE,
+             agent_tokens.SCOPE_ALERTS_PROPOSE))),
     ],
     status: str | None = None,
     limit: int = Query(50, ge=1, le=200),
@@ -2119,7 +2124,8 @@ def agent_get_proposal(
         agent_tokens.AgentTokenContext,
         Depends(require_any_agent_scope(
             (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
-             agent_tokens.SCOPE_PLANS_PROPOSE))),
+             agent_tokens.SCOPE_PLANS_PROPOSE,
+             agent_tokens.SCOPE_ALERTS_PROPOSE))),
     ],
 ) -> dict[str, Any]:
     """仅创建者 token 可读；他人提案返回 404。"""
@@ -2144,7 +2150,8 @@ def agent_cancel_proposal(
         agent_tokens.AgentTokenContext,
         Depends(require_any_agent_scope(
             (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
-             agent_tokens.SCOPE_PLANS_PROPOSE))),
+             agent_tokens.SCOPE_PLANS_PROPOSE,
+             agent_tokens.SCOPE_ALERTS_PROPOSE))),
     ],
 ) -> dict[str, Any]:
     """只能取消自己未处理的提案；已批准/拒绝/过期不可取消。"""
@@ -2861,7 +2868,8 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
     {"name": "create_operation_proposal", "method": "POST",
      "path": "/api/agent/tools/proposals",
      "any_of_scopes": (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
-                       agent_tokens.SCOPE_PLANS_PROPOSE),
+                       agent_tokens.SCOPE_PLANS_PROPOSE,
+                       agent_tokens.SCOPE_ALERTS_PROPOSE),
      "risk": "propose", "requires_confirmation": True},
     {"name": "record_transaction", "method": "POST",
      "path": "/api/agent/tools/transactions",
@@ -2871,15 +2879,18 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
     {"name": "list_operation_proposals", "method": "GET",
      "path": "/api/agent/tools/proposals",
      "any_of_scopes": (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
-                       agent_tokens.SCOPE_PLANS_PROPOSE)},
+                       agent_tokens.SCOPE_PLANS_PROPOSE,
+                       agent_tokens.SCOPE_ALERTS_PROPOSE)},
     {"name": "get_operation_proposal", "method": "GET",
      "path": "/api/agent/tools/proposals/{proposal_id}",
      "any_of_scopes": (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
-                       agent_tokens.SCOPE_PLANS_PROPOSE)},
+                       agent_tokens.SCOPE_PLANS_PROPOSE,
+                       agent_tokens.SCOPE_ALERTS_PROPOSE)},
     {"name": "cancel_operation_proposal", "method": "DELETE",
      "path": "/api/agent/tools/proposals/{proposal_id}",
      "any_of_scopes": (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
-                       agent_tokens.SCOPE_PLANS_PROPOSE),
+                       agent_tokens.SCOPE_PLANS_PROPOSE,
+                       agent_tokens.SCOPE_ALERTS_PROPOSE),
      "risk": "write", "requires_confirmation": False},
     {"name": "precheck_transactions", "method": "POST",
      "path": "/api/agent/tools/precheck/transactions",

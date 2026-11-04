@@ -73,6 +73,10 @@ function isPlanSummary(summary: ProposalSummary): boolean {
   return PLAN_OPERATIONS.has(summary.operation_type)
 }
 
+function isAlertSummary(summary: ProposalSummary): boolean {
+  return summary.operation_type === "resolve_alert"
+}
+
 function batchActionsText(summary: ProposalSummary): string {
   const entries = Object.entries(summary.actions ?? {})
   if (entries.length === 0) return "—"
@@ -151,7 +155,12 @@ export default function Proposals() {
     setBusy(true)
     try {
       const result = await api.approveProposal(approveTarget.proposal_id)
-      finish(result, t.proposals.approveDone)
+      finish(
+        result,
+        isAlertSummary(approveTarget.summary)
+          ? t.proposals.approveDoneAlert
+          : t.proposals.approveDone,
+      )
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t.proposals.actionFailed)
       reload()
@@ -296,20 +305,26 @@ export default function Proposals() {
                           ? batchActionsText(item.summary)
                           : isPlanSummary(item.summary)
                             ? item.summary.schedule ?? item.summary.cadence_label ?? "—"
-                            : item.summary.action_label}
+                            : isAlertSummary(item.summary)
+                              ? item.summary.alert_type_label ?? "—"
+                              : item.summary.action_label}
                       </TableCell>
                       <TableCell className="hidden md:table-cell tabular-nums">
                         {isBatchSummary(item.summary)
                           ? batchDateRange(item.summary)
                           : isPlanSummary(item.summary)
                             ? item.summary.next_run ?? "—"
-                            : item.summary.date}
+                            : isAlertSummary(item.summary)
+                              ? item.summary.record_date ?? item.summary.ex_date ?? "—"
+                              : item.summary.date}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {money(
                           isBatchSummary(item.summary)
                             ? item.summary.amount_total
-                            : item.summary.amount,
+                            : isAlertSummary(item.summary)
+                              ? item.summary.estimated_amount ?? null
+                              : item.summary.amount,
                         )}
                       </TableCell>
                       <TableCell>
@@ -402,6 +417,8 @@ export default function Proposals() {
                   <BatchSection summary={detail.summary} />
                 ) : isPlanSummary(detail.summary) ? (
                   <PlanSection summary={detail.summary} />
+                ) : isAlertSummary(detail.summary) ? (
+                  <AlertSection summary={detail.summary} />
                 ) : (
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
                     <DetailRow label={t.proposals.colFund}>
@@ -579,13 +596,29 @@ export default function Proposals() {
                     </p>
                   )}
                 </>
+              ) : isAlertSummary(approveTarget.summary) ? (
+                <>
+                  <p>
+                    {approveTarget.summary.title} ·{" "}
+                    {approveTarget.summary.fund_name}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {approveTarget.summary.alert_type_label} ·{" "}
+                    {approveTarget.summary.before_status} →{" "}
+                    {approveTarget.summary.after_status}
+                  </p>
+                </>
               ) : (
                 <p>
                   {approveTarget.summary.title} · {money(approveTarget.summary.amount)} ·{" "}
                   {approveTarget.summary.date}
                 </p>
               )}
-              <p>{t.proposals.approveDesc}</p>
+              <p>
+                {isAlertSummary(approveTarget.summary)
+                  ? t.proposals.approveDescAlert
+                  : t.proposals.approveDesc}
+              </p>
             </div>
           ) : undefined
         }
@@ -897,6 +930,75 @@ function formatPlanField(field: string, value: unknown, t: {
     return weekdays ? weekdays[value] ?? String(value) : String(value)
   }
   return String(value)
+}
+
+function AlertSection({ summary }: { summary: ProposalSummary }) {
+  const { t } = useLang()
+  const statusLabel = (value: string | null | undefined) => {
+    if (value === "confirmed") return t.proposals.alertStatusConfirmed
+    if (value === "ignored") return t.proposals.alertStatusIgnored
+    if (value === "pending") return t.proposals.alertStatusPending
+    return value || "—"
+  }
+  return (
+    <div className="space-y-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+        <DetailRow label={t.proposals.colFund}>
+          {summary.fund_name}
+          <span className="ml-1 font-mono text-xs text-muted-foreground">
+            {summary.fund_code}
+          </span>
+        </DetailRow>
+        <DetailRow label={t.proposals.alertType}>
+          {summary.alert_type_label || "—"}
+        </DetailRow>
+        <DetailRow label={t.proposals.alertStatus}>
+          <span className="line-through text-muted-foreground">
+            {statusLabel(summary.before_status)}
+          </span>
+          {" → "}
+          <span className="font-medium">{statusLabel(summary.after_status)}</span>
+        </DetailRow>
+        <DetailRow label={t.proposals.alertLinkedTx}>
+          {summary.linked_tx_id ? `#${summary.linked_tx_id}` : "—"}
+        </DetailRow>
+        <DetailRow label={t.proposals.alertRecordDate}>
+          {summary.record_date || "—"}
+        </DetailRow>
+        <DetailRow label={t.proposals.alertExDate}>
+          {summary.ex_date || "—"}
+        </DetailRow>
+        {summary.alert_type === "dividend" ? (
+          <>
+            <DetailRow label={t.proposals.alertPayDate}>
+              {summary.pay_date || "—"}
+            </DetailRow>
+            <DetailRow label={t.proposals.alertPerShare}>
+              {summary.per_share ?? "—"}
+            </DetailRow>
+            <DetailRow label={t.proposals.alertHeldShares}>
+              {summary.held_shares ?? "—"}
+            </DetailRow>
+            <DetailRow label={t.proposals.alertEstimatedAmount}>
+              {money(summary.estimated_amount)}
+            </DetailRow>
+          </>
+        ) : (
+          <>
+            <DetailRow label={t.proposals.alertTriggeredReturn}>
+              {summary.triggered_return ?? "—"}
+            </DetailRow>
+            <DetailRow label={t.proposals.alertThreshold}>
+              {summary.threshold ?? "—"}
+            </DetailRow>
+          </>
+        )}
+      </dl>
+      <p className="rounded-md border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground">
+        {t.proposals.alertNoLedgerHint}
+      </p>
+    </div>
+  )
 }
 
 function PlanSection({ summary }: { summary: ProposalSummary }) {

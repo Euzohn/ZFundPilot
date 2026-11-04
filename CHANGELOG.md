@@ -42,6 +42,7 @@
 - 明确 [NOTICE.md](./NOTICE.md) 的许可边界：MIT License 仅覆盖项目源代码与原创文档，**不覆盖**运行时获取或展示的第三方数据，也不构成数据源对本项目的授权、认可或背书（中英文同步）
 
 ### Fixed
+- 修复 F6.2 交易回填提案的写锁与费率口径问题：创建期净值/费率预计算移出 `BEGIN IMMEDIATE` 写事务（之前费率缓存冷启动时会在持 RESERVED 锁期间联网抓取，阻塞其他写操作甚至触发 `database_busy`），改造为只读连接一次性算好快照、写事务内仅复读目标行做 digest 复核；卖出 `no_buy_record`（无买入记录、无法算持有期）不再静默回填 `fee=0`，与 `fee_unknown`/`pending_nav` 一致要求显式 `fee`；`precheck_backfill` 改为纯离线（净值只查本地，缺失手续费标 `fee_source="needs_fee"` + `fee_pending=true`，由创建提案时抓取），与 F3 预检「不联网」语义对齐。新增写锁探针、`no_buy_record` 拒绝、预计算与写事务间并发改动整批 `target_changed`、precheck 离线等回归用例
 - 修复 F3 预检契约未兑现：`fund_name` 不再读取基金池（避免离线误报与「预检可提案、实际 `fund_not_registered`」），改为只查账本已收录基金；命中他人待审提案只判重复、不返回 `proposal_id`（新增 `duplicate.own`），修复跨 token 信息泄漏；对账 `maybe_sold` 恒 `proposal_ready=false` 并附 `absent_from_input`，被 `fund_resolution_errors` 剔除的基金不再生成「疑似清仓」建议；`channel` 增加 50 字符上限；CSV `parse_errors` 补行号；`missing_fee` 改为按原始条目 / CSV fee 列判定，显式 `fee=0` 不再误报；补齐预检成功审计与前端审计标签，并补充跨主体重复、账本基金名解析、`maybe_sold`、预检只读性等回归用例
 - 修复多 worker 部署下 Agent 写能力总开关不一致：审批提案时改为在 `BEGIN IMMEDIATE` 事务内读取 `preferences.agent_write_enabled` 权威值（数据库无记录时回退运行时值），任一进程在设置页关闭总闸后其他 worker 立即阻断执行，不再依赖各自启动时的内存状态
 - SQLite 持锁超时（`database is locked` / `database is busy`）现映射为 `503 database_busy` 并附 `Retry-After: 5`，备份恢复等长写事务期间不再返回无法区分的 500

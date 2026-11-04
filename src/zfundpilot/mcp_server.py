@@ -585,12 +585,14 @@ async def create_operation_proposal(
         shares/amount/fee) of one or more existing transactions whose nav is
         still NULL. Requires items (1-50), each with tx_id, expected_digest
         (the row_digest from get_transaction), and an optional fee (required
-        only when the server cannot compute it offline). Only explicit tx_ids
-        are accepted — there is no "backfill everything". Dividend rows are
+        only when the server cannot compute it at creation; a sell with no buy
+        record also requires an explicit fee). Only explicit tx_ids are
+        accepted — there is no "backfill everything". Dividend rows are
         rejected (a dividend's nav is the per-share payout, not a fund NAV).
-        All NAVs/fees are snapshotted offline at creation time; approval never
-        touches the network. The whole batch is written atomically on approval,
-        or rejected if any row was filled or changed in the meantime.
+        All NAVs/fees are snapshotted at creation outside the write
+        transaction; approval never touches the network. The whole batch is
+        written atomically on approval, or rejected if any row was filled or
+        changed in the meantime.
 
     Args:
         operation_type: "add_transaction", "update_transaction",
@@ -795,10 +797,13 @@ async def precheck_backfill(payload: dict[str, Any]) -> dict[str, Any]:
     """Pre-check which transactions can have their NAV backfilled. Read-only.
 
     Lists transactions whose nav is still NULL and reports, per row, whether
-    a fund NAV is available in the local NAV table, whether the fee can be
-    computed offline, and the NAV date that would be used (T+1 transactions
-    use the next trading day's NAV). Each row includes its row_digest, so you
-    can build a backfill_transaction_navs proposal directly from the output.
+    a fund NAV is available in the local NAV table, whether the fee must be
+    fetched or supplied at proposal creation, and the NAV date that would be
+    used (T+1 transactions use the next trading day's NAV). This pre-check is
+    fully offline: a row with a missing fee is marked fee_source="needs_fee"
+    (fee_pending=true) instead of fetching fee rates. Each row includes its
+    row_digest, so you can build a backfill_transaction_navs proposal directly
+    from the output.
 
     Dividend rows are reported as not backfillable: a dividend's nav is the
     per-share payout, not a fund NAV.

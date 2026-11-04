@@ -886,6 +886,7 @@ def create_pending_proposal_conn(
     origin: str = "", reason: str = "",
     extra_warnings: list[str] | None = None,
     backfill_items: list[dict] | None = None,
+    backfill_error: ProposalResult | None = None,
 ) -> ProposalResult:
     """在调用方事务内创建待审提案；不写幂等记录。
 
@@ -894,6 +895,10 @@ def create_pending_proposal_conn(
     内容；``fund_code`` 缺省取 ``clean["fund_code"]``（delete 由调用方从目标行
     传入）；``before`` 为 update/delete 的目标行快照，用于展示前后差异；
     ``origin``/``reason`` 仅追加到 ``proposal_created`` 审计，复用既有 action。
+
+    回填的 ``backfill_items``（创建期预计算快照）与 ``backfill_error`` 必须由
+    调用方在**写事务之外**算好传入：本函数只复读目标行做摘要复核，绝不在此
+    触发费率抓取等网络操作。
     """
     resolved_fund_code = fund_code or clean.get("fund_code")
     batch_fund_names: dict[str, str] = {}
@@ -1042,17 +1047,23 @@ def create_pending_proposal_conn(
                 f"当前有 {related} 个待审提醒处理提案，建议先处理再提交新提案")
         extra_warnings = extra
     elif operation_type == OPERATION_BACKFILL_TRANSACTION_NAVS:
-        # 创建期离线预计算每行 nav/shares/amount/fee 快照；任何一行不可执行
-        # （dividend / nav 缺失 / fee 未知且未显式给）时整批拒绝，避免产生
-        # 「审批后才可能执行不了」的悬空提案。
-        prepared, error = _prepare_backfill_items(conn, clean.get("items") or [])
-        if error is not None:
+        # 快照已在写事务之外算好（_prepare_backfill_items 可能联网抓费率）。
+        # 这里只做纯 DB 复读：确认预计算到进入写事务之间目标行未发生变化。
+        if backfill_error is not None:
             _audit(conn, principal, ip, "proposal_create_rejected", {
-                "reason": error.code, "operation_type": operation_type,
-                "issues": error.data.get("issues")})
-            return error
-        backfill_items = prepared
-        resolved_fund_code = prepared[0]["fund_code"] if prepared else None
+                "reason": backfill_error.code, "operation_type": operation_type,
+                "issues": backfill_error.data.get("issues")})
+            return backfill_error
+        if backfill_items is None:
+            raise ProposalValidationError(
+                "params", "回填提案缺少创建期预计算快照（内部错误）")
+        conflict = _verify_backfill_targets(conn, clean.get("items") or [])
+        if conflict is not None:
+            _audit(conn, principal, ip, "proposal_create_rejected", {
+                "reason": conflict.code, "operation_type": operation_type,
+                "issues": conflict.data.get("issues")})
+            return conflict
+        resolved_fund_code = backfill_items[0]["fund_code"] if backfill_items else None
         fund_name = (fund_name_in_conn(conn, resolved_fund_code)
                      if resolved_fund_code else None) or resolved_fund_code or ""
     else:
@@ -1637,12 +1648,13 @@ def _validate_alert_tx_link(
 
 
 # ---------------------------------------------------------------------------
-# F6.2：交易回填（离线预计算 + 审批零联网）
+# F6.2：交易回填（写事务外预计算 + 审批零联网）
 # ---------------------------------------------------------------------------
 _BACKFILL_FEE_SOURCE_LABELS = {
     "existing": "沿用原手续费",
     "fetched": "按本地/抓取费率计算",
     "explicit": "Agent 显式提供",
+    "needs_fee": "创建时抓取费率或显式提供 fee",
 }
 
 
@@ -1659,8 +1671,11 @@ def _backfill_fee(tx: Transaction) -> tuple[float, str, str | None, str]:
 
     口径与网页/调度器离线回填一致（``if not tx.fee: 抓取``）：已有非零手续费
     沿用；为 0/NULL 时按方向抓取（买入按金额、卖出按份额）。费率未知
-    （``fee_unknown``）或净值待确认（``pending_nav``）时返回 ``fee_unknown``。
-    分红/再投资不涉及手续费，沿用 0。仅本地计算，不产生任何写操作。
+    （``fee_unknown``）、净值待确认（``pending_nav``）或卖出无买入记录
+    （``no_buy_record``）时返回 ``fee_unknown``——后两者都无法可靠计算持有期
+    费率，要求 Agent 显式给 ``fee``，避免静默回填错误的 0。
+    分红/再投资不涉及手续费，沿用 0。只读计算、不产生任何写操作；费率缺失时
+    可能联网抓取费率（带内存缓存），故本函数必须在写事务之外调用。
     """
     if tx.fee:
         return tx.fee, "existing", None, ""
@@ -1676,6 +1691,10 @@ def _backfill_fee(tx: Transaction) -> tuple[float, str, str | None, str]:
     if tx.action == "sell" and tx.shares:
         res = fetch_fund.calc_redemption_fee(
             tx.fund_code, tx.date, float(tx.shares))
+        if res.code == "no_buy_record":
+            return 0.0, "", "fee_unknown", (
+                f"{tx.fund_code} 无买入记录，无法按持有期计算赎回费；"
+                "请显式提供 fee 后再提案")
         if res.code in ("fee_unknown", "pending_nav"):
             return 0.0, "", "fee_unknown", (
                 f"{tx.fund_code} 赎回费率/确认净值未知，无法计算手续费；"
@@ -1686,13 +1705,18 @@ def _backfill_fee(tx: Transaction) -> tuple[float, str, str | None, str]:
 
 
 def _preview_backfill_row(conn: sqlite3.Connection, row: sqlite3.Row,
-                          explicit_fee: float | None,
+                          explicit_fee: float | None, *,
+                          fetch_fee: bool = True,
                           ) -> tuple[dict | None, str | None, str]:
     """离线预览某行回填后的 nav/shares/amount/fee 快照（不写库）。
 
     返回 ``(snapshot, reason, message)``：``reason`` 为 None 表示可回填，
     ``snapshot`` 含 ``tx_id/fund_code/date/nav_date/before/after/fee_source``。
-    ``before``/``after`` 仅覆盖回填的四字段（nav/shares/amount/fee）。
+
+    ``fetch_fee=False`` 供 ``precheck_backfill`` 使用：**完全不联网**，只查本地
+    净值；缺失手续费的行标记 ``fee_source="needs_fee"`` + ``fee_pending=True``，
+    由创建提案时再抓取（或由 Agent 显式给 ``fee``）。``before``/``after`` 仅
+    覆盖回填的四字段（nav/shares/amount/fee）。
     """
     tx = Transaction.from_row(row)
     nav_date = _backfill_nav_date(tx)
@@ -1706,26 +1730,47 @@ def _preview_backfill_row(conn: sqlite3.Connection, row: sqlite3.Row,
             f"本地净值表缺少 {tx.fund_code} 在 {nav_date} 当天或之后的净值")
     tx.nav = float(nav_row["nav"])
     fee_source: str
+    fee_pending = False
     if explicit_fee is not None:
         tx.fee = float(explicit_fee)
         fee_source = "explicit"
-    else:
+    elif tx.fee:
+        fee_source = "existing"
+    elif fetch_fee:
         fee, fee_source, reason, message = _backfill_fee(tx)
         if reason is not None:
             return None, reason, message
         tx.fee = fee
-    tx.normalize()
-    if not tx.is_valid():
-        return None, "invalid_row", "回填后交易信息仍不完整，无法回填"
+    elif tx.action == "buy":
+        if not tx.amount:
+            return None, "fee_unknown", (
+                "缺少申购金额，无法计算买入手续费；请显式提供 fee 后再提案")
+        fee_source = "needs_fee"
+        fee_pending = True
+    elif tx.action == "sell" and tx.shares:
+        fee_source = "needs_fee"
+        fee_pending = True
+    else:
+        # 分红/再投资等无手续费方向，与 ``_backfill_fee`` 口径一致。
+        fee_source = "existing"
     after = {
         "nav": _norm_field(tx.nav), "shares": _norm_field(tx.shares),
         "amount": _norm_field(tx.amount), "fee": _norm_field(tx.fee),
     }
+    if not fee_pending:
+        tx.normalize()
+        if not tx.is_valid():
+            return None, "invalid_row", "回填后交易信息仍不完整，无法回填"
+        after = {
+            "nav": _norm_field(tx.nav), "shares": _norm_field(tx.shares),
+            "amount": _norm_field(tx.amount), "fee": _norm_field(tx.fee),
+        }
     snapshot = {
         "tx_id": tx.id, "fund_code": tx.fund_code, "date": tx.date,
         "nav_date": nav_date, "before": before, "after": after,
         "fee_source": fee_source,
         "fee_source_label": _BACKFILL_FEE_SOURCE_LABELS.get(fee_source, ""),
+        "fee_pending": fee_pending,
     }
     return snapshot, None, ""
 
@@ -1759,10 +1804,47 @@ def _backfill_reject(problems: list[dict]) -> ProposalResult:
         http_status, first["reason"], message, {"issues": ranked})
 
 
+def _check_backfill_target(
+        conn: sqlite3.Connection, index: int, item: dict,
+) -> tuple[sqlite3.Row | None, dict | None]:
+    """校验单行回填目标；返回 ``(row, problem)``。
+
+    只做数据库读取与摘要比对，不联网、不写库。``problem`` 非 None 时
+    ``row`` 为 None，结构为 ``{index, tx_id, reason, message}``。
+    """
+    tx_id = int(item["tx_id"])
+    row = db.get_transaction_conn(conn, tx_id)
+    if row is None:
+        return None, {
+            "index": index, "tx_id": tx_id, "reason": "target_not_found",
+            "message": f"未找到交易 {tx_id}"}
+    if row["action"] == "dividend":
+        return None, {
+            "index": index, "tx_id": tx_id,
+            "reason": "dividend_not_backfillable",
+            "message": "分红交易的 nav 是每份分红金额而非基金净值，"
+                       "不能按净值回填（请走网页改单）"}
+    if row["nav"] is not None:
+        return None, {
+            "index": index, "tx_id": tx_id, "reason": "nav_present",
+            "message": f"交易 {tx_id} 已有净值，无需回填"}
+    if transaction_row_digest(row) != item["expected_digest"]:
+        return None, {
+            "index": index, "tx_id": tx_id, "reason": "target_changed",
+            "message": f"交易 {tx_id} 已被修改，请通过 get_transaction "
+                       "重新读取 row_digest 后再提案"}
+    return row, None
+
+
 def _prepare_backfill_items(conn: sqlite3.Connection,
                             items: list[dict]) -> tuple[list[dict],
                                                         ProposalResult | None]:
     """逐行校验并预计算回填快照；任一行不可执行则整批拒绝。
+
+    **必须在 ``write=True`` 事务之外调用**：``_backfill_fee`` 可能触发费率
+    抓取（联网），且 ``calc_redemption_fee`` 会自开连接读库，放在
+    ``BEGIN IMMEDIATE`` 写事务内会长时间持锁。调用方可传入只读连接，
+    拿到快照后再进写事务；写事务内应调用 ``_verify_backfill_targets`` 复读。
 
     返回 ``(prepared, error)``：``prepared`` 每条为 ``_preview_backfill_row``
     的快照（另带 ``index``），``error`` 非 None 时整批不创建。
@@ -1770,44 +1852,39 @@ def _prepare_backfill_items(conn: sqlite3.Connection,
     problems: list[dict] = []
     prepared: list[dict] = []
     for idx, item in enumerate(items):
-        tx_id = int(item["tx_id"])
-        explicit_fee = item.get("fee")
-        row = db.get_transaction_conn(conn, tx_id)
-        if row is None:
-            problems.append({
-                "index": idx, "tx_id": tx_id, "reason": "target_not_found",
-                "message": f"未找到交易 {tx_id}"})
-            continue
-        if row["action"] == "dividend":
-            problems.append({
-                "index": idx, "tx_id": tx_id,
-                "reason": "dividend_not_backfillable",
-                "message": "分红交易的 nav 是每份分红金额而非基金净值，"
-                           "不能按净值回填（请走网页改单）"})
-            continue
-        if row["nav"] is not None:
-            problems.append({
-                "index": idx, "tx_id": tx_id, "reason": "nav_present",
-                "message": f"交易 {tx_id} 已有净值，无需回填"})
-            continue
-        if transaction_row_digest(row) != item["expected_digest"]:
-            problems.append({
-                "index": idx, "tx_id": tx_id, "reason": "target_changed",
-                "message": f"交易 {tx_id} 已被修改，请通过 get_transaction "
-                           "重新读取 row_digest 后再提案"})
+        row, problem = _check_backfill_target(conn, idx, item)
+        if problem is not None:
+            problems.append(problem)
             continue
         snapshot, reason, message = _preview_backfill_row(
-            conn, row, explicit_fee)
+            conn, row, item.get("fee"))
         if reason is not None:
             problems.append({
-                "index": idx, "tx_id": tx_id, "reason": reason,
-                "message": message})
+                "index": idx, "tx_id": int(item["tx_id"]),
+                "reason": reason, "message": message})
             continue
         snapshot["index"] = idx
         prepared.append(snapshot)
     if problems:
         return [], _backfill_reject(problems)
     return prepared, None
+
+
+def _verify_backfill_targets(conn: sqlite3.Connection,
+                             items: list[dict]) -> ProposalResult | None:
+    """在写事务内复读回填目标，确认 ``nav IS NULL`` 且摘要未变。
+
+    只读校验、不联网；预计算与写事务之间若有并发修改，整批拒绝（与审批期
+    版本前置一致），避免把过期快照写进提案。
+    """
+    problems: list[dict] = []
+    for idx, item in enumerate(items):
+        _, problem = _check_backfill_target(conn, idx, item)
+        if problem is not None:
+            problems.append(problem)
+    if problems:
+        return _backfill_reject(problems)
+    return None
 
 
 # 回填预检（只读盘点）最大返回条目数；与提案 batch 上限一致。
@@ -1865,7 +1942,8 @@ def _backfill_item_view(conn: sqlite3.Connection, row: sqlite3.Row,
         base.update(backfillable=False, reason="nav_present",
                     message="已有净值，无需回填")
         return base, "nav_present", base["message"]
-    snapshot, reason, message = _preview_backfill_row(conn, row, explicit_fee)
+    snapshot, reason, message = _preview_backfill_row(
+        conn, row, explicit_fee, fetch_fee=False)
     if reason is not None:
         base.update(backfillable=False, reason=reason, message=message)
         return base, reason, message
@@ -1873,17 +1951,21 @@ def _backfill_item_view(conn: sqlite3.Connection, row: sqlite3.Row,
         backfillable=True, reason=None, message="",
         nav_date=snapshot["nav_date"], after=snapshot["after"],
         fee_source=snapshot["fee_source"],
-        fee_source_label=snapshot["fee_source_label"])
+        fee_source_label=snapshot["fee_source_label"],
+        fee_pending=snapshot["fee_pending"])
     return base, None, ""
 
 
 def precheck_backfill(input_data: object) -> dict[str, Any]:
-    """只读盘点可回填净值的候选行；不写账本、不创建提案、审批路径零联网。
+    """只读盘点可回填净值的候选行；不写账本、不创建提案、**完全不联网**。
 
-    接受 ``{"tx_ids"?: [int, ...]}``：省略 ``tx_ids`` 时返回全部 nav IS NULL
-    的非分红行（上限 ``MAX_PRECHECK_BACKFILL_ITEMS``）；给定 ``tx_ids`` 时按
-    给定顺序逐行报告（含不可回填原因）。每行返回 ``row_digest``、净值/费率
-    可用性与回填后的 ``after`` 快照，供 Agent 直接构造提案。
+    只查本地 ``nav_history``；缺失手续费的行标记 ``fee_source="needs_fee"`` +
+    ``fee_pending=true``，由创建提案时再抓取（或由 Agent 显式给 ``fee``），
+    因此预检本身绝不触发费率抓取。接受 ``{"tx_ids"?: [int, ...]}``：省略
+    ``tx_ids`` 时返回全部 nav IS NULL 的非分红行（上限
+    ``MAX_PRECHECK_BACKFILL_ITEMS``）；给定 ``tx_ids`` 时按给定顺序逐行报告
+    （含不可回填原因）。每行返回 ``row_digest``、净值可用性与回填后的
+    ``after`` 快照，供 Agent 直接构造提案。
     """
     if not isinstance(input_data, dict):
         raise ProposalValidationError("input", "input 必须是对象")
@@ -2030,6 +2112,17 @@ def create_proposal(principal: Principal, *, operation_type: object,
     now = _now()
     _expire_stale(now)
 
+    # 回填的净值/费率预计算放在写事务之外：费率缺失时 ``calc_*_fee`` 会联网抓取，
+    # 且卖出费率计算还会自开连接读库；若在 ``BEGIN IMMEDIATE`` 内执行，会把
+    # RESERVED 写锁持有到网络请求结束，阻塞其他写操作甚至触发 database_busy。
+    # 这里用只读连接一次性算好快照，写事务内只做复读 + digest 复核。
+    backfill_items: list[dict] | None = None
+    backfill_error: ProposalResult | None = None
+    if operation_type == OPERATION_BACKFILL_TRANSACTION_NAVS:
+        with db.get_connection() as pre_conn:
+            backfill_items, backfill_error = _prepare_backfill_items(
+                pre_conn, clean.get("items") or [])
+
     with db.get_connection(write=True) as conn:
         replay = _replay_create(
             conn, principal, key_hash, operation_type, digest, ip)
@@ -2128,7 +2221,8 @@ def create_proposal(principal: Principal, *, operation_type: object,
 
         created = create_pending_proposal_conn(
             conn, principal, clean=clean, digest=digest, now=now, ip=ip,
-            operation_type=operation_type, fund_code=fund_code, before=before)
+            operation_type=operation_type, fund_code=fund_code, before=before,
+            backfill_items=backfill_items, backfill_error=backfill_error)
         if not created.ok:
             return created
         proposal_id = int(created.data["proposal_id"])

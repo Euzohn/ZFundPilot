@@ -2108,10 +2108,11 @@ def agent_precheck_backfill(
         Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_PROPOSE)),
     ],
 ) -> dict[str, Any]:
-    """盘点可回填净值的候选行：返回逐行 row_digest、净值/费率可用性与回填快照。
+    """盘点可回填净值的候选行：返回逐行 row_digest、净值可用性与回填快照。
 
-    不写账本、不创建提案。受写总闸控制（关闭时 403），与 F3 precheck 对齐，
-    限流 10 次/分钟。
+    纯离线：净值只查本地；缺失手续费的行标记 ``fee_source="needs_fee"`` +
+    ``fee_pending=true``，由创建提案时再抓取。不写账本、不创建提案。受写总闸
+    控制（关闭时 403），与 F3 precheck 对齐，限流 10 次/分钟。
     """
     _require_agent_write_enabled(request, ctx)
     try:

@@ -1,12 +1,14 @@
-"""F6.2 交易回填提案测试：创建期离线预计算、整批拒绝语义与审批执行。
+"""F6.2 交易回填提案测试：创建期写事务外预计算、整批拒绝语义与审批执行。
 
 覆盖：单行/批量成功、dividend 行拒绝（422）、nav 已存在（409）、digest 失配、
-nav_unavailable / fee_unknown 拒绝、显式 fee、不触碰 date/action/channel/note、
+nav_unavailable / fee_unknown（含 no_buy_record）拒绝、显式 fee、费率抓取不在
+写事务内、预计算与写事务间并发修改整批拒绝、不触碰 date/action/channel/note、
 审批整批写入与审计（nav_backfill 对齐网页）、部分已回填整批 conflict；
-precheck_backfill 只读工具（写总闸 + scope + 限流）。
+precheck_backfill 只读工具（纯离线 + 写总闸 + scope + 限流）。
 """
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -276,6 +278,62 @@ class TestCreateBackfill:
         assert second.replayed is True
         assert second.code == "replayed"
 
+    def test_fee_fetch_runs_outside_write_transaction(self, temp_db,
+                                                       monkeypatch):
+        """费率抓取不得在 BEGIN IMMEDIATE 写事务内（F6.2 复查 Bug 1）。
+
+        预计算阶段若已持写锁，另一个连接立即尝试写会 ``database is locked``。
+        """
+        def _fee_with_lock_probe(code, amt):
+            probe = sqlite3.connect(config.DB_PATH, timeout=0.05)
+            try:
+                probe.execute("BEGIN IMMEDIATE")
+                probe.rollback()
+            finally:
+                probe.close()
+            return CalcFeeResult(fee=0.0, code="purchase_rate")
+
+        monkeypatch.setattr(fetch_fund, "calc_purchase_fee",
+                            _fee_with_lock_probe)
+        tx_id = _make_buy_tx()
+        _add_nav(date="2026-01-05", nav=1.5)
+        result = _create(_backfill_principal(), _params(tx_id))
+        assert result.ok
+
+    def test_sell_no_buy_record_rejected(self, temp_db, monkeypatch):
+        """无买入记录时不能静默回填 fee=0（F6.2 复查 Bug 2）。"""
+        monkeypatch.setattr(
+            fetch_fund, "calc_redemption_fee",
+            lambda code, date, shares: CalcFeeResult(
+                fee=0.0, code="no_buy_record"))
+        tx_id = _make_sell_tx()
+        _add_nav(date="2026-01-05", nav=1.5)
+        result = _create(_backfill_principal(), _params(tx_id))
+        assert result.http_status == 409
+        assert result.code == "fee_unknown"
+        assert "无买入记录" in result.message
+
+    def test_concurrent_change_before_write_rejected(self, temp_db,
+                                                     monkeypatch):
+        """预计算与写事务之间的并发修改必须整批拒绝，不能写入过期快照。"""
+        monkeypatch.setattr(fetch_fund, "calc_purchase_fee", lambda code, amt:
+                            CalcFeeResult(fee=0.0, code="purchase_rate"))
+        tx_id = _make_buy_tx()
+        _add_nav(date="2026-01-05", nav=1.5)
+        original = svc._prepare_backfill_items
+
+        def _race(conn, items):
+            prepared, error = original(conn, items)
+            with db.get_connection(write=True) as wconn:
+                wconn.execute(
+                    "UPDATE transactions SET note='raced' WHERE id=?", (tx_id,))
+            return prepared, error
+
+        monkeypatch.setattr(svc, "_prepare_backfill_items", _race)
+        result = _create(_backfill_principal(), _params(tx_id))
+        assert result.http_status == 409
+        assert result.code == "target_changed"
+
 
 # ---------------------------------------------------------------------------
 # 审批执行
@@ -382,6 +440,28 @@ class TestHttpGating:
             "params": {"items": [{"tx_id": 1,
                                   "expected_digest": "0" * 64}]}})
         assert resp.status_code == 403
+
+    def test_precheck_backfill_is_offline(self, client, temp_db, monkeypatch):
+        """precheck 只读盘点不得联网抓费率（F6.2 复查问题 3）。"""
+        def _boom(*args, **kwargs):
+            raise AssertionError("precheck_backfill 不应抓取费率")
+
+        monkeypatch.setattr(fetch_fund, "calc_purchase_fee", _boom)
+        monkeypatch.setattr(fetch_fund, "calc_redemption_fee", _boom)
+        _add_nav(date="2026-01-05", nav=1.5)
+        buy_id = _make_buy_tx()
+        sell_id = _make_sell_tx()
+        _plain, _info = agent_tokens.issue_token(
+            "agent", [agent_tokens.SCOPE_TRANSACTIONS_PROPOSE])
+        headers = {"Authorization": f"Bearer {_plain}"}
+        resp = client.post(PRECHECK_BACKFILL_PATH, headers=headers,
+                           json={"tx_ids": [buy_id, sell_id]})
+        assert resp.status_code == 200, resp.text
+        for item in resp.json()["data"]["items"]:
+            assert item["backfillable"] is True
+            assert item["fee_source"] == "needs_fee"
+            assert item["fee_pending"] is True
+            assert item["after"]["nav"] == 1.5
 
     def test_precheck_backfill_lists_candidates(self, client, temp_db,
                                                  monkeypatch):

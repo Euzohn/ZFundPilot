@@ -761,13 +761,15 @@ class TestAgentTools:
                         headers=headers)
         assert tp.json()["data"]["total"] == 1
 
-        # 白名单字段：不含内部列
+        # 白名单字段：不含内部列（F6.1 新增 row_digest 供 resolve_alert 版本前置）
         item = data["alerts"][0]
         assert set(item) <= {
             "id", "alert_type", "fund_code", "fund_name", "status",
             "triggered_return", "threshold", "record_date", "ex_date",
             "pay_date", "per_share", "estimated_amount", "held_shares",
-            "dividend_method", "created_at", "resolved_at", "tx_id"}
+            "dividend_method", "created_at", "resolved_at", "tx_id",
+            "row_digest"}
+        assert len(item["row_digest"]) == 64
 
         assert client.get(
             "/api/agent/tools/alerts?type=xxx", headers=headers).status_code == 400

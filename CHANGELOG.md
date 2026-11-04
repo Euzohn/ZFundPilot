@@ -37,6 +37,7 @@
 - 设置页 Agent 相关能力独立为「Agent 接入」tab：「Agent 写能力」与「Agent 访问令牌」面板从「账户与安全」tab 迁出（账户 tab 保留账户卡片与审计日志）；未启用登录密码时该 tab 与账户 tab 一样隐藏并回退到「AI 投顾」，支持 `settings?tab=agent` 直达；中英文文档中的入口位置说明同步更新
 - README 中英文版将 Agent 接入提升为独立功能亮点（新增「Agent 接入（API / MCP）」段与「为什么不同」差异点），从「安全与自定义」移出，避免能力被埋在安全条目里
 - 统一 `docs/AGENT_API.md` / `docs/AGENT_API_EN.md` 的接入示例：环境变量统一为 `ZFUNDPILOT_BASE_URL` / `ZFUNDPILOT_AGENT_TOKEN`，Python 示例由 `requests` 改为项目已依赖的 `httpx`
+- 明确 [NOTICE.md](./NOTICE.md) 的许可边界：MIT License 仅覆盖项目源代码与原创文档，**不覆盖**运行时获取或展示的第三方数据，也不构成数据源对本项目的授权、认可或背书（中英文同步）
 
 ### Fixed
 - 修复 F3 预检契约未兑现：`fund_name` 不再读取基金池（避免离线误报与「预检可提案、实际 `fund_not_registered`」），改为只查账本已收录基金；命中他人待审提案只判重复、不返回 `proposal_id`（新增 `duplicate.own`），修复跨 token 信息泄漏；对账 `maybe_sold` 恒 `proposal_ready=false` 并附 `absent_from_input`，被 `fund_resolution_errors` 剔除的基金不再生成「疑似清仓」建议；`channel` 增加 50 字符上限；CSV `parse_errors` 补行号；`missing_fee` 改为按原始条目 / CSV fee 列判定，显式 `fee=0` 不再误报；补齐预检成功审计与前端审计标签，并补充跨主体重复、账本基金名解析、`maybe_sold`、预检只读性等回归用例

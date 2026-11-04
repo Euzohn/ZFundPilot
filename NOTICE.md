@@ -1,6 +1,10 @@
 # NOTICE
 
-本项目（ZFundPilot）采用 [MIT License](./LICENSE) 授权。
+本项目（ZFundPilot）的源代码与原创文档采用 [MIT License](./LICENSE) 授权。
+
+## 许可范围
+
+MIT License 仅适用于本项目的源代码与原创文档，**不适用于**本项目在运行时获取或展示的第三方数据。该许可也不构成任何数据源对本项目的授权、认可或背书。
 
 ## 数据来源声明
 
@@ -27,7 +31,11 @@
 
 # NOTICE (English)
 
-This project (ZFundPilot) is licensed under the [MIT License](./LICENSE).
+The source code and original documentation of this project (ZFundPilot) are licensed under the [MIT License](./LICENSE).
+
+## License Scope
+
+The MIT License applies only to this project's source code and original documentation. It **does not apply** to third-party data retrieved or displayed by the project at runtime, and it does not imply any authorization, endorsement, or approval by any data provider.
 
 ## Data Source Attribution
 

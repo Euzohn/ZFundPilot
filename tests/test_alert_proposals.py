@@ -272,8 +272,9 @@ class TestCreateResolveAlert:
 
     def test_idempotent_replay(self, temp_db):
         alert_id = _make_dividend_alert()
-        first = _create(_alert_principal(), _params(alert_id))
-        second = _create(_alert_principal(), _params(alert_id))
+        principal = _alert_principal()
+        first = _create(principal, _params(alert_id))
+        second = _create(principal, _params(alert_id))
         assert first.data["proposal_id"] == second.data["proposal_id"]
         assert second.replayed is True
         assert second.http_status == 200
@@ -281,9 +282,9 @@ class TestCreateResolveAlert:
 
     def test_idempotency_conflict_on_param_change(self, temp_db):
         alert_id = _make_dividend_alert()
-        _create(_alert_principal(), _params(alert_id))
-        result = _create(_alert_principal(), _params(
-            alert_id, status="ignored"))
+        principal = _alert_principal()
+        _create(principal, _params(alert_id))
+        result = _create(principal, _params(alert_id, status="ignored"))
         assert result.http_status == 409
         assert result.code == "idempotency_conflict"
 

@@ -77,6 +77,10 @@ function isAlertSummary(summary: ProposalSummary): boolean {
   return summary.operation_type === "resolve_alert"
 }
 
+function isBackfillSummary(summary: ProposalSummary): boolean {
+  return summary.operation_type === "backfill_transaction_navs"
+}
+
 function batchActionsText(summary: ProposalSummary): string {
   const entries = Object.entries(summary.actions ?? {})
   if (entries.length === 0) return "—"
@@ -419,6 +423,8 @@ export default function Proposals() {
                   <PlanSection summary={detail.summary} />
                 ) : isAlertSummary(detail.summary) ? (
                   <AlertSection summary={detail.summary} />
+                ) : isBackfillSummary(detail.summary) ? (
+                  <BackfillSection summary={detail.summary} />
                 ) : (
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
                     <DetailRow label={t.proposals.colFund}>
@@ -606,6 +612,17 @@ export default function Proposals() {
                     {approveTarget.summary.alert_type_label} ·{" "}
                     {approveTarget.summary.before_status} →{" "}
                     {approveTarget.summary.after_status}
+                  </p>
+                </>
+              ) : isBackfillSummary(approveTarget.summary) ? (
+                <>
+                  <p>
+                    {approveTarget.summary.title} ·{" "}
+                    {(approveTarget.summary.backfill_items ?? []).length}{" "}
+                    {t.proposals.batchItems}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t.proposals.backfillApproveHint}
                   </p>
                 </>
               ) : (
@@ -996,6 +1013,78 @@ function AlertSection({ summary }: { summary: ProposalSummary }) {
       </dl>
       <p className="rounded-md border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground">
         {t.proposals.alertNoLedgerHint}
+      </p>
+    </div>
+  )
+}
+
+function BackfillSection({ summary }: { summary: ProposalSummary }) {
+  const { t } = useLang()
+  const items = summary.backfill_items ?? []
+  return (
+    <div className="space-y-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+        <DetailRow label={t.proposals.backfillCount}>
+          {summary.count ?? items.length}
+        </DetailRow>
+        <DetailRow label={t.proposals.backfillFunds} className="col-span-2">
+          {(summary.funds ?? []).length > 0
+            ? (summary.funds ?? [])
+                .map((f) => `${f.fund_name || f.fund_code}(${f.fund_code})`)
+                .join("、")
+            : "—"}
+        </DetailRow>
+      </dl>
+      <div className="rounded-md border border-border">
+        <div className="max-h-72 overflow-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>#</TableHead>
+                <TableHead>{t.proposals.txId}</TableHead>
+                <TableHead>{t.proposals.colDate}</TableHead>
+                <TableHead>{t.proposals.navDate}</TableHead>
+                <TableHead className="text-right">{t.proposals.navBefore}</TableHead>
+                <TableHead className="text-right">{t.proposals.nav}</TableHead>
+                <TableHead className="text-right">{t.proposals.shares}</TableHead>
+                <TableHead className="text-right">{t.proposals.colAmount}</TableHead>
+                <TableHead className="text-right">{t.proposals.fee}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((item, idx) => (
+                <TableRow key={item.tx_id}>
+                  <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                  <TableCell className="font-mono">#{item.tx_id}</TableCell>
+                  <TableCell>{item.date}</TableCell>
+                  <TableCell>
+                    {item.nav_date}
+                    {item.nav_date !== item.date && (
+                      <span className="ml-1 text-xs text-muted-foreground">(T+1)</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right text-muted-foreground">
+                    {navStr(item.before?.nav ?? null)}
+                  </TableCell>
+                  <TableCell className="text-right font-medium">
+                    {navStr(item.after?.nav ?? null)}
+                  </TableCell>
+                  <TableCell className="text-right">{navStr(item.after?.shares ?? null)}</TableCell>
+                  <TableCell className="text-right">{money(item.after?.amount ?? null)}</TableCell>
+                  <TableCell className="text-right">
+                    {money(item.after?.fee ?? 0)}
+                    <span className="block text-xs text-muted-foreground">
+                      {item.fee_source_label || item.fee_source}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+      <p className="rounded-md border border-border bg-muted/40 p-2.5 text-xs text-muted-foreground">
+        {t.proposals.backfillNoNetworkHint}
       </p>
     </div>
   )

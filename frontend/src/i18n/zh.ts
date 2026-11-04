@@ -1452,6 +1452,12 @@ const zh = {
     alertTriggeredReturn: "触发收益率",
     alertThreshold: "阈值",
     alertNoLedgerHint: "本提案只推进提醒状态，不写入或修改任何交易流水；确认分红时可关联一条已存在的分红/再投资流水。",
+    backfillCount: "回填条数",
+    backfillFunds: "涉及基金",
+    navDate: "净值日期",
+    navBefore: "原净值",
+    backfillNoNetworkHint: "审批只写入创建时固化的净值/份额/金额/手续费快照，不再联网重算；任一行已被其他路径回填则整批取消。",
+    backfillApproveHint: "整批一次性回填：全部成功或全部取消。",
   },
   watchlist: {
     title: "自选关注",

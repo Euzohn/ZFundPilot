@@ -271,6 +271,7 @@ _ENDPOINT_LIMITS: dict[str, tuple[int, int]] = {
     "/api/agent/tokens":       (30, 60),
     "/api/agent/tools/precheck/transactions":   (10, 60),
     "/api/agent/tools/precheck/reconciliation": (10, 60),
+    "/api/agent/tools/precheck/backfill":       (10, 60),
 }
 
 _DOMAIN_LIMITS: dict[str, tuple[int, int]] = {
@@ -759,6 +760,7 @@ _AGENT_ROUTE_RATE_MAX: dict[str, int] = {
     # 预检虽只读，但受写总闸约束且为写流程前置，独立桶 10 次/分钟。
     "POST /api/agent/tools/precheck/transactions": 10,
     "POST /api/agent/tools/precheck/reconciliation": 10,
+    "POST /api/agent/tools/precheck/backfill": 10,
 }
 
 
@@ -1917,6 +1919,14 @@ class PrecheckReconciliationRequest(BaseModel):
     input: dict[str, Any]
 
 
+class PrecheckBackfillRequest(BaseModel):
+    """回填预检请求体；可选 tx_ids，省略时盘点全部 nav IS NULL 候选行。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tx_ids: list[int] | None = None
+
+
 def _proposal_principal(
     ctx: agent_tokens.AgentTokenContext,
 ) -> proposal_service.Principal:
@@ -2084,6 +2094,40 @@ def agent_precheck_reconciliation(
                 "fund_resolution_errors": len(result["fund_resolution_errors"])},
     )
     return _agent_tool_response("precheck_reconciliation", result)
+
+
+@app.post("/api/agent/tools/precheck/backfill", tags=["agent"],
+          summary="回填净值候选盘点（只读，不写账本）",
+          responses=_AGENT_WRITE_ERROR_RESPONSES,
+          dependencies=[Security(_agent_bearer_scheme)])
+def agent_precheck_backfill(
+    request: Request,
+    body: PrecheckBackfillRequest,
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_TRANSACTIONS_PROPOSE)),
+    ],
+) -> dict[str, Any]:
+    """盘点可回填净值的候选行：返回逐行 row_digest、净值/费率可用性与回填快照。
+
+    不写账本、不创建提案。受写总闸控制（关闭时 403），与 F3 precheck 对齐，
+    限流 10 次/分钟。
+    """
+    _require_agent_write_enabled(request, ctx)
+    try:
+        result = proposal_service.precheck_backfill(
+            {"tx_ids": body.tx_ids})
+    except proposal_service.ProposalValidationError as exc:
+        raise _proposal_validation_error(exc) from exc
+    # 只记计数，不记金额/净值明细（可能含持仓信息）
+    db.log_audit(
+        "agent_precheck_backfill", ip=_get_client_ip(request),
+        username=f"agent:{ctx.prefix}",
+        detail={"token_prefix": ctx.prefix, "tx_ids_given": body.tx_ids
+                is not None, "total": result["total"],
+                "ready": result["ready"], "unavailable": result["unavailable"]},
+    )
+    return _agent_tool_response("precheck_backfill", result)
 
 
 @app.get("/api/agent/tools/proposals", tags=["agent"],
@@ -2898,6 +2942,10 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
      "risk": "propose", "requires_confirmation": False},
     {"name": "precheck_reconciliation", "method": "POST",
      "path": "/api/agent/tools/precheck/reconciliation",
+     "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+     "risk": "propose", "requires_confirmation": False},
+    {"name": "precheck_backfill", "method": "POST",
+     "path": "/api/agent/tools/precheck/backfill",
      "scope": agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
      "risk": "propose", "requires_confirmation": False},
 )

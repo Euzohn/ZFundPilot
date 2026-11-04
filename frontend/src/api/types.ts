@@ -890,6 +890,23 @@ export interface ProposalSummary {
   dividend_method?: string | null
   triggered_return?: number | null
   threshold?: number | null
+  // F6.2 回填净值提案（backfill_transaction_navs 携带）。逐行 before/after，
+  // 仅覆盖回填的 nav/shares/amount/fee 四字段。
+  fee_sources?: Record<string, number>
+  backfill_items?: BackfillItem[]
+}
+
+export interface BackfillItem {
+  index?: number
+  tx_id: number
+  fund_code: string
+  fund_name?: string
+  date: string
+  nav_date: string
+  before: { nav: number | null; shares: number | null; amount: number | null; fee: number | null }
+  after: { nav: number | null; shares: number | null; amount: number | null; fee: number | null }
+  fee_source: string
+  fee_source_label?: string
 }
 
 export interface BatchImportItem {

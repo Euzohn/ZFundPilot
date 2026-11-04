@@ -74,6 +74,7 @@ def test_tools_registered():
         "record_transaction",
         "precheck_transactions",
         "precheck_reconciliation",
+        "precheck_backfill",
     }
 
 

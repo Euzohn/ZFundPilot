@@ -581,12 +581,22 @@ async def create_operation_proposal(
         existing dividend/reinvestment transaction; no new transaction is
         created. This operation only advances the alert state and never
         writes the transactions table.
+      - "backfill_transaction_navs": fill in the missing NAV (and the derived
+        shares/amount/fee) of one or more existing transactions whose nav is
+        still NULL. Requires items (1-50), each with tx_id, expected_digest
+        (the row_digest from get_transaction), and an optional fee (required
+        only when the server cannot compute it offline). Only explicit tx_ids
+        are accepted — there is no "backfill everything". Dividend rows are
+        rejected (a dividend's nav is the per-share payout, not a fund NAV).
+        All NAVs/fees are snapshotted offline at creation time; approval never
+        touches the network. The whole batch is written atomically on approval,
+        or rejected if any row was filled or changed in the meantime.
 
     Args:
         operation_type: "add_transaction", "update_transaction",
             "delete_transaction", "add_conversion", "delete_conversion",
             "batch_import", "create_plan", "update_plan", "toggle_plan",
-            "delete_plan", or "resolve_alert".
+            "delete_plan", "resolve_alert", or "backfill_transaction_navs".
         params: For add_transaction: fund_code, action (buy/sell/dividend/
             reinvest), date (YYYY-MM-DD), fee, channel, note, is_t1, optional
             dividend_alert_id (dividend/reinvest only), and the
@@ -626,6 +636,10 @@ async def create_operation_proposal(
             status (confirmed/ignored; no rollback to pending), and an
             optional tx_id (dividend + confirmed only; links one existing
             dividend/reinvestment transaction, does not create one).
+            For backfill_transaction_navs: items (1-50), each with tx_id,
+            expected_digest (the row_digest from get_transaction), and an
+            optional fee (required only when the server cannot compute the
+            fee offline; omit otherwise).
         idempotency_key: Unique retry key (16-128 chars); same key+params
             returns the same proposal.
     """
@@ -634,12 +648,12 @@ async def create_operation_proposal(
             "add_transaction", "update_transaction", "delete_transaction",
             "add_conversion", "delete_conversion", "batch_import",
             "create_plan", "update_plan", "toggle_plan", "delete_plan",
-            "resolve_alert"):
+            "resolve_alert", "backfill_transaction_navs"):
         raise ToolError(
             'operation_type must be "add_transaction", "update_transaction", '
             '"delete_transaction", "add_conversion", "delete_conversion", '
             '"batch_import", "create_plan", "update_plan", "toggle_plan", '
-            '"delete_plan", or "resolve_alert".')
+            '"delete_plan", "resolve_alert", or "backfill_transaction_navs".')
     if not isinstance(params, dict):
         raise ToolError("params must be an object.")
     return await _post(
@@ -774,6 +788,32 @@ async def precheck_reconciliation(payload: dict[str, Any]) -> dict[str, Any]:
         raise ToolError("payload must be an object.")
     return await _post(
         "/api/agent/tools/precheck/reconciliation", {"input": payload})
+
+
+@mcp.tool()
+async def precheck_backfill(payload: dict[str, Any]) -> dict[str, Any]:
+    """Pre-check which transactions can have their NAV backfilled. Read-only.
+
+    Lists transactions whose nav is still NULL and reports, per row, whether
+    a fund NAV is available in the local NAV table, whether the fee can be
+    computed offline, and the NAV date that would be used (T+1 transactions
+    use the next trading day's NAV). Each row includes its row_digest, so you
+    can build a backfill_transaction_navs proposal directly from the output.
+
+    Dividend rows are reported as not backfillable: a dividend's nav is the
+    per-share payout, not a fund NAV.
+
+    This does NOT write the ledger and does NOT create a proposal. Requires the
+    transactions:propose scope.
+
+    Args:
+        payload: {"tx_ids"?: [int, ...]}. Omit tx_ids to list all nav-NULL
+          non-dividend rows (capped at 50); pass tx_ids to check specific rows
+          (at most 50, no duplicates). Read-only either way.
+    """
+    if not isinstance(payload, dict):
+        raise ToolError("payload must be an object.")
+    return await _post("/api/agent/tools/precheck/backfill", payload)
 
 
 @mcp.tool()

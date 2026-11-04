@@ -1454,6 +1454,12 @@ const en: typeof zh = {
     alertTriggeredReturn: "Triggered return",
     alertThreshold: "Threshold",
     alertNoLedgerHint: "This proposal only advances the alert state; it never writes or modifies transactions. Confirming a dividend alert may link one existing dividend/reinvestment transaction.",
+    backfillCount: "Rows to backfill",
+    backfillFunds: "Funds involved",
+    navDate: "NAV date",
+    navBefore: "Old NAV",
+    backfillNoNetworkHint: "Approval writes the NAV/shares/amount/fee snapshot fixed at creation time and never re-fetches; the whole batch is cancelled if any row was already backfilled by another path.",
+    backfillApproveHint: "The batch is backfilled atomically: all succeed or none.",
   },
   watchlist: {
     title: "Watchlist",

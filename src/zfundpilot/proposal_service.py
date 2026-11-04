@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from . import agent_tokens, analysis, auto_invest, config, db
+from . import agent_tokens, analysis, auto_invest, config, db, fetch_fund
 from .models import Transaction
 from .transaction_service import (
     _DIGEST_RE,
@@ -79,6 +79,9 @@ PLAN_OPERATIONS = frozenset({
 # F6.1：提醒处理。只推进提醒状态机（pending → confirmed/ignored），
 # 不写 transactions 表，也不支持 pending 回滚（人工走网页更正）。
 OPERATION_RESOLVE_ALERT = "resolve_alert"
+# F6.2：交易回填。只补 nav/shares/amount/fee 四字段；分红行（nav 为每份分红
+# 金额而非净值）直接拒绝。仅接受显式 tx_ids，不做「回填全部」。
+OPERATION_BACKFILL_TRANSACTION_NAVS = "backfill_transaction_navs"
 ALLOWED_OPERATIONS = frozenset({
     OPERATION_ADD_TRANSACTION,
     OPERATION_UPDATE_TRANSACTION,
@@ -88,6 +91,7 @@ ALLOWED_OPERATIONS = frozenset({
     OPERATION_BATCH_IMPORT,
     *PLAN_OPERATIONS,
     OPERATION_RESOLVE_ALERT,
+    OPERATION_BACKFILL_TRANSACTION_NAVS,
 })
 OPERATION_LABELS = {
     OPERATION_ADD_TRANSACTION: "新增交易",
@@ -101,6 +105,7 @@ OPERATION_LABELS = {
     OPERATION_TOGGLE_PLAN: "启停定投",
     OPERATION_DELETE_PLAN: "删除定投",
     OPERATION_RESOLVE_ALERT: "处理提醒",
+    OPERATION_BACKFILL_TRANSACTION_NAVS: "回填净值",
 }
 
 # 计划展示标签（summary_json 与既有中文标题口径一致）。
@@ -150,6 +155,8 @@ OPERATION_SCOPE = {
     OPERATION_TOGGLE_PLAN: agent_tokens.SCOPE_PLANS_PROPOSE,
     OPERATION_DELETE_PLAN: agent_tokens.SCOPE_PLANS_PROPOSE,
     OPERATION_RESOLVE_ALERT: agent_tokens.SCOPE_ALERTS_PROPOSE,
+    # F6.2 回填与 F6.3 手动执行都写账本，复用 transactions:propose。
+    OPERATION_BACKFILL_TRANSACTION_NAVS: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
 }
 
 
@@ -226,7 +233,8 @@ def _build_summary(fund_name: str, operation_type: str,
                    extra_warnings: list[str] | None = None,
                    *, before: dict | sqlite3.Row | None = None,
                    fund_names: dict[str, str] | None = None,
-                   plan_context: dict | None = None) -> dict[str, Any]:
+                   plan_context: dict | None = None,
+                   backfill_items: list[dict] | None = None) -> dict[str, Any]:
     warnings: list[str] = list(extra_warnings or [])
     if operation_type == OPERATION_ADD_TRANSACTION:
         action = params["action"]
@@ -610,6 +618,32 @@ def _build_summary(fund_name: str, operation_type: str,
             "threshold": before_fields.get("threshold"),
             "warnings": warnings,
         }
+    if operation_type == OPERATION_BACKFILL_TRANSACTION_NAVS:
+        items = backfill_items or []
+        fee_sources: dict[str, int] = {}
+        for it in items:
+            src = it.get("fee_source") or ""
+            fee_sources[src] = fee_sources.get(src, 0) + 1
+        if any(it.get("before", {}).get("fee") is None for it in items):
+            warnings.append("部分交易原先缺少手续费，已按本地/抓取费率补全")
+        if any(it.get("nav_date") != it.get("date") for it in items):
+            warnings.append("部分为 T+1 确认：采用 T+1 日净值而非成交当日净值")
+        funds: dict[str, str] = {}
+        for it in items:
+            code = it.get("fund_code", "")
+            if code and code not in funds:
+                funds[code] = it.get("fund_name") or code
+        return {
+            "operation_type": operation_type,
+            "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
+            "title": f"回填净值 {len(items)} 条",
+            "count": len(items),
+            "funds": [{"fund_code": code, "fund_name": name}
+                      for code, name in funds.items()],
+            "fee_sources": fee_sources,
+            "items": items,
+            "warnings": warnings,
+        }
     # 兜底：不应到达
     return {"operation_type": operation_type,
             "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
@@ -851,6 +885,7 @@ def create_pending_proposal_conn(
     before: dict | sqlite3.Row | None = None,
     origin: str = "", reason: str = "",
     extra_warnings: list[str] | None = None,
+    backfill_items: list[dict] | None = None,
 ) -> ProposalResult:
     """在调用方事务内创建待审提案；不写幂等记录。
 
@@ -1006,6 +1041,20 @@ def create_pending_proposal_conn(
             extra.append(
                 f"当前有 {related} 个待审提醒处理提案，建议先处理再提交新提案")
         extra_warnings = extra
+    elif operation_type == OPERATION_BACKFILL_TRANSACTION_NAVS:
+        # 创建期离线预计算每行 nav/shares/amount/fee 快照；任何一行不可执行
+        # （dividend / nav 缺失 / fee 未知且未显式给）时整批拒绝，避免产生
+        # 「审批后才可能执行不了」的悬空提案。
+        prepared, error = _prepare_backfill_items(conn, clean.get("items") or [])
+        if error is not None:
+            _audit(conn, principal, ip, "proposal_create_rejected", {
+                "reason": error.code, "operation_type": operation_type,
+                "issues": error.data.get("issues")})
+            return error
+        backfill_items = prepared
+        resolved_fund_code = prepared[0]["fund_code"] if prepared else None
+        fund_name = (fund_name_in_conn(conn, resolved_fund_code)
+                     if resolved_fund_code else None) or resolved_fund_code or ""
     else:
         fund_name = (fund_name_in_conn(conn, resolved_fund_code)
                      if resolved_fund_code else None)
@@ -1034,7 +1083,8 @@ def create_pending_proposal_conn(
 
     summary = _build_summary(
         fund_name, operation_type, clean, extra_warnings, before=before,
-        fund_names=batch_fund_names, plan_context=plan_context)
+        fund_names=batch_fund_names, plan_context=plan_context,
+        backfill_items=backfill_items)
     params_json = json.dumps(clean, ensure_ascii=False, sort_keys=True)
     summary_json = json.dumps(summary, ensure_ascii=False, sort_keys=True)
     expires_at = (now + timedelta(days=PROPOSAL_TTL_DAYS)).isoformat()
@@ -1073,6 +1123,9 @@ def create_pending_proposal_conn(
         audit_detail["status"] = clean.get("status")
         if clean.get("tx_id") is not None:
             audit_detail["tx_id"] = clean.get("tx_id")
+    elif operation_type == OPERATION_BACKFILL_TRANSACTION_NAVS:
+        audit_detail["count"] = len(backfill_items or [])
+        audit_detail.pop("fund_code", None)
     else:
         audit_detail["tx_id"] = clean.get("tx_id")
     if origin:
@@ -1432,6 +1485,68 @@ def validate_resolve_alert_params(params: object) -> dict[str, Any]:
     }
 
 
+def validate_backfill_transaction_navs_params(
+        params: object) -> dict[str, Any]:
+    """校验 ``backfill_transaction_navs``：显式 tx_ids + 逐行版本前置 + 可选 fee。
+
+    只接受「显式 tx_ids」语义（D2），不做「回填全部」。``items[].fee`` 仅在
+    创建期费率未知时由 Agent 显式提供；顶层未知字段硬拒。
+    """
+    if not isinstance(params, dict):
+        raise ProposalValidationError("params", "params 必须是对象")
+    unknown = set(params) - {"items"}
+    if unknown:
+        raise ProposalValidationError(
+            "params", f"包含不支持的参数：{', '.join(sorted(unknown))}")
+    items = params.get("items")
+    if not isinstance(items, list):
+        raise ProposalValidationError("items", "items 必须是数组")
+    if not items:
+        raise ProposalValidationError("items", "items 不能为空")
+    if len(items) > MAX_BATCH_ITEMS:
+        raise ProposalValidationError(
+            "items", f"回填条目数超过 {MAX_BATCH_ITEMS} 上限")
+    cleaned: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ProposalValidationError(
+                "items", f"第 {idx} 条必须是对象")
+        unknown_item = set(item) - {"tx_id", "expected_digest", "fee"}
+        if unknown_item:
+            raise ProposalValidationError(
+                "items",
+                f"第 {idx} 条包含不支持的参数："
+                f"{', '.join(sorted(unknown_item))}")
+        tx_id = item.get("tx_id")
+        if isinstance(tx_id, bool) or not isinstance(tx_id, int) or tx_id <= 0:
+            raise ProposalValidationError(
+                "items", f"第 {idx} 条的 tx_id 必须是正整数")
+        if tx_id in seen:
+            raise ProposalValidationError(
+                "items", f"第 {idx} 条的 tx_id={tx_id} 与批内重复")
+        seen.add(tx_id)
+        expected_digest = item.get("expected_digest")
+        if not isinstance(expected_digest, str) or not _DIGEST_RE.fullmatch(
+                expected_digest.strip().lower()):
+            raise ProposalValidationError(
+                "items",
+                f"第 {idx} 条的 expected_digest 必须是 64 位十六进制"
+                "（取自 get_transaction 返回的 row_digest）")
+        clean_item: dict[str, Any] = {
+            "tx_id": tx_id,
+            "expected_digest": expected_digest.strip().lower(),
+        }
+        fee = _number(item.get("fee"), "fee") if "fee" in item else None
+        if "fee" in item and fee is None:
+            raise ProposalValidationError(
+                "items", f"第 {idx} 条的 fee 不能为空（如需清除请用网页改单）")
+        if fee is not None:
+            clean_item["fee"] = fee
+        cleaned.append(clean_item)
+    return {"items": cleaned}
+
+
 def _merge_plan_patch(row: dict | sqlite3.Row, clean: dict) -> dict[str, Any]:
     """把 update patch 合并到当前行配置；patch 显式 null 表示清除该字段。"""
     base = dict(row) if isinstance(row, sqlite3.Row) else row
@@ -1521,6 +1636,294 @@ def _validate_alert_tx_link(
     return None
 
 
+# ---------------------------------------------------------------------------
+# F6.2：交易回填（离线预计算 + 审批零联网）
+# ---------------------------------------------------------------------------
+_BACKFILL_FEE_SOURCE_LABELS = {
+    "existing": "沿用原手续费",
+    "fetched": "按本地/抓取费率计算",
+    "explicit": "Agent 显式提供",
+}
+
+
+def _backfill_nav_date(tx: Transaction) -> str:
+    """回填应采用的净值日期：T+1 用次日，其余用成交当日。"""
+    if tx.is_t1:
+        d = datetime.strptime(tx.date, "%Y-%m-%d")
+        return (d + timedelta(days=1)).strftime("%Y-%m-%d")
+    return tx.date
+
+
+def _backfill_fee(tx: Transaction) -> tuple[float, str, str | None, str]:
+    """回填时的费率快照；返回 (fee, fee_source, reason, message)。
+
+    口径与网页/调度器离线回填一致（``if not tx.fee: 抓取``）：已有非零手续费
+    沿用；为 0/NULL 时按方向抓取（买入按金额、卖出按份额）。费率未知
+    （``fee_unknown``）或净值待确认（``pending_nav``）时返回 ``fee_unknown``。
+    分红/再投资不涉及手续费，沿用 0。仅本地计算，不产生任何写操作。
+    """
+    if tx.fee:
+        return tx.fee, "existing", None, ""
+    if tx.action == "buy":
+        if not tx.amount:
+            return 0.0, "", "fee_unknown", "缺少申购金额，无法计算买入手续费"
+        res = fetch_fund.calc_purchase_fee(tx.fund_code, float(tx.amount))
+        if res.code == "fee_unknown":
+            return 0.0, "", "fee_unknown", (
+                f"{tx.fund_code} 申购费率未知，无法计算手续费；"
+                "请显式提供 fee 后再提案")
+        return res.fee, "fetched", None, ""
+    if tx.action == "sell" and tx.shares:
+        res = fetch_fund.calc_redemption_fee(
+            tx.fund_code, tx.date, float(tx.shares))
+        if res.code in ("fee_unknown", "pending_nav"):
+            return 0.0, "", "fee_unknown", (
+                f"{tx.fund_code} 赎回费率/确认净值未知，无法计算手续费；"
+                "请显式提供 fee 后再提案")
+        return res.fee, "fetched", None, ""
+    # 再投资等其他方向不涉及手续费，沿用 0。
+    return 0.0, "existing", None, ""
+
+
+def _preview_backfill_row(conn: sqlite3.Connection, row: sqlite3.Row,
+                          explicit_fee: float | None,
+                          ) -> tuple[dict | None, str | None, str]:
+    """离线预览某行回填后的 nav/shares/amount/fee 快照（不写库）。
+
+    返回 ``(snapshot, reason, message)``：``reason`` 为 None 表示可回填，
+    ``snapshot`` 含 ``tx_id/fund_code/date/nav_date/before/after/fee_source``。
+    ``before``/``after`` 仅覆盖回填的四字段（nav/shares/amount/fee）。
+    """
+    tx = Transaction.from_row(row)
+    nav_date = _backfill_nav_date(tx)
+    before = {
+        "nav": _norm_field(tx.nav), "shares": _norm_field(tx.shares),
+        "amount": _norm_field(tx.amount), "fee": _norm_field(tx.fee),
+    }
+    nav_row = db.get_nav_on_or_after_conn(conn, tx.fund_code, nav_date)
+    if nav_row is None:
+        return None, "nav_unavailable", (
+            f"本地净值表缺少 {tx.fund_code} 在 {nav_date} 当天或之后的净值")
+    tx.nav = float(nav_row["nav"])
+    fee_source: str
+    if explicit_fee is not None:
+        tx.fee = float(explicit_fee)
+        fee_source = "explicit"
+    else:
+        fee, fee_source, reason, message = _backfill_fee(tx)
+        if reason is not None:
+            return None, reason, message
+        tx.fee = fee
+    tx.normalize()
+    if not tx.is_valid():
+        return None, "invalid_row", "回填后交易信息仍不完整，无法回填"
+    after = {
+        "nav": _norm_field(tx.nav), "shares": _norm_field(tx.shares),
+        "amount": _norm_field(tx.amount), "fee": _norm_field(tx.fee),
+    }
+    snapshot = {
+        "tx_id": tx.id, "fund_code": tx.fund_code, "date": tx.date,
+        "nav_date": nav_date, "before": before, "after": after,
+        "fee_source": fee_source,
+        "fee_source_label": _BACKFILL_FEE_SOURCE_LABELS.get(fee_source, ""),
+    }
+    return snapshot, None, ""
+
+
+# 回填整批拒绝时对外 code 的优先级：结构/存在性问题优先于数据可用性问题。
+_BACKFILL_REJECT_PRIORITY = (
+    "target_not_found", "dividend_not_backfillable", "nav_present",
+    "target_changed", "nav_unavailable", "fee_unknown", "invalid_row",
+)
+
+
+def _backfill_reject(problems: list[dict]) -> ProposalResult:
+    """把回填预计算的行级问题汇总为整批拒绝结果（含逐行 ``issues``）。
+
+    分红行（``dividend_not_backfillable``）语义上是参数非法，返回 422；
+    其余为并发/数据冲突，返回 409。对外 ``code`` 取优先级最高的问题。
+    """
+    ranked = sorted(
+        problems,
+        key=lambda p: _BACKFILL_REJECT_PRIORITY.index(p["reason"])
+        if p["reason"] in _BACKFILL_REJECT_PRIORITY else len(
+            _BACKFILL_REJECT_PRIORITY))
+    first = ranked[0]
+    http_status = 422 if first["reason"] == "dividend_not_backfillable" else 409
+    if len(ranked) > 1:
+        message = (f"第 {first['index'] + 1} 行不可回填：{first['message']}"
+                   f"（共 {len(ranked)} 行存在问题）")
+    else:
+        message = f"第 {first['index'] + 1} 行不可回填：{first['message']}"
+    return ProposalResult(
+        http_status, first["reason"], message, {"issues": ranked})
+
+
+def _prepare_backfill_items(conn: sqlite3.Connection,
+                            items: list[dict]) -> tuple[list[dict],
+                                                        ProposalResult | None]:
+    """逐行校验并预计算回填快照；任一行不可执行则整批拒绝。
+
+    返回 ``(prepared, error)``：``prepared`` 每条为 ``_preview_backfill_row``
+    的快照（另带 ``index``），``error`` 非 None 时整批不创建。
+    """
+    problems: list[dict] = []
+    prepared: list[dict] = []
+    for idx, item in enumerate(items):
+        tx_id = int(item["tx_id"])
+        explicit_fee = item.get("fee")
+        row = db.get_transaction_conn(conn, tx_id)
+        if row is None:
+            problems.append({
+                "index": idx, "tx_id": tx_id, "reason": "target_not_found",
+                "message": f"未找到交易 {tx_id}"})
+            continue
+        if row["action"] == "dividend":
+            problems.append({
+                "index": idx, "tx_id": tx_id,
+                "reason": "dividend_not_backfillable",
+                "message": "分红交易的 nav 是每份分红金额而非基金净值，"
+                           "不能按净值回填（请走网页改单）"})
+            continue
+        if row["nav"] is not None:
+            problems.append({
+                "index": idx, "tx_id": tx_id, "reason": "nav_present",
+                "message": f"交易 {tx_id} 已有净值，无需回填"})
+            continue
+        if transaction_row_digest(row) != item["expected_digest"]:
+            problems.append({
+                "index": idx, "tx_id": tx_id, "reason": "target_changed",
+                "message": f"交易 {tx_id} 已被修改，请通过 get_transaction "
+                           "重新读取 row_digest 后再提案"})
+            continue
+        snapshot, reason, message = _preview_backfill_row(
+            conn, row, explicit_fee)
+        if reason is not None:
+            problems.append({
+                "index": idx, "tx_id": tx_id, "reason": reason,
+                "message": message})
+            continue
+        snapshot["index"] = idx
+        prepared.append(snapshot)
+    if problems:
+        return [], _backfill_reject(problems)
+    return prepared, None
+
+
+# 回填预检（只读盘点）最大返回条目数；与提案 batch 上限一致。
+MAX_PRECHECK_BACKFILL_ITEMS = MAX_BATCH_ITEMS
+
+
+def _candidate_backfill_rows(conn: sqlite3.Connection,
+                             tx_ids: list[int] | None) -> list[sqlite3.Row]:
+    """取回填候选行：显式 tx_ids（按给定顺序）或全部 nav IS NULL（排除分红）。
+
+    显式 ``tx_ids`` 时逐条取（可能不存在/已回填/分红，交由上层报告）；
+    省略时返回 nav IS NULL 且非分红的前 ``MAX_PRECHECK_BACKFILL_ITEMS`` 行。
+    """
+    if tx_ids is not None:
+        rows: list[sqlite3.Row] = []
+        for tx_id in tx_ids:
+            row = db.get_transaction_conn(conn, tx_id)
+            if row is not None:
+                rows.append(row)
+        return rows
+    return conn.execute(
+        "SELECT * FROM transactions WHERE nav IS NULL AND action<>'dividend' "
+        "ORDER BY date ASC, id ASC LIMIT ?",
+        (MAX_PRECHECK_BACKFILL_ITEMS,)).fetchall()
+
+
+def _backfill_item_view(conn: sqlite3.Connection, row: sqlite3.Row,
+                        explicit_fee: float | None) -> tuple[dict, str | None,
+                                                             str]:
+    """渲染回填候选行的盘点视图；返回 ``(item, reason, message)``。
+
+    ``reason`` 非 None 表示该行当前不可回填；``row_digest`` 供 Agent 直接
+    构造提案的 ``expected_digest``。
+    """
+    tx_id = row["id"]
+    action = row["action"]
+    fund_code = row["fund_code"]
+    base: dict[str, Any] = {
+        "tx_id": tx_id, "fund_code": fund_code,
+        "fund_name": fund_name_in_conn(conn, fund_code) or fund_code,
+        "action": action, "date": row["date"],
+        "is_t1": bool(row["is_t1"]),
+        "row_digest": transaction_row_digest(row),
+        "before": {
+            "nav": _norm_field(row["nav"]), "shares": _norm_field(row["shares"]),
+            "amount": _norm_field(row["amount"]), "fee": _norm_field(row["fee"]),
+        },
+    }
+    if action == "dividend":
+        base.update(
+            backfillable=False, reason="dividend_not_backfillable",
+            message="分红交易的 nav 是每份分红金额而非基金净值，不能按净值回填")
+        return base, "dividend_not_backfillable", base["message"]
+    if row["nav"] is not None:
+        base.update(backfillable=False, reason="nav_present",
+                    message="已有净值，无需回填")
+        return base, "nav_present", base["message"]
+    snapshot, reason, message = _preview_backfill_row(conn, row, explicit_fee)
+    if reason is not None:
+        base.update(backfillable=False, reason=reason, message=message)
+        return base, reason, message
+    base.update(
+        backfillable=True, reason=None, message="",
+        nav_date=snapshot["nav_date"], after=snapshot["after"],
+        fee_source=snapshot["fee_source"],
+        fee_source_label=snapshot["fee_source_label"])
+    return base, None, ""
+
+
+def precheck_backfill(input_data: object) -> dict[str, Any]:
+    """只读盘点可回填净值的候选行；不写账本、不创建提案、审批路径零联网。
+
+    接受 ``{"tx_ids"?: [int, ...]}``：省略 ``tx_ids`` 时返回全部 nav IS NULL
+    的非分红行（上限 ``MAX_PRECHECK_BACKFILL_ITEMS``）；给定 ``tx_ids`` 时按
+    给定顺序逐行报告（含不可回填原因）。每行返回 ``row_digest``、净值/费率
+    可用性与回填后的 ``after`` 快照，供 Agent 直接构造提案。
+    """
+    if not isinstance(input_data, dict):
+        raise ProposalValidationError("input", "input 必须是对象")
+    unknown = set(input_data) - {"tx_ids"}
+    if unknown:
+        raise ProposalValidationError(
+            "input", f"包含不支持的参数：{', '.join(sorted(unknown))}")
+    tx_ids_raw = input_data.get("tx_ids")
+    tx_ids: list[int] | None = None
+    if tx_ids_raw is not None:
+        if not isinstance(tx_ids_raw, list) or not tx_ids_raw:
+            raise ProposalValidationError("tx_ids", "tx_ids 必须是非空数组")
+        if len(tx_ids_raw) > MAX_PRECHECK_BACKFILL_ITEMS:
+            raise ProposalValidationError(
+                "tx_ids", f"tx_ids 数量超过 {MAX_PRECHECK_BACKFILL_ITEMS} 上限")
+        cleaned: list[int] = []
+        for value in tx_ids_raw:
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ProposalValidationError(
+                    "tx_ids", "tx_ids 必须是正整数数组")
+            cleaned.append(value)
+        if len(set(cleaned)) != len(cleaned):
+            raise ProposalValidationError("tx_ids", "tx_ids 批内不能重复")
+        tx_ids = cleaned
+
+    with db.get_connection() as conn:
+        rows = _candidate_backfill_rows(conn, tx_ids)
+        items: list[dict[str, Any]] = []
+        ready = 0
+        for row in rows:
+            item, reason, _ = _backfill_item_view(conn, row, None)
+            if reason is None:
+                ready += 1
+            items.append(item)
+    return {
+        "total": len(items), "ready": ready,
+        "unavailable": len(items) - ready, "items": items,
+    }
+
+
 def _validate_proposal_params(operation_type: str, params: object) -> dict:
     """按操作类型分派参数校验；返回规范化后的参数字典。"""
     if operation_type == OPERATION_ADD_TRANSACTION:
@@ -1545,6 +1948,8 @@ def _validate_proposal_params(operation_type: str, params: object) -> dict:
         return validate_delete_plan_params(params)
     if operation_type == OPERATION_RESOLVE_ALERT:
         return validate_resolve_alert_params(params)
+    if operation_type == OPERATION_BACKFILL_TRANSACTION_NAVS:
+        return validate_backfill_transaction_navs_params(params)
     raise ProposalValidationError(
         "operation_type", f"操作类型不受支持：{operation_type}")
 
@@ -2367,6 +2772,78 @@ def _exec_resolve_alert(conn: sqlite3.Connection, row: sqlite3.Row,
     return execution, audit_id
 
 
+def _exec_backfill_transaction_navs(conn: sqlite3.Connection, row: sqlite3.Row,
+                                    clean: dict, pid: int, reviewer: str,
+                                    now: datetime, ip: str | None):
+    """执行回填：逐行复读 nav IS NULL + digest 匹配，全对才整批写快照值。
+
+    快照值取自 ``summary_json``（创建期离线预计算并固化），审批期不联网、
+    不重算漂移值。任一行失配/被删除/已被回填 → 整批 ``conflict``，无部分写入。
+    """
+    items = clean.get("items") or []
+    try:
+        summary = json.loads(row["summary_json"] or "{}")
+    except ValueError:
+        summary = {}
+    snapshot_map = {it.get("tx_id"): it for it in summary.get("items", [])}
+    updates: list[tuple] = []
+    details: list[dict] = []
+    for idx, item in enumerate(items):
+        tx_id = int(item["tx_id"])
+        target = db.get_transaction_conn(conn, tx_id)
+        if target is None:
+            return _mark_failure(
+                conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+                reason="target_deleted",
+                message=f"目标交易 {tx_id} 已被删除，无法回填",
+                extra={"index": idx, "tx_id": tx_id,
+                       "executed_before_failure": 0})
+        if target["nav"] is not None:
+            return _mark_failure(
+                conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+                reason="partially_updated",
+                message=f"交易 {tx_id} 已被其他路径回填，整批取消",
+                extra={"index": idx, "tx_id": tx_id,
+                       "executed_before_failure": 0})
+        if transaction_row_digest(target) != item["expected_digest"]:
+            return _mark_failure(
+                conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+                reason="target_changed",
+                message=f"目标交易 {tx_id} 已被修改，请重新提案",
+                extra={"index": idx, "tx_id": tx_id,
+                       "executed_before_failure": 0})
+        snap = snapshot_map.get(tx_id)
+        if snap is None or "after" not in snap:
+            return _mark_failure(
+                conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+                reason="proposal_corrupt",
+                message=f"交易 {tx_id} 的回填快照缺失，无法执行",
+                extra={"index": idx, "tx_id": tx_id,
+                       "executed_before_failure": 0})
+        after = snap["after"]
+        updates.append((after.get("nav"), after.get("shares"),
+                        after.get("amount"), after.get("fee"), tx_id))
+        details.append({"tx_id": tx_id, "before": snap.get("before"),
+                        "after": after})
+    conn.executemany(
+        "UPDATE transactions SET nav=?, shares=?, amount=?, fee=? WHERE id=?",
+        updates)
+    tx_ids = [u[4] for u in updates]
+    # 审计事件与网页/调度器对齐（nav_backfill），detail 另带 proposal_id 区分来源。
+    db.log_audit(
+        "nav_backfill", ip=ip, username=reviewer,
+        detail={"count": len(tx_ids), "tx_ids": tx_ids, "items": details,
+                "proposal_id": pid},
+        conn=conn,
+    )
+    execution = {"ok": True, "count": len(tx_ids), "tx_ids": tx_ids,
+                 "items": details}
+    audit_id = _audit(conn, None, ip, "proposal_approved", {
+        "proposal_id": pid, "operation_type": row["operation_type"],
+        "count": len(tx_ids), "tx_ids": tx_ids}, reviewer=reviewer)
+    return execution, audit_id
+
+
 def _exec_update_transaction(conn: sqlite3.Connection, row: sqlite3.Row,
                              clean: dict, pid: int, reviewer: str,
                              now: datetime, ip: str | None):
@@ -2692,6 +3169,9 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
         elif operation_type == OPERATION_RESOLVE_ALERT:
             outcome = _exec_resolve_alert(
                 conn, row, clean, pid, reviewer, now, ip)
+        elif operation_type == OPERATION_BACKFILL_TRANSACTION_NAVS:
+            outcome = _exec_backfill_transaction_navs(
+                conn, row, clean, pid, reviewer, now, ip)
         else:
             return _mark_failure(
                 conn, row, reviewer, now, ip, status=STATUS_FAILED,
@@ -2710,6 +3190,8 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
     analysis.clear_analysis_cache()
     message = ("提案已批准，提醒状态已更新"
                if operation_type == OPERATION_RESOLVE_ALERT
+               else "提案已批准，净值已回填"
+               if operation_type == OPERATION_BACKFILL_TRANSACTION_NAVS
                else "提案已批准并写入账本")
     return ProposalResult(
         200, "succeeded", message,

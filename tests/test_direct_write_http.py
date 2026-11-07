@@ -170,7 +170,7 @@ class TestDirectWriteResults:
         detail = response.json()["detail"]
         assert detail["code"] == "duplicate_candidate"
         assert "proposal_id" not in detail
-        assert str(proposal_id) not in response.text
+        assert str(proposal_id) not in str(detail)
         assert db.get_transactions_desc() == []
 
     def test_capabilities_registers_record_transaction_with_fallback(

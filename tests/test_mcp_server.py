@@ -135,6 +135,24 @@ def test_api_error_detail_is_preserved(mock_api):
         _run(mcp_server.get_fund_detail("000000"))
 
 
+def test_api_error_prefers_error_object_and_surfaces_request_id(mock_api):
+    mock_api(lambda request: httpx.Response(
+        409,
+        json={
+            "detail": {"code": "target_changed", "message": "已变更"},
+            "error": {
+                "code": "target_changed", "message": "已变更",
+                "request_id": "req-0123456789", "retryable": False,
+            },
+            "request_id": "req-0123456789",
+        },
+        headers={"X-Request-ID": "req-0123456789"},
+    ))
+
+    with pytest.raises(ToolError, match="target_changed.*req-0123456789"):
+        _run(mcp_server.get_data_status())
+
+
 def test_fund_code_validation_without_network():
     with pytest.raises(ToolError, match="6 digits"):
         _run(mcp_server.get_fund_detail("abc"))

@@ -36,16 +36,20 @@ from fastapi import (
     Security,
     UploadFile,
 )
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__ as APP_VERSION
 from . import (
     agent_tokens,
     ai,
     analysis,
+    api_errors,
     auto_invest,
     backtest,
     backup_service,
@@ -140,6 +144,49 @@ app = FastAPI(
 )
 
 
+@app.exception_handler(StarletteHTTPException)
+async def _http_exception_handler(
+    request: Request, exc: StarletteHTTPException,
+) -> JSONResponse:
+    """统一错误包：保留 ``detail``，补充稳定 ``code`` 与 ``request_id``。
+
+    兼容旧客户端：``detail`` 的内容与形状保持不变；新客户端应读取 ``error``。
+    """
+    request_id = getattr(request.state, "request_id", "") or api_errors.get_request_id()
+    payload = api_errors.build_error_payload(
+        request_id=request_id,
+        status_code=exc.status_code,
+        detail=exc.detail,
+        code=getattr(exc, "code", None),
+        retryable=getattr(exc, "retryable", None),
+        retry_after=getattr(exc, "retry_after", None),
+    )
+    headers = dict(exc.headers or {})
+    headers["X-Request-ID"] = request_id
+    return JSONResponse(
+        status_code=exc.status_code, content=payload, headers=headers)
+
+
+@app.exception_handler(RequestValidationError)
+async def _request_validation_error_handler(
+    request: Request, exc: RequestValidationError,
+) -> JSONResponse:
+    """参数校验失败：``detail`` 保留 FastAPI 原始列表，另给稳定错误码。"""
+    request_id = getattr(request.state, "request_id", "") or api_errors.get_request_id()
+    details = jsonable_encoder(exc.errors())
+    payload = api_errors.build_error_payload(
+        request_id=request_id,
+        status_code=422,
+        detail=details,
+        code="validation_error",
+        message="请求参数校验失败",
+        details=details,
+    )
+    return JSONResponse(
+        status_code=422, content=payload,
+        headers={"X-Request-ID": request_id})
+
+
 @app.exception_handler(sqlite3.OperationalError)
 async def _sqlite_operational_error_handler(
     request: Request, exc: sqlite3.OperationalError,
@@ -149,27 +196,41 @@ async def _sqlite_operational_error_handler(
     备份恢复等长事务会持有写锁；若 ``busy_timeout`` 耗尽，Agent 调用方应
     收到明确的「稍后重试」信号，而不是无法区分的服务器错误。
     """
+    request_id = getattr(request.state, "request_id", "") or api_errors.get_request_id()
     message = str(exc).lower()
     if "locked" in message or "busy" in message:
         logger.warning(
             "数据库繁忙，请求稍后重试：%s %s", request.method, request.url.path)
-        return JSONResponse(
+        payload = api_errors.build_error_payload(
+            request_id=request_id,
             status_code=503,
-            content={"detail": {
+            detail={
                 "code": "database_busy",
                 "message": "数据库正忙（可能正在备份或恢复），请稍后重试",
-            }},
-            headers={"Retry-After": "5"},
+            },
+            retryable=True,
+            retry_after=5,
+        )
+        return JSONResponse(
+            status_code=503,
+            content=payload,
+            headers={"Retry-After": "5", "X-Request-ID": request_id},
         )
     logger.error(
         "数据库操作失败：%s %s", request.method, request.url.path,
         exc_info=exc)
-    return JSONResponse(
+    payload = api_errors.build_error_payload(
+        request_id=request_id,
         status_code=500,
-        content={"detail": {
+        detail={
             "code": "database_error",
             "message": "数据库操作失败，请稍后重试",
-        }},
+        },
+    )
+    return JSONResponse(
+        status_code=500,
+        content=payload,
+        headers={"X-Request-ID": request_id},
     )
 
 # ---------------------------------------------------------------------------
@@ -324,11 +385,22 @@ async def endpoint_rate_limit_middleware(request: Request, call_next):
         return await call_next(request)
     allowed, retry_after = _check_endpoint_rate_limit(request, path)
     if not allowed:
+        request_id = getattr(request.state, "request_id", "") or api_errors.get_request_id()
+        message = f"请求过于频繁，请 {retry_after} 秒后再试"
+        payload = api_errors.build_error_payload(
+            request_id=request_id,
+            status_code=429,
+            detail=message,
+            code="rate_limited",
+            retryable=True,
+            retry_after=retry_after,
+        )
+        payload["retry_after"] = retry_after  # 兼容旧客户端读取顶层字段
         return JSONResponse(
             status_code=429,
-            content={"detail": f"请求过于频繁，请 {retry_after} 秒后再试",
-                     "retry_after": retry_after},
-            headers={"Retry-After": str(retry_after)},
+            content=payload,
+            headers={"Retry-After": str(retry_after),
+                     "X-Request-ID": request_id},
         )
     return await call_next(request)
 
@@ -412,7 +484,16 @@ async def auth_middleware(request: Request, call_next):
         if _verify_token(token):
             return await call_next(request)
 
-    return JSONResponse(status_code=401, content={"detail": "未登录或 token 已过期"})
+    return JSONResponse(
+        status_code=401,
+        content=api_errors.build_error_payload(
+            request_id=(getattr(request.state, "request_id", "")
+                        or api_errors.get_request_id()),
+            status_code=401,
+            detail="未登录或 token 已过期",
+            code="session_expired",
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -441,10 +522,21 @@ def auth_login(request: Request, body: LoginRequest) -> dict[str, Any]:
     if not allowed:
         db.log_audit("login_failed", ip=ip, username=body.username,
                       detail={"reason": "rate_limited", "retry_after": retry_after})
+        request_id = getattr(request.state, "request_id", "") or api_errors.get_request_id()
+        payload = api_errors.build_error_payload(
+            request_id=request_id,
+            status_code=429,
+            detail=f"尝试次数过多，请 {retry_after} 秒后再试",
+            code="login_rate_limited",
+            retryable=True,
+            retry_after=retry_after,
+        )
+        payload["retry_after"] = retry_after  # 兼容旧客户端读取顶层字段
         return JSONResponse(
             status_code=429,
-            content={"detail": f"尝试次数过多，请 {retry_after} 秒后再试",
-                     "retry_after": retry_after},
+            content=payload,
+            headers={"Retry-After": str(retry_after),
+                     "X-Request-ID": request_id},
         )
 
     if body.username != config.AUTH_USERNAME:
@@ -821,9 +913,12 @@ def _authenticate_agent_token(request: Request) -> agent_tokens.AgentTokenContex
         db.log_audit(
             "agent_auth_failed", ip=_get_client_ip(request),
             detail={"path": request.url.path, "reason": exc.reason,
+                    "request_id": api_errors.get_request_id(),
                     "token_prefix": plaintext[:agent_tokens.PREFIX_DISPLAY_LEN]},
         )
-        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+        raise api_errors.ApiError(
+            status_code=exc.status_code, detail=exc.message,
+            code=exc.reason) from exc
 
 
 def require_agent_scope(required_scope: str | None):
@@ -868,11 +963,13 @@ def _require_agent_scopes(required_scopes: tuple[str, ...] | None):
                 "agent_auth_failed", ip=_get_client_ip(request),
                 detail={"path": request.url.path, "scope": scope_label,
                         "reason": "insufficient_scope",
+                        "request_id": api_errors.get_request_id(),
                         "token_id": ctx.id, "token_prefix": ctx.prefix},
             )
-            raise HTTPException(
+            raise api_errors.ApiError(
                 status_code=403,
                 detail=f"Agent token 缺少权限：{' / '.join(required_scopes)}",
+                code="insufficient_scope",
             )
 
         allowed, retry_after = _check_agent_rate_limit(
@@ -881,17 +978,22 @@ def _require_agent_scopes(required_scopes: tuple[str, ...] | None):
             db.log_audit(
                 "agent_rate_limited", ip=_get_client_ip(request),
                 detail={"path": request.url.path, "token_id": ctx.id,
+                        "request_id": api_errors.get_request_id(),
                         "token_prefix": ctx.prefix, "retry_after": retry_after},
             )
-            raise HTTPException(
+            raise api_errors.ApiError(
                 status_code=429,
                 detail=f"请求过于频繁，请 {retry_after} 秒后再试",
+                code="rate_limited",
+                retryable=True,
+                retry_after=retry_after,
                 headers={"Retry-After": str(retry_after)},
             )
 
         db.log_audit(
             "agent_auth_ok", ip=_get_client_ip(request),
             detail={"path": request.url.path, "token_id": ctx.id,
+                    "request_id": api_errors.get_request_id(),
                     "token_prefix": ctx.prefix, "scope": scope_label},
         )
         return ctx
@@ -913,18 +1015,49 @@ async def agent_auth_middleware(request: Request, call_next):
     try:
         request.state.agent_ctx = _authenticate_agent_token(request)
     except HTTPException as exc:
+        request_id = (getattr(request.state, "request_id", "")
+                      or api_errors.get_request_id())
+        payload = api_errors.build_error_payload(
+            request_id=request_id,
+            status_code=exc.status_code,
+            detail=exc.detail,
+            code=getattr(exc, "code", None),
+            retryable=getattr(exc, "retryable", None),
+            retry_after=getattr(exc, "retry_after", None),
+        )
+        headers = dict(exc.headers or {})
+        headers["X-Request-ID"] = request_id
         return JSONResponse(status_code=exc.status_code,
-                            content={"detail": exc.detail},
-                            headers=exc.headers)
+                            content=payload,
+                            headers=headers)
     return await call_next(request)
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """为每个请求分配/透传 ``X-Request-ID``，供错误包与日志关联。
+
+    必须最后注册（最外层），这样内层鉴权/限流的直接响应也会带上该头。
+    """
+    request_id = api_errors.normalize_request_id(
+        request.headers.get("X-Request-ID"))
+    request.state.request_id = request_id
+    token = api_errors.set_request_id(request_id)
+    try:
+        response = await call_next(request)
+    finally:
+        api_errors.reset_request_id(token)
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
 # --- Agent 只读工具（首期 4 个）--------------------------------------------
 def _agent_tool_response(tool: str, data: dict[str, Any]) -> dict[str, Any]:
-    """统一工具响应包：版本、工具名、生成时间与币种，便于 Agent 稳定解析。"""
+    """统一工具响应包：版本、工具名、生成时间、币种与请求 ID，便于稳定解析。"""
     return {
         "schema_version": 1,
         "tool": tool,
+        "request_id": api_errors.get_request_id(),
         "generated_at": datetime.now(config.TIMEZONE).isoformat(),
         "currency": "CNY",
         "data": data,
@@ -1999,12 +2132,14 @@ def agent_create_proposal(
             "agent_auth_failed", ip=_get_client_ip(request),
             detail={"path": request.url.path, "scope": required_scope,
                     "reason": "insufficient_scope",
+                    "request_id": api_errors.get_request_id(),
                     "token_id": ctx.id, "token_prefix": ctx.prefix,
                     "operation_type": body.operation_type})
-        raise HTTPException(
+        raise api_errors.ApiError(
             status_code=403,
             detail=(f"Agent token 缺少权限：{required_scope}"
                     f"（操作 {body.operation_type} 需要）"),
+            code="insufficient_scope",
         )
     try:
         result = proposal_service.create_proposal(

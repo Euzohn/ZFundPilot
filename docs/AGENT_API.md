@@ -110,6 +110,7 @@ Authorization: Bearer zfag_xxxxxxxx
 {
   "schema_version": 1,
   "tool": "get_portfolio_summary",
+  "request_id": "0f5c2d9a8b7e4c1fa2b3c4d5e6f70819",
   "generated_at": "2026-10-27T21:30:00+08:00",
   "currency": "CNY",
   "data": { }
@@ -118,28 +119,54 @@ Authorization: Bearer zfag_xxxxxxxx
 
 - `schema_version`：响应结构版本，当前为 `1`；新增字段不改版本，破坏性变更才递增。
 - `tool`：工具名，与端点对应。
+- `request_id`：本次请求 ID，与响应头 `X-Request-ID` 一致。
 - `generated_at`：服务端生成时间（含时区）。
 - `currency`：金额币种，当前固定 `CNY`。
 - `data`：工具具体数据。
 
+### 请求 ID
+
+每个响应都带 `X-Request-ID` 头；Agent 工具成功响应体与所有错误响应体也含 `request_id`。客户端可传入
+`X-Request-ID`（8–64 位 ASCII 字母、数字或 `._:-`）用于跨系统关联；非法值会被服务端替换。排障时请提供该 ID。
+
 ### 错误响应
 
-使用标准 FastAPI 错误结构：
+错误响应保留 FastAPI 兼容的 `detail` 字段，同时新增稳定的 `error` 对象：
 
 ```json
-{ "detail": "Agent token 缺少权限：funds:read" }
+{
+  "detail": "Agent token 缺少权限：funds:read",
+  "error": {
+    "code": "insufficient_scope",
+    "message": "Agent token 缺少权限：funds:read",
+    "request_id": "0f5c2d9a8b7e4c1fa2b3c4d5e6f70819",
+    "retryable": false
+  },
+  "request_id": "0f5c2d9a8b7e4c1fa2b3c4d5e6f70819"
+}
 ```
 
-| 状态码 | 含义 |
-|---|---|
-| `400` | 参数不合法（如基金代码不是 6 位数字） |
-| `401` | 缺少 token，或 token 无效 / 已过期 / 已撤销 |
-| `403` | token 有效但缺少所需 scope、写能力总开关关闭；或实例未启用密码认证 |
-| `404` | 工具或基金不存在（带有效 token 时） |
-| `409` | 自选版本冲突、对象已存在/不存在、基金未收录、提案非 `pending`/已过期，或幂等键冲突 |
-| `422` | 请求体/参数校验失败，或缺少合法的 `Idempotency-Key` |
-| `429` | 超过限流阈值，响应头含 `Retry-After` |
-| `503` | 数据库正忙（如备份/恢复持有写锁），`detail.code="database_busy"`，请按 `Retry-After` 秒数重试 |
+- `detail`：旧字段，形状保持不变（字符串 / 对象 / 校验错误列表），旧客户端可继续读取。
+- `error.code`：稳定错误码，客户端应据此分支；`error.message` 只是中文兜底文案，不要匹配文案。
+- `error.details`：可选，业务附加信息（如 `field`、`index`、`reason`）。
+- `error.retryable`：是否建议重试；`429`、`503` 为 `true`。
+- `error.retry_after`：可选，建议重试秒数，与 `Retry-After` 响应头一致。
+
+通用错误码：`bad_request`、`unauthorized`、`forbidden`、`not_found`、`method_not_allowed`、`conflict`、
+`validation_error`、`rate_limited`、`internal_error`、`service_unavailable`。Agent 鉴权另有
+`invalid_token`、`expired`、`revoked`、`auth_disabled`、`insufficient_scope`；业务错误码见各工具章节
+（如 `write_disabled`、`target_changed`、`idempotency_conflict`）。
+
+| 状态码 | 含义 | 典型 `error.code` |
+|---|---|---|
+| `400` | 参数不合法（如基金代码不是 6 位数字） | `bad_request` |
+| `401` | 缺少 token，或 token 无效 / 已过期 / 已撤销 | `invalid_token` / `expired` / `revoked` |
+| `403` | token 有效但缺少所需 scope、写能力总开关关闭；或实例未启用密码认证 | `insufficient_scope` / `write_disabled` / `auth_disabled` |
+| `404` | 工具或基金不存在（带有效 token 时） | `not_found` |
+| `409` | 自选版本冲突、对象已存在/不存在、基金未收录、提案非 `pending`/已过期，或幂等键冲突 | 业务错误码（如 `target_changed`） |
+| `422` | 请求体/参数校验失败，或缺少合法的 `Idempotency-Key` | `validation_error` |
+| `429` | 超过限流阈值 | `rate_limited`（`retryable=true`） |
+| `503` | 数据库正忙（如备份/恢复持有写锁） | `database_busy`（`retryable=true`，按 `Retry-After` 重试） |
 
 > `/api/agent/tools/*` 由独立的 Agent 鉴权中间件保护：即使访问一个不存在的工具路径，没有有效 token 也会先返回 `401`，不会暴露路由是否存在。
 

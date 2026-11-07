@@ -110,6 +110,7 @@ Every successful tool call returns the same envelope:
 {
   "schema_version": 1,
   "tool": "get_portfolio_summary",
+  "request_id": "0f5c2d9a8b7e4c1fa2b3c4d5e6f70819",
   "generated_at": "2026-10-27T21:30:00+08:00",
   "currency": "CNY",
   "data": { }
@@ -118,28 +119,55 @@ Every successful tool call returns the same envelope:
 
 - `schema_version`: response schema version, currently `1`. Additive fields do not bump it; only breaking changes do.
 - `tool`: tool name matching the endpoint.
+- `request_id`: ID of this request, matching the `X-Request-ID` header.
 - `generated_at`: server-side timestamp with timezone.
 - `currency`: amount currency, currently always `CNY`.
 - `data`: tool-specific payload.
 
+### Request ID
+
+Every response carries an `X-Request-ID` header; successful tool envelopes and all error bodies also include
+`request_id`. Clients may send `X-Request-ID` (8–64 ASCII letters, digits, or `._:-`) for cross-system correlation;
+invalid values are replaced by the server. Include this ID when reporting issues.
+
 ### Errors
 
-Standard FastAPI error shape:
+Error responses keep the FastAPI-compatible `detail` field and add a stable `error` object:
 
 ```json
-{ "detail": "Agent token 缺少权限：funds:read" }
+{
+  "detail": "Agent token 缺少权限：funds:read",
+  "error": {
+    "code": "insufficient_scope",
+    "message": "Agent token 缺少权限：funds:read",
+    "request_id": "0f5c2d9a8b7e4c1fa2b3c4d5e6f70819",
+    "retryable": false
+  },
+  "request_id": "0f5c2d9a8b7e4c1fa2b3c4d5e6f70819"
+}
 ```
 
-| Status | Meaning |
-|---|---|
-| `400` | Invalid parameter (e.g. fund code is not 6 digits) |
-| `401` | Missing, invalid, expired, or revoked token |
-| `403` | Valid token but missing required scope, write switch off, or password auth not enabled |
-| `404` | Unknown tool or fund (only with a valid token) |
-| `409` | Watchlist revision conflict, missing/existing object, unregistered fund, non-pending/expired proposal, or idempotency conflict |
-| `422` | Invalid body/parameters, or missing a valid `Idempotency-Key` |
-| `429` | Rate limit exceeded; see `Retry-After` |
-| `503` | Database busy (e.g. backup/restore holds the write lock); `detail.code="database_busy"`, retry after `Retry-After` seconds |
+- `detail`: legacy field, unchanged in shape (string / object / validation list), so old clients keep working.
+- `error.code`: stable code; branch on it. `error.message` is a Chinese fallback only — do not match text.
+- `error.details`: optional business context (e.g. `field`, `index`, `reason`).
+- `error.retryable`: whether a retry is recommended; `true` for `429` and `503`.
+- `error.retry_after`: optional suggested delay in seconds, matching the `Retry-After` header.
+
+Generic codes: `bad_request`, `unauthorized`, `forbidden`, `not_found`, `method_not_allowed`, `conflict`,
+`validation_error`, `rate_limited`, `internal_error`, `service_unavailable`. Agent auth adds `invalid_token`,
+`expired`, `revoked`, `auth_disabled`, `insufficient_scope`; business codes are listed per tool
+(e.g. `write_disabled`, `target_changed`, `idempotency_conflict`).
+
+| Status | Meaning | Typical `error.code` |
+|---|---|---|
+| `400` | Invalid parameter (e.g. fund code is not 6 digits) | `bad_request` |
+| `401` | Missing, invalid, expired, or revoked token | `invalid_token` / `expired` / `revoked` |
+| `403` | Valid token but missing required scope, write switch off, or password auth not enabled | `insufficient_scope` / `write_disabled` / `auth_disabled` |
+| `404` | Unknown tool or fund (only with a valid token) | `not_found` |
+| `409` | Watchlist revision conflict, missing/existing object, unregistered fund, non-pending/expired proposal, or idempotency conflict | business code (e.g. `target_changed`) |
+| `422` | Invalid body/parameters, or missing a valid `Idempotency-Key` | `validation_error` |
+| `429` | Rate limit exceeded | `rate_limited` (`retryable=true`) |
+| `503` | Database busy (e.g. backup/restore holds the write lock) | `database_busy` (`retryable=true`, retry after `Retry-After`) |
 
 > `/api/agent/tools/*` is protected by a dedicated Agent auth middleware. Even a nonexistent tool path returns `401` without a valid token, so route existence is not leaked.
 

@@ -86,14 +86,18 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     let code: string | undefined
     try {
       const j = JSON.parse(text)
+      const apiError = j?.error
       const detail = j?.detail
-      if (detail) {
+      if (apiError && typeof apiError === "object") {
+        if (typeof apiError.message === "string") msg = apiError.message
+        if (typeof apiError.code === "string") code = apiError.code
+      } else if (detail) {
         if (typeof detail === "string") msg = detail
         else if (typeof detail.message === "string") msg = detail.message
         else msg = JSON.stringify(detail)
+        if (typeof detail?.code === "string") code = detail.code
       }
-      if (typeof detail?.code === "string") code = detail.code
-      else if (typeof j?.code === "string") code = j.code
+      if (!code && typeof j?.code === "string") code = j.code
     } catch { /* not json */ }
     const err = new Error(msg) as Error & { code?: string }
     err.code = code
@@ -131,8 +135,11 @@ async function uploadWithAuth<T>(url: string, form: FormData): Promise<T> {
     let msg = text || `${res.status}`
     try {
       const j = JSON.parse(text)
+      const apiError = j?.error
       const detail = j?.detail
-      if (typeof detail === "string") msg = detail
+      if (apiError && typeof apiError === "object") {
+        if (typeof apiError.message === "string") msg = apiError.message
+      } else if (typeof detail === "string") msg = detail
       else if (typeof detail?.message === "string") msg = detail.message
       else if (detail) msg = JSON.stringify(detail)
     } catch { /* not json */ }

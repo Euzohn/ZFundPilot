@@ -537,6 +537,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- feat: Agent HTTP 统一请求 ID 与错误契约——所有响应带 `X-Request-ID`（可透传合法客户端值），Agent 工具成功响应包新增 `request_id`；错误响应保留既有 `detail`（形状不变）并新增 `error` 对象（`code`/`message`/`request_id`/`retryable`，可选 `details`/`retry_after`）。`429`/`503` 为 `retryable=true`，`503 database_busy` 保留原 `detail.code`；鉴权错误稳定码 `invalid_token`/`expired`/`revoked`/`auth_disabled`/`insufficient_scope`，限流 `rate_limited`，参数校验 `validation_error`。新增 `api_errors.py`；前端错误解析优先 `error`、回退 `detail`，MCP 错误解析优先 `error` 并回显 `request_id`；新增 `tests/test_agent_error_contract.py`（12 例）
+
 ### [0.26.0] - 2026-11-07
 
 - feat: 定投手动执行提案（F6.3）——复用 `transactions:propose`，`create_operation_proposal` 新增 `execute_plan`：为一条**已存在**的定投计划手动生成一笔买入流水，并推进 `last_run`/`last_tx_id`。参数为 `plan_id` + `expected_digest`（`list_auto_invest_plans` 的 `row_digest`）+ 可选 `trade_date`（缺省今天，仅允许最近 7 天补记）+ 可选 `fee`（仅当服务端算不出申购费时必填）；`amount`/`fund_code`/`channel`/`note`/`is_t1` 及 `enabled`/`next_run`/`last_run`/`last_tx_id` 硬拒（422），金额、渠道、备注取计划快照，`is_t1` 按「交易日是否为今天且创建时点 ≥15:00」判定。创建期在写事务之外检查可投性并抓取费率（显式 `fee` 跳过；费率未知 `409 fee_unknown`，不静默写 0），快照固化进 `summary_json`；审批零联网，按快照写一笔 `buy`（`shares/nav` 为 `NULL` 待回填），`last_run = max(现有, trade_date)`，**不重算 `next_run`、不触发调度器**，网页 `/api/auto-invest/plans/{id}/execute` 与调度器 `run_all_due()` 行为不变。今天靠 `last_run == trade_date` 防重，补记历史日期另查「同一 `plan_id + trade_date` 的已成功提案」兜底；可投性严格阻断（`suspended`/`limit_exceeded`/`below_minimum`，与网页手动执行仅 warning 不同），停用计划仍可手动执行（warning）、非交易日仅 warning；审批成功记 `auto_invest_execute`（带 `proposal_id`）。提案 `summary` 新增 `plan_id`/`trade_date`/`is_t1`/`fee`/`fee_source`/`before`/`after`，前端提案列表/详情/审批确认支持执行摘要；MCP 白名单、docstring 与 instructions 同步；新增 `tests/test_execute_plan_proposals.py`（40 例）

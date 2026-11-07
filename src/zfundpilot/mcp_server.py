@@ -136,10 +136,14 @@ async def _send(
 
     if response.status_code >= 400:
         detail: object = response.text
+        request_id = response.headers.get("X-Request-ID", "")
         try:
             payload = response.json()
             if isinstance(payload, dict):
-                detail = payload.get("detail", detail)
+                error = payload.get("error")
+                detail = error if isinstance(error, dict) else payload.get(
+                    "detail", detail)
+                request_id = request_id or str(payload.get("request_id") or "")
         except ValueError:
             pass
         if isinstance(detail, dict):
@@ -148,6 +152,7 @@ async def _send(
             detail_text = f"{code}: {message}" if code else str(message)
         else:
             detail_text = str(detail)
+        trace = f" (request_id: {request_id})" if request_id else ""
 
         if response.status_code == 401:
             raise ToolError(
@@ -158,7 +163,7 @@ async def _send(
             raise ToolError(
                 "Agent token lacks the required scope, admin authentication "
                 "is disabled, or the Agent write switch is off. "
-                f"Server detail: {detail_text}"
+                f"Server detail: {detail_text}{trace}"
             )
         if response.status_code == 429:
             retry_after = response.headers.get("Retry-After", "60")
@@ -166,7 +171,9 @@ async def _send(
                 f"Rate limited by ZFundPilot. Retry after {retry_after} seconds."
             )
         raise ToolError(
-            f"ZFundPilot API error ({response.status_code}): {detail_text}")
+            f"ZFundPilot API error ({response.status_code}): "
+            f"{detail_text}{trace}"
+        )
 
     try:
         return response.json()

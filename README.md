@@ -155,7 +155,7 @@ cd frontend && npm install && npm run dev
 - **账本/计划/提醒处理提案** — `create_operation_proposal` 等 4 个工具按 `transactions:propose`/`plans:propose`/`alerts:propose` scope 只提交待审批提案；管理员网页确认后服务端在同一事务内复核并写入账本/计划/提醒状态，永不绕过审批；修改/删除/启停/提醒处理/回填/定投手动执行用 `row_digest` 版本前置防并发覆盖。定投手动执行只新增一笔买入并推进计划簿记，不重算 `next_run`、不触发调度器
 - **CSV/截图预检、对账与回填预检** — 提交提案前先校验 CSV/条目与持仓对账，或盘点可回填净值的候选流水，只返回报告，不写账本、不联网、不创建提案
 - **MCP 适配层** — 可选 stdio 桥接（`python -m zfundpilot.mcp_server`），让 Claude Desktop / Cursor 在 scope 边界内调用，鉴权/scope/限流复用 HTTP 入口
-- **可审计边界** — 鉴权成功/失败、限流、签发与撤销均写审计（仅记 token 前缀），按 token + 端点限流，远程访问要求 HTTPS。端点、示例与配置见 [docs/AGENT_API.md](docs/AGENT_API.md)
+- **可审计边界** — 鉴权成功/失败、限流、签发与撤销均写审计（仅记 token 前缀），按 token + 端点限流，远程访问要求 HTTPS；所有响应带 `X-Request-ID`，错误体提供稳定 `error.code` 与 `retryable`。端点、示例与配置见 [docs/AGENT_API.md](docs/AGENT_API.md)
 
 ### 安全与自定义
 

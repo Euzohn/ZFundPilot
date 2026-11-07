@@ -1987,10 +1987,10 @@ def agent_create_proposal(
     """创建待审批提案；不写账本/计划，管理员确认后才由服务端执行。
 
     多域授权：账本类操作（add/update/delete_transaction、conversion、
-    batch_import）需 transactions:propose；定投计划类操作
-    （create/update/toggle/delete_plan）需 plans:propose；提醒处理操作
-    （resolve_alert）需 alerts:propose。端点先接受任一提案 scope 进入，
-    再按 operation_type 精确复核，避免跨域越权。
+    batch_import、backfill_transaction_navs、execute_plan）需
+    transactions:propose；定投计划类操作（create/update/toggle/delete_plan）
+    需 plans:propose；提醒处理操作（resolve_alert）需 alerts:propose。端点先
+    接受任一提案 scope 进入，再按 operation_type 精确复核，避免跨域越权。
     """
     _require_agent_write_enabled(request, ctx)
     required_scope = proposal_service.OPERATION_SCOPE.get(body.operation_type)

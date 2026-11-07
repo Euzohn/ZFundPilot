@@ -81,6 +81,10 @@ function isBackfillSummary(summary: ProposalSummary): boolean {
   return summary.operation_type === "backfill_transaction_navs"
 }
 
+function isExecutePlanSummary(summary: ProposalSummary): boolean {
+  return summary.operation_type === "execute_plan"
+}
+
 function batchActionsText(summary: ProposalSummary): string {
   const entries = Object.entries(summary.actions ?? {})
   if (entries.length === 0) return "—"
@@ -309,18 +313,22 @@ export default function Proposals() {
                           ? batchActionsText(item.summary)
                           : isPlanSummary(item.summary)
                             ? item.summary.schedule ?? item.summary.cadence_label ?? "—"
-                            : isAlertSummary(item.summary)
-                              ? item.summary.alert_type_label ?? "—"
-                              : item.summary.action_label}
+                            : isExecutePlanSummary(item.summary)
+                              ? item.summary.schedule ?? "—"
+                              : isAlertSummary(item.summary)
+                                ? item.summary.alert_type_label ?? "—"
+                                : item.summary.action_label}
                       </TableCell>
                       <TableCell className="hidden md:table-cell tabular-nums">
                         {isBatchSummary(item.summary)
                           ? batchDateRange(item.summary)
                           : isPlanSummary(item.summary)
                             ? item.summary.next_run ?? "—"
-                            : isAlertSummary(item.summary)
-                              ? item.summary.record_date ?? item.summary.ex_date ?? "—"
-                              : item.summary.date}
+                            : isExecutePlanSummary(item.summary)
+                              ? item.summary.trade_date ?? item.summary.date
+                              : isAlertSummary(item.summary)
+                                ? item.summary.record_date ?? item.summary.ex_date ?? "—"
+                                : item.summary.date}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {money(
@@ -425,6 +433,8 @@ export default function Proposals() {
                   <AlertSection summary={detail.summary} />
                 ) : isBackfillSummary(detail.summary) ? (
                   <BackfillSection summary={detail.summary} />
+                ) : isExecutePlanSummary(detail.summary) ? (
+                  <ExecutePlanSection summary={detail.summary} />
                 ) : (
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
                     <DetailRow label={t.proposals.colFund}>
@@ -623,6 +633,17 @@ export default function Proposals() {
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {t.proposals.backfillApproveHint}
+                  </p>
+                </>
+              ) : isExecutePlanSummary(approveTarget.summary) ? (
+                <>
+                  <p>
+                    {approveTarget.summary.title} ·{" "}
+                    {money(approveTarget.summary.amount)} ·{" "}
+                    {approveTarget.summary.trade_date ?? approveTarget.summary.date}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {t.proposals.executePlanApproveHint}
                   </p>
                 </>
               ) : (
@@ -947,6 +968,61 @@ function formatPlanField(field: string, value: unknown, t: {
     return weekdays ? weekdays[value] ?? String(value) : String(value)
   }
   return String(value)
+}
+
+function ExecutePlanSection({ summary }: { summary: ProposalSummary }) {
+  const { t } = useLang()
+  const before = summary.before as PlanSnapshot | undefined
+  return (
+    <div className="space-y-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+        <DetailRow label={t.proposals.colFund}>
+          {summary.fund_name}
+          <span className="ml-1 font-mono text-xs text-muted-foreground">
+            {summary.fund_code}
+          </span>
+        </DetailRow>
+        <DetailRow label={t.proposals.planId}>#{summary.plan_id}</DetailRow>
+        <DetailRow label={t.proposals.colAmount}>{money(summary.amount)}</DetailRow>
+        <DetailRow label={t.proposals.planSchedule}>
+          {summary.schedule || summary.cadence_label || "—"}
+        </DetailRow>
+        <DetailRow label={t.proposals.executePlanTradeDate}>
+          {summary.trade_date ?? summary.date}
+        </DetailRow>
+        <DetailRow label={t.proposals.isT1}>
+          {summary.is_t1 ? t.proposals.t1Yes : t.proposals.t1No}
+        </DetailRow>
+        <DetailRow label={t.proposals.fee}>
+          {money(summary.fee)}
+          <span className="ml-1 text-xs text-muted-foreground">
+            {summary.fee_source_label || summary.fee_source || ""}
+          </span>
+        </DetailRow>
+        <DetailRow label={t.proposals.channel}>{summary.channel || "—"}</DetailRow>
+        <DetailRow label={t.proposals.planState}>
+          {before?.enabled
+            ? t.proposals.planStateEnabled
+            : t.proposals.planStateDisabled}
+        </DetailRow>
+        <DetailRow label={t.proposals.planNextRun}>
+          {summary.next_run ?? "—"}
+        </DetailRow>
+        <DetailRow label={t.proposals.planLastRun}>
+          {summary.last_run ?? "—"}
+        </DetailRow>
+        {summary.note && (
+          <DetailRow label={t.proposals.note} className="col-span-2">
+            {summary.note}
+          </DetailRow>
+        )}
+      </dl>
+      <div className="rounded-md border border-border p-3 text-xs text-muted-foreground">
+        <p>{t.proposals.executePlanWillWrite}</p>
+        <p className="mt-1">{t.proposals.executePlanNoScheduler}</p>
+      </div>
+    </div>
+  )
 }
 
 function AlertSection({ summary }: { summary: ProposalSummary }) {

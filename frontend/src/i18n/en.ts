@@ -1460,6 +1460,10 @@ const en: typeof zh = {
     navBefore: "Old NAV",
     backfillNoNetworkHint: "Approval writes the NAV/shares/amount/fee snapshot fixed at creation time and never re-fetches; the whole batch is cancelled if any row was already backfilled by another path.",
     backfillApproveHint: "The batch is backfilled atomically: all succeed or none.",
+    executePlanTradeDate: "Execution date",
+    executePlanWillWrite: "Approval inserts one buy transaction (amount/channel/note from the plan; NAV and shares still pending) and advances the plan's last_run / last_tx_id.",
+    executePlanNoScheduler: "next_run is not recomputed and the scheduler is not triggered; the fee and T+1 flag are snapshotted at creation, so approval never touches the network.",
+    executePlanApproveHint: "Approval immediately inserts one buy transaction and advances the plan bookkeeping; the same plan and trade date cannot be executed twice.",
   },
   watchlist: {
     title: "Watchlist",

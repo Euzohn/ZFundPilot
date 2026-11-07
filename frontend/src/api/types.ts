@@ -894,6 +894,12 @@ export interface ProposalSummary {
   // 仅覆盖回填的 nav/shares/amount/fee 四字段。
   fee_sources?: Record<string, number>
   backfill_items?: BackfillItem[]
+  // F6.3 定投手动执行提案（execute_plan 携带）。当天/补记交易日、T+1 快照、
+  // 费率来源与计划簿记前后值。
+  trade_date?: string
+  fee_source?: string
+  fee_source_label?: string
+  last_run?: string | null
 }
 
 export interface BackfillItem {

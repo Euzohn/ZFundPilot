@@ -52,16 +52,9 @@ def _is_qdii_fund(fund_code: str) -> bool:
     return fund is not None and fund.fund_type == "QDII"
 
 
-def _check_purchasable(fund_code: str, amount: float) -> tuple[bool, str, dict]:
-    """检查基金当前是否可定投（申购状态 / 限购额度 / 购买起点）。
-
-    返回 (ok, reason_code, detail)。ok=True 表示可执行。
-    reason_code: "" / "suspended" / "limit_exceeded" / "below_minimum"
-
-    数据来自 funds 表（由 fetch_fund.refresh_purchase_status 每日刷新）。
-    基金不在库或状态未知时放行，避免误伤。
-    """
-    fund = db.get_fund(fund_code)
+def _check_purchasable_fund(
+        fund: Any | None, amount: float) -> tuple[bool, str, dict]:
+    """纯函数：按基金状态判断是否可定投（不读库、不联网）。"""
     if fund is None:
         return True, "", {}
     status = fund.purchase_status if isinstance(fund.purchase_status, str) else ""
@@ -81,6 +74,25 @@ def _check_purchasable(fund_code: str, amount: float) -> tuple[bool, str, dict]:
             "min_purchase": min_purchase, "amount": amount,
         }
     return True, "", {}
+
+
+def _check_purchasable(fund_code: str, amount: float) -> tuple[bool, str, dict]:
+    """检查基金当前是否可定投（申购状态 / 限购额度 / 购买起点）。
+
+    返回 (ok, reason_code, detail)。ok=True 表示可执行。
+    reason_code: "" / "suspended" / "limit_exceeded" / "below_minimum"
+
+    数据来自 funds 表（由 fetch_fund.refresh_purchase_status 每日刷新）。
+    基金不在库或状态未知时放行，避免误伤。
+    """
+    return _check_purchasable_fund(db.get_fund(fund_code), amount)
+
+
+def _check_purchasable_conn(
+        conn: sqlite3.Connection, fund_code: str,
+        amount: float) -> tuple[bool, str, dict]:
+    """连接感知版本：供 ``approve_proposal`` 的写事务内复用。"""
+    return _check_purchasable_fund(db.get_fund_conn(conn, fund_code), amount)
 
 
 def _next_trading_day_conn(

@@ -152,7 +152,7 @@ cd frontend && npm install && npm run dev
 - **20 个只读工具** — 组合汇总、数据状态、持仓、基金详情、体检、收益、对比、流水、自选、提醒、计划、曲线、基准、风险、行业敞口、检索、筛选、回测与能力发现；统一响应包与正式净值口径，不暴露任何写接口
 - **写开关总闸** — Agent 写能力默认关闭，网页「设置 → Agent 接入」可随时开关（需登录密码确认、持久化、重启保持），无密码模式禁止开启
 - **受控写入** — 自选维护（`watchlist:write`）与净值/元数据刷新（`data:refresh`）直接执行；`record_transaction`（`transactions:create`）在限额内直记已确认的单笔买卖，预检异常自动降级为待审批提案
-- **账本/计划/提醒处理提案** — `create_operation_proposal` 等 4 个工具按 `transactions:propose`/`plans:propose`/`alerts:propose` scope 只提交待审批提案；管理员网页确认后服务端在同一事务内复核并写入账本/计划/提醒状态，永不绕过审批；修改/删除/启停/提醒处理用 `row_digest` 版本前置防并发覆盖
+- **账本/计划/提醒处理提案** — `create_operation_proposal` 等 4 个工具按 `transactions:propose`/`plans:propose`/`alerts:propose` scope 只提交待审批提案；管理员网页确认后服务端在同一事务内复核并写入账本/计划/提醒状态，永不绕过审批；修改/删除/启停/提醒处理/回填/定投手动执行用 `row_digest` 版本前置防并发覆盖。定投手动执行只新增一笔买入并推进计划簿记，不重算 `next_run`、不触发调度器
 - **CSV/截图预检、对账与回填预检** — 提交提案前先校验 CSV/条目与持仓对账，或盘点可回填净值的候选流水，只返回报告，不写账本、不联网、不创建提案
 - **MCP 适配层** — 可选 stdio 桥接（`python -m zfundpilot.mcp_server`），让 Claude Desktop / Cursor 在 scope 边界内调用，鉴权/scope/限流复用 HTTP 入口
 - **可审计边界** — 鉴权成功/失败、限流、签发与撤销均写审计（仅记 token 前缀），按 token + 端点限流，远程访问要求 HTTPS。端点、示例与配置见 [docs/AGENT_API.md](docs/AGENT_API.md)

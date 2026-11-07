@@ -71,6 +71,10 @@ mcp = FastMCP(
         "Alert resolution (resolve_alert) also goes through the same tool and "
         "requires alerts:propose; it only advances the alert state and never "
         "writes the transactions table. "
+        "Manual plan execution (execute_plan) uses the same proposal path and "
+        "transactions:propose: approval inserts one buy transaction and "
+        "advances the plan's bookkeeping without recomputing next_run or "
+        "triggering the scheduler. "
         "record_transaction is a separately authorized direct-write path for a "
         "single buy/sell the user explicitly says already happened elsewhere; it "
         "requires transactions:create and may still be downgraded to a proposal "
@@ -593,12 +597,25 @@ async def create_operation_proposal(
         transaction; approval never touches the network. The whole batch is
         written atomically on approval, or rejected if any row was filled or
         changed in the meantime.
+      - "execute_plan": manually execute one existing auto-invest (DCA) plan.
+        Requires plan_id and its current row_digest (from
+        list_auto_invest_plans), an optional trade_date (defaults to today;
+        only the last 7 days are allowed), and an optional fee (required only
+        when the server cannot compute the purchase fee at creation). Approval
+        inserts one buy transaction (amount/channel/note from the plan, NAV and
+        shares still unset, T+1 flag fixed at creation) and advances the plan's
+        last_run/last_tx_id without recomputing next_run or triggering the
+        scheduler. Purchasability is checked strictly at creation and approval;
+        fee/NAV are snapshotted at creation, so approval never touches the
+        network. Repeated execution for the same plan and trade_date is
+        rejected.
 
     Args:
         operation_type: "add_transaction", "update_transaction",
             "delete_transaction", "add_conversion", "delete_conversion",
             "batch_import", "create_plan", "update_plan", "toggle_plan",
-            "delete_plan", "resolve_alert", or "backfill_transaction_navs".
+            "delete_plan", "resolve_alert", "backfill_transaction_navs", or
+            "execute_plan".
         params: For add_transaction: fund_code, action (buy/sell/dividend/
             reinvest), date (YYYY-MM-DD), fee, channel, note, is_t1, optional
             dividend_alert_id (dividend/reinvest only), and the
@@ -642,6 +659,12 @@ async def create_operation_proposal(
             expected_digest (the row_digest from get_transaction), and an
             optional fee (required only when the server cannot compute the
             fee offline; omit otherwise).
+            For execute_plan: plan_id, expected_digest (the row_digest from
+            list_auto_invest_plans), an optional trade_date (YYYY-MM-DD;
+            defaults to today, only the last 7 days are allowed), and an
+            optional fee (required only when the purchase fee cannot be
+            computed at creation). amount/is_t1/channel/note and scheduler
+            bookkeeping fields are rejected.
         idempotency_key: Unique retry key (16-128 chars); same key+params
             returns the same proposal.
     """
@@ -650,12 +673,13 @@ async def create_operation_proposal(
             "add_transaction", "update_transaction", "delete_transaction",
             "add_conversion", "delete_conversion", "batch_import",
             "create_plan", "update_plan", "toggle_plan", "delete_plan",
-            "resolve_alert", "backfill_transaction_navs"):
+            "resolve_alert", "backfill_transaction_navs", "execute_plan"):
         raise ToolError(
             'operation_type must be "add_transaction", "update_transaction", '
             '"delete_transaction", "add_conversion", "delete_conversion", '
             '"batch_import", "create_plan", "update_plan", "toggle_plan", '
-            '"delete_plan", "resolve_alert", or "backfill_transaction_navs".')
+            '"delete_plan", "resolve_alert", "backfill_transaction_navs", or '
+            '"execute_plan".')
     if not isinstance(params, dict):
         raise ToolError("params must be an object.")
     return await _post(

@@ -35,6 +35,7 @@ from .transaction_service import (
     ACTION_LABELS,
     AMOUNT_TOLERANCE,
     CONTRACT_VERSION,
+    DATE_RE,
     FUND_CODE_RE,
     _duplicate_in_ledger,
     _duplicate_pending_proposal,
@@ -82,6 +83,9 @@ OPERATION_RESOLVE_ALERT = "resolve_alert"
 # F6.2：交易回填。只补 nav/shares/amount/fee 四字段；分红行（nav 为每份分红
 # 金额而非净值）直接拒绝。仅接受显式 tx_ids，不做「回填全部」。
 OPERATION_BACKFILL_TRANSACTION_NAVS = "backfill_transaction_navs"
+# F6.3：定投手动执行。生成一笔买入流水并推进计划簿记（last_run/last_tx_id），
+# 不重算 next_run、不触发调度器；创建期快照费率/is_t1，审批零联网。
+OPERATION_EXECUTE_PLAN = "execute_plan"
 ALLOWED_OPERATIONS = frozenset({
     OPERATION_ADD_TRANSACTION,
     OPERATION_UPDATE_TRANSACTION,
@@ -92,6 +96,7 @@ ALLOWED_OPERATIONS = frozenset({
     *PLAN_OPERATIONS,
     OPERATION_RESOLVE_ALERT,
     OPERATION_BACKFILL_TRANSACTION_NAVS,
+    OPERATION_EXECUTE_PLAN,
 })
 OPERATION_LABELS = {
     OPERATION_ADD_TRANSACTION: "新增交易",
@@ -106,6 +111,7 @@ OPERATION_LABELS = {
     OPERATION_DELETE_PLAN: "删除定投",
     OPERATION_RESOLVE_ALERT: "处理提醒",
     OPERATION_BACKFILL_TRANSACTION_NAVS: "回填净值",
+    OPERATION_EXECUTE_PLAN: "手动执行定投",
 }
 
 # 计划展示标签（summary_json 与既有中文标题口径一致）。
@@ -157,6 +163,7 @@ OPERATION_SCOPE = {
     OPERATION_RESOLVE_ALERT: agent_tokens.SCOPE_ALERTS_PROPOSE,
     # F6.2 回填与 F6.3 手动执行都写账本，复用 transactions:propose。
     OPERATION_BACKFILL_TRANSACTION_NAVS: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
+    OPERATION_EXECUTE_PLAN: agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
 }
 
 
@@ -234,7 +241,8 @@ def _build_summary(fund_name: str, operation_type: str,
                    *, before: dict | sqlite3.Row | None = None,
                    fund_names: dict[str, str] | None = None,
                    plan_context: dict | None = None,
-                   backfill_items: list[dict] | None = None) -> dict[str, Any]:
+                   backfill_items: list[dict] | None = None,
+                   execute_plan_context: dict | None = None) -> dict[str, Any]:
     warnings: list[str] = list(extra_warnings or [])
     if operation_type == OPERATION_ADD_TRANSACTION:
         action = params["action"]
@@ -644,6 +652,51 @@ def _build_summary(fund_name: str, operation_type: str,
             "items": items,
             "warnings": warnings,
         }
+    if operation_type == OPERATION_EXECUTE_PLAN:
+        ctx = execute_plan_context or {}
+        before_fields = ctx.get("plan_before") or {}
+        trade_date = ctx.get("trade_date") or params.get("trade_date") or ""
+        last_run_before = before_fields.get("last_run")
+        last_run_after = max(last_run_before or "", trade_date)
+        warnings.extend(ctx.get("warnings") or [])
+        fee_source = ctx.get("fee_source") or ""
+        return {
+            "operation_type": operation_type,
+            "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
+            "title": f"手动执行定投计划 #{params['plan_id']}",
+            "plan_id": params["plan_id"],
+            "fund_code": ctx.get("fund_code", ""),
+            "fund_name": fund_name,
+            "action": "buy",
+            "action_label": ACTION_LABELS.get("buy", "买入"),
+            "amount": ctx.get("amount"),
+            "cadence": ctx.get("cadence", ""),
+            "cadence_label": CADENCE_LABELS.get(
+                ctx.get("cadence", ""), ctx.get("cadence", "")),
+            "schedule": _plan_schedule_label(
+                ctx.get("cadence", ""), ctx.get("day_of_week"),
+                ctx.get("day_of_month")),
+            "trade_date": trade_date,
+            "date": trade_date,
+            "is_t1": bool(ctx.get("is_t1")),
+            "fee": ctx.get("fee"),
+            "fee_source": fee_source,
+            "fee_source_label": {
+                "fetched": "抓取费率", "explicit": "显式提供",
+            }.get(fee_source, fee_source),
+            "channel": ctx.get("channel", ""),
+            "note": ctx.get("note", ""),
+            "enabled": bool(before_fields.get("enabled")),
+            "next_run": before_fields.get("next_run"),
+            "last_run": last_run_after or None,
+            "before": before_fields,
+            "after": {
+                **before_fields,
+                "last_run": last_run_after or None,
+                "last_tx_id": "（审批后写入）",
+            },
+            "warnings": warnings,
+        }
     # 兜底：不应到达
     return {"operation_type": operation_type,
             "operation_label": OPERATION_LABELS.get(operation_type, operation_type),
@@ -887,6 +940,8 @@ def create_pending_proposal_conn(
     extra_warnings: list[str] | None = None,
     backfill_items: list[dict] | None = None,
     backfill_error: ProposalResult | None = None,
+    execute_plan_context: dict | None = None,
+    execute_plan_error: ProposalResult | None = None,
 ) -> ProposalResult:
     """在调用方事务内创建待审提案；不写幂等记录。
 
@@ -1066,6 +1121,30 @@ def create_pending_proposal_conn(
         resolved_fund_code = backfill_items[0]["fund_code"] if backfill_items else None
         fund_name = (fund_name_in_conn(conn, resolved_fund_code)
                      if resolved_fund_code else None) or resolved_fund_code or ""
+    elif operation_type == OPERATION_EXECUTE_PLAN:
+        # 费率/is_t1 快照已在写事务之外算好（费率抓取可能联网）。这里只做
+        # 纯 DB 复读：计划配置（digest）、当日/历史幂等、可投性是否漂移。
+        if execute_plan_error is not None:
+            _audit(conn, principal, ip, "proposal_create_rejected", {
+                "reason": execute_plan_error.code,
+                "operation_type": operation_type,
+                "plan_id": clean.get("plan_id")})
+            return execute_plan_error
+        if execute_plan_context is None:
+            raise ProposalValidationError(
+                "params", "定投执行提案缺少创建期预计算快照（内部错误）")
+        conflict = _verify_execute_plan_target(
+            conn, clean, execute_plan_context, now)
+        if conflict is not None:
+            _audit(conn, principal, ip, "proposal_create_rejected", {
+                "reason": conflict.code, "operation_type": operation_type,
+                "plan_id": clean.get("plan_id")})
+            return conflict
+        resolved_fund_code = execute_plan_context["fund_code"]
+        # 计划可能引用已从 funds 移除的基金：展示尽力取名称，不阻断执行
+        # （与网页手动执行 / 调度器口径一致）。
+        fund_name = (fund_name_in_conn(conn, resolved_fund_code)
+                     or resolved_fund_code or "")
     else:
         fund_name = (fund_name_in_conn(conn, resolved_fund_code)
                      if resolved_fund_code else None)
@@ -1095,7 +1174,8 @@ def create_pending_proposal_conn(
     summary = _build_summary(
         fund_name, operation_type, clean, extra_warnings, before=before,
         fund_names=batch_fund_names, plan_context=plan_context,
-        backfill_items=backfill_items)
+        backfill_items=backfill_items,
+        execute_plan_context=execute_plan_context)
     params_json = json.dumps(clean, ensure_ascii=False, sort_keys=True)
     summary_json = json.dumps(summary, ensure_ascii=False, sort_keys=True)
     expires_at = (now + timedelta(days=PROPOSAL_TTL_DAYS)).isoformat()
@@ -1136,6 +1216,12 @@ def create_pending_proposal_conn(
             audit_detail["tx_id"] = clean.get("tx_id")
     elif operation_type == OPERATION_BACKFILL_TRANSACTION_NAVS:
         audit_detail["count"] = len(backfill_items or [])
+        audit_detail.pop("fund_code", None)
+    elif operation_type == OPERATION_EXECUTE_PLAN:
+        audit_detail["plan_id"] = clean.get("plan_id")
+        for key in ("amount", "trade_date", "is_t1", "fee", "fee_source"):
+            if execute_plan_context and key in execute_plan_context:
+                audit_detail[key] = execute_plan_context.get(key)
         audit_detail.pop("fund_code", None)
     else:
         audit_detail["tx_id"] = clean.get("tx_id")
@@ -1558,6 +1644,86 @@ def validate_backfill_transaction_navs_params(
     return {"items": cleaned}
 
 
+# 定投手动执行拒绝的字段：金额/渠道/备注一律取自计划快照，T+1 与调度器
+# 簿记由服务端维护，避免 Agent 覆盖账本语义或伪造状态。
+EXECUTE_PLAN_FORBIDDEN_FIELDS = {
+    "amount": "执行金额取自计划快照，不接受外部指定",
+    "fund_code": "基金代码取自计划快照，不接受外部指定",
+    "channel": "渠道取自计划快照，不接受外部指定",
+    "note": "备注取自计划快照，不接受外部指定",
+    "is_t1": "is_t1 由创建时点与交易日自动判定",
+    "enabled": "启停必须提交独立的 toggle_plan 提案",
+    "next_run": "next_run 由服务端/调度器维护，不接受外部指定",
+    "last_run": "last_run 由服务端/调度器维护，不接受外部指定",
+    "last_tx_id": "last_tx_id 由服务端/调度器维护，不接受外部指定",
+}
+# 允许补记的历史窗口（天）。与 F6 设计稿一致：today-7 <= trade_date <= today。
+EXECUTE_PLAN_MAX_BACKFILL_DAYS = 7
+
+
+def validate_execute_plan_params(
+        params: object, *, now: datetime | None = None) -> dict[str, Any]:
+    """校验 ``execute_plan``：计划引用 + 版本前置 + 交易日 + 可选 fee。
+
+    ``trade_date`` 缺省取创建当天（上海时区）；只允许最近 7 天内且不得未来。
+    金额/渠道/备注/T+1 标记一律由服务端从计划与创建时点推导，硬拒外部覆盖。
+    """
+    if not isinstance(params, dict):
+        raise ProposalValidationError("params", "params 必须是对象")
+    for key, message in EXECUTE_PLAN_FORBIDDEN_FIELDS.items():
+        if key in params:
+            raise ProposalValidationError(key, message)
+    allowed = {"plan_id", "expected_digest", "trade_date", "fee"}
+    unknown = set(params) - allowed
+    if unknown:
+        raise ProposalValidationError(
+            "params", f"包含不支持的参数：{', '.join(sorted(unknown))}")
+    plan_id, expected_digest = _validate_plan_ref(params)
+    # 只有创建期（显式传入 now）才做「最近 7 天」窗口校验。审批期参数已固化，
+    # 若按审批时刻重新校验窗口，创建于窗口边缘的合法提案会在等待审批后失效。
+    if now is not None:
+        today = now.strftime("%Y-%m-%d")
+        raw_date = params.get("trade_date", today)
+    else:
+        raw_date = params.get("trade_date")
+        if raw_date is None:
+            raise ProposalValidationError(
+                "trade_date", "trade_date 缺失（提案参数不完整）")
+    if not isinstance(raw_date, str) or not DATE_RE.fullmatch(
+            raw_date.strip()):
+        raise ProposalValidationError(
+            "trade_date", "trade_date 必须是 YYYY-MM-DD 格式")
+    trade_date = raw_date.strip()
+    try:
+        parsed = datetime.strptime(trade_date, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise ProposalValidationError(
+            "trade_date", "trade_date 不是合法日期") from exc
+    if now is not None:
+        today_date = now.date()
+        earliest = today_date - timedelta(days=EXECUTE_PLAN_MAX_BACKFILL_DAYS)
+        if parsed > today_date:
+            raise ProposalValidationError(
+                "trade_date", "trade_date 不能晚于今天")
+        if parsed < earliest:
+            raise ProposalValidationError(
+                "trade_date",
+                f"trade_date 最早为 {earliest.isoformat()}"
+                f"（仅允许补记最近 {EXECUTE_PLAN_MAX_BACKFILL_DAYS} 天）")
+    fee = _number(params.get("fee"), "fee") if "fee" in params else None
+    # 仅创建期拒绝显式 null；审批期的 params_json 固化后总带 fee 键（可能是
+    # None，表示创建时由服务端抓取并写入 summary 快照）。
+    if now is not None and "fee" in params and fee is None:
+        raise ProposalValidationError(
+            "fee", "fee 不能为空（如需由服务端计算请省略该字段）")
+    return {
+        "plan_id": plan_id,
+        "expected_digest": expected_digest,
+        "trade_date": trade_date,
+        "fee": fee,
+    }
+
+
 def _merge_plan_patch(row: dict | sqlite3.Row, clean: dict) -> dict[str, Any]:
     """把 update patch 合并到当前行配置；patch 显式 null 表示清除该字段。"""
     base = dict(row) if isinstance(row, sqlite3.Row) else row
@@ -1887,6 +2053,172 @@ def _verify_backfill_targets(conn: sqlite3.Connection,
     return None
 
 
+def _execute_plan_purchasable_message(reason: str) -> str:
+    return {
+        "suspended": "基金当前暂停申购/处于封闭期，不能执行定投",
+        "limit_exceeded": "计划金额超过基金单日限购额度，不能执行定投",
+        "below_minimum": "计划金额低于基金购买起点，不能执行定投",
+    }.get(reason, "基金当前不可申购，不能执行定投")
+
+
+def _executed_plan_trade_exists(
+        conn: sqlite3.Connection, plan_id: int, trade_date: str) -> bool:
+    """检查是否已有同一计划、同一交易日的**成功**执行提案。
+
+    ``last_run == trade_date`` 只能拦截「今天」的重复执行；补记历史日期时
+    ``last_run`` 取 ``max(现有, trade_date)``，不会回退成历史日期，因此需要
+    额外查已成功提案。审批在同一 ``BEGIN IMMEDIATE`` 事务内串行执行，能可靠
+    看到前一笔已提交的成功提案。提案保留 30 天，而补记窗口仅 7 天，覆盖足够。
+    """
+    rows = conn.execute(
+        "SELECT params_json FROM operation_proposals "
+        "WHERE operation_type=? AND status=?",
+        (OPERATION_EXECUTE_PLAN, STATUS_SUCCEEDED)).fetchall()
+    for other in rows:
+        try:
+            other_params = json.loads(other["params_json"] or "{}")
+        except ValueError:
+            continue
+        if (other_params.get("plan_id") == plan_id
+                and other_params.get("trade_date") == trade_date):
+            return True
+    return False
+
+
+def _check_execute_plan_target(
+        conn: sqlite3.Connection, clean: dict, now: datetime,
+) -> tuple[dict | None, ProposalResult | None]:
+    """校验定投执行目标：存在、digest、当日/历史幂等、可投性。
+
+    只做数据库读取，不联网、不写库。返回 ``(context, error)``；``context``
+    含目标行与创建当天日期。
+    """
+    plan_id = int(clean["plan_id"])
+    row = db.get_auto_invest_plan_conn(conn, plan_id)
+    if row is None:
+        return None, ProposalResult(
+            404, "target_not_found", f"未找到定投计划 {plan_id}",
+            {"plan_id": plan_id})
+    if auto_invest.plan_row_digest(row) != clean["expected_digest"]:
+        return None, ProposalResult(
+            409, "target_changed",
+            "目标定投计划已被修改，请通过 list_auto_invest_plans 重新读取"
+            " row_digest 后再提案", {"plan_id": plan_id})
+    trade_date = clean["trade_date"]
+    today = now.strftime("%Y-%m-%d")
+    last_run = row["last_run"] or ""
+    if last_run == trade_date:
+        return None, ProposalResult(
+            409, "already_executed",
+            "该计划在目标交易日已执行，无需重复提案",
+            {"plan_id": plan_id, "trade_date": trade_date,
+             "tx_id": row["last_tx_id"]})
+    if trade_date != today and _executed_plan_trade_exists(
+            conn, plan_id, trade_date):
+        return None, ProposalResult(
+            409, "already_executed",
+            "该计划在目标交易日已有成功执行的提案，请勿重复补记",
+            {"plan_id": plan_id, "trade_date": trade_date})
+    purchasable, reason, detail = auto_invest._check_purchasable_conn(
+        conn, row["fund_code"], float(row["amount"] or 0))
+    if not purchasable:
+        return None, ProposalResult(
+            409, reason, _execute_plan_purchasable_message(reason),
+            {"plan_id": plan_id, "reason": reason, **detail})
+    return {"row": row, "today": today}, None
+
+
+def _prepare_execute_plan(
+        conn: sqlite3.Connection, clean: dict, now: datetime,
+) -> tuple[dict | None, ProposalResult | None]:
+    """预计算定投执行快照；**必须在写事务之外调用**（费率抓取可能联网）。
+
+    返回 ``(snapshot, error)``。快照包含计划前值、金额、交易日、T+1 标记、
+    费率与来源、展示警告；审批期只复读校验并写这份快照，不重算漂移值。
+    """
+    context, error = _check_execute_plan_target(conn, clean, now)
+    if error is not None:
+        return None, error
+    assert context is not None
+    row = context["row"]
+    today = context["today"]
+    trade_date = clean["trade_date"]
+    amount = float(row["amount"] or 0)
+    is_t1 = trade_date == today and now.hour >= config.T1_CUTOFF_HOUR
+
+    fee = clean.get("fee")
+    fee_source = "explicit"
+    if fee is None:
+        fee_result = fetch_fund.calc_purchase_fee(row["fund_code"], amount)
+        # calc_purchase_fee 在费率未知时返回 fee=0 + code="fee_unknown"；
+        # 不能把 0 当成已知费率静默写入（与 F6.2 回填口径一致）。
+        if fee_result.code == "fee_unknown":
+            return None, ProposalResult(
+                409, "fee_unknown",
+                "无法获取申购费率，请显式提供 fee 后重试",
+                {"plan_id": int(clean["plan_id"]),
+                 "fund_code": row["fund_code"], "trade_date": trade_date})
+        fee = float(fee_result.fee or 0)
+        fee_source = "fetched"
+
+    warnings: list[str] = []
+    if trade_date != today:
+        warnings.append(
+            "补记历史交易日：只新增一笔买入流水，不会重算 next_run；"
+            "可能与调度器的当期执行并存")
+    if not row["enabled"]:
+        warnings.append("计划当前停用，本次为人工确认后的手动执行")
+    if is_t1:
+        warnings.append("T+1 确认：15:00 后提交，份额按次日净值确认")
+    try:
+        weekday = datetime.strptime(trade_date, "%Y-%m-%d").weekday()
+    except ValueError:
+        weekday = 0
+    if weekday >= 5:
+        warnings.append(
+            "目标交易日为周末（非交易日），净值确认可能顺延到之后首个净值日")
+
+    snapshot = {
+        "plan_id": int(clean["plan_id"]),
+        "fund_code": row["fund_code"],
+        "amount": amount,
+        "cadence": row["cadence"],
+        "day_of_week": row["day_of_week"],
+        "day_of_month": row["day_of_month"],
+        "channel": row["channel"] or "",
+        "note": row["note"] or "",
+        "trade_date": trade_date,
+        "is_t1": is_t1,
+        "fee": fee,
+        "fee_source": fee_source,
+        "plan_before": _plan_snapshot(row),
+        "warnings": warnings,
+    }
+    return snapshot, None
+
+
+def _verify_execute_plan_target(
+        conn: sqlite3.Connection, clean: dict, snapshot: dict, now: datetime,
+) -> ProposalResult | None:
+    """在写事务内复读定投执行目标，确认预计算后计划/可投性未变化。"""
+    context, error = _check_execute_plan_target(conn, clean, now)
+    if error is not None:
+        return error
+    assert context is not None
+    row = context["row"]
+    # 计划配置（含金额/渠道/备注/启停）由 digest 覆盖；这里额外复核预计算
+    # 与写事务之间没有跨日/可投性漂移。
+    if snapshot.get("trade_date") != clean["trade_date"]:
+        return ProposalResult(
+            409, "target_changed", "提案交易日已变化，请重新提案",
+            {"plan_id": int(clean["plan_id"])})
+    if row["fund_code"] != snapshot.get("fund_code"):
+        return ProposalResult(
+            409, "target_changed", "目标计划基金已变化，请重新提案",
+            {"plan_id": int(clean["plan_id"])})
+    return None
+
+
 # 回填预检（只读盘点）最大返回条目数；与提案 batch 上限一致。
 MAX_PRECHECK_BACKFILL_ITEMS = MAX_BATCH_ITEMS
 
@@ -2006,8 +2338,13 @@ def precheck_backfill(input_data: object) -> dict[str, Any]:
     }
 
 
-def _validate_proposal_params(operation_type: str, params: object) -> dict:
-    """按操作类型分派参数校验；返回规范化后的参数字典。"""
+def _validate_proposal_params(
+        operation_type: str, params: object, *,
+        now: datetime | None = None) -> dict:
+    """按操作类型分派参数校验；返回规范化后的参数字典。
+
+    ``now`` 仅用于 ``execute_plan`` 解析缺省交易日；审批期参数已固化，无需再传。
+    """
     if operation_type == OPERATION_ADD_TRANSACTION:
         return validate_add_transaction_params(params)
     if operation_type == OPERATION_UPDATE_TRANSACTION:
@@ -2032,6 +2369,8 @@ def _validate_proposal_params(operation_type: str, params: object) -> dict:
         return validate_resolve_alert_params(params)
     if operation_type == OPERATION_BACKFILL_TRANSACTION_NAVS:
         return validate_backfill_transaction_navs_params(params)
+    if operation_type == OPERATION_EXECUTE_PLAN:
+        return validate_execute_plan_params(params, now=now)
     raise ProposalValidationError(
         "operation_type", f"操作类型不受支持：{operation_type}")
 
@@ -2106,10 +2445,10 @@ def create_proposal(principal: Principal, *, operation_type: object,
         raise ProposalValidationError(
             "operation_type",
             f"操作类型不受支持，当前仅支持：{', '.join(sorted(ALLOWED_OPERATIONS))}")
-    clean = _validate_proposal_params(operation_type, params)
+    now = _now()
+    clean = _validate_proposal_params(operation_type, params, now=now)
     key_hash = _key_hash(validate_idempotency_key(idempotency_key))
     digest = _digest(operation_type, clean)
-    now = _now()
     _expire_stale(now)
 
     # 回填的净值/费率预计算放在写事务之外：费率缺失时 ``calc_*_fee`` 会联网抓取，
@@ -2122,6 +2461,15 @@ def create_proposal(principal: Principal, *, operation_type: object,
         with db.get_connection() as pre_conn:
             backfill_items, backfill_error = _prepare_backfill_items(
                 pre_conn, clean.get("items") or [])
+
+    # 定投执行同样在写事务之外预计算：费率缺失时 ``calc_purchase_fee`` 会联网
+    # 抓取；写事务内只复读计划/可投性并做 digest 复核。
+    execute_plan_context: dict | None = None
+    execute_plan_error: ProposalResult | None = None
+    if operation_type == OPERATION_EXECUTE_PLAN:
+        with db.get_connection() as pre_conn:
+            execute_plan_context, execute_plan_error = _prepare_execute_plan(
+                pre_conn, clean, now)
 
     with db.get_connection(write=True) as conn:
         replay = _replay_create(
@@ -2222,7 +2570,9 @@ def create_proposal(principal: Principal, *, operation_type: object,
         created = create_pending_proposal_conn(
             conn, principal, clean=clean, digest=digest, now=now, ip=ip,
             operation_type=operation_type, fund_code=fund_code, before=before,
-            backfill_items=backfill_items, backfill_error=backfill_error)
+            backfill_items=backfill_items, backfill_error=backfill_error,
+            execute_plan_context=execute_plan_context,
+            execute_plan_error=execute_plan_error)
         if not created.ok:
             return created
         proposal_id = int(created.data["proposal_id"])
@@ -2938,6 +3288,118 @@ def _exec_backfill_transaction_navs(conn: sqlite3.Connection, row: sqlite3.Row,
     return execution, audit_id
 
 
+def _exec_execute_plan(conn: sqlite3.Connection, row: sqlite3.Row,
+                       clean: dict, pid: int, reviewer: str,
+                       now: datetime, ip: str | None):
+    """执行定投手动执行：写一笔买入流水 + 推进 last_run/last_tx_id。
+
+    零联网：金额/渠道/备注取计划当前值（digest 已保证与创建期一致），
+    ``fee``/``is_t1`` 取 ``summary_json`` 快照。不重算 ``next_run``，也不触发
+    调度器；今天依赖 ``last_run == trade_date`` 防重，历史日期另查已成功提案。
+    """
+    plan_id = int(clean["plan_id"])
+    target = db.get_auto_invest_plan_conn(conn, plan_id)
+    if target is None:
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="target_deleted",
+            message=f"定投计划 {plan_id} 已被删除，无法执行",
+            extra={"plan_id": plan_id})
+    if auto_invest.plan_row_digest(target) != clean["expected_digest"]:
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="target_changed",
+            message="目标定投计划已被修改，请重新提案",
+            extra={"plan_id": plan_id})
+    trade_date = clean["trade_date"]
+    today = now.strftime("%Y-%m-%d")
+    if (target["last_run"] or "") == trade_date:
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="already_executed",
+            message="该计划在目标交易日已执行，无需重复审批",
+            extra={"plan_id": plan_id, "trade_date": trade_date,
+                   "tx_id": target["last_tx_id"]})
+    if trade_date != today and _executed_plan_trade_exists(
+            conn, plan_id, trade_date):
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="already_executed",
+            message="该计划在目标交易日已有成功执行，请勿重复补记",
+            extra={"plan_id": plan_id, "trade_date": trade_date})
+    purchasable, reason, detail = auto_invest._check_purchasable_conn(
+        conn, target["fund_code"], float(target["amount"] or 0))
+    if not purchasable:
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="purchasable_changed",
+            message=_execute_plan_purchasable_message(reason),
+            extra={"plan_id": plan_id, "purchasable_reason": reason,
+                   **detail})
+
+    try:
+        summary = json.loads(row["summary_json"] or "{}")
+    except ValueError:
+        summary = {}
+    if (summary.get("plan_id") != plan_id
+            or summary.get("trade_date") != trade_date):
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="proposal_corrupt",
+            message="提案快照与参数不一致，无法执行",
+            extra={"plan_id": plan_id, "trade_date": trade_date})
+    amount = float(target["amount"] or 0)
+    snap_amount = summary.get("amount")
+    if (amount <= 0 or not isinstance(snap_amount, (int, float))
+            or isinstance(snap_amount, bool)
+            or abs(float(snap_amount) - amount) > AMOUNT_TOLERANCE):
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="proposal_corrupt",
+            message="提案金额快照缺失或与计划不一致，无法执行",
+            extra={"plan_id": plan_id})
+    fee = summary.get("fee")
+    if (not isinstance(fee, (int, float)) or isinstance(fee, bool)
+            or not float(fee) >= 0):
+        return _mark_failure(
+            conn, row, reviewer, now, ip, status=STATUS_CONFLICT,
+            reason="proposal_corrupt",
+            message="提案手续费快照缺失，无法执行",
+            extra={"plan_id": plan_id})
+    is_t1 = bool(summary.get("is_t1"))
+    channel = target["channel"] or ""
+    note = target["note"] or ""
+    tx = Transaction(
+        fund_code=target["fund_code"], action="buy", date=trade_date,
+        amount=amount, shares=None, nav=None, fee=float(fee),
+        channel=channel, note=note, is_t1=is_t1,
+    )
+    tx.normalize()
+    tx_id = db.insert_transaction(conn, tx)
+    last_run = max(target["last_run"] or "", trade_date)
+    db.update_auto_invest_plan_conn(
+        conn, plan_id, last_run=last_run, last_tx_id=tx_id)
+    # 审计事件与网页/调度器对齐（auto_invest_execute），detail 另带 proposal_id。
+    db.log_audit(
+        "auto_invest_execute", ip=ip, username=reviewer,
+        detail={"plan_id": plan_id, "fund_code": target["fund_code"],
+                "amount": amount, "tx_id": tx_id, "trade_date": trade_date,
+                "is_t1": is_t1, "proposal_id": pid},
+        conn=conn,
+    )
+    execution = {
+        "ok": True, "tx_id": tx_id, "plan_id": plan_id,
+        "fund_code": target["fund_code"], "amount": amount,
+        "fee": float(fee), "date": trade_date, "trade_date": trade_date,
+        "is_t1": is_t1, "last_run": last_run,
+        "next_run": target["next_run"],
+    }
+    audit_id = _audit(conn, None, ip, "proposal_approved", {
+        "proposal_id": pid, "operation_type": row["operation_type"],
+        "plan_id": plan_id, "tx_id": tx_id}, reviewer=reviewer)
+    return execution, audit_id
+
+
 def _exec_update_transaction(conn: sqlite3.Connection, row: sqlite3.Row,
                              clean: dict, pid: int, reviewer: str,
                              now: datetime, ip: str | None):
@@ -3266,6 +3728,9 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
         elif operation_type == OPERATION_BACKFILL_TRANSACTION_NAVS:
             outcome = _exec_backfill_transaction_navs(
                 conn, row, clean, pid, reviewer, now, ip)
+        elif operation_type == OPERATION_EXECUTE_PLAN:
+            outcome = _exec_execute_plan(
+                conn, row, clean, pid, reviewer, now, ip)
         else:
             return _mark_failure(
                 conn, row, reviewer, now, ip, status=STATUS_FAILED,
@@ -3286,6 +3751,8 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
                if operation_type == OPERATION_RESOLVE_ALERT
                else "提案已批准，净值已回填"
                if operation_type == OPERATION_BACKFILL_TRANSACTION_NAVS
+               else "提案已批准，定投已执行"
+               if operation_type == OPERATION_EXECUTE_PLAN
                else "提案已批准并写入账本")
     return ProposalResult(
         200, "succeeded", message,

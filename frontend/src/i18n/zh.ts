@@ -1458,6 +1458,10 @@ const zh = {
     navBefore: "原净值",
     backfillNoNetworkHint: "审批只写入创建时固化的净值/份额/金额/手续费快照，不再联网重算；任一行已被其他路径回填则整批取消。",
     backfillApproveHint: "整批一次性回填：全部成功或全部取消。",
+    executePlanTradeDate: "执行交易日",
+    executePlanWillWrite: "批准后将新增一笔买入流水（金额/渠道/备注取自计划，净值与份额待回填），并更新计划的 last_run / last_tx_id。",
+    executePlanNoScheduler: "不会重算 next_run，也不会触发调度器；费率与 T+1 标记在创建提案时已快照，审批不再联网。",
+    executePlanApproveHint: "批准后立即新增一笔买入流水并推进计划簿记；同一计划同一交易日不可重复执行。",
   },
   watchlist: {
     title: "自选关注",

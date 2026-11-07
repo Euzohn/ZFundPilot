@@ -128,6 +128,7 @@ Authorization: Bearer zfag_xxxxxxxx
 
 每个响应都带 `X-Request-ID` 头；Agent 工具成功响应体与所有错误响应体也含 `request_id`。客户端可传入
 `X-Request-ID`（8–64 位 ASCII 字母、数字或 `._:-`）用于跨系统关联；非法值会被服务端替换。排障时请提供该 ID。
+它只用于日志关联，**不是身份凭证**：服务端不会据此鉴权或信任任何调用方声明。
 
 ### 错误响应
 
@@ -148,7 +149,7 @@ Authorization: Bearer zfag_xxxxxxxx
 
 - `detail`：旧字段，形状保持不变（字符串 / 对象 / 校验错误列表），旧客户端可继续读取。
 - `error.code`：稳定错误码，客户端应据此分支；`error.message` 只是中文兜底文案，不要匹配文案。
-- `error.details`：可选，业务附加信息（如 `field`、`index`、`reason`）。
+- `error.details`：可选，业务附加信息（如 `field`、`index`、`reason`）；参数校验错误时为精简的 `loc/type/msg` 列表。
 - `error.retryable`：是否建议重试；`429`、`503` 为 `true`。
 - `error.retry_after`：可选，建议重试秒数，与 `Retry-After` 响应头一致。
 
@@ -1140,7 +1141,7 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/precheck/backfill" \
 - 重复检测复用直记/提案的 `_duplicate_in_ledger`（同基金+渠道+日期+方向且金额或份额容差匹配）与 `_duplicate_pending_proposal`（待审批提案，跨主体保守判定）。
 - 硬阻断仅：`date`/`action`/`fund_code`/`shares`(卖出)/`amount`(分红) 缺失或非法；`channel`/`fee` 缺失为 warning（条目仍 `valid`）。`missing_fee` 按「条目是否提供 `fee`」判断（items 路径）或「CSV 是否含 fee 列」判断（csv 路径），显式 `fee=0` 不告警。
 - `parse_errors` 每条含 `line`（CSV 行号，无法定位时为 `null`）与 `message`。
-- 请求级错误（`format` 非法、`items` 非数组、超 200 条、CSV 超 5 MB）返回 `422`，`detail.code` 为 `validation_error`/`too_many_items`/`csv_too_large`。
+- 请求级错误（`format` 非法、`items` 非数组、超 200 条、CSV 超 5 MB）返回 `422`，`detail.code` / `error.code` 为 `validation_error`/`too_many_items`/`csv_too_large`。
 
 **对账预检**（`precheck_reconciliation`）：
 

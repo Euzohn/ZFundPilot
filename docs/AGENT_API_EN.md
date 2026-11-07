@@ -128,7 +128,8 @@ Every successful tool call returns the same envelope:
 
 Every response carries an `X-Request-ID` header; successful tool envelopes and all error bodies also include
 `request_id`. Clients may send `X-Request-ID` (8–64 ASCII letters, digits, or `._:-`) for cross-system correlation;
-invalid values are replaced by the server. Include this ID when reporting issues.
+invalid values are replaced by the server. Include this ID when reporting issues. It is for log correlation only and
+is **not an identity credential**; the server never authorizes requests or trusts claims based on it.
 
 ### Errors
 
@@ -149,7 +150,7 @@ Error responses keep the FastAPI-compatible `detail` field and add a stable `err
 
 - `detail`: legacy field, unchanged in shape (string / object / validation list), so old clients keep working.
 - `error.code`: stable code; branch on it. `error.message` is a Chinese fallback only — do not match text.
-- `error.details`: optional business context (e.g. `field`, `index`, `reason`).
+- `error.details`: optional business context (e.g. `field`, `index`, `reason`); for validation errors it is a compact `loc/type/msg` list.
 - `error.retryable`: whether a retry is recommended; `true` for `429` and `503`.
 - `error.retry_after`: optional suggested delay in seconds, matching the `Retry-After` header.
 
@@ -1137,7 +1138,7 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/precheck/backfill" \
 - Duplicate detection reuses the direct-write/proposal `_duplicate_in_ledger` (same fund + channel + date + direction with amount or shares tolerance match) and `_duplicate_pending_proposal` (pending proposals, conservatively across principals).
 - Hard blocks only: missing/invalid `date`/`action`/`fund_code`/`shares`(sell)/`amount`(dividend); missing `channel`/`fee` are warnings (item stays `valid`). `missing_fee` is based on whether the original item supplied `fee` (items path) or whether the CSV has a fee column (csv path); an explicit `fee=0` does not warn.
 - Each `parse_errors` entry includes `line` (CSV line number, `null` when not locatable) and `message`.
-- Request-level errors (`format` invalid, `items` not an array, over 200 items, CSV over 5 MB) return `422` with `detail.code` of `validation_error`/`too_many_items`/`csv_too_large`.
+- Request-level errors (`format` invalid, `items` not an array, over 200 items, CSV over 5 MB) return `422` with `detail.code` / `error.code` of `validation_error`/`too_many_items`/`csv_too_large`.
 
 **Reconciliation precheck** (`precheck_reconciliation`):
 

@@ -153,16 +153,25 @@ async def _http_exception_handler(
     兼容旧客户端：``detail`` 的内容与形状保持不变；新客户端应读取 ``error``。
     """
     request_id = getattr(request.state, "request_id", "") or api_errors.get_request_id()
+    retry_after = getattr(exc, "retry_after", None)
+    if retry_after is None and exc.status_code in api_errors.RETRYABLE_STATUS_CODES:
+        raw_retry_after = (exc.headers or {}).get("Retry-After")
+        try:
+            retry_after = int(raw_retry_after) if raw_retry_after else None
+        except (TypeError, ValueError):
+            retry_after = None
     payload = api_errors.build_error_payload(
         request_id=request_id,
         status_code=exc.status_code,
         detail=exc.detail,
         code=getattr(exc, "code", None),
         retryable=getattr(exc, "retryable", None),
-        retry_after=getattr(exc, "retry_after", None),
+        retry_after=retry_after,
     )
     headers = dict(exc.headers or {})
     headers["X-Request-ID"] = request_id
+    if retry_after is not None:
+        headers.setdefault("Retry-After", str(retry_after))
     return JSONResponse(
         status_code=exc.status_code, content=payload, headers=headers)
 
@@ -171,19 +180,55 @@ async def _http_exception_handler(
 async def _request_validation_error_handler(
     request: Request, exc: RequestValidationError,
 ) -> JSONResponse:
-    """参数校验失败：``detail`` 保留 FastAPI 原始列表，另给稳定错误码。"""
+    """参数校验失败：``detail`` 保留 FastAPI 原始列表，另给稳定错误码。
+
+    ``error.details`` 只保留 ``loc/type/msg`` 的精简摘要，避免把原始输入在
+    ``detail`` 与 ``error`` 中重复回显（大请求体放大）。
+    """
     request_id = getattr(request.state, "request_id", "") or api_errors.get_request_id()
     details = jsonable_encoder(exc.errors())
+    compact = [
+        {
+            "loc": list(item.get("loc", [])),
+            "type": item.get("type"),
+            "msg": item.get("msg"),
+        }
+        for item in details
+        if isinstance(item, dict)
+    ]
     payload = api_errors.build_error_payload(
         request_id=request_id,
         status_code=422,
         detail=details,
         code="validation_error",
         message="请求参数校验失败",
-        details=details,
+        details=compact,
     )
     return JSONResponse(
         status_code=422, content=payload,
+        headers={"X-Request-ID": request_id})
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(
+    request: Request, exc: Exception,
+) -> JSONResponse:
+    """兜底 500：仍返回统一错误包，但不向客户端泄漏异常细节。"""
+    request_id = getattr(request.state, "request_id", "") or api_errors.get_request_id()
+    logger.exception(
+        "未处理异常：%s %s (request_id=%s)",
+        request.method, request.url.path, request_id)
+    payload = api_errors.build_error_payload(
+        request_id=request_id,
+        status_code=500,
+        detail={
+            "code": "internal_error",
+            "message": "服务器内部错误，请稍后重试",
+        },
+        retryable=False,
+    )
+    return JSONResponse(
+        status_code=500, content=payload,
         headers={"X-Request-ID": request_id})
 
 
@@ -410,6 +455,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # 浏览器跨域时，只有显式暴露的响应头才能被前端 JS 读取。
+    expose_headers=["X-Request-ID", "Retry-After"],
 )
 
 
@@ -484,15 +531,17 @@ async def auth_middleware(request: Request, call_next):
         if _verify_token(token):
             return await call_next(request)
 
+    request_id = (getattr(request.state, "request_id", "")
+                  or api_errors.get_request_id())
     return JSONResponse(
         status_code=401,
         content=api_errors.build_error_payload(
-            request_id=(getattr(request.state, "request_id", "")
-                        or api_errors.get_request_id()),
+            request_id=request_id,
             status_code=401,
             detail="未登录或 token 已过期",
             code="session_expired",
         ),
+        headers={"X-Request-ID": request_id},
     )
 
 
@@ -601,12 +650,18 @@ def change_username(request: Request, body: ChangeUsernameRequest) -> dict[str, 
 # Agent 只读访问：独立 token 管理 + 默认拒绝的 scope 依赖
 # ---------------------------------------------------------------------------
 _AGENT_ERROR_RESPONSES = {
-    401: {"description": "缺少、无效、已过期或已撤销的 Agent token"},
-    403: {"description": "缺少所需 scope，或实例未启用管理员密码认证"},
-    429: {"description": "超过按 token + 端点的限流阈值，参见 Retry-After"},
+    401: {"description": (
+        "缺少、无效、已过期或已撤销的 Agent token；"
+        "响应体 `error.code` 为 `invalid_token`/`expired`/`revoked`")},
+    403: {"description": (
+        "缺少所需 scope、实例未启用管理员密码认证或写能力总开关关闭；"
+        "响应体 `error.code` 为 `insufficient_scope`/`auth_disabled`/`write_disabled`")},
+    429: {"description": (
+        "超过按 token + 端点的限流阈值；响应头含 `Retry-After`，"
+        "`error.retryable=true`")},
 }
 _ADMIN_ERROR_RESPONSES = {
-    401: {"description": "需要有效的网页登录 token"},
+    401: {"description": "需要有效的网页登录 token（`error.code=session_expired`）"},
     403: {"description": "未启用管理员密码认证，禁止管理 Agent token"},
 }
 

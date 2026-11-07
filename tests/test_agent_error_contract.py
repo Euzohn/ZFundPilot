@@ -1,12 +1,16 @@
 """统一错误契约：request_id、稳定错误码与旧 detail 兼容。"""
 from __future__ import annotations
 
+import asyncio
+import json
 import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from zfundpilot import agent_tokens, api, config, db
 from zfundpilot.api_errors import build_error_payload
@@ -122,7 +126,17 @@ class TestErrorEnvelope:
         body = response.json()
         assert isinstance(body["detail"], list)
         assert body["error"]["code"] == "validation_error"
-        assert isinstance(body["error"]["details"], list)
+        details = body["error"]["details"]
+        assert isinstance(details, list) and details
+        assert set(details[0]) == {"loc", "type", "msg"}
+        assert "input" not in details[0]
+
+    def test_admin_401_has_request_id_header(self, client):
+        response = client.get("/api/agent/tokens")
+        assert response.status_code == 401
+        body = response.json()
+        assert body["error"]["code"] == "session_expired"
+        assert body["request_id"] == response.headers["X-Request-ID"]
 
     def test_rate_limit_is_retryable(self, client):
         headers = _headers("transactions:propose")
@@ -173,3 +187,69 @@ class TestEnvelopeBuilder:
         )
         assert payload["error"]["retryable"] is True
         assert payload["error"]["retry_after"] == 5
+
+
+class TestUnhandledException:
+    @pytest.fixture
+    def boom_route(self):
+        path = "/api/__test_unhandled_error"
+
+        def _boom() -> None:
+            raise RuntimeError("secret detail")
+
+        api.app.add_api_route(path, _boom, methods=["GET"])
+        route = api.app.router.routes.pop()
+        api.app.router.routes.insert(0, route)
+        try:
+            yield path
+        finally:
+            api.app.router.routes = [
+                item for item in api.app.router.routes
+                if getattr(item, "path", None) != path
+            ]
+
+    def test_returns_generic_500_without_leaking_detail(self):
+        request = Request({
+            "type": "http", "method": "GET", "path": "/api/boom",
+            "headers": [], "query_string": b"",
+        })
+        request.state.request_id = "req-0123456789"
+
+        response = asyncio.run(
+            api._unhandled_exception_handler(request, RuntimeError("secret")))
+        assert response.status_code == 500
+        body = json.loads(response.body)
+        assert body["error"]["code"] == "internal_error"
+        assert body["error"]["retryable"] is False
+        assert body["request_id"] == "req-0123456789"
+        assert response.headers["X-Request-ID"] == "req-0123456789"
+        assert "secret" not in response.body.decode()
+
+    def test_registered_handler_returns_json_500(self, boom_route):
+        client = TestClient(api.app, raise_server_exceptions=False)
+        response = client.get(boom_route)
+
+        assert response.status_code == 500
+        body = response.json()
+        assert body["error"]["code"] == "internal_error"
+        assert body["request_id"] == response.headers["X-Request-ID"]
+        assert "secret detail" not in response.text
+
+
+class TestHttpExceptionHandler:
+    def test_retry_after_header_populates_error(self):
+        request = Request({
+            "type": "http", "method": "GET", "path": "/api/slow",
+            "headers": [], "query_string": b"",
+        })
+        request.state.request_id = "req-0123456789"
+        exc = HTTPException(
+            status_code=429, detail="慢点", headers={"Retry-After": "7"})
+
+        response = asyncio.run(api._http_exception_handler(request, exc))
+        body = json.loads(response.body)
+        assert body["detail"] == "慢点"
+        assert body["error"]["code"] == "rate_limited"
+        assert body["error"]["retryable"] is True
+        assert body["error"]["retry_after"] == 7
+        assert response.headers["Retry-After"] == "7"

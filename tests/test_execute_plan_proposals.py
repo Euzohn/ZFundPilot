@@ -179,6 +179,19 @@ class TestCreateExecutePlan:
         assert summary["is_t1"] is False
         assert any("补记历史交易日" in w for w in summary["warnings"])
 
+    def test_non_trading_day_warning_uses_calendar(self, temp_db,
+                                                   monkeypatch):
+        _fixed_now(monkeypatch, day=7)
+        monkeypatch.setattr(fetch_fund, "calc_purchase_fee", _fee(0.0))
+        # 2026-01-06（周二）不在交易日历内 → 法定节假日，只 warning 不阻断。
+        db.upsert_trade_calendar(["2026-01-05", "2026-01-07", "2026-01-30"])
+        plan_id = _make_plan()
+        result = _create(
+            _tx_principal(), _params(plan_id, trade_date="2026-01-06"))
+        assert result.ok
+        warnings = result.data["summary"]["warnings"]
+        assert any("不是 A 股交易日" in w for w in warnings)
+
     @pytest.mark.parametrize("trade_date", [
         "2026-01-06",   # 未来
         "2025-12-28",   # 超过 7 天

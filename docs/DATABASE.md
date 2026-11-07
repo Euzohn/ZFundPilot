@@ -344,7 +344,7 @@
 
 ## 13. operation_proposals — 账本操作提案
 
-Agent 默认只能提交**待审批提案**。网页管理员在「待确认提案」页面批准后，服务端在同一 SQLite 事务内复核实例认证、写总开关、创建者 token/scope 与业务规则，写入交易并记录审计。首期仅支持 `add_transaction`。
+Agent 默认只能提交**待审批提案**。网页管理员在「待确认提案」页面批准后，服务端在同一 SQLite 事务内复核实例认证、写总开关、创建者 token/scope 与业务规则，写入交易/计划或推进提醒与计划簿记，并记录审计。支持的操作类型以 `proposal_service.ALLOWED_OPERATIONS` 为准（当前清单见 `docs/AGENT_API.md` §5.23）。
 
 例外是**可信单笔直记（F0）**：持有 `transactions:create` 的 token 可在单笔/每日额度内直接写入 `transactions`（仅 `buy` / `sell`），写入行 `source='agent'`；预检不通过时若同时具备 `transactions:propose`，则降级为待审批提案。详见 `docs/AGENT_API.md` §5.24。
 
@@ -354,7 +354,7 @@ Agent 默认只能提交**待审批提案**。网页管理员在「待确认提�
 | `principal_type` | TEXT | NOT NULL | 创建者类型，当前固定 `agent_token` |
 | `principal_id` | TEXT | NOT NULL | 创建者 token id；访问按此隔离 |
 | `token_prefix` | TEXT | DEFAULT '' | 创建时 token 前缀，仅用于审计展示 |
-| `operation_type` | TEXT | NOT NULL | 白名单操作类型，首期仅 `add_transaction` |
+| `operation_type` | TEXT | NOT NULL | 白名单操作类型（以 `proposal_service.ALLOWED_OPERATIONS` 为准，清单见 `docs/AGENT_API.md` §5.23） |
 | `status` | TEXT | NOT NULL | 状态机：`pending` / `succeeded` / `failed` / `conflict` / `rejected` / `cancelled` / `expired` |
 | `params_json` | TEXT | NOT NULL | 规范化后的入参（白名单字段），审批时按此复核 |
 | `params_digest` | TEXT | NOT NULL | 入参 SHA-256，用于幂等键“同键同参”判定 |

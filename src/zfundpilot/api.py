@@ -1968,7 +1968,7 @@ def _proposal_result_data(
 
 
 @app.post("/api/agent/tools/proposals", tags=["agent"], status_code=201,
-          summary="创建账本/定投计划操作提案（需网页确认）",
+          summary="创建账本/定投计划/提醒处理操作提案（需网页确认）",
           responses={**_AGENT_WRITE_ERROR_RESPONSES,
                      201: {"description": "提案已创建，等待网页管理员确认"}},
           dependencies=[Security(_agent_bearer_scheme)])

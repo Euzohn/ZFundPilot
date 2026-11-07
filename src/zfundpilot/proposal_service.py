@@ -2170,13 +2170,12 @@ def _prepare_execute_plan(
         warnings.append("计划当前停用，本次为人工确认后的手动执行")
     if is_t1:
         warnings.append("T+1 确认：15:00 后提交，份额按次日净值确认")
-    try:
-        weekday = datetime.strptime(trade_date, "%Y-%m-%d").weekday()
-    except ValueError:
-        weekday = 0
-    if weekday >= 5:
+    # 以 A 股交易日历为准（含法定节假日/调休；日历缺失时 fail-open 退化为
+    # 周末判断），非交易日不硬阻断，只提示净值确认可能顺延。
+    if not db.is_trading_day_conn(conn, trade_date):
         warnings.append(
-            "目标交易日为周末（非交易日），净值确认可能顺延到之后首个净值日")
+            "目标交易日不是 A 股交易日（周末/节假日），"
+            "净值确认可能顺延到之后首个净值日")
 
     snapshot = {
         "plan_id": int(clean["plan_id"]),

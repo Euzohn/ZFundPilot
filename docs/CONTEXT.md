@@ -25,7 +25,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.25.0`（git tag `v0.25.0`）
+- **版本**: `0.26.0`（git tag `v0.26.0`）
 - **License**: MIT
 
 ---
@@ -47,7 +47,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.25.0"
+│   ├── __init__.py          # __version__ = "0.26.0"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
@@ -185,7 +185,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.25.0")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.26.0")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
 - 启动: `@app.lifespan` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`；把遗留刷新任务标为 `interrupted`，并把过期提案标为 `expired`
@@ -536,6 +536,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ## 十二、当前工作状态
 
 ### [Unreleased]
+
+### [0.26.0] - 2026-11-07
 
 - feat: 定投手动执行提案（F6.3）——复用 `transactions:propose`，`create_operation_proposal` 新增 `execute_plan`：为一条**已存在**的定投计划手动生成一笔买入流水，并推进 `last_run`/`last_tx_id`。参数为 `plan_id` + `expected_digest`（`list_auto_invest_plans` 的 `row_digest`）+ 可选 `trade_date`（缺省今天，仅允许最近 7 天补记）+ 可选 `fee`（仅当服务端算不出申购费时必填）；`amount`/`fund_code`/`channel`/`note`/`is_t1` 及 `enabled`/`next_run`/`last_run`/`last_tx_id` 硬拒（422），金额、渠道、备注取计划快照，`is_t1` 按「交易日是否为今天且创建时点 ≥15:00」判定。创建期在写事务之外检查可投性并抓取费率（显式 `fee` 跳过；费率未知 `409 fee_unknown`，不静默写 0），快照固化进 `summary_json`；审批零联网，按快照写一笔 `buy`（`shares/nav` 为 `NULL` 待回填），`last_run = max(现有, trade_date)`，**不重算 `next_run`、不触发调度器**，网页 `/api/auto-invest/plans/{id}/execute` 与调度器 `run_all_due()` 行为不变。今天靠 `last_run == trade_date` 防重，补记历史日期另查「同一 `plan_id + trade_date` 的已成功提案」兜底；可投性严格阻断（`suspended`/`limit_exceeded`/`below_minimum`，与网页手动执行仅 warning 不同），停用计划仍可手动执行（warning）、非交易日仅 warning；审批成功记 `auto_invest_execute`（带 `proposal_id`）。提案 `summary` 新增 `plan_id`/`trade_date`/`is_t1`/`fee`/`fee_source`/`before`/`after`，前端提案列表/详情/审批确认支持执行摘要；MCP 白名单、docstring 与 instructions 同步；新增 `tests/test_execute_plan_proposals.py`（40 例）
 - feat: 交易回填净值提案（F6.2）——复用 `transactions:propose`，`create_operation_proposal` 新增 `backfill_transaction_navs`：为 `nav` 仍 `NULL` 的**已存在**交易补净值（及连带重算的份额/金额/手续费），支持显式 `tx_ids` 批量（1–50 条、批内去重，**不做「回填全部」**），逐行带 `expected_digest`（取自 `GET /api/agent/tools/transactions/{tx_id}` 的 `row_digest`）作版本前置，可选 `fee`（仅当服务端离线算不出费率时才需显式给）。顶层与逐行未知字段硬拒（422）。分红行语义上不可按净值回填（分红 `nav` 是每份分红金额），整批拒绝 `422 dividend_not_backfillable`；`nav IS NULL` 不满足 `409 nav_present`；缺摘要 `409 target_changed`、行不存在 `409 target_not_found`、无本地可用净值 `409 nav_unavailable`、费率/确认净值未知 `409 fee_unknown`（此时可显式给 `fee` 重提）。创建期**离线**预计算每行 nav（本地 `nav_history`，T+1 取次日净值，缺当天取之后首个净值日）与 fee（已有非零沿用 `existing`，否则买入按金额 `calc_purchase_fee`/卖出按份额 `calc_redemption_fee` 算 `fetched`，与网页离线回填口径一致；Agent 显式提供记 `explicit`），快照固化进 `summary_json`，**审批零联网、不重算漂移值**；任一行不可执行整批拒绝、不建悬空提案。审批在单事务内逐行复读（`nav IS NULL`+digest 匹配），全对才整批写快照值，任一行已回填/已改/已删 → 整批 `conflict`（`partially_updated`/`target_changed`/`target_deleted`/`proposal_corrupt`），无部分写入；审计 `nav_backfill` 与网页/调度器对齐（`detail` 另带 `proposal_id`）；只补 nav/shares/amount/fee 四字段，不触碰 `date/action/fund_code/channel/note/is_t1`。提案 `summary` 新增 `count`/`funds`/`fee_sources`/`items`（逐行 `before`/`after` 仅覆盖回填四字段，`nav_date` 标注 T+1 采用的净值日），前端提案列表/详情/审批确认支持回填摘要（逐行净值前后、费率来源、T+1 标注与原子性提示）。新增只读工具 `precheck_backfill`（`POST /api/agent/tools/precheck/backfill`，复用 `transactions:propose`、受写总闸与 10 次/分钟限流约束、risk `propose`）：省略 `tx_ids` 盘点全部 nav-NULL 非分红行（上限 50），给定则按序逐行报告（含不可回填原因），每行返回 `row_digest`、净值/费率可用性与回填后 `after` 快照，供 Agent 直接构造提案；MCP 适配层同步暴露 `precheck_backfill`。新增 `tests/test_backfill_proposals.py` 覆盖创建校验、逐行拒绝语义与整批 422/409、审批整批写入/审计对齐/部分已回填整批冲突与 precheck 门控/限流

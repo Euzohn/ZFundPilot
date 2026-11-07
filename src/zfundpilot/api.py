@@ -122,7 +122,7 @@ async def _lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ZFundPilot API",
-    version="0.25.0",
+    version="0.26.0",
     lifespan=_lifespan,
     openapi_tags=[
         {

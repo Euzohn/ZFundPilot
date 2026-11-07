@@ -7,7 +7,7 @@
 ## [Unreleased]
 
 ### Added
-- 新增 Agent HTTP 统一请求 ID 与错误契约：所有响应带 `X-Request-ID` 头（客户端可传入 8–64 位合法值透传，非法值替换），Agent 工具成功响应包新增 `request_id`；错误响应在保留既有 `detail`（形状不变，旧客户端兼容）的同时新增 `error` 对象（`code`/`message`/`request_id`/`retryable`，可选 `details`/`retry_after`）。`429`/`503` 标记 `retryable=true` 并与 `Retry-After` 对齐，`503 database_busy` 仍保留原 `detail.code`；Agent 鉴权错误补稳定码 `invalid_token`/`expired`/`revoked`/`auth_disabled`/`insufficient_scope`，限流为 `rate_limited`，参数校验为 `validation_error`。新增 `src/zfundpilot/api_errors.py`（请求 ID 规范化、错误包构造、可携带错误码的 `ApiError`）；前端 `client.ts` 优先读取 `error.code`/`error.message`，缺失时回退 `detail`；MCP 适配层错误优先解析 `error` 对象并在错误文案中回显 `request_id`。新增 `tests/test_agent_error_contract.py`（12 例）与 MCP 错误解析用例
+- 新增 Agent HTTP 统一请求 ID 与错误契约：所有响应带 `X-Request-ID` 头（客户端可传入 8–64 位合法值透传，非法值替换），Agent 工具成功响应包新增 `request_id`；错误响应在保留既有 `detail`（形状不变，旧客户端兼容）的同时新增 `error` 对象（`code`/`message`/`request_id`/`retryable`，可选 `details`/`retry_after`）。`429`/`503` 标记 `retryable=true`，`retry_after` 与 `Retry-After` 响应头双向对齐，`503 database_busy` 仍保留原 `detail.code`；Agent 鉴权错误补稳定码 `invalid_token`/`expired`/`revoked`/`auth_disabled`/`insufficient_scope`，限流为 `rate_limited`，参数校验为 `validation_error`（`error.details` 精简为 `loc/type/msg`，避免重复回显输入），未处理异常统一返回 500 `internal_error` 且不泄漏异常细节。新增 `src/zfundpilot/api_errors.py`（请求 ID 规范化、错误包构造、可携带错误码的 `ApiError`）；CORS 暴露 `X-Request-ID`/`Retry-After`；前端 `client.ts` 优先读取 `error.code`/`error.message`，缺失时回退 `detail`；MCP 适配层错误优先解析 `error` 对象并在错误文案中回显 `request_id`。新增 `tests/test_agent_error_contract.py`（16 例）与 MCP 错误解析用例
 
 ## [0.26.0] - 2026-11-07
 

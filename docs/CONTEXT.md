@@ -537,7 +537,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
-- feat: Agent HTTP 统一请求 ID 与错误契约——所有响应带 `X-Request-ID`（可透传合法客户端值），Agent 工具成功响应包新增 `request_id`；错误响应保留既有 `detail`（形状不变）并新增 `error` 对象（`code`/`message`/`request_id`/`retryable`，可选 `details`/`retry_after`）。`429`/`503` 为 `retryable=true`，`503 database_busy` 保留原 `detail.code`；鉴权错误稳定码 `invalid_token`/`expired`/`revoked`/`auth_disabled`/`insufficient_scope`，限流 `rate_limited`，参数校验 `validation_error`。新增 `api_errors.py`；前端错误解析优先 `error`、回退 `detail`，MCP 错误解析优先 `error` 并回显 `request_id`；新增 `tests/test_agent_error_contract.py`（12 例）
+- feat: Agent HTTP 统一请求 ID 与错误契约——所有响应带 `X-Request-ID`（可透传合法客户端值），Agent 工具成功响应包新增 `request_id`；错误响应保留既有 `detail`（形状不变）并新增 `error` 对象（`code`/`message`/`request_id`/`retryable`，可选 `details`/`retry_after`）。`429`/`503` 为 `retryable=true` 并从 `Retry-After` 回填秒数，`503 database_busy` 保留原 `detail.code`；鉴权错误稳定码 `invalid_token`/`expired`/`revoked`/`auth_disabled`/`insufficient_scope`，限流 `rate_limited`，参数校验 `validation_error`（`details` 精简为 `loc/type/msg`），未处理异常统一 500 `internal_error` 且不泄漏细节。新增 `api_errors.py`；CORS 暴露 `X-Request-ID`/`Retry-After`；前端错误解析优先 `error`、回退 `detail`，MCP 错误解析优先 `error` 并回显 `request_id`；新增 `tests/test_agent_error_contract.py`（16 例）
 
 ### [0.26.0] - 2026-11-07
 

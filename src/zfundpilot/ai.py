@@ -769,9 +769,9 @@ def parse_screenshot(image_bytes: bytes, mode: str, channel_hint: str = "", cont
         return {"ok": False, "items": [], "error": "连接失败，请检查网络或 Base URL"}
     except httpx.TimeoutException:
         return {"ok": False, "items": [], "error": "请求超时（60s），请稍后重试"}
-    except Exception as e:
+    except Exception:
         logger.exception("parse_screenshot 异常")
-        return {"ok": False, "items": [], "error": f"内部错误: {e}"}
+        return {"ok": False, "items": [], "error": "解析失败，请稍后重试"}
 
 
 def test_vision_connection() -> dict:

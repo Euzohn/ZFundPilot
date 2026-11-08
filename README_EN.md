@@ -160,7 +160,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 ### Security & Customization
 
 - **Password Auth** — Username + password login, HMAC-signed token, bcrypt password hashing, login rate limiting
-- **API Key Encryption** — AI API key encrypted at rest (Fernet AES-128-CBC + HMAC-SHA256)
+- **API Key Encryption** — AI API key encrypted at rest (Fernet AES-128-CBC + HMAC-SHA256); the master key `data/secret.key` is mode 0o600. Encryption protects against reading a single config file, not against reading the entire `data/` directory — restrict directory permissions accordingly. Remote AI endpoints must use HTTPS; plain HTTP is only allowed for loopback addresses
 - **Audit Log** — Sensitive operations logged, viewable in Settings
 - **Language Switch** — Full UI supports Chinese/English toggle, switch from sidebar, data format (¥/$) adapts automatically
 - **Color Theme Switch** — Toggle between "Green-up/Red-down (International)" and "Red-up/Green-down (A-share)"

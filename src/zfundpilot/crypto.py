@@ -14,10 +14,13 @@
 """
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
+
+logger = logging.getLogger(__name__)
 
 _PREFIX = "enc:"
 _fernet: Fernet | None = None
@@ -42,8 +45,14 @@ def _get_fernet() -> Fernet:
         except OSError:
             # Windows/非 POSIX 平台无 chmod，忽略
             pass
+        logger.info("已生成新的加密主密钥 %s", key_path)
     _fernet = Fernet(key)
     return _fernet
+
+
+def is_encrypted(value: str) -> bool:
+    """判断字段是否为 `enc:` 前缀的密文。"""
+    return bool(value) and value.startswith(_PREFIX)
 
 
 def encrypt(plaintext: str) -> str:
@@ -59,17 +68,22 @@ def decrypt(ciphertext: str) -> str:
 
     - 无 `enc:` 前缀视为旧版明文，原样返回（向后兼容）
     - 空串原样返回
-    - 解密失败（密钥变更/数据损坏）返回空串
+    - 解密失败（密钥变更/数据损坏）返回空串，并记录告警避免静默丢数据
     """
     if not ciphertext:
         return ""
     if not ciphertext.startswith(_PREFIX):
         # 旧版明文，原样返回，下次保存时自动加密
         return ciphertext
-    token = ciphertext[len(_PREFIX):].encode("ascii")
     try:
+        token = ciphertext[len(_PREFIX):].encode("ascii")
         return _get_fernet().decrypt(token).decode("utf-8")
-    except (InvalidToken, UnicodeDecodeError):
+    except (InvalidToken, UnicodeDecodeError, UnicodeEncodeError):
+        logger.warning(
+            "敏感字段解密失败（主密钥可能已变更或丢失）：ciphertext 长度 %d，"
+            "该字段暂按空值处理；请重新填写并保存，避免旧值被覆盖",
+            len(ciphertext),
+        )
         return ""
 
 

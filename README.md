@@ -160,7 +160,7 @@ cd frontend && npm install && npm run dev
 ### 安全与自定义
 
 - **密码认证** — 用户名 + 密码登录，HMAC 签名 token，bcrypt 密码哈希，登录速率限制防爆破
-- **API Key 加密存储** — AI API key 落盘自动加密（Fernet AES-128-CBC + HMAC-SHA256）
+- **API Key 加密存储** — AI API key 落盘自动加密（Fernet AES-128-CBC + HMAC-SHA256），主密钥 `data/secret.key` 权限 0o600；加密用于防止单个配置文件被直接读取，无法防止整个 `data/` 目录被读取，请限制目录权限。远程 AI 端点要求 HTTPS，明文 HTTP 仅允许本机回环地址
 - **审计日志** — 敏感操作记入日志，设置页可查看
 - **中英文切换** — 全站界面支持中英文切换，侧边栏一键切换，数据格式（¥/$、相对时间）自动适配
 - **涨跌颜色切换** — 支持「绿涨红跌（国际）」/「红涨红跌（A 股）」双主题，服务端同步

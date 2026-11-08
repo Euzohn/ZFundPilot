@@ -419,14 +419,34 @@ def _load_ai_config() -> dict:
         return {}
 
 
+def _read_raw_ai_config() -> dict:
+    """读取原始 ai_config.json（不解密），失败返回空 dict。"""
+    try:
+        with open(AI_CONFIG_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
 def _save_ai_config(data: dict) -> None:
-    # 加密 api_key 后再落盘，避免密钥明文存储
+    """加密敏感字段后落盘。
+
+    传入空字符串通常表示“未改动”或“解密失败”（API 语义中空值即保留原值），
+    此时保留磁盘上已有的密文，避免把已加密的 Key 覆盖为空。
+    """
     from . import crypto
     to_save = dict(data)
-    if to_save.get("api_key"):
-        to_save["api_key"] = crypto.encrypt(to_save["api_key"])
-    if to_save.get("vision_api_key"):
-        to_save["vision_api_key"] = crypto.encrypt(to_save["vision_api_key"])
+    if not to_save.get("api_key") or not to_save.get("vision_api_key"):
+        old = _read_raw_ai_config()
+        for field in ("api_key", "vision_api_key"):
+            if not to_save.get(field) and old.get(field):
+                to_save[field] = old[field]
+    # 仅加密尚未加密的明文；从磁盘保留的旧值已是 enc: 密文，跳过以免二次加密
+    for field in ("api_key", "vision_api_key"):
+        value = to_save.get(field)
+        if value and not crypto.is_encrypted(value):
+            to_save[field] = crypto.encrypt(value)
     _atomic_write(AI_CONFIG_PATH, json.dumps(to_save, indent=2).encode("utf-8"))
 
 

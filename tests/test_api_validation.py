@@ -383,9 +383,32 @@ class TestSSRFValidation:
         m = AIConfigUpdate(base_url="http://localhost:11434", model="llama3")
         assert m.base_url == "http://localhost:11434"
 
-    def test_valid_private_ip(self):
-        m = AIConfigUpdate(base_url="http://192.168.1.100:8080", model="model")
-        assert m.base_url == "http://192.168.1.100:8080"
+    def test_valid_http_loopback_ip(self):
+        m = AIConfigUpdate(base_url="http://127.0.0.1:11434/v1", model="llama3")
+        assert m.base_url == "http://127.0.0.1:11434/v1"
+
+    def test_valid_http_loopback_ipv6(self):
+        m = AIConfigUpdate(base_url="http://[::1]:11434/v1", model="llama3")
+        assert m.base_url == "http://[::1]:11434/v1"
+
+    def test_valid_https_private_ip(self):
+        """https 到内网地址允许（链路已加密），仅明文 http 受限。"""
+        m = AIConfigUpdate(base_url="https://192.168.1.100:8080", model="model")
+        assert m.base_url == "https://192.168.1.100:8080"
+
+    def test_reject_http_private_ip(self):
+        """明文 http 发往内网会暴露 Key，要求改用 https。"""
+        with pytest.raises(ValidationError, match="https"):
+            AIConfigUpdate(base_url="http://192.168.1.100:8080", model="model")
+
+    def test_reject_http_public_domain(self):
+        """明文 http 发往公网端点会暴露 Key，要求改用 https。"""
+        with pytest.raises(ValidationError, match="https"):
+            AIConfigUpdate(base_url="http://api.openai.com/v1", model="gpt-4")
+
+    def test_reject_missing_hostname(self):
+        with pytest.raises(ValidationError, match="主机名"):
+            AIConfigUpdate(base_url="http:///v1", model="m")
 
     def test_reject_link_local_ipv4(self):
         with pytest.raises(ValidationError, match="link-local"):

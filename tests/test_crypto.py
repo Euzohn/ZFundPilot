@@ -1,4 +1,5 @@
 """crypto 加解密测试：Fernet 加密、解密、旧版明文兼容、主密钥隔离。"""
+import json
 import os
 
 from zfundpilot import config, crypto
@@ -40,6 +41,58 @@ class TestCrypto:
         self._setup_key(tmp_path, monkeypatch)
         bad = "enc:ZmFrZS1ub3QtcmVhbC10b2tlbi0xMjM0NTY3ODkw="
         assert crypto.decrypt(bad) == ""
+
+    def test_invalid_token_warns(self, tmp_path, monkeypatch, caplog):
+        """解密失败必须记录告警，避免静默丢数据。"""
+        self._setup_key(tmp_path, monkeypatch)
+        bad = "enc:ZmFrZS1ub3QtcmVhbC10b2tlbi0xMjM0NTY3ODkw="
+        with caplog.at_level("WARNING", logger="zfundpilot.crypto"):
+            assert crypto.decrypt(bad) == ""
+        assert any("解密失败" in r.message for r in caplog.records)
+
+    def test_is_encrypted(self):
+        assert crypto.is_encrypted("enc:abc") is True
+        assert crypto.is_encrypted("sk-plaintext") is False
+        assert crypto.is_encrypted("") is False
+
+    def test_save_preserves_existing_ciphertext_on_empty(self, tmp_path, monkeypatch):
+        """传入空 Key 时保留磁盘上的旧密文，避免解密失败后被空值覆盖。"""
+        self._setup_key(tmp_path, monkeypatch)
+        cfg_path = tmp_path / "ai_config.json"
+        monkeypatch.setattr(config, "AI_CONFIG_PATH", str(cfg_path))
+
+        config._save_ai_config({
+            "base_url": "https://api.test/v1",
+            "api_key": "sk-original",
+            "model": "m",
+            "vision_api_key": "sk-vision",
+        })
+        raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+        assert raw["api_key"].startswith("enc:")
+        saved_cipher = raw["api_key"]
+
+        # 模拟“未改动/解密失败”：空 Key 不应覆盖旧密文
+        config._save_ai_config({
+            "base_url": "https://api.test/v1",
+            "api_key": "",
+            "model": "m2",
+            "vision_api_key": "",
+        })
+        raw2 = json.loads(cfg_path.read_text(encoding="utf-8"))
+        assert raw2["api_key"] == saved_cipher
+        assert raw2["vision_api_key"].startswith("enc:")
+        assert crypto.decrypt(raw2["api_key"]) == "sk-original"
+        assert crypto.decrypt(raw2["vision_api_key"]) == "sk-vision"
+
+        # 重新填写新 Key 时应覆盖
+        config._save_ai_config({
+            "base_url": "https://api.test/v1",
+            "api_key": "sk-new",
+            "model": "m2",
+            "vision_api_key": "sk-vision",
+        })
+        raw3 = json.loads(cfg_path.read_text(encoding="utf-8"))
+        assert crypto.decrypt(raw3["api_key"]) == "sk-new"
 
     def test_key_file_permissions(self, tmp_path, monkeypatch):
         """Unix 平台上 secret.key 文件权限应为 0o600。"""

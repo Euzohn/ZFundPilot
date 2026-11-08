@@ -3193,14 +3193,35 @@ def agent_get_capabilities(
 # AI 投顾配置 & 对话
 # ---------------------------------------------------------------------------
 _BLOCKED_TLDS = {".internal", ".localhost"}
+_LOOPBACK_HOSTNAMES = {"localhost", "localhost.localdomain"}
+
+
+def _is_loopback_host(hostname: str) -> bool:
+    """判断主机名是否为回环地址（localhost / 127.0.0.0/8 / ::1）。"""
+    if hostname in _LOOPBACK_HOSTNAMES:
+        return True
+    try:
+        addr = ipaddress.ip_address(hostname)
+    except ValueError:
+        return False
+    return addr.is_loopback
 
 
 def _validate_base_url(v: str) -> str:
-    """校验 AI base_url：要求 http/https 协议，拒绝 link-local 地址和危险 TLD。"""
+    """校验 AI base_url。
+
+    规则：
+    - 仅允许 http/https；
+    - 始终拒绝 link-local（云元数据 169.254.x.x / fe80::/10）与危险 TLD；
+    - 明文 http 会让 API Key 暴露在链路上，因此只允许回环地址（本地 Ollama/vLLM 等），
+      远程端点必须使用 https。
+    """
     parsed = urllib.parse.urlparse(v)
     if parsed.scheme not in ("http", "https"):
         raise ValueError("base_url 必须使用 http 或 https 协议")
-    hostname = parsed.hostname or ""
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("base_url 缺少主机名")
     # 拒绝 link-local 地址（云元数据端点 169.254.x.x / fe80::/10）
     try:
         addr = ipaddress.ip_address(hostname)
@@ -3215,6 +3236,9 @@ def _validate_base_url(v: str) -> str:
     for tld in _BLOCKED_TLDS:
         if hostname.endswith(tld):
             raise ValueError(f"不允许使用 {tld} 域名")
+    # 明文 http 仅允许回环地址，避免 API Key 在链路上明文传输
+    if parsed.scheme == "http" and not _is_loopback_host(hostname):
+        raise ValueError("明文 http 仅允许本机回环地址，远程端点请使用 https")
     return v
 
 

@@ -312,6 +312,19 @@ class TestParseScreenshot:
         assert r["ok"] is False
         assert "JSON" in r["error"]
 
+    def test_generic_exception_sanitized(self):
+        """未预期异常不应把内部细节回传给调用方。"""
+        with patch("zfundpilot.ai.config") as mock_cfg, \
+             patch("zfundpilot.ai.httpx.post",
+                   side_effect=RuntimeError("secret internal detail")):
+            mock_cfg.AI_VISION_BASE_URL = "https://api.test.com/v1"
+            mock_cfg.AI_VISION_API_KEY = "sk-test"
+            mock_cfg.AI_VISION_MODEL = "test-vl"
+            r = ai.parse_screenshot(b"img", "transactions")
+        assert r["ok"] is False
+        assert r["error"] == "解析失败，请稍后重试"
+        assert "secret internal detail" not in r["error"]
+
 
 # ---------------------------------------------------------------------------
 # test_vision_connection

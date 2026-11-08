@@ -206,6 +206,7 @@ ZFundPilot/
 - 路径: `ZFUNDPILOT_HOME` 环境变量 → 项目根 → `data/` 目录
 - 认证: `auth.json` 存储 `{username, password_hash, secret}`；`ZFUNDPILOT_USERNAME`/`ZFUNDPILOT_PASSWORD` 仅首次迁移；密码哈希为 bcrypt（兼容旧 SHA-256）；`ZFUNDPILOT_TRUSTED_PROXIES` 控制代理信任网段
 - AI: `ai_config.json` 存储 `{base_url, api_key, model, web_search, custom_prompt, vision_base_url, vision_api_key, vision_model}`，其中 `api_key` 和 `vision_api_key` 加密存储（见 `crypto.py`）
+- AI `base_url` 校验：仅允许 http/https；明文 http 仅允许回环地址（`localhost`/`127.0.0.0/8`/`::1`，用于本地 Ollama/vLLM），远程端点必须使用 https，避免 API Key 明文传输；始终拒绝 link-local（云元数据 `169.254.x.x`/`fe80::/10`）与 `.internal`/`.localhost` 域名
 - 定时: `ZFUNDPILOT_NAV_CRON` 环境变量（默认 `0 21 * * 1-5`）
 
 ### crypto.py — 敏感字段加密
@@ -214,6 +215,9 @@ ZFundPilot/
 - 主密钥独立存于 `data/secret.key`（首启自动生成，32 字节随机，文件权限 0o600），与 `auth.json` 的 `AUTH_SECRET` 解耦
 - 加密格式: `enc:<base64-token>`，无前缀的旧版明文自动兼容（加载时原样返回，下次保存时自动加密）
 - `config._load_ai_config()` / `_save_ai_config()` 自动调用 `crypto.decrypt()` / `crypto.encrypt()`，运行时内存中 `AI_API_KEY` 为明文
+- 加密边界：主密钥与密文同处 `data/`，能防“单个配置文件被直接读取/被单独备份”，但不防“整个 `data/` 目录被读取”；生产环境应限制目录权限并确保主机可信
+- 主密钥丢失/变更时 `decrypt()` 返回空串并记录 WARNING；`_save_ai_config()` 收到空 Key 时保留磁盘上的旧密文，避免静默覆盖
+- `crypto.is_encrypted()` 判断字段是否已是 `enc:` 密文，保存时跳过二次加密
 
 ### backtest.py — 定投策略回测
 

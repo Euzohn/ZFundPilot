@@ -6,6 +6,7 @@ export const ACTION_LABELS: Record<string, string> = {
   sell: "卖出",
   dividend: "分红",
   reinvest: "再投资",
+  conversion: "转换",
 }
 
 // 英文操作类型标签
@@ -14,6 +15,7 @@ const ACTION_LABELS_EN: Record<string, string> = {
   sell: "Sell",
   dividend: "Dividend",
   reinvest: "Reinvest",
+  conversion: "Conversion",
 }
 
 export function actionLabel(action: string): string {

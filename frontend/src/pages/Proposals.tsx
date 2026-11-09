@@ -37,6 +37,13 @@ import { AlertTriangle, Check, Inbox, RefreshCw, X } from "lucide-react"
 import { useLang } from "@/i18n/LanguageContext"
 import { money, navStr } from "@/lib/format"
 import { actionLabel } from "@/lib/actionLabels"
+import {
+  alertTypeLabel,
+  feeSourceLabel,
+  operationLabel,
+  planScheduleLabel,
+  proposalTitle,
+} from "@/lib/operationLabels"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -304,7 +311,7 @@ export default function Proposals() {
                         #{item.proposal_id}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
-                        {item.operation_label}
+                        {operationLabel(item.operation_type)}
                       </TableCell>
                       <TableCell>
                         {isBatchSummary(item.summary) ? (
@@ -329,12 +336,12 @@ export default function Proposals() {
                         {isBatchSummary(item.summary)
                           ? batchActionsText(item.summary)
                           : isPlanSummary(item.summary)
-                            ? item.summary.schedule ?? item.summary.cadence_label ?? "—"
+                            ? planScheduleLabel(item.summary)
                             : isExecutePlanSummary(item.summary)
-                              ? item.summary.schedule ?? "—"
+                              ? planScheduleLabel(item.summary)
                               : isAlertSummary(item.summary)
-                                ? item.summary.alert_type_label ?? "—"
-                                : item.summary.action_label}
+                                ? alertTypeLabel(item.summary.alert_type)
+                                : actionLabel(item.summary.action)}
                       </TableCell>
                       <TableCell className="hidden md:table-cell tabular-nums">
                         {isBatchSummary(item.summary)
@@ -443,7 +450,7 @@ export default function Proposals() {
                 <DialogTitle>
                   {t.proposals.detailTitle} #{detail.proposal_id}
                 </DialogTitle>
-                <DialogDescription>{detail.summary.title}</DialogDescription>
+                <DialogDescription>{proposalTitle(detail.summary)}</DialogDescription>
               </DialogHeader>
 
               <div className="space-y-4 text-sm">
@@ -452,7 +459,7 @@ export default function Proposals() {
                     {statusLabels[detail.status]}
                   </Badge>
                   <span className="text-xs text-muted-foreground">
-                    {detail.operation_label}
+                    {operationLabel(detail.operation_type)}
                   </span>
                 </div>
 
@@ -489,7 +496,7 @@ export default function Proposals() {
                       </span>
                     </DetailRow>
                     <DetailRow label={t.proposals.colAction}>
-                      {detail.summary.action_label}
+                      {actionLabel(detail.summary.action)}
                     </DetailRow>
                     <DetailRow label={t.proposals.colDate}>{detail.summary.date}</DetailRow>
                     <DetailRow label={t.proposals.colAmount}>
@@ -638,7 +645,7 @@ export default function Proposals() {
               {isBatchSummary(approveTarget.summary) ? (
                 <>
                   <p>
-                    {approveTarget.summary.title} ·{" "}
+                    {proposalTitle(approveTarget.summary)} ·{" "}
                     {money(approveTarget.summary.amount_total)} ·{" "}
                     {batchDateRange(approveTarget.summary)}
                   </p>
@@ -647,9 +654,9 @@ export default function Proposals() {
               ) : isPlanSummary(approveTarget.summary) ? (
                 <>
                   <p>
-                    {approveTarget.summary.title} ·{" "}
+                    {proposalTitle(approveTarget.summary)} ·{" "}
                     {money(approveTarget.summary.amount)} ·{" "}
-                    {approveTarget.summary.schedule ?? approveTarget.summary.cadence_label ?? "—"}
+                    {planScheduleLabel(approveTarget.summary)}
                   </p>
                   {approveTarget.summary.scheduler_hint && (
                     <p className="text-xs text-muted-foreground">
@@ -660,11 +667,11 @@ export default function Proposals() {
               ) : isAlertSummary(approveTarget.summary) ? (
                 <>
                   <p>
-                    {approveTarget.summary.title} ·{" "}
+                    {proposalTitle(approveTarget.summary)} ·{" "}
                     {approveTarget.summary.fund_name}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {approveTarget.summary.alert_type_label} ·{" "}
+                    {alertTypeLabel(approveTarget.summary.alert_type)} ·{" "}
                     {approveTarget.summary.before_status} →{" "}
                     {approveTarget.summary.after_status}
                   </p>
@@ -672,7 +679,7 @@ export default function Proposals() {
               ) : isBackfillSummary(approveTarget.summary) ? (
                 <>
                   <p>
-                    {approveTarget.summary.title} ·{" "}
+                    {proposalTitle(approveTarget.summary)} ·{" "}
                     {(approveTarget.summary.backfill_items ?? []).length}{" "}
                     {t.proposals.batchItems}
                   </p>
@@ -683,7 +690,7 @@ export default function Proposals() {
               ) : isExecutePlanSummary(approveTarget.summary) ? (
                 <>
                   <p>
-                    {approveTarget.summary.title} ·{" "}
+                    {proposalTitle(approveTarget.summary)} ·{" "}
                     {money(approveTarget.summary.amount)} ·{" "}
                     {approveTarget.summary.trade_date ?? approveTarget.summary.date}
                   </p>
@@ -693,7 +700,7 @@ export default function Proposals() {
                 </>
               ) : (
                 <p>
-                  {approveTarget.summary.title} · {money(approveTarget.summary.amount)} ·{" "}
+                  {proposalTitle(approveTarget.summary)} · {money(approveTarget.summary.amount)} ·{" "}
                   {approveTarget.summary.date}
                 </p>
               )}
@@ -859,11 +866,11 @@ function DiffSection({ summary }: { summary: ProposalSummary }) {
         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
           <div>
             <span className="font-medium text-muted-foreground">{t.proposals.conversionLegFrom}：</span>
-            <span>{from.fund_code}{from.action_label ? ` (${from.action_label})` : ""}</span>
+            <span>{from.fund_code}{from.action ? ` (${actionLabel(from.action)})` : ""}</span>
           </div>
           <div>
             <span className="font-medium text-muted-foreground">{t.proposals.conversionLegTo}：</span>
-            <span>{to.fund_code}{to.action_label ? ` (${to.action_label})` : ""}</span>
+            <span>{to.fund_code}{to.action ? ` (${actionLabel(to.action)})` : ""}</span>
           </div>
           <div><span className="text-muted-foreground">{t.proposals.shares}：</span>{formatField("shares", from.shares)}</div>
           <div><span className="text-muted-foreground">{t.proposals.colAmount}：</span>{formatField("amount", to.amount)}</div>
@@ -955,7 +962,7 @@ function BatchSection({ summary }: { summary: ProposalSummary }) {
                       {item.fund_code}
                     </div>
                   </TableCell>
-                  <TableCell className="text-xs">{item.action_label || actionLabel(item.action)}</TableCell>
+                  <TableCell className="text-xs">{actionLabel(item.action)}</TableCell>
                   <TableCell className="hidden sm:table-cell text-xs tabular-nums">
                     {item.date}
                   </TableCell>
@@ -1030,7 +1037,7 @@ function ExecutePlanSection({ summary }: { summary: ProposalSummary }) {
         <DetailRow label={t.proposals.planId}>#{summary.plan_id}</DetailRow>
         <DetailRow label={t.proposals.colAmount}>{money(summary.amount)}</DetailRow>
         <DetailRow label={t.proposals.planSchedule}>
-          {summary.schedule || summary.cadence_label || "—"}
+          {planScheduleLabel(summary)}
         </DetailRow>
         <DetailRow label={t.proposals.executePlanTradeDate}>
           {summary.trade_date ?? summary.date}
@@ -1041,7 +1048,7 @@ function ExecutePlanSection({ summary }: { summary: ProposalSummary }) {
         <DetailRow label={t.proposals.fee}>
           {money(summary.fee)}
           <span className="ml-1 text-xs text-muted-foreground">
-            {summary.fee_source_label || summary.fee_source || ""}
+            {feeSourceLabel(summary.fee_source)}
           </span>
         </DetailRow>
         <DetailRow label={t.proposals.channel}>{summary.channel || "—"}</DetailRow>
@@ -1088,7 +1095,7 @@ function AlertSection({ summary }: { summary: ProposalSummary }) {
           </span>
         </DetailRow>
         <DetailRow label={t.proposals.alertType}>
-          {summary.alert_type_label || "—"}
+          {alertTypeLabel(summary.alert_type)}
         </DetailRow>
         <DetailRow label={t.proposals.alertStatus}>
           <span className="line-through text-muted-foreground">
@@ -1195,7 +1202,7 @@ function BackfillSection({ summary }: { summary: ProposalSummary }) {
                   <TableCell className="text-right">
                     {money(item.after?.fee ?? 0)}
                     <span className="block text-xs text-muted-foreground">
-                      {item.fee_source_label || item.fee_source}
+                      {feeSourceLabel(item.fee_source)}
                     </span>
                   </TableCell>
                 </TableRow>
@@ -1241,7 +1248,7 @@ function PlanSection({ summary }: { summary: ProposalSummary }) {
         )}
         <DetailRow label={t.proposals.colAmount}>{money(summary.amount)}</DetailRow>
         <DetailRow label={t.proposals.planSchedule}>
-          {summary.schedule || summary.cadence_label || "—"}
+          {planScheduleLabel(summary)}
         </DetailRow>
         {op === "toggle_plan" ? (
           <DetailRow label={t.proposals.planState}>

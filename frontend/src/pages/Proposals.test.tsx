@@ -155,11 +155,11 @@ describe("Proposals", () => {
 
   it("打开详情时重新拉取最新提案而不是复用列表数据", async () => {
     const stale = proposal({
-      summary: summary({ fund_name: "列表旧名称", title: "列表旧标题" }),
+      summary: summary({ fund_name: "列表旧名称", fund_code: "000001" }),
     })
     const fresh: ProposalActionResult = {
       ...proposal({
-        summary: summary({ fund_name: "详情新名称", title: "详情新标题" }),
+        summary: summary({ fund_name: "详情新名称", fund_code: "999999" }),
       }),
       ok: true,
       code: "ok",
@@ -174,6 +174,8 @@ describe("Proposals", () => {
     await waitFor(() => expect(mocks.getProposal).toHaveBeenCalledWith(1))
     const dialog = await screen.findByRole("dialog")
     expect(within(dialog).getByText("详情新名称")).toBeInTheDocument()
-    expect(within(dialog).getByText("详情新标题")).toBeInTheDocument()
+    // 详情标题由稳定 code 重拼（"买入 <fund_code>"）；用新 fund_code 验证展示的是重拉数据
+    expect(within(dialog).getByText("买入 999999")).toBeInTheDocument()
+    expect(within(dialog).queryByText("买入 000001")).not.toBeInTheDocument()
   })
 })

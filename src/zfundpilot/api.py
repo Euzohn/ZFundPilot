@@ -43,6 +43,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import Match, Mount
 
 from . import __version__ as APP_VERSION
 from . import (
@@ -5357,6 +5358,33 @@ _frontend_dist = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "frontend", "dist",
 )
+
+
+class _SpaMount(Mount):
+    """SPA 静态兜底挂载：只接管非 ``/api`` 路径。
+
+    若直接用 ``app.mount("/", StaticFiles(...))``，根路径挂载会 FULL 匹配
+    ``/api`` 下的所有 GET 请求，导致「路径存在但方法不对」的 POST-only 路由
+    返回 404（静态文件不存在）而不是更准确的 405，未知的 ``/api`` 路径也会
+    被静态兜底吞掉。这里让 ``/api`` 路径返回 ``Match.NONE``，交回 FastAPI
+    路由，从而保留正确的 405/404/鉴权等语义。
+    """
+
+    def matches(self, scope):
+        if scope["type"] in ("http", "websocket"):
+            path = scope.get("path", "")
+            if path == "/api" or path.startswith("/api/"):
+                return Match.NONE, {}
+        return super().matches(scope)
+
+
 if os.path.isdir(_frontend_dist):
     from fastapi.staticfiles import StaticFiles
-    app.mount("/", StaticFiles(directory=_frontend_dist, html=True), name="frontend")
+
+    app.routes.append(
+        _SpaMount(
+            "/",
+            StaticFiles(directory=_frontend_dist, html=True),
+            name="frontend",
+        )
+    )

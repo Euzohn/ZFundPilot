@@ -11,6 +11,9 @@
 - 幂等操作记录定期清理：新增 `db.purge_agent_operations(cutoff)`，删除 `agent_operations` 中 `expires_at` 已过期且早于「now − 30 天宽限」的记录（TTL 内重放/拒绝语义不受影响，`expires_at IS NULL` 保留）；应用启动（`_lifespan`）与每日定时任务（scheduler `daily_maintenance`，10:30）各清一次，避免长驻服务下表无限增长。**行为变化**：过期且超宽限（90 天 TTL + 30 天）的幂等键可被回收复用（清理前为永久占用、同键重试恒返回 409 `idempotency_expired`）；TTL+宽限内语义完全不变。新增 `tests/test_agent_operations_purge.py`（3 例）
 - 新增 Agent HTTP 统一请求 ID 与错误契约：所有响应带 `X-Request-ID` 头（客户端可传入 8–64 位合法值透传，非法值替换），Agent 工具成功响应包新增 `request_id`；错误响应在保留既有 `detail`（形状不变，旧客户端兼容）的同时新增 `error` 对象（`code`/`message`/`request_id`/`retryable`，可选 `details`/`retry_after`）。`429`/`503` 标记 `retryable=true`，`retry_after` 与 `Retry-After` 响应头双向对齐，`503 database_busy` 仍保留原 `detail.code`；Agent 鉴权错误补稳定码 `invalid_token`/`expired`/`revoked`/`auth_disabled`/`insufficient_scope`，限流为 `rate_limited`，参数校验为 `validation_error`（`error.details` 精简为 `loc/type/msg`，避免重复回显输入），未处理异常统一返回 500 `internal_error` 且不泄漏异常细节。新增 `src/zfundpilot/api_errors.py`（请求 ID 规范化、错误包构造、可携带错误码的 `ApiError`）；CORS 暴露 `X-Request-ID`/`Retry-After`；前端 `client.ts` 优先读取 `error.code`/`error.message`，缺失时回退 `detail`；MCP 适配层错误优先解析 `error` 对象并在错误文案中回显 `request_id`。新增 `tests/test_agent_error_contract.py`（16 例）与 MCP 错误解析用例
 
+### Fixed
+- 修复生产模式下 SPA 静态兜底挂载遮蔽 `/api` 路由的问题：`app.mount("/", StaticFiles(...))` 会 FULL 匹配 `/api/*` 的 GET 请求，使「路径存在但方法不对」的 POST-only 路由返回 404（静态文件不存在）而非更准确的 405，未知 `/api` 路径也会被静默吞掉。新增 `_SpaMount` 让 `/api`/`/api/*` 返回 `Match.NONE` 交回 FastAPI 路由，保留正确的 405/404/鉴权语义；非 `/api` 路径行为不变。新增 `tests/test_spa_mount.py`（3 例）
+
 ### Security
 - 加固 AI `base_url` 校验：明文 `http` 仅允许本机回环地址（`localhost`/`127.0.0.0/8`/`::1`），远程端点必须使用 `https`，避免 API Key 在链路上明文传输；继续拒绝 link-local（云元数据 `169.254.x.x`/`fe80::/10`）与 `.internal`/`.localhost` 域名
 - 敏感字段解密失败时记录 WARNING 而非静默返回空串；保存配置时若传入空 Key 则保留磁盘上的旧密文，避免主密钥丢失/变更后旧 Key 被空值覆盖

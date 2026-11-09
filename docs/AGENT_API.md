@@ -1194,6 +1194,14 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`search_funds`、`screen_funds`、`run_dca_backtest`、`get_agent_capabilities`、`add_watchlist_item`、`update_watchlist_item`、`remove_watchlist_item`、`start_data_refresh`、`get_job_status`、`create_operation_proposal`、`list_operation_proposals`、`get_operation_proposal`、`cancel_operation_proposal`、`record_transaction`。
 写工具需要在客户端同时提供 `idempotency_key`，并映射到 HTTP 的 `Idempotency-Key`；MCP 客户端只负责传参，不能替代服务端鉴权、scope 与写开关。
 
+每个 MCP 工具都带 `ToolAnnotations`（`readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`），便于 MCP 客户端在 UI 上区分只读查询与写操作：
+
+- **只读工具**（26 个：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`get_job_status`、`precheck_*`、`list_operation_proposals`、`get_operation_proposal`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`search_funds`、`screen_funds`、`run_dca_backtest`、`get_agent_capabilities`）设 `readOnlyHint=True`。
+- **追加型写**（`add_watchlist_item`、`start_data_refresh`、`create_operation_proposal`、`record_transaction`）设 `destructiveHint=False` + `idempotentHint=True`：只追加不覆盖，幂等键可安全重试。
+- **修改/删除/取消型写**（`update_watchlist_item`、`remove_watchlist_item`、`cancel_operation_proposal`）设 `destructiveHint=True` + `idempotentHint=True`。
+
+这些注解**仅是给客户端的提示**（`ToolAnnotations` 的所有字段按 MCP 规范都是 hint），不构成访问控制：实际安全仍由服务端的 scope 门控与 Agent 写开关独立校验，客户端 UI 不应（也不能）仅凭注解放行或拦截调用。
+
 - `ZFUNDPILOT_BASE_URL` 默认 `http://127.0.0.1:8000`；ZFundPilot 跑在 NAS/Docker 时改成实际地址，远程访问请用 HTTPS。
 - `ZFUNDPILOT_TIMEOUT` 可选，默认 30 秒，范围 1–120。
 - token 只从环境变量读取，不写入配置仓库或提示词；泄漏后立即在设置页撤销。

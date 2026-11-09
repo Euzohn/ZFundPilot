@@ -1191,6 +1191,14 @@ Claude Desktop example (`claude_desktop_config.json`):
 Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`, `add_watchlist_item`, `update_watchlist_item`, `remove_watchlist_item`, `start_data_refresh`, `get_job_status`, `create_operation_proposal`, `list_operation_proposals`, `get_operation_proposal`, `cancel_operation_proposal`, `record_transaction`.
 Write tools require an `idempotency_key` argument, mapped to the HTTP `Idempotency-Key` header. The MCP client only passes parameters; server-side auth, scope, and the write switch remain authoritative.
 
+Every MCP tool carries `ToolAnnotations` (`readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`) so MCP clients can distinguish read queries from writes in their UI:
+
+- **Read-only tools** (26: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `get_job_status`, `precheck_*`, `list_operation_proposals`, `get_operation_proposal`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`) set `readOnlyHint=True`.
+- **Additive writes** (`add_watchlist_item`, `start_data_refresh`, `create_operation_proposal`, `record_transaction`) set `destructiveHint=False` + `idempotentHint=True`: they only append and are safe to retry with an idempotency key.
+- **Modify/delete/cancel writes** (`update_watchlist_item`, `remove_watchlist_item`, `cancel_operation_proposal`) set `destructiveHint=True` + `idempotentHint=True`.
+
+These annotations are **hints to the client only** (every `ToolAnnotations` field is a hint per the MCP spec); they are not access control. Actual security is enforced independently by server-side scope gating and the Agent write switch, and a client UI must not (and cannot) gate calls on the annotations alone.
+
 - `ZFUNDPILOT_BASE_URL` defaults to `http://127.0.0.1:8000`; use the real NAS/Docker address for remote instances and HTTPS for remote access.
 - `ZFUNDPILOT_TIMEOUT` is optional, default 30 seconds (range 1–120).
 - The token is read only from the environment; never commit it or paste it into prompts. Revoke it in Settings if leaked.

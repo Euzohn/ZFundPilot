@@ -27,6 +27,7 @@ from typing import Annotated, Any
 import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from . import config
@@ -54,6 +55,19 @@ def _validate_date(value: str | None, field: str) -> str | None:
     except ValueError as exc:
         raise ToolError(f"{field} is not a valid date.") from exc
     return value
+
+
+# MCP tool annotations：仅作客户端提示（ToolAnnotations 所有字段均为 hint），
+# 实际安全仍由服务端 scope 与写开关独立校验，不依赖这些注解。
+_ANNOT_READ_ONLY = ToolAnnotations(readOnlyHint=True)
+# additive 写：只追加不覆盖，幂等键可安全重试。
+_ANNOT_ADDITIVE_WRITE = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=False, idempotentHint=True,
+)
+# 修改/删除/取消类写：可能覆盖或移除既有数据，幂等键可安全重试。
+_ANNOT_MUTATING_WRITE = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=True, idempotentHint=True,
+)
 
 
 mcp = FastMCP(
@@ -198,7 +212,7 @@ async def _delete(path: str, params: dict[str, Any] | None = None,
     return await _send("DELETE", path, params=params, headers=headers)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_portfolio_summary() -> dict[str, Any]:
     """Read portfolio market value, cost, P&L, annualized return, and data-as-of date.
 
@@ -207,13 +221,13 @@ async def get_portfolio_summary() -> dict[str, Any]:
     return await _request("/api/agent/tools/portfolio-summary")
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_data_status() -> dict[str, Any]:
     """Check formal NAV freshness and pending T+1 transactions before analysis."""
     return await _request("/api/agent/tools/data-status")
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def list_positions(
     include_closed: bool = False,
     limit: Annotated[int, Field(ge=1, le=500)] = 200,
@@ -230,7 +244,7 @@ async def list_positions(
     })
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_fund_detail(
     code: str,
     nav_limit: Annotated[int, Field(ge=1, le=250)] = 30,
@@ -246,7 +260,7 @@ async def get_fund_detail(
     return await _request(f"/api/agent/tools/funds/{code}", {"nav_limit": nav_limit})
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_portfolio_health() -> dict[str, Any]:
     """Read the four-dimension health score, risk flags, and structural advice.
 
@@ -256,7 +270,7 @@ async def get_portfolio_health() -> dict[str, Any]:
     return await _request("/api/agent/tools/portfolio-health")
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_returns(fund_code: str | None = None) -> dict[str, Any]:
     """Read portfolio or single-fund return breakdown.
 
@@ -273,7 +287,7 @@ async def get_returns(fund_code: str | None = None) -> dict[str, Any]:
     return await _request("/api/agent/tools/returns", params)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def compare_funds(
     codes: Annotated[list[str], Field(min_length=1, max_length=20)],
     include_nav_series: bool = False,
@@ -295,7 +309,7 @@ async def compare_funds(
     })
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def list_transactions(
     fund_code: str | None = None,
     channel: str | None = None,
@@ -354,7 +368,7 @@ async def list_transactions(
     return await _request("/api/agent/tools/transactions", params)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_transaction(
     tx_id: Annotated[int, Field(ge=1)],
 ) -> dict[str, Any]:
@@ -371,7 +385,7 @@ async def get_transaction(
     return await _request(f"/api/agent/tools/transactions/{tx_id}")
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def list_watchlist(
     group_name: str | None = None,
     limit: Annotated[int, Field(ge=1, le=200)] = 50,
@@ -398,7 +412,7 @@ def _validate_write_key(value: str) -> str:
     return value
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_ADDITIVE_WRITE)
 async def add_watchlist_item(
     fund_code: str,
     idempotency_key: str,
@@ -428,7 +442,7 @@ async def add_watchlist_item(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_MUTATING_WRITE)
 async def update_watchlist_item(
     fund_code: str,
     expected_revision: int,
@@ -465,7 +479,7 @@ async def update_watchlist_item(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_MUTATING_WRITE)
 async def remove_watchlist_item(
     fund_code: str,
     expected_revision: int,
@@ -492,7 +506,7 @@ async def remove_watchlist_item(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_ADDITIVE_WRITE)
 async def start_data_refresh(
     idempotency_key: str,
     fund_codes: list[str] | None = None,
@@ -525,7 +539,7 @@ async def start_data_refresh(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_job_status(job_id: int) -> dict[str, Any]:
     """Get the status of a data refresh job started with start_data_refresh.
 
@@ -537,7 +551,7 @@ async def get_job_status(job_id: int) -> dict[str, Any]:
     return await _request(f"/api/agent/tools/refresh/{job_id}")
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_ADDITIVE_WRITE)
 async def create_operation_proposal(
     operation_type: str,
     params: dict[str, Any],
@@ -696,7 +710,7 @@ async def create_operation_proposal(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_ADDITIVE_WRITE)
 async def record_transaction(
     fund_code: str,
     action: str,
@@ -769,7 +783,7 @@ async def record_transaction(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def precheck_transactions(payload: dict[str, Any]) -> dict[str, Any]:
     """Pre-check transactions before proposing them. Read-only, never writes.
 
@@ -796,7 +810,7 @@ async def precheck_transactions(payload: dict[str, Any]) -> dict[str, Any]:
         "/api/agent/tools/precheck/transactions", {"input": payload})
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def precheck_reconciliation(payload: dict[str, Any]) -> dict[str, Any]:
     """Pre-check a holdings reconciliation against the ledger. Read-only.
 
@@ -823,7 +837,7 @@ async def precheck_reconciliation(payload: dict[str, Any]) -> dict[str, Any]:
         "/api/agent/tools/precheck/reconciliation", {"input": payload})
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def precheck_backfill(payload: dict[str, Any]) -> dict[str, Any]:
     """Pre-check which transactions can have their NAV backfilled. Read-only.
 
@@ -852,7 +866,7 @@ async def precheck_backfill(payload: dict[str, Any]) -> dict[str, Any]:
     return await _post("/api/agent/tools/precheck/backfill", payload)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def list_operation_proposals(
     status: str | None = None,
     limit: Annotated[int, Field(ge=1, le=200)] = 50,
@@ -872,7 +886,7 @@ async def list_operation_proposals(
     return await _request("/api/agent/tools/proposals", params)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_operation_proposal(proposal_id: int) -> dict[str, Any]:
     """Get one proposal created by the current token.
 
@@ -884,7 +898,7 @@ async def get_operation_proposal(proposal_id: int) -> dict[str, Any]:
     return await _request(f"/api/agent/tools/proposals/{proposal_id}")
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_MUTATING_WRITE)
 async def cancel_operation_proposal(proposal_id: int) -> dict[str, Any]:
     """Cancel one of your pending proposals. Approved/rejected ones cannot cancel.
 
@@ -899,7 +913,7 @@ async def cancel_operation_proposal(proposal_id: int) -> dict[str, Any]:
     return await _delete(f"/api/agent/tools/proposals/{proposal_id}")
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def list_alerts(
     type: str | None = None,
     status: str | None = None,
@@ -933,7 +947,7 @@ async def list_alerts(
     return await _request("/api/agent/tools/alerts", params)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def list_auto_invest_plans(
     enabled: bool | None = None,
     limit: Annotated[int, Field(ge=1, le=200)] = 50,
@@ -959,7 +973,7 @@ async def list_auto_invest_plans(
     return await _request("/api/agent/tools/auto-invest-plans", params)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_portfolio_curve(
     start_date: str | None = None,
     end_date: str | None = None,
@@ -986,7 +1000,7 @@ async def get_portfolio_curve(
     return await _request("/api/agent/tools/portfolio-curve", params)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_benchmark_comparison(
     codes: Annotated[list[str], Field(min_length=1, max_length=20)],
     start_date: str | None = None,
@@ -1022,7 +1036,7 @@ async def get_benchmark_comparison(
     return await _request("/api/agent/tools/benchmark", params)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_risk_report() -> dict[str, Any]:
     """Read drawdown, volatility, concentration, structure weights, and risk flags.
 
@@ -1032,7 +1046,7 @@ async def get_risk_report() -> dict[str, Any]:
     return await _request("/api/agent/tools/risk-report")
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_industry_exposure() -> dict[str, Any]:
     """Read portfolio industry exposure by looking through fund allocations.
 
@@ -1042,7 +1056,7 @@ async def get_industry_exposure() -> dict[str, Any]:
     return await _request("/api/agent/tools/industry-exposure")
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def search_funds(
     keyword: str,
     limit: Annotated[int, Field(ge=1, le=200)] = 50,
@@ -1067,7 +1081,7 @@ async def search_funds(
         "keyword": value, "limit": limit, "offset": offset})
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def screen_funds(
     types: Annotated[list[str] | None, Field(max_length=20)] = None,
     sectors: Annotated[list[str] | None, Field(max_length=20)] = None,
@@ -1108,7 +1122,7 @@ async def screen_funds(
     return await _request("/api/agent/tools/screen", params)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def run_dca_backtest(
     fund_codes: Annotated[list[str], Field(min_length=1, max_length=5)],
     start_date: str,
@@ -1195,7 +1209,7 @@ async def run_dca_backtest(
     })
 
 
-@mcp.tool()
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_agent_capabilities() -> dict[str, Any]:
     """List read-only tools granted to the current Agent token."""
     return await _request("/api/agent/tools/capabilities")

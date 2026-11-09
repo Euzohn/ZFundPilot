@@ -580,9 +580,9 @@ export const api = {
 
   // 账本提案（Agent 提交，网页管理员审批）
   getProposalCount: () => request<ProposalCountResponse>("/proposals/count"),
-  getProposals: (status?: string) =>
+  getProposals: (status?: string, limit = 50, offset = 0) =>
     request<ProposalListResponse>(
-      `/proposals?limit=100${status ? `&status=${encodeURIComponent(status)}` : ""}`,
+      `/proposals?limit=${limit}&offset=${offset}${status ? `&status=${encodeURIComponent(status)}` : ""}`,
     ),
   getProposal: (id: number) =>
     request<ProposalActionResult>(`/proposals/${id}`),

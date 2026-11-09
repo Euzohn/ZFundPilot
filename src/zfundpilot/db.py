@@ -1913,6 +1913,22 @@ def purge_refresh_jobs(cutoff: str) -> int:
         return int(cur.rowcount)
 
 
+def purge_agent_operations(cutoff: str) -> int:
+    """清理幂等键已过期较久的写入操作记录，避免表无限增长。
+
+    只删除 ``expires_at`` 已过期且早于 ``cutoff`` 的记录：TTL 内的重放/拒绝
+    语义不受影响；``expires_at IS NULL`` 的历史数据保留不动。
+    ``cutoff`` 由调用方传入（如 now − 30 天宽限），过期后再留宽限期便于排障。
+    """
+    with get_connection(write=True) as conn:
+        cur = conn.execute(
+            "DELETE FROM agent_operations WHERE expires_at IS NOT NULL "
+            "AND expires_at < ?",
+            (cutoff,),
+        )
+        return int(cur.rowcount)
+
+
 # ---------------------------------------------------------------------------
 # 账本操作提案 (operation_proposals)
 # ---------------------------------------------------------------------------

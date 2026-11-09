@@ -754,7 +754,7 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist" \
   -d '{"fund_code":"005827","note":"观察","group_name":"核心"}'
 ```
 
-- 所有写请求必须带 `Idempotency-Key`（16–128 个安全 ASCII 字符）。同键同参数返回原结果并标记 `replayed=true`；同键不同参数或不同操作返回 `409 idempotency_conflict`；过期键返回 `409 idempotency_expired`。幂等记录保留 90 天。
+- 所有写请求必须带 `Idempotency-Key`（16–128 个安全 ASCII 字符）。同键同参数返回原结果并标记 `replayed=true`；同键不同参数或不同操作返回 `409 idempotency_conflict`；过期键返回 `409 idempotency_expired`。幂等记录保留 90 天；过期后再保留 30 天宽限供排障，之后由每日维护任务清理回收（超宽限的同键重试按新请求处理，请改用新的 `Idempotency-Key`）。
 - `expected_revision` 来自 `list_watchlist` 返回的 `revision`。版本不符返回 `409 revision_conflict`，不会覆盖网页或其它调用方的更新。
 - 新增已存在返回 `409 already_exists`；更新/删除不存在返回 `404 not_found`；基金未收录返回 `409 fund_not_registered`。
 - 成功响应 `data` 含 `ok`、`code`、`message`、`changed`、`replayed`、`fund_code`、`revision`、`operation_id`、`audit_id`、`before`/`after`。

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
@@ -50,6 +50,9 @@ const STATUS_FILTERS: Array<ProposalStatus | ""> = [
   "cancelled",
   "expired",
 ]
+
+// 每页条数；后端上限 200，此处取 50 与分页条配合展示。
+const PAGE_SIZE = 50
 
 function formatDateTime(iso: string | null): string {
   if (!iso) return "—"
@@ -117,6 +120,7 @@ function statusVariant(status: ProposalStatus): BadgeProps["variant"] {
 export default function Proposals() {
   const { t } = useLang()
   const [status, setStatus] = useState<ProposalStatus | "">("")
+  const [page, setPage] = useState(0)
   const [detail, setDetail] = useState<OperationProposal | null>(null)
   const [approveTarget, setApproveTarget] = useState<OperationProposal | null>(null)
   const [rejectTarget, setRejectTarget] = useState<OperationProposal | null>(null)
@@ -124,10 +128,23 @@ export default function Proposals() {
   const [busy, setBusy] = useState(false)
 
   const fetcher = useCallback(
-    () => api.getProposals(status || undefined),
-    [status],
+    () => api.getProposals(status || undefined, PAGE_SIZE, page * PAGE_SIZE),
+    [status, page],
   )
-  const { data, loading, error, reload } = useApi(fetcher, [status])
+  const { data, loading, error, reload } = useApi(fetcher, [status, page])
+
+  const items = data?.items ?? []
+  const pendingCount = data?.pending_count ?? 0
+  const total = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  // 审批/拒绝后 total 变小时当前页可能越界；回退到末页避免出现空白页。
+  useEffect(() => {
+    if (!data) return
+    if (items.length === 0 && page > 0 && total > 0) {
+      setPage(Math.max(0, Math.ceil(total / PAGE_SIZE) - 1))
+    }
+  }, [data, items.length, page, total])
 
   const statusLabels = useMemo<Record<ProposalStatus, string>>(
     () => ({
@@ -207,9 +224,6 @@ export default function Proposals() {
     }
   }
 
-  const items = data?.items ?? []
-  const pendingCount = data?.pending_count ?? 0
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -245,7 +259,10 @@ export default function Proposals() {
             key={value || "all"}
             size="sm"
             variant={status === value ? "default" : "outline"}
-            onClick={() => setStatus(value)}
+            onClick={() => {
+              setStatus(value)
+              setPage(0)
+            }}
           >
             {filterLabels[value]}
           </Button>
@@ -384,6 +401,34 @@ export default function Proposals() {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          )}
+          {!loading && !error && data && total > PAGE_SIZE && (
+            <div className="flex items-center justify-between border-t px-4 py-3">
+              <span className="text-sm text-muted-foreground">
+                {t.proposals.paginationSummary
+                  .replace("{page}", String(page + 1))
+                  .replace("{totalPages}", String(totalPages))
+                  .replace("{total}", String(total))}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                >
+                  {t.proposals.paginationPrev}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page + 1 >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  {t.proposals.paginationNext}
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

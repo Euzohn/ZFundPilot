@@ -96,11 +96,45 @@ describe("Proposals", () => {
     mocks.getProposals.mockResolvedValue(listResponse([proposal()]))
     renderPage()
 
-    await waitFor(() => expect(mocks.getProposals).toHaveBeenCalledWith(undefined))
+    await waitFor(() => expect(mocks.getProposals).toHaveBeenCalledWith(undefined, 50, 0))
 
     fireEvent.click(screen.getByRole("button", { name: "待处理" }))
 
-    await waitFor(() => expect(mocks.getProposals).toHaveBeenCalledWith("pending"))
+    await waitFor(() => expect(mocks.getProposals).toHaveBeenCalledWith("pending", 50, 0))
+  })
+
+  it("总数超过每页时显示分页条，翻页按新 offset 请求", async () => {
+    mocks.getProposals.mockResolvedValue({ ...listResponse([proposal()]), total: 51 })
+    renderPage()
+
+    // 第 1 页：上一页禁用、下一页可用
+    await waitFor(() => expect(mocks.getProposals).toHaveBeenCalledWith(undefined, 50, 0))
+    const prev = await screen.findByRole("button", { name: "上一页" })
+    expect(prev).toBeDisabled()
+    const next = screen.getByRole("button", { name: "下一页" })
+    expect(next).not.toBeDisabled()
+    expect(screen.getByText(/第 1\/2 页 · 共 51 条/)).toBeInTheDocument()
+
+    fireEvent.click(next)
+    await waitFor(() => expect(mocks.getProposals).toHaveBeenCalledWith(undefined, 50, 50))
+  })
+
+  it("末页 items 为空则页码自动回退，不出现空白页", async () => {
+    // 有状态 mock：第 1 页有数据（total=51），第 2 页为空（total 收缩为 50，只剩 1 页）
+    const calls: number[] = []
+    mocks.getProposals.mockImplementation((_status?: string, _limit?: number, offset = 0) => {
+      calls.push(offset)
+      if (offset === 50) return Promise.resolve({ ...listResponse([]), total: 50 })
+      return Promise.resolve({ ...listResponse([proposal()]), total: 51 })
+    })
+    renderPage()
+
+    await waitFor(() => expect(screen.getByText(/第 1\/2 页 · 共 51 条/)).toBeInTheDocument())
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }))
+
+    // 第 2 页返回空 → clamp 回退第 1 页，重新请求 offset=0 并渲染出数据
+    await waitFor(() => expect(calls[calls.length - 1]).toBe(0))
+    expect(await screen.findByText("易方达蓝筹精选")).toBeInTheDocument()
   })
 
   it("审批失败后刷新列表并关闭确认框", async () => {

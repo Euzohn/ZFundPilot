@@ -753,7 +753,7 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist" \
   -d '{"fund_code":"005827","note":"watch","group_name":"core"}'
 ```
 
-- Every write request must send `Idempotency-Key` (16–128 safe ASCII characters). Same key and parameters replay the original result with `replayed=true`; same key with different parameters or a different operation returns `409 idempotency_conflict`; expired keys return `409 idempotency_expired`. Records are kept for 90 days.
+- Every write request must send `Idempotency-Key` (16–128 safe ASCII characters). Same key and parameters replay the original result with `replayed=true`; same key with different parameters or a different operation returns `409 idempotency_conflict`; expired keys return `409 idempotency_expired`. Records are kept for 90 days, plus a 30-day grace window for troubleshooting; after that a daily maintenance job reclaims them (a retry with the same over-grace key is treated as a new request — use a new `Idempotency-Key`).
 - `expected_revision` comes from `list_watchlist`. A mismatch returns `409 revision_conflict` and never overwrites concurrent web or agent changes.
 - Adding an existing item returns `409 already_exists`; updating/removing a missing item returns `404 not_found`; an unregistered fund returns `409 fund_not_registered`.
 - Successful `data` includes `ok`, `code`, `message`, `changed`, `replayed`, `fund_code`, `revision`, `operation_id`, `audit_id`, and `before`/`after`.

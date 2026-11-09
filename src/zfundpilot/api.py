@@ -120,6 +120,12 @@ async def _lifespan(app: FastAPI):
     expired = proposal_service.mark_stale_on_startup()
     if expired:
         logger.info("标记 %d 个过期提案为 expired", expired)
+    try:
+        purged_ops = scheduler.purge_agent_operations_daily()
+        if purged_ops:
+            logger.info("清理 %d 条过期幂等操作记录", purged_ops)
+    except Exception:
+        logger.exception("启动清理幂等操作记录异常")
     yield
     scheduler.shutdown_scheduler()
 

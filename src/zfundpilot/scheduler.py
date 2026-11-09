@@ -10,7 +10,7 @@ import logging
 import re
 import threading
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -467,6 +467,14 @@ def init_scheduler() -> None:
         misfire_grace_time=3600,
         coalesce=True,
     )
+    _scheduler.add_job(
+        _run_daily_maintenance,
+        trigger=CronTrigger(hour=10, minute=30, timezone=config.TIMEZONE),
+        id="daily_maintenance",
+        max_instances=1,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
     _scheduler.start()
     logger.info("[scheduler] 调度器已启动, cron=%s, enabled=%s", cron_expr, enabled)
 
@@ -483,6 +491,31 @@ def init_scheduler() -> None:
 
     # 启动补全缺失的风险等级（部署后无需等待定时任务即可展示）
     threading.Thread(target=_bootstrap_risk_levels, daemon=True).start()
+
+
+# 幂等操作记录保留期：TTL 90 天 + 30 天排障宽限，之后清理。
+AGENT_OPERATIONS_PURGE_GRACE_DAYS = 30
+
+
+def purge_agent_operations_daily() -> int:
+    """清理过期较久的幂等操作记录（agent_operations），启动与每日任务共用。
+
+    只删除 expires_at 已过期且早于「now − 30 天宽限」的记录；TTL 内的重放/
+    拒绝语义不受影响。失败由调用方决定是否吞掉（每日任务吞掉并记日志）。
+    """
+    now = datetime.now(config.TIMEZONE)
+    cutoff = (now - timedelta(days=AGENT_OPERATIONS_PURGE_GRACE_DAYS)).isoformat()
+    return db.purge_agent_operations(cutoff)
+
+
+def _run_daily_maintenance() -> None:
+    """每日维护：清理过期较久的幂等操作记录，避免表无限增长。"""
+    try:
+        removed = purge_agent_operations_daily()
+        if removed:
+            logger.info("[scheduler] 清理 %d 条过期幂等操作记录", removed)
+    except Exception:
+        logger.exception("[scheduler] 清理幂等操作记录异常")
 
 
 def _bootstrap_auto_invest() -> None:

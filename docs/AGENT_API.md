@@ -86,7 +86,7 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 
 写 scope 目前有 `watchlist:write`、`data:refresh`、`transactions:propose`、`plans:propose`、`alerts:propose` 与 `transactions:create`，均默认不勾选，且受服务端写开关约束（默认关闭）。写开关的日常开启/关闭由管理员在网页「设置 → Agent 接入 → Agent 写能力」完成（`GET/PUT /api/settings/agent-write`，开启需输入当前登录密码确认，状态持久化在数据库，多 worker 部署以数据库为权威值）；环境变量 `ZFUNDPILOT_AGENT_WRITE_ENABLED` 只在两种情况下生效：显式设为 `0`/`false`/`no`/`off` 是**紧急刹车**（强制关闭且设置页无法开启），设为 `1`/`true`/`yes`/`on` 仅作为数据库无记录时的首次启动默认值。调用未授权工具返回 **403**。前两者是低风险直接写入；`transactions:propose` 只允许提交账本提案，`plans:propose` 只允许提交定投计划提案，`alerts:propose` 只允许提交提醒处理提案，三者都**不能直接写账本或计划**；`transactions:create` 允许在限额内直接写入账本，是与提案**相互独立**的预授权——仅有 `transactions:create` 而无 `transactions:propose` 时预检异常直接拒绝（不会降级）。
 
-`capabilities` 只要求有效 token，不要求特定 scope；它只返回当前 token 已获授权的工具，写工具会标注 `risk="write"`、提案工具标注 `risk="propose"`，并以 `enabled` 反映服务端写开关状态；顶层 `write_enabled` 为当前开关值，`write_locked` 为 `true` 时表示环境变量紧急刹车已锁死，设置页也无法开启。提案类工具（`create_operation_proposal`、`list_operation_proposals`、`get_operation_proposal`、`cancel_operation_proposal`）采用**多域授权**：持有 `transactions:propose`、`plans:propose` 或 `alerts:propose` 任一即可进入，但创建时按 `operation_type` 精确复核（账本类需 `transactions:propose`，计划类需 `plans:propose`，提醒类需 `alerts:propose`），跨域操作返回 **403**；`capabilities` 中任一 scope 命中即列出这些工具。
+`capabilities` 只要求有效 token，不要求特定 scope；它只返回当前 token 已获授权的工具，写工具会标注 `risk="write"`、提案工具标注 `risk="propose"`，并以 `enabled` 反映服务端写开关状态；每个工具另带契约元数据 `side_effect`（`read`/`additive`/`mutating`）、`idempotent`（同键同参重试是否安全）、`limits`（请求参数上限）、`error_codes`（稳定业务错误码，详见下方「统一能力表」）；顶层 `write_enabled` 为当前开关值，`write_locked` 为 `true` 时表示环境变量紧急刹车已锁死，设置页也无法开启。提案类工具（`create_operation_proposal`、`list_operation_proposals`、`get_operation_proposal`、`cancel_operation_proposal`）采用**多域授权**：持有 `transactions:propose`、`plans:propose` 或 `alerts:propose` 任一即可进入，但创建时按 `operation_type` 精确复核（账本类需 `transactions:propose`，计划类需 `plans:propose`，提醒类需 `alerts:propose`），跨域操作返回 **403**；`capabilities` 中任一 scope 命中即列出这些工具。
 
 > 前三个 scope 是签发页面的默认勾选项；`transactions:read`、`watchlist:read`、`alerts:read`、`plans:read`、`watchlist:write`、`data:refresh`、`transactions:propose`、`plans:propose`、`alerts:propose`、`transactions:create` 默认不勾选，需要读取或写入对应数据时请显式勾选，避免存量流程静默扩权。
 
@@ -193,6 +193,50 @@ FastAPI 自动生成以下页面：
 
 - `as_of_date` 是各持仓正式净值日期的**最大值**，不代表所有基金都已更新。
 - 接口**不返回**盘中实时估值，避免与正式净值混淆。数据完整性请调用 `data-status`。
+
+---
+
+### 统一能力表
+
+下表汇总全部 Agent 工具的契约元数据（与 `get_agent_capabilities` 返回的 `side_effect`/`idempotent`/`limits`/`error_codes` 字段一致）。按副作用分组：**只读**（不改动任何状态，含只读模拟与 `precheck_*` 预检）、**追加**（只新增不覆盖既有数据，幂等键可安全重试）、**修改/删除**（可能覆盖或移除既有数据）。`risk` 与 `side_effect` 是两个正交维度：`risk` 描述授权层级（只读 / 直写 / 提案），`side_effect` 描述数据影响方式；例如 `precheck_*` 的 `risk=提案`（要求 `transactions:propose`）但 `side_effect=只读`（预检本身不写账本、不建提案）。`idempotent` 列表示同键同参重试是否安全（写类靠 `Idempotency-Key`，取消提案天然幂等）。
+
+| 工具 | 方法 | HTTP 路径 | scope | 风险 | 副作用 | 需审批 | 限额 | 稳定错误码 |
+|---|---|---|---|---|---|---|---|---|
+| `compare_funds` | `GET` | `/api/agent/tools/funds/compare` | funds:read | 只读 | 只读 | 否 | codes 1-20 | validation_error, insufficient_scope, rate_limited |
+| `get_agent_capabilities` | `GET` | `/api/agent/tools/capabilities` | — | 只读 | 只读 | 否 | — | — |
+| `get_benchmark_comparison` | `GET` | `/api/agent/tools/benchmark` | portfolio:read | 只读 | 只读 | 否 | codes 1-20 | validation_error, insufficient_scope, rate_limited |
+| `get_data_status` | `GET` | `/api/agent/tools/data-status` | health:read | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited |
+| `get_fund_detail` | `GET` | `/api/agent/tools/funds/{code}` | funds:read | 只读 | 只读 | 否 | nav_limit 1-250 (default 30) | validation_error, insufficient_scope, rate_limited, not_found |
+| `get_industry_exposure` | `GET` | `/api/agent/tools/industry-exposure` | portfolio:read | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited |
+| `get_job_status` | `GET` | `/api/agent/tools/refresh/{job_id}` | data:refresh | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited, not_found |
+| `get_operation_proposal` | `GET` | `/api/agent/tools/proposals/{proposal_id}` | transactions/plans/alerts:propose 任一 | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited, not_found |
+| `get_portfolio_curve` | `GET` | `/api/agent/tools/portfolio-curve` | portfolio:read | 只读 | 只读 | 否 | max_points 10-2000 (default 365) | validation_error, insufficient_scope, rate_limited |
+| `get_portfolio_health` | `GET` | `/api/agent/tools/portfolio-health` | health:read | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited |
+| `get_portfolio_summary` | `GET` | `/api/agent/tools/portfolio-summary` | portfolio:read | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited |
+| `get_returns` | `GET` | `/api/agent/tools/returns` | portfolio:read | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited |
+| `get_risk_report` | `GET` | `/api/agent/tools/risk-report` | health:read | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited |
+| `get_transaction` | `GET` | `/api/agent/tools/transactions/{tx_id}` | transactions:read | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited, not_found |
+| `list_alerts` | `GET` | `/api/agent/tools/alerts` | alerts:read | 只读 | 只读 | 否 | limit 1-200 (default 50) | validation_error, insufficient_scope, rate_limited |
+| `list_auto_invest_plans` | `GET` | `/api/agent/tools/auto-invest-plans` | plans:read | 只读 | 只读 | 否 | limit 1-200 (default 50) | validation_error, insufficient_scope, rate_limited |
+| `list_operation_proposals` | `GET` | `/api/agent/tools/proposals` | transactions/plans/alerts:propose 任一 | 只读 | 只读 | 否 | limit 1-200 (default 50) | validation_error, insufficient_scope, rate_limited |
+| `list_positions` | `GET` | `/api/agent/tools/positions` | portfolio:read | 只读 | 只读 | 否 | limit 1-500 (default 200) | validation_error, insufficient_scope, rate_limited |
+| `list_transactions` | `GET` | `/api/agent/tools/transactions` | transactions:read | 只读 | 只读 | 否 | limit 1-200 (default 50); offset >=0 | validation_error, insufficient_scope, rate_limited |
+| `list_watchlist` | `GET` | `/api/agent/tools/watchlist` | watchlist:read | 只读 | 只读 | 否 | limit 1-200 (default 50); offset >=0 | validation_error, insufficient_scope, rate_limited |
+| `precheck_backfill` | `POST` | `/api/agent/tools/precheck/backfill` | transactions:propose | 提案 | 只读 | 否 | tx_ids 1-50 | validation_error, insufficient_scope, rate_limited |
+| `precheck_reconciliation` | `POST` | `/api/agent/tools/precheck/reconciliation` | transactions:propose | 提案 | 只读 | 否 | holdings 1-100 | validation_error, insufficient_scope, rate_limited |
+| `precheck_transactions` | `POST` | `/api/agent/tools/precheck/transactions` | transactions:propose | 提案 | 只读 | 否 | items 1-200; csv_text <=5MB | validation_error, insufficient_scope, rate_limited |
+| `run_dca_backtest` | `POST` | `/api/agent/tools/backtest/dca` | funds:read | 只读 | 只读 | 否 | fund_codes 1-5; max_points 10-2000 (default 365); amount_per_period >0 and <=1000000 | validation_error, insufficient_scope, rate_limited, not_found |
+| `screen_funds` | `GET` | `/api/agent/tools/screen` | funds:read | 只读 | 只读 | 否 | limit 1-200 (default 50) | validation_error, insufficient_scope, rate_limited |
+| `search_funds` | `GET` | `/api/agent/tools/search` | funds:read | 只读 | 只读 | 否 | limit 1-200 (default 50) | validation_error, insufficient_scope, rate_limited |
+| `add_watchlist_item` | `POST` | `/api/agent/tools/watchlist` | watchlist:write | 写 | 追加 | 否 | note <=500 chars; group_name <=50 chars | validation_error, insufficient_scope, write_disabled, rate_limited, idempotency_conflict, idempotency_expired, already_exists |
+| `create_operation_proposal` | `POST` | `/api/agent/tools/proposals` | transactions/plans/alerts:propose 任一 | 提案 | 追加 | 需网页审批 | batch_import.items 1-50; backfill_transaction_navs.items 1-50 | validation_error, insufficient_scope, write_disabled, rate_limited, idempotency_conflict, idempotency_expired, not_found, target_changed, conflict, fee_unknown, pending_nav, no_buy_record |
+| `record_transaction` | `POST` | `/api/agent/tools/transactions` | transactions:create | 写 | 追加 | 否 | — | validation_error, insufficient_scope, write_disabled, rate_limited, idempotency_conflict, idempotency_expired, not_found, fee_unknown, pending_nav, no_buy_record |
+| `start_data_refresh` | `POST` | `/api/agent/tools/refresh` | data:refresh | 写 | 追加 | 否 | fund_codes 1-50 | validation_error, insufficient_scope, write_disabled, rate_limited, idempotency_conflict, idempotency_expired, already_running, busy |
+| `cancel_operation_proposal` | `DELETE` | `/api/agent/tools/proposals/{proposal_id}` | transactions/plans/alerts:propose 任一 | 写 | 修改/删除 | 否 | — | not_found, conflict, insufficient_scope, rate_limited |
+| `remove_watchlist_item` | `DELETE` | `/api/agent/tools/watchlist/{code}` | watchlist:write | 写 | 修改/删除 | 否 | — | validation_error, insufficient_scope, write_disabled, rate_limited, idempotency_conflict, idempotency_expired, not_found, target_changed |
+| `update_watchlist_item` | `PATCH` | `/api/agent/tools/watchlist/{code}` | watchlist:write | 写 | 修改/删除 | 否 | note <=500 chars; group_name <=50 chars | validation_error, insufficient_scope, write_disabled, rate_limited, idempotency_conflict, idempotency_expired, not_found, target_changed |
+
+> 稳定错误码列为该工具可能返回的**业务**错误码，不含通用鉴权/限流之外的未预期异常（统一 500 `internal_error`）；`validation_error`/`insufficient_scope`/`rate_limited` 为几乎所有工具共有，此处一并列出以便对照。`limits` 为请求参数的数值/条目上限，供 Agent 侧自适应分页与批量。
 
 ---
 

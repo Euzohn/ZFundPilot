@@ -3148,6 +3148,129 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
      "risk": "propose", "requires_confirmation": False},
 )
 
+# 写/提案类工具共有的稳定错误码：参数校验 + 鉴权 + 写总闸 + 限流 + 幂等。
+_COMMON_WRITE_ERROR_CODES: tuple[str, ...] = (
+    "validation_error", "insufficient_scope", "write_disabled",
+    "rate_limited", "idempotency_conflict", "idempotency_expired",
+)
+# 只读类工具共有的稳定错误码：参数校验 + 鉴权 + 限流。
+_COMMON_READ_ERROR_CODES: tuple[str, ...] = (
+    "validation_error", "insufficient_scope", "rate_limited",
+)
+
+# 工具契约元数据（按工具名）：副作用 / 幂等 / 限额 / 稳定错误码。
+# ``side_effect``：read=只读；additive=只追加不覆盖；mutating=可能覆盖或移除既有数据。
+# ``idempotent``：同键同参重试是否安全（写类靠 Idempotency-Key，取消类天然幂等）。
+# ``limits``：请求参数的数值/条目上限，供 Agent 侧自适应分页与批量。
+# ``error_codes``：该工具可能返回的稳定业务错误码（不含 5xx internal_error 之外的
+# 未预期异常；鉴权/限流类通用码见 _COMMON_*_ERROR_CODES）。
+_AGENT_TOOL_CONTRACT: dict[str, dict[str, Any]] = {
+    # ---- 只读：分析 / 持仓 / 交易 ----
+    "get_portfolio_summary": {"side_effect": "read", "idempotent": True,
+                              "limits": {}, "error_codes": _COMMON_READ_ERROR_CODES},
+    "get_data_status": {"side_effect": "read", "idempotent": True,
+                        "limits": {}, "error_codes": _COMMON_READ_ERROR_CODES},
+    "get_portfolio_health": {"side_effect": "read", "idempotent": True,
+                             "limits": {}, "error_codes": _COMMON_READ_ERROR_CODES},
+    "list_positions": {"side_effect": "read", "idempotent": True,
+                       "limits": {"limit": "1-500 (default 200)"},
+                       "error_codes": _COMMON_READ_ERROR_CODES},
+    "get_returns": {"side_effect": "read", "idempotent": True,
+                    "limits": {}, "error_codes": _COMMON_READ_ERROR_CODES},
+    "compare_funds": {"side_effect": "read", "idempotent": True,
+                      "limits": {"codes": "1-20"},
+                      "error_codes": _COMMON_READ_ERROR_CODES},
+    "get_fund_detail": {"side_effect": "read", "idempotent": True,
+                        "limits": {"nav_limit": "1-250 (default 30)"},
+                        "error_codes": _COMMON_READ_ERROR_CODES + ("not_found",)},
+    "list_transactions": {"side_effect": "read", "idempotent": True,
+                          "limits": {"limit": "1-200 (default 50)", "offset": ">=0"},
+                          "error_codes": _COMMON_READ_ERROR_CODES},
+    "get_transaction": {"side_effect": "read", "idempotent": True,
+                        "limits": {}, "error_codes": _COMMON_READ_ERROR_CODES + ("not_found",)},
+    "list_watchlist": {"side_effect": "read", "idempotent": True,
+                       "limits": {"limit": "1-200 (default 50)", "offset": ">=0"},
+                       "error_codes": _COMMON_READ_ERROR_CODES},
+    "get_job_status": {"side_effect": "read", "idempotent": True,
+                       "limits": {}, "error_codes": _COMMON_READ_ERROR_CODES + ("not_found",)},
+    "list_alerts": {"side_effect": "read", "idempotent": True,
+                    "limits": {"limit": "1-200 (default 50)"},
+                    "error_codes": _COMMON_READ_ERROR_CODES},
+    "list_auto_invest_plans": {"side_effect": "read", "idempotent": True,
+                               "limits": {"limit": "1-200 (default 50)"},
+                               "error_codes": _COMMON_READ_ERROR_CODES},
+    "get_portfolio_curve": {"side_effect": "read", "idempotent": True,
+                            "limits": {"max_points": "10-2000 (default 365)"},
+                            "error_codes": _COMMON_READ_ERROR_CODES},
+    "get_benchmark_comparison": {"side_effect": "read", "idempotent": True,
+                                 "limits": {"codes": "1-20"},
+                                 "error_codes": _COMMON_READ_ERROR_CODES},
+    "get_risk_report": {"side_effect": "read", "idempotent": True,
+                        "limits": {}, "error_codes": _COMMON_READ_ERROR_CODES},
+    "get_industry_exposure": {"side_effect": "read", "idempotent": True,
+                              "limits": {}, "error_codes": _COMMON_READ_ERROR_CODES},
+    "search_funds": {"side_effect": "read", "idempotent": True,
+                     "limits": {"limit": "1-200 (default 50)"},
+                     "error_codes": _COMMON_READ_ERROR_CODES},
+    "screen_funds": {"side_effect": "read", "idempotent": True,
+                     "limits": {"limit": "1-200 (default 50)"},
+                     "error_codes": _COMMON_READ_ERROR_CODES},
+    "run_dca_backtest": {"side_effect": "read", "idempotent": True,
+                         "limits": {"fund_codes": "1-5",
+                                    "max_points": "10-2000 (default 365)",
+                                    "amount_per_period": ">0 and <=1000000"},
+                         "error_codes": _COMMON_READ_ERROR_CODES + ("not_found",)},
+    "get_agent_capabilities": {"side_effect": "read", "idempotent": True,
+                               "limits": {}, "error_codes": ()},
+    # ---- 只读：precheck（不写账本、不建提案） ----
+    "precheck_transactions": {"side_effect": "read", "idempotent": True,
+                              "limits": {"items": "1-200", "csv_text": "<=5MB"},
+                              "error_codes": _COMMON_READ_ERROR_CODES},
+    "precheck_reconciliation": {"side_effect": "read", "idempotent": True,
+                                "limits": {"holdings": "1-100"},
+                                "error_codes": _COMMON_READ_ERROR_CODES},
+    "precheck_backfill": {"side_effect": "read", "idempotent": True,
+                          "limits": {"tx_ids": "1-50"},
+                          "error_codes": _COMMON_READ_ERROR_CODES},
+    # ---- 提案读 / 取消 ----
+    "list_operation_proposals": {"side_effect": "read", "idempotent": True,
+                                 "limits": {"limit": "1-200 (default 50)"},
+                                 "error_codes": _COMMON_READ_ERROR_CODES},
+    "get_operation_proposal": {"side_effect": "read", "idempotent": True,
+                               "limits": {}, "error_codes": _COMMON_READ_ERROR_CODES + ("not_found",)},
+    # ---- additive 写：只追加、幂等键可安全重试 ----
+    "add_watchlist_item": {"side_effect": "additive", "idempotent": True,
+                           "limits": {"note": "<=500 chars", "group_name": "<=50 chars"},
+                           "error_codes": _COMMON_WRITE_ERROR_CODES + ("already_exists",)},
+    "start_data_refresh": {"side_effect": "additive", "idempotent": True,
+                           "limits": {"fund_codes": "1-50"},
+                           "error_codes": _COMMON_WRITE_ERROR_CODES + ("already_running", "busy")},
+    "create_operation_proposal": {"side_effect": "additive", "idempotent": True,
+                                  "limits": {"batch_import.items": "1-50",
+                                             "backfill_transaction_navs.items": "1-50"},
+                                  "error_codes": _COMMON_WRITE_ERROR_CODES + (
+                                      "not_found", "target_changed", "conflict",
+                                      "fee_unknown", "pending_nav", "no_buy_record")},
+    "record_transaction": {"side_effect": "additive", "idempotent": True,
+                           "limits": {},
+                           "error_codes": _COMMON_WRITE_ERROR_CODES + (
+                               "not_found", "fee_unknown", "pending_nav",
+                               "no_buy_record")},
+    # ---- mutating 写：可能覆盖/移除，幂等键或天然幂等 ----
+    "update_watchlist_item": {"side_effect": "mutating", "idempotent": True,
+                              "limits": {"note": "<=500 chars", "group_name": "<=50 chars"},
+                              "error_codes": _COMMON_WRITE_ERROR_CODES + (
+                                  "not_found", "target_changed")},
+    "remove_watchlist_item": {"side_effect": "mutating", "idempotent": True,
+                              "limits": {},
+                              "error_codes": _COMMON_WRITE_ERROR_CODES + (
+                                  "not_found", "target_changed")},
+    "cancel_operation_proposal": {"side_effect": "mutating", "idempotent": True,
+                                  "limits": {},
+                                  "error_codes": ("not_found", "conflict",
+                                                  "insufficient_scope", "rate_limited")},
+}
+
 
 def _agent_tool_visible(tool: dict[str, Any], scopes: object) -> bool:
     """能力发现过滤：any_of_scopes 任一命中，或单一 scope 命中。
@@ -3181,6 +3304,11 @@ def agent_get_capabilities(
                 config.AGENT_WRITE_ENABLED
                 if tool.get("risk") in ("write", "propose") else True
             ),
+            # 契约元数据：副作用 / 幂等 / 限额 / 稳定错误码（未登记的工具回退默认值）。
+            **_AGENT_TOOL_CONTRACT.get(tool["name"], {
+                "side_effect": "read", "idempotent": True,
+                "limits": {}, "error_codes": (),
+            }),
         }
         for tool in _AGENT_TOOL_REGISTRY
         if _agent_tool_visible(tool, ctx.scopes)

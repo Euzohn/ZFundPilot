@@ -752,7 +752,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 启动一次**只读定投回测任务**，scope：`funds:read`。这是**只读历史模拟**：不会写入正式净值表、交易、定投计划、自选或基金元数据，也不代表未来收益或配置建议。
 
-端点创建任务后立即返回 `202` 与 `job_id`；用 `GET /api/agent/tools/refresh/{job_id}` 轮询（该端点同时服务刷新与回测任务，按 `job_type` 精确复核 scope，见 §5.22）。回测在后台按基金逐个执行，`progress.done/total` 反映已完成的基金数。
+端点创建任务后立即返回 `202` 与 `job_id`；用 `GET /api/agent/tools/refresh/{job_id}` 轮询（该端点同时服务刷新与回测任务，按 `job_type` 精确复核 scope，见 §5.22）。回测在后台按基金逐个执行，`progress.done/total` 反映已完成的基金数，`progress.current` 为正在执行的基金代码。
 
 必须带 `Idempotency-Key`（16–128 安全 ASCII）：同键同参返回原 `job_id`（`replayed=true`），同键异参或异操作返回 `409 idempotency_conflict`，过期返回 `409 idempotency_expired`。创建响应的 `data`：`ok`、`code`（`queued`/`replayed`）、`message`、`replayed`、`job_id`、`status`、`fund_count`、`expires_at`。
 
@@ -769,7 +769,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 | `include_periods` | bool | `false` | 是否返回逐期买入明细（响应体更大） |
 | `max_points` | int | `365` | 曲线等距抽样上限，10–2000，保留首尾 |
 
-区间最长 10 年；月/双周/周的计划期数最多分别约为 120/261/522。非法 JSON、缺少必填字段或未知字段返回 `422`；认证与 scope 语义与其他工具一致（`401`/`403`）。并发已满返回 `429 backtest_busy`（带 `Retry-After`），不排队。
+区间最长 10 年；月/双周/周的计划期数最多分别约为 120/261/522。非法 JSON、缺少必填字段或未知字段返回 `422`；认证与 scope 语义与其他工具一致（`401`/`403`）。并发已满返回 `429 backtest_busy`（带 `Retry-After`），不排队；429 时未创建任务与幂等记录，可按 `Retry-After` 秒数用原键重试。审计记录 `dca_backtest_started/succeeded/failed/busy/rejected`，仅记计数与 token 前缀。
 
 轮询到 `status="succeeded"` 后，`data.result` 字段：`ok`、`message`、`simulation_note`、`requested`、`fund_count`、`result_count`、`failed_count`、`results[]`。`failed_count` 按结果条数计（同一基金的 `dca` 与 `lumpsum` 各自计一条）；`ok` 仅在全部结果失败时为 `false`，部分失败仍为 `true`，由 `message` 与各结果的 `status` 说明。
 
@@ -882,7 +882,7 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/refresh" \
 
 curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
   "$ZFUNDPILOT_BASE_URL/api/agent/tools/refresh/7" | jq
-# {"tool":"get_job_status","data":{"status":"succeeded","progress":{"done":3,"total":3,"phase":"risk_levels"},"result":{"ok":true,"updated":3,"failed":0,"errors":[]},"can_cancel":false}}
+# {"tool":"get_job_status","data":{"job_type":"data_refresh","status":"succeeded","progress":{"done":3,"total":3,"phase":"risk_levels"},"result":{"ok":true,"updated":3,"failed":0,"partial":false,"errors":[]},"can_cancel":false}}
 ```
 
 - 必须带 `Idempotency-Key`（16–128 安全 ASCII）；同键同参数重放返回原 `job_id`（`replayed=true`），同键异参数/过期返回 `409 idempotency_conflict` / `idempotency_expired`。
@@ -1373,8 +1373,8 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/refresh" \
 # 2) 轮询（建议 1–2 秒一次，直到终态）
 curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
   "$ZFUNDPILOT_BASE_URL/api/agent/tools/refresh/7" | jq '.data'
-# {"status":"succeeded","progress":{"done":3,"total":3},
-#  "result":{"ok":true,"updated":3,"failed":0,"errors":[]},"can_cancel":false}
+# {"job_type":"data_refresh","status":"succeeded","progress":{"done":3,"total":3},
+#  "result":{"ok":true,"updated":3,"failed":0,"partial":false,"errors":[]},"can_cancel":false}
 ```
 
 - 终态为 `succeeded` / `failed` / `interrupted`；服务重启会把遗留 `queued`/`running` 标为 `interrupted`，不会误报成功。
@@ -1461,6 +1461,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 | 自选版本冲突 | `409 revision_conflict` | 重新读取 `revision` 后再改 |
 | 提案目标已变更 | `409 target_changed` | 重新读取目标 `row_digest` 后重建提案 |
 | 刷新已在运行 | `409 refresh_busy` | 轮询 `detail.current_job_id` |
+| 回测并发已满 | `429 backtest_busy` | 未创建任务，按 `Retry-After` 秒数用原键重试 |
 | token 在执行中被撤销 | `403 scope_revoked`（直记） | 停止并告知用户重新授权 |
 
 重试总原则：
@@ -1499,6 +1500,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 | 2026-10-28 | 新增 2 个基金检索工具：`search`（关键词检索）、`screen`（类型/板块/关键词筛选，可选限量指标），复用 `funds:read`；引入按路由覆盖的限流 |
 | 2026-10-28 | 新增只读定投回测工具 `backtest/dca`（`POST`，复用 `funds:read`）：数据准备与计算解耦，不写正式净值表；统一估值日与 XIRR 终值日，显式标注数据不足、部分覆盖与费率未知 |
 | 2026-10-30 | 新增 `transactions:propose` scope 与 4 个账本提案工具：Agent 只能提交待审批提案，管理员在网页批准后由服务端同事务写入账本并审计；首期仅开放 `add_transaction`，提案默认 7 天过期、幂等创建、按 token 隔离 |
+| 2026-10-30 | D：新增任务化数据刷新（`data:refresh` scope，默认关闭）：`POST refresh` 返回 `202` + `job_id`，`GET refresh/{job_id}` 轮询进度与结果；仅更新净值/元数据，不回填交易净值、不执行定投；与网页/调度器共用互斥锁，占用时返回 `409 refresh_busy`；幂等创建，重启把遗留任务标为 `interrupted` |
 | 2026-10-31 | 新增 `transactions:create` scope 与 `record_transaction` 工具（F0 可信单笔直记）：限额内直接写入 buy/sell，预检异常降级为提案或稳定报错；新增 `transactions.source` 列与 3 个审计标签，备份兼容旧 v2 列变体 |
 | 2026-10-31 | F1：`create_operation_proposal` 新增 `update_transaction`/`delete_transaction` 两种 operation_type，携带 `expected_digest`（行内容 SHA-256）作目标行版本前置；转换腿单腿修改/删除被拒，份额连带在执行期阻断；`GET transactions/{tx_id}` 新增 `row_digest` 字段 |
 | 2026-10-31 | F2：新增 `add_conversion`/`delete_conversion` 提案（转换双腿原子写入；按 `conversion_id` 整对删除并校验两腿 `expected_digest`），`add_transaction` 支持可选 `dividend_alert_id` 原子关联分红提醒；均复用 `transactions:propose`，新增对应错误码与审计标签 |
@@ -1509,3 +1511,4 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 | 2026-11-04 | F6.1：新增 `alerts:propose` scope 与 `resolve_alert` operation_type，把 `pending` 提醒推进为 `confirmed`/`ignored`（不支持回滚到 `pending`）；分红可携带已有分红/再投资流水的 `tx_id` 关联，不创建流水。`list_alerts` 每项新增 `row_digest`（覆盖 `status/resolved_at/tx_id` 与业务字段）作 `expected_digest` 版本前置。提案工具改为多域授权（`transactions:propose`/`plans:propose`/`alerts:propose` 任一进入、按 `operation_type` 精确复核、`capabilities` 任一命中即列出）。执行只更新提醒状态并在同一事务写审计（`dividend_alert_update`/`tp_sl_alert_update`，带 `proposal_id`），不写 `transactions` 表 |
 | 2026-11-05 | F6.2：新增 `backfill_transaction_navs` operation_type（复用 `transactions:propose`），为 `nav` 缺失的已存在交易补净值及连带份额/金额/手续费，支持 1–50 条显式 `tx_ids` 批量（不做「回填全部」）、逐行 `expected_digest` 版本前置、整批原子。创建期一次性预计算 nav/fee 快照并固化进 `summary_json`（预计算在写事务之外，费率缺失时可能联网一次；审批零联网），分红行 `422 dividend_not_backfillable`、已有净值 `409 nav_present`、无可用净值 `409 nav_unavailable`、费率未知/卖出无买入记录 `409 fee_unknown`（可显式给 `fee`）；审批单事务逐行复读，任一行已回填/已改/已删 → 整批 `conflict`、无部分写入，成功逐行记 `nav_backfill`（带 `proposal_id`）。新增只读工具 `precheck_backfill`（`POST /api/agent/tools/precheck/backfill`，受写总闸与 10 次/分钟限流约束，逐行返回 `row_digest` 与回填快照） |
 | 2026-11-07 | F6.3：新增 `execute_plan` operation_type（复用 `transactions:propose`），为一条已存在的定投计划手动生成一笔买入流水并推进 `last_run`/`last_tx_id`；不重算 `next_run`、不触发调度器，网页/调度器既有行为不变。须带计划 `row_digest` 版本前置；金额/渠道/备注/`is_t1`/启停与簿记字段一律硬拒。创建期在写事务外判定可投性并抓取费率（显式 `fee` 跳过；费率未知 `409 fee_unknown`，不静默写 0），`trade_date` 缺省今天、仅允许最近 7 天补记；审批零联网，按快照写 `buy`（`shares/nav` 待回填）。今天靠 `last_run == trade_date` 防重，历史日期另查同一计划+交易日的已成功提案；停用计划仍可手动执行（warning），非交易日仅 warning。审批成功记 `auto_invest_execute`（带 `proposal_id`） |
+| 2026-11-14 | R5：回测任务化——`backtest/dca` 由同步 `200` 改为 **`202` + `job_id`**（破坏性变更，客户端需改为轮询 `get_job_status`），复用 `refresh_jobs`（新增 `job_type="dca_backtest"`）与幂等记录，必带 `Idempotency-Key`；后台按基金逐个执行推进进度（`done` 为已完成数、`current` 为正在执行的基金），并发满返回 `429 backtest_busy`（`Retry-After: 60`，未建任务可用原键重试）；`get_job_status` 以 `data:refresh`/`funds:read` 任一进入并按 `job_type` 精确复核；MCP `run_dca_backtest` 新增必填 `idempotency_key`。网页同步回测端点不变 |

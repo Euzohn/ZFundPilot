@@ -494,17 +494,22 @@ def _run_backtest_job(job_id: int, params: dict[str, Any],
     """后台执行：按基金逐个回测并推进进度，结果写入 ``result_json``。
 
     只读净值（``readonly_nav_rows``），不写交易、计划或基金元数据；
-    每个基金独立执行，因此 ``done`` 能真实反映进度。
+    每个基金独立执行，``done`` 为已完成数，``current`` 指向正在执行的基金。
+    首次状态写入也在 try 内：即使它失败（如数据库忙），finally 仍归还并发名额。
     """
     codes = params["fund_codes"]
-    ts = _now().isoformat()
-    with db.get_connection(write=True) as conn:
-        db.update_refresh_job(
-            conn, job_id, status="running", total=len(codes),
-            phase="backtest", updated_at=ts)
     try:
+        ts = _now().isoformat()
+        with db.get_connection(write=True) as conn:
+            db.update_refresh_job(
+                conn, job_id, status="running", total=len(codes),
+                phase="backtest", updated_at=ts)
         results: list[Any] = []
         for index, code in enumerate(codes, start=1):
+            ts = _now().isoformat()
+            with db.get_connection(write=True) as conn:
+                db.update_refresh_job(
+                    conn, job_id, current=code, updated_at=ts)
             results.extend(backtest.run_dca_backtest(
                 fund_codes=[code],
                 start_date=params["start_date"],
@@ -517,7 +522,7 @@ def _run_backtest_job(job_id: int, params: dict[str, Any],
             ts = _now().isoformat()
             with db.get_connection(write=True) as conn:
                 db.update_refresh_job(
-                    conn, job_id, done=index, current=code, updated_at=ts)
+                    conn, job_id, done=index, updated_at=ts)
 
         data = _backtest_result_data(results, params)
         ts = _now().isoformat()
@@ -601,12 +606,15 @@ def _run_job(job_id: int, codes: list[str], principal: Any) -> None:
 
     不持有 ``nav_update_lock`` 执行（仅启动时由 ``start_refresh`` 短暂声明），
     避免阻塞网页 ``/api/nav/update`` 的请求线程；结束/失败时在锁内清除运行态。
+    首次状态写入也在 try 内：即使它失败（如数据库忙），finally 仍清除运行态，
+    避免后续刷新永久 ``refresh_busy``。
     """
-    now = _now().isoformat()
-    with db.get_connection(write=True) as conn:
-        db.update_refresh_job(
-            conn, job_id, status="running", total=len(codes), updated_at=now)
     try:
+        now = _now().isoformat()
+        with db.get_connection(write=True) as conn:
+            db.update_refresh_job(
+                conn, job_id, status="running", total=len(codes), updated_at=now)
+
         def _progress(done: int, total: int, code: str) -> None:
             nav_update_state.update({"done": done, "total": total,
                                      "current": code})

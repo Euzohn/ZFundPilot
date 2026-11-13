@@ -129,11 +129,12 @@ class TestBacktestJobLifecycle:
         assert data["result"]["fund_count"] == 2
         assert data["result"]["result_count"] == 2
 
-        # 每个基金开始前读取任务行：done 从 0 递增到 1。
+        # 每个基金开始前读取任务行：done 为已完成数，current 指向即将执行的基金。
         assert [s["done"] for s in snapshots] == [0, 1]
         assert snapshots[0]["status"] == "running"
         assert snapshots[0]["total"] == 2
-        assert snapshots[1]["current"] == "000001"
+        assert snapshots[0]["current"] == "000001"
+        assert snapshots[1]["current"] == "000002"
 
         replay = client.post(URL, json=payload, headers=post_headers)
         assert replay.status_code == 202
@@ -175,6 +176,34 @@ class TestBacktestJobLifecycle:
         assert "模拟回测失败" in data["error"]
         assert data["result"] == {"ok": False}
         # 后台执行无论成败都必须归还并发名额。
+        assert svc._backtest_gate.acquire(blocking=False)
+        svc._backtest_gate.release()
+
+    def test_initial_db_failure_marks_failed_and_releases_gate(
+            self, client, monkeypatch):
+        """首次状态写入失败（如数据库忙）也必须归还并发名额并标记任务失败。"""
+        _install_stub(monkeypatch)
+        headers, _ = _issue(agent_tokens.SCOPE_FUNDS_READ)
+        real_update = svc.db.update_refresh_job
+        calls = {"n": 0}
+
+        def flaky_update(conn, job_id, **kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("database is locked")
+            return real_update(conn, job_id, **kw)
+
+        monkeypatch.setattr(svc.db, "update_refresh_job", flaky_update)
+        resp = client.post(
+            URL, json=_body(), headers={**headers, "Idempotency-Key": KEY})
+        assert resp.status_code == 202
+        job_id = resp.json()["data"]["job_id"]
+
+        data = client.get(
+            f"/api/agent/tools/refresh/{job_id}",
+            headers=headers).json()["data"]
+        assert data["status"] == "failed"
+        assert "database is locked" in data["error"]
         assert svc._backtest_gate.acquire(blocking=False)
         svc._backtest_gate.release()
 

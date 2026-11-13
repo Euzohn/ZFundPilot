@@ -97,6 +97,32 @@ class TestStartRefresh:
         assert result.http_status == 409
         assert result.code == "refresh_busy"
 
+    def test_initial_db_failure_clears_running_state(
+            self, temp_db, sync_refresh, monkeypatch):
+        """首次状态写入失败也必须清除共享运行态，否则刷新永久 busy。"""
+        real_update = svc.db.update_refresh_job
+        calls = {"n": 0}
+
+        def flaky_update(conn, job_id, **kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("database is locked")
+            return real_update(conn, job_id, **kw)
+
+        monkeypatch.setattr(svc.db, "update_refresh_job", flaky_update)
+        result = _start(["005827"])
+        assert result.http_status == 202
+        assert svc.nav_update_state["running"] is False
+        status = svc.get_job_status(_agent(), result.data["job_id"])
+        assert status.data["status"] == "failed"
+
+        # 运行态已清除：新任务可正常创建并执行。
+        second = _start(["005827"], key=KEY_B)
+        assert second.http_status == 202
+        assert second.code == "queued"
+        assert svc.get_job_status(
+            _agent(), second.data["job_id"]).data["status"] == "succeeded"
+
     def test_open_holdings_default(self, temp_db, sync_refresh, monkeypatch):
         """缺省基金代码使用当前开仓持仓。"""
         monkeypatch.setattr(

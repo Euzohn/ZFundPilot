@@ -1250,7 +1250,174 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 - `ZFUNDPILOT_TIMEOUT` 可选，默认 30 秒，范围 1–120。
 - token 只从环境变量读取，不写入配置仓库或提示词；泄漏后立即在设置页撤销。
 
-## 7. 安全与运维
+## 7. 端到端示例（Agent 闭环）
+
+> 本节示例全部走 `/api/agent/tools/*` HTTP 接口，MCP 工具与之一一对应（工具名见上文「统一能力表」）。示例省略 `Host` 与响应信封（`schema_version`/`tool`/`request_id`/`generated_at`/`currency`/`data`，见 §4）。`$ZFUNDPILOT_AGENT_TOKEN` 为 token 明文，只应来自环境变量，**不要**写入代码、URL 或提示词。
+>
+> 写示例假设管理员已为 token 勾选对应 scope **且**已开启「Agent 写能力」总开关；否则写端点返回 `403 write_disabled`。
+
+### 7.1 只读分析：先确认数据状态，再下结论
+
+```bash
+# 1) 数据是否新鲜、是否有待确认净值的 T+1 交易
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/data-status" | jq '.data'
+# {"as_of_date":"2026-11-13","as_of_date_semantics":"...",
+#  "missing_nav_fund_count":0,"stale_nav_fund_count":1,
+#  "pending_t1_transaction_count":2}
+
+# 2) 组合汇总与持仓（金额基于最新正式净值）
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/portfolio-summary" | jq '.data'
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/positions?limit=20" | jq '.data.positions'
+```
+
+- `as_of_date` 是各持仓正式净值日期的**最大值**，不代表所有基金都已更新；`stale_nav_fund_count` / `missing_nav_fund_count` 非 0 时应在回答中显式提示。
+- 待确认净值的 T+1 交易会造成成本/份额口径偏差，先说明再分析，不要给出确定性结论。
+
+### 7.2 自选维护（低风险直写）
+
+```bash
+# 1) 读取当前自选与每项 revision
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist?limit=50" | jq '.data.watchlist'
+
+# 2) 新增（必须带 Idempotency-Key）
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f50" \
+  -d '{"fund_code":"005827","note":"观察","group_name":"核心"}' | jq '.data'
+
+# 3) 更新备注/分组（带 revision 前置，避免覆盖网页侧的修改）
+curl -s -X PATCH "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist/005827" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d" \
+  -d '{"expected_revision":3,"note":"重点观察"}' | jq '.data'
+```
+
+- 同键同参重试返回原结果（`replayed=true`）；同键异参返回 `409 idempotency_conflict`。
+- `expected_revision` 不匹配返回 `409 revision_conflict`：应**重新读取 revision 后再改**，不要盲目重试。
+- 自选写入只影响自选关系与备注/分组，不写交易、净值或定投计划。
+
+### 7.3 刷新与轮询（202 + job_id）
+
+```bash
+# 1) 启动（缺省刷新当前开仓持仓；也可显式传 fund_codes，最多 50 只）
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/refresh" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f51" \
+  -d '{}' | jq '.data'
+# {"job_id":7,"status":"queued","fund_count":3,...}
+
+# 2) 轮询（建议 1–2 秒一次，直到终态）
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/refresh/7" | jq '.data'
+# {"status":"succeeded","progress":{"done":3,"total":3},
+#  "result":{"ok":true,"updated":3,"failed":0,"errors":[]},"can_cancel":false}
+```
+
+- 终态为 `succeeded` / `failed` / `interrupted`；服务重启会把遗留 `queued`/`running` 标为 `interrupted`，不会误报成功。
+- 返回 `409 refresh_busy` 时，用 `detail.current_job_id` 轮询已有任务，不要换键重复创建（不排队）。
+- 任务 7 天内可查询；刷新只更新净值/元数据，**不**回填交易净值、**不**执行定投。
+
+### 7.4 已发生交易：提案 → 网页批准 → 核对
+
+```bash
+# 1) 提交提案（不写账本）
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f52" \
+  -d '{"operation_type":"add_transaction","params":{
+        "fund_code":"005827","action":"buy","date":"2026-11-10",
+        "amount":1000,"fee":1,"channel":"支付宝"}}' | jq '.data'
+# {"ok":true,"proposal_id":18,"status":"pending","expires_at":"2026-11-17T...","summary":{...}}
+
+# 2) 管理员在网页「待确认提案」点批准（服务端同事务写入账本并审计）。
+#    对应网页接口：POST /api/proposals/18/approve（需网页登录 token，不是 Agent token）。
+
+# 3) Agent 侧核对提案结果与账本流水
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals/18" | jq '.data | {status, execution_result}'
+# {"status":"approved","execution_result":{"ok":true,"message":"..."}}
+
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions?fund_code=005827&limit=5" | jq '.data.transactions[0]'
+```
+
+- 提案默认 7 天过期；已过期/已拒绝/已取消的提案不能再批准。
+- 批准前 `list_transactions` 看不到这笔交易——**提案不是写入**。对用户应说「已提交，待网页确认」，不要宣称“已记录”。
+- 修改/删除已存在流水需 `expected_digest`（先从 `GET transactions/{tx_id}` 的 `data.row_digest` 获取）；目标已被改动返回 `409 target_changed`，应重新读取后重建提案。
+
+### 7.5 可信单笔直记 → 回执 → 更正
+
+```bash
+# 仅当用户明确说明「已在外部平台完成」且 token 具有 transactions:create
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: direct-0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f52" \
+  -d '{"fund_code":"005827","action":"buy","date":"2026-11-10",
+       "amount":1000,"fee":1,"channel":"支付宝"}' | jq '.data'
+# {"execution_mode":"direct","transaction_id":42,"receipt":{...},
+#  "daily_quota":{"used":1,"count_limit":10,...},"verify_path":"/transactions"}
+
+# 核对回执
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions/42" | jq '.data'
+```
+
+- **边界（重要）**：直记是管理员对该 Token 的**预授权**，不是服务端验证了「本次对话中用户已确认」。模型自述、客户端弹窗、同一 Agent 再调用批准工具，都不构成独立的人类审批。不得凭截图、预测、建议或“看起来应该买过”推断交易。
+- 先核对回执（金额/日期/渠道/净值状态），再向用户复述结果。
+- 更正已直记的流水：取 `row_digest` → 提交 `update_transaction` 提案（需 `transactions:propose`）→ 网页批准。直记本身不支持修改/删除/转换/定投。
+
+### 7.6 异常转审批（降级）与硬失败
+
+| 命中情况 | 返回 | Agent 动作 |
+|---|---|---|
+| 疑似重复、卖出份额不足、单笔金额超限 | `200` + `data.execution_mode="proposal"` + `proposal_id`（需同时持有 `transactions:propose`） | 告知用户已转待审提案，等待网页批准 |
+| 同上但只有 `transactions:create` | `409` + `duplicate_candidate` / `insufficient_shares` / `amount_exceeds_cap` | 不要换键重试直写；说明原因，必要时改走提案 |
+| 待审提案数量超限 | `409 too_many_pending`（降级路径透传） | 先处理已有提案，再重试 |
+| 基金未收录 | `409 fund_not_registered` | 不降级；让用户先在网页收录基金 |
+| 当日额度用尽 | `429 daily_quota_exceeded`（含 `used`/`limit`/`reset_at`） | 不降级；告知额度与重置时间 |
+| 请求体非法 | `422 validation_error` / `future_date` | 修正参数，不要原样重试 |
+
+- **重放永不升级**：原结局是降级提案时，同键重放始终返回该提案的实时状态，即使诱因已消除也不会补写第二笔。
+- 降级提案与 `create_operation_proposal` 完全等价；同主体同参的 pending 提案会被复用而不是新建。
+
+### 7.7 权限、过期、撤销、冲突与重试
+
+| 场景 | 状态码 / `error.code` | 建议动作 |
+|---|---|---|
+| 缺少 scope | `403 insufficient_scope` | 不重试；请管理员补 scope（需重新签发 token） |
+| 写总闸关闭 | `403 write_disabled` | 不重试；请管理员在设置页开启 |
+| 实例未启用密码认证 | `403 auth_disabled` | 不重试；请管理员先配置管理员密码 |
+| token 无效 / 过期 / 已撤销 | `401 invalid_token` / `expired` / `revoked` | 立即停止，不要重试；请管理员重新签发 |
+| 触发限流 | `429 rate_limited`（`retryable=true`） | 按 `Retry-After` 秒数重试 |
+| 数据库忙 | `503 database_busy`（`retryable=true`） | 按 `Retry-After` 秒数重试 |
+| 同键不同参数 | `409 idempotency_conflict` | 生成新的 `Idempotency-Key`；不要复用旧键 |
+| 幂等键过期 | `409 idempotency_expired` | 用新键重新发起（先确认业务未执行） |
+| 自选版本冲突 | `409 revision_conflict` | 重新读取 `revision` 后再改 |
+| 提案目标已变更 | `409 target_changed` | 重新读取目标 `row_digest` 后重建提案 |
+| 刷新已在运行 | `409 refresh_busy` | 轮询 `detail.current_job_id` |
+| token 在执行中被撤销 | `403 scope_revoked`（直记） | 停止并告知用户重新授权 |
+
+重试总原则：
+
+1. 只有 `retryable=true`（429/503）或**同一 `Idempotency-Key` 的确定性重放**才可重试；其余 4xx 先修正原因。
+2. 写操作重试必须复用原 `Idempotency-Key`，否则可能产生第二笔写入。
+3. 重试前先用 `GET .../proposals/{id}` 或 `GET .../refresh/{job_id}` 确认上一次结果。
+4. 错误响应含 `request_id`，反馈问题时请附带（见 §4）。
+
+> **已知限制**：服务端错误消息（`error.message` / `detail`）目前为中文。英文界面客户端应按 `error.code` 分支展示本地化文案，**不要**匹配或直出 `message`。
+
+---
+
+## 8. 安全与运维
 
 - **独立凭证**：Agent token 与网页登录 token 不能互换。网页 token 调用工具返回 `401`；Agent token 不能调用网页管理接口。
 - **默认拒绝**：工具路径由独立中间件先校验 token，再由 scope 依赖授权；管理端点也会自行校验网页 token。
@@ -1262,7 +1429,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 
 ---
 
-## 8. 变更记录
+## 9. 变更记录
 
 | 日期 | 变更 |
 |---|---|

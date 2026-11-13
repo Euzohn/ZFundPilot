@@ -1247,7 +1247,176 @@ These annotations are **hints to the client only** (every `ToolAnnotations` fiel
 - `ZFUNDPILOT_TIMEOUT` is optional, default 30 seconds (range 1–120).
 - The token is read only from the environment; never commit it or paste it into prompts. Revoke it in Settings if leaked.
 
-## 7. Security and operations
+## 7. End-to-end examples (agent loop)
+
+> Every example below uses the `/api/agent/tools/*` HTTP endpoints; MCP tools map one-to-one to them (tool names are listed in the unified capability table above). Examples omit `Host` and the response envelope (`schema_version`/`tool`/`request_id`/`generated_at`/`currency`/`data`; see §4). `$ZFUNDPILOT_AGENT_TOKEN` is the token plaintext and must come from an environment variable only — **never** put it in code, URLs, or prompts.
+>
+> Write examples assume the administrator has granted the token the matching scope **and** enabled the Agent write switch; otherwise write endpoints return `403 write_disabled`.
+
+### 7.1 Read-only analysis: check data status before drawing conclusions
+
+```bash
+# 1) Is the data fresh? Are there T+1 transactions awaiting NAV?
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/data-status" | jq '.data'
+# {"as_of_date":"2026-11-13","as_of_date_semantics":"...",
+#  "missing_nav_fund_count":0,"stale_nav_fund_count":1,
+#  "pending_t1_transaction_count":2}
+
+# 2) Portfolio summary and positions (amounts use the latest formal NAV)
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/portfolio-summary" | jq '.data'
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/positions?limit=20" | jq '.data.positions'
+```
+
+- `as_of_date` is the **maximum** formal-NAV date across holdings; it does not mean every fund was updated. If `stale_nav_fund_count` / `missing_nav_fund_count` is non-zero, say so explicitly in the answer.
+- T+1 transactions awaiting NAV skew cost/share figures; disclose that before analyzing rather than giving a definitive conclusion.
+
+### 7.2 Watchlist maintenance (low-risk direct write)
+
+```bash
+# 1) Read the current watchlist and each item's revision
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist?limit=50" | jq '.data.watchlist'
+
+# 2) Add an item (Idempotency-Key is required)
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f50" \
+  -d '{"fund_code":"005827","note":"watch","group_name":"core"}' | jq '.data'
+
+# 3) Update note/group (revision precondition prevents overwriting web edits)
+curl -s -X PATCH "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist/005827" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d" \
+  -d '{"expected_revision":3,"note":"priority watch"}' | jq '.data'
+```
+
+- Retrying with the same key and parameters returns the original result (`replayed=true`); same key with different parameters returns `409 idempotency_conflict`.
+- A mismatched `expected_revision` returns `409 revision_conflict`: **re-read the revision and retry**, do not blindly retry.
+- Watchlist writes only touch the watchlist relation and note/group; they never write transactions, NAV, or plans.
+
+### 7.3 Refresh and polling (202 + job_id)
+
+```bash
+# 1) Start (defaults to current open holdings; fund_codes may be passed explicitly, max 50)
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/refresh" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f51" \
+  -d '{}' | jq '.data'
+# {"job_id":7,"status":"queued","fund_count":3,...}
+
+# 2) Poll (every 1–2 seconds until a terminal state)
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/refresh/7" | jq '.data'
+# {"status":"succeeded","progress":{"done":3,"total":3},
+#  "result":{"ok":true,"updated":3,"failed":0,"errors":[]},"can_cancel":false}
+```
+
+- Terminal states are `succeeded` / `failed` / `interrupted`; on restart, leftover `queued`/`running` jobs are marked `interrupted` rather than falsely reported as succeeded.
+- On `409 refresh_busy`, poll the existing job via `detail.current_job_id` instead of creating another one with a different key (no queueing).
+- Jobs are queryable for 7 days; refresh only updates NAV/metadata and **never** backfills transaction NAV or runs auto-invest plans.
+
+### 7.4 Already-happened transaction: proposal → web approval → verify
+
+```bash
+# 1) Create a proposal (writes nothing to the ledger)
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f52" \
+  -d '{"operation_type":"add_transaction","params":{
+        "fund_code":"005827","action":"buy","date":"2026-11-10",
+        "amount":1000,"fee":1,"channel":"Alipay"}}' | jq '.data'
+# {"ok":true,"proposal_id":18,"status":"pending","expires_at":"2026-11-17T...","summary":{...}}
+
+# 2) The administrator approves it in Settings → Pending proposals
+#    (server writes the ledger and audit in one transaction).
+#    Web endpoint: POST /api/proposals/18/approve (requires a web login token, not an Agent token).
+
+# 3) The agent verifies the proposal result and the ledger row
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals/18" | jq '.data | {status, execution_result}'
+# {"status":"approved","execution_result":{"ok":true,"message":"..."}}
+
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions?fund_code=005827&limit=5" | jq '.data.transactions[0]'
+```
+
+- Proposals expire after 7 days by default; expired/rejected/cancelled proposals can no longer be approved.
+- Before approval, `list_transactions` does not show the trade — **a proposal is not a write**. Tell the user "submitted, awaiting web approval", never "recorded".
+- Updating/deleting an existing row requires `expected_digest` (get it from `GET transactions/{tx_id}` → `data.row_digest`); if the target changed, the API returns `409 target_changed`, so re-read and rebuild the proposal.
+
+### 7.5 Trusted single direct write → receipt → correction
+
+```bash
+# Only when the user explicitly says it already happened externally
+# and the token has transactions:create
+curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions" \
+  -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: direct-0f6c2f9a-4b1e-4e2a-9d0e-7c1d2b3a4f52" \
+  -d '{"fund_code":"005827","action":"buy","date":"2026-11-10",
+       "amount":1000,"fee":1,"channel":"Alipay"}' | jq '.data'
+# {"execution_mode":"direct","transaction_id":42,"receipt":{...},
+#  "daily_quota":{"used":1,"count_limit":10,...},"verify_path":"/transactions"}
+
+# Verify the receipt
+curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
+  "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions/42" | jq '.data'
+```
+
+- **Boundary (important)**: direct write is a **pre-authorization** the administrator granted to this token; it is *not* the server verifying that the user confirmed in this conversation. A model's own claim, a client-side dialog, or the same agent calling an approval tool do not constitute independent human approval. Never infer a trade from a screenshot, forecast, recommendation, or "it probably happened".
+- Verify the receipt (amount/date/channel/NAV status) before restating the result to the user.
+- To correct a directly written row: take `row_digest` → submit an `update_transaction` proposal (needs `transactions:propose`) → web approval. Direct write itself cannot update/delete/convert or touch plans.
+
+### 7.6 Exceptions downgraded to proposals — and hard failures
+
+| Trigger | Response | Agent action |
+|---|---|---|
+| Suspected duplicate, insufficient shares, amount over cap | `200` + `data.execution_mode="proposal"` + `proposal_id` (requires `transactions:propose` too) | Tell the user it became a pending proposal and awaits web approval |
+| Same, but the token only has `transactions:create` | `409` + `duplicate_candidate` / `insufficient_shares` / `amount_exceeds_cap` | Do not retry the direct write with a new key; explain and suggest the proposal path |
+| Too many pending proposals | `409 too_many_pending` (passed through from the downgrade path) | Resolve existing proposals first, then retry |
+| Fund not registered | `409 fund_not_registered` | No downgrade; ask the user to add the fund in the web UI first |
+| Daily quota exhausted | `429 daily_quota_exceeded` (includes `used`/`limit`/`reset_at`) | No downgrade; report the quota and reset time |
+| Invalid request body | `422 validation_error` / `future_date` | Fix the parameters; do not retry unchanged |
+
+- **Replays never escalate**: if the original outcome was a downgraded proposal, a same-key replay always returns that proposal's live status and will not write a second entry even after the trigger clears.
+- Downgraded proposals are fully equivalent to `create_operation_proposal`; a same-principal, same-parameter pending proposal is reused rather than duplicated.
+
+### 7.7 Permissions, expiry, revocation, conflicts, and retries
+
+| Scenario | Status / `error.code` | Suggested action |
+|---|---|---|
+| Missing scope | `403 insufficient_scope` | Do not retry; ask the administrator to grant the scope (re-issue the token) |
+| Write switch off | `403 write_disabled` | Do not retry; ask the administrator to enable it in Settings |
+| Instance has no admin password | `403 auth_disabled` | Do not retry; ask the administrator to configure an admin password |
+| Token invalid / expired / revoked | `401 invalid_token` / `expired` / `revoked` | Stop immediately; ask the administrator to re-issue |
+| Rate limited | `429 rate_limited` (`retryable=true`) | Retry after `Retry-After` seconds |
+| Database busy | `503 database_busy` (`retryable=true`) | Retry after `Retry-After` seconds |
+| Same key, different parameters | `409 idempotency_conflict` | Generate a new `Idempotency-Key`; do not reuse the old one |
+| Idempotency key expired | `409 idempotency_expired` | Retry with a new key after confirming nothing was executed |
+| Watchlist revision conflict | `409 revision_conflict` | Re-read `revision`, then retry |
+| Proposal target changed | `409 target_changed` | Re-read the target `row_digest`, then rebuild the proposal |
+| Refresh already running | `409 refresh_busy` | Poll `detail.current_job_id` |
+| Token revoked mid-execution | `403 scope_revoked` (direct write) | Stop and ask the user to re-authorize |
+
+Retry principles:
+
+1. Only `retryable=true` (429/503) or a **deterministic replay with the same `Idempotency-Key`** is safe to retry; fix the cause first for any other 4xx.
+2. Write retries must reuse the original `Idempotency-Key`; otherwise a second write may occur.
+3. Before retrying, confirm the previous outcome via `GET .../proposals/{id}` or `GET .../refresh/{job_id}`.
+4. Error responses include `request_id`; include it when reporting an issue (see §4).
+
+> **Known limitation**: server error messages (`error.message` / `detail`) are currently in Chinese. English-UI clients should branch on `error.code` and render their own localized text — do **not** match or surface `message`.
+
+---
+
+## 8. Security and operations
 
 - **Separate credentials**: Agent and web tokens are not interchangeable. A web token calling a tool gets `401`; an Agent token cannot call web management endpoints.
 - **Default deny**: Tool paths are checked by the Agent middleware first, then authorized by scope dependencies. Management endpoints also verify the web token themselves.
@@ -1259,7 +1428,7 @@ These annotations are **hints to the client only** (every `ToolAnnotations` fiel
 
 ---
 
-## 8. Changelog
+## 9. Changelog
 
 | Date | Change |
 |---|---|

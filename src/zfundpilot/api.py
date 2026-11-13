@@ -5371,10 +5371,43 @@ def execute_auto_invest_plan(request: Request, plan_id: int) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 审计日志
 # ---------------------------------------------------------------------------
+# 审计筛选的 from/to：接受纯日期或 ISO 时间串（可带时区）。
+_AUDIT_TS_QUERY_PATTERN = (
+    r"^\d{4}-\d{2}-\d{2}"
+    r"(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})?)?$"
+)
+
+
 @app.get("/api/audit")
-def get_audit_logs(limit: Annotated[int, Query(ge=1, le=1000)] = 100) -> list[dict]:
-    """返回最近 N 条审计日志（需认证）。"""
-    return db.fetch_audit_logs(limit)
+def get_audit_logs(
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    action: Annotated[str | None, Query(min_length=1, max_length=64)] = None,
+    username: Annotated[str | None, Query(min_length=1, max_length=64)] = None,
+    ts_from: Annotated[
+        str | None, Query(alias="from", pattern=_AUDIT_TS_QUERY_PATTERN)
+    ] = None,
+    ts_to: Annotated[str | None, Query(alias="to", pattern=_AUDIT_TS_QUERY_PATTERN)] = None,
+) -> list[dict]:
+    """返回审计日志（需认证），支持动作/用户/时间范围过滤与偏移分页。
+
+    ``action``/``username`` 精确匹配；``from``/``to`` 为纯日期时按整天包含式
+    处理；默认仅 ``limit=100`` 时行为与旧版一致。
+    """
+    if ts_from and ts_to and ts_from > ts_to:
+        raise api_errors.ApiError(
+            status_code=422,
+            detail={"field": "from", "message": "起始时间不能晚于结束时间"},
+            code="validation_error",
+        )
+    return db.fetch_audit_logs(
+        limit,
+        action=action,
+        username=username,
+        ts_from=ts_from,
+        ts_to=ts_to,
+        offset=offset,
+    )
 
 
 # ---------------------------------------------------------------------------

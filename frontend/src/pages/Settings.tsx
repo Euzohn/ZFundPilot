@@ -4,6 +4,7 @@ import { getChannels, getChannelsAsync, saveChannels, getDefaultChannels } from 
 import { getChannelColors, getChannelColorsAsync, saveChannelColors, getDefaultChannelColors, getPalette } from "@/lib/channelColors"
 import { getColorTheme, getColorThemeAsync, saveColorTheme, applyColorTheme, type ColorTheme } from "@/lib/colorTheme"
 import { formatRelativeTime, formatTokens } from "@/lib/format"
+import { isTokenExpiringSoon } from "@/lib/tokenExpiry"
 import { translateBackendError } from "@/lib/backendLabels"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
@@ -353,6 +354,9 @@ function AgentTokenPanel() {
   const renderStatus = (token: AgentTokenInfo) => {
     if (token.revoked_at) return <Badge variant="secondary">{t.settings.agentTokenRevoked}</Badge>
     if (token.active === false) return <Badge variant="warning">{t.settings.agentTokenExpired}</Badge>
+    if (isTokenExpiringSoon(token.expires_at)) {
+      return <Badge variant="warning">{t.settings.agentTokenExpiringSoon}</Badge>
+    }
     return <Badge variant="success">{t.settings.agentTokenActive}</Badge>
   }
 
@@ -552,9 +556,51 @@ function AgentTokenPanel() {
   )
 }
 
+interface AuditFilters {
+  action: string
+  username: string
+  from: string
+  to: string
+}
+
+const EMPTY_AUDIT_FILTERS: AuditFilters = {
+  action: "",
+  username: "",
+  from: "",
+  to: "",
+}
+
 function AuditLogPanel() {
   const { t } = useLang()
-  const { data: logs, loading, error, reload } = useApi<AuditLog[]>(() => api.getAuditLogs(100), [])
+  const [draft, setDraft] = useState<AuditFilters>(EMPTY_AUDIT_FILTERS)
+  const [filters, setFilters] = useState<AuditFilters>(EMPTY_AUDIT_FILTERS)
+  const { data: logs, loading, error, reload } = useApi<AuditLog[]>(
+    () => api.getAuditLogs({
+      limit: 200,
+      action: filters.action || undefined,
+      username: filters.username || undefined,
+      from: filters.from || undefined,
+      to: filters.to || undefined,
+    }),
+    [filters],
+  )
+
+  const applyFilters = () => {
+    if (draft.from && draft.to && draft.from > draft.to) {
+      toast.error(t.settings.auditFilterRangeInvalid)
+      return
+    }
+    setFilters({ ...draft, username: draft.username.trim() })
+  }
+
+  const resetFilters = () => {
+    setDraft(EMPTY_AUDIT_FILTERS)
+    setFilters(EMPTY_AUDIT_FILTERS)
+  }
+
+  const filtersActive = Boolean(
+    filters.action || filters.username || filters.from || filters.to,
+  )
 
   const auditLabels: Record<string, string> = {
     login_success: t.settings.auditLabels.login_success,
@@ -645,6 +691,77 @@ function AuditLogPanel() {
         </div>
       </CardHeader>
       <CardContent>
+        <div className="mb-3 flex flex-wrap items-end gap-2">
+          <div className="min-w-[9rem] flex-1 sm:flex-none">
+            <Label className="mb-1 block text-xs text-muted-foreground">
+              {t.settings.auditFilterAction}
+            </Label>
+            <Select
+              value={draft.action}
+              onChange={(e) => setDraft((prev) => ({ ...prev, action: e.target.value }))}
+              className="h-8 text-xs"
+              aria-label={t.settings.auditFilterAction}
+            >
+              <option value="">{t.settings.auditFilterAllActions}</option>
+              {Object.keys(auditLabels).map((action) => (
+                <option key={action} value={action}>{auditLabels[action]}</option>
+              ))}
+            </Select>
+          </div>
+          <div className="min-w-[8rem] flex-1 sm:flex-none">
+            <Label className="mb-1 block text-xs text-muted-foreground">
+              {t.settings.auditUser}
+            </Label>
+            <Input
+              value={draft.username}
+              onChange={(e) => setDraft((prev) => ({ ...prev, username: e.target.value }))}
+              onKeyDown={(e) => { if (e.key === "Enter") applyFilters() }}
+              className="h-8 text-xs"
+              placeholder={t.settings.auditFilterUserPlaceholder}
+              maxLength={64}
+            />
+          </div>
+          <div>
+            <Label className="mb-1 block text-xs text-muted-foreground">
+              {t.settings.auditFilterFrom}
+            </Label>
+            <Input
+              type="date"
+              value={draft.from}
+              onChange={(e) => setDraft((prev) => ({ ...prev, from: e.target.value }))}
+              className="h-8 text-xs"
+            />
+          </div>
+          <div>
+            <Label className="mb-1 block text-xs text-muted-foreground">
+              {t.settings.auditFilterTo}
+            </Label>
+            <Input
+              type="date"
+              value={draft.to}
+              onChange={(e) => setDraft((prev) => ({ ...prev, to: e.target.value }))}
+              className="h-8 text-xs"
+            />
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            onClick={applyFilters}
+            disabled={loading}
+          >
+            {t.settings.auditFilterApply}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-xs"
+            onClick={resetFilters}
+            disabled={loading}
+          >
+            {t.settings.auditFilterReset}
+          </Button>
+        </div>
         {error ? (
           <div className="flex items-center gap-2 py-2">
             <span className="text-xs text-loss-600">{t.common.loadFailed}</span>
@@ -653,7 +770,10 @@ function AuditLogPanel() {
         ) : !logs ? (
           <LoadingState size="sm" />
         ) : logs.length === 0 ? (
-          <EmptyState title={t.settings.noAuditLogs} size="sm" />
+          <EmptyState
+            title={filtersActive ? t.settings.auditFilterEmpty : t.settings.noAuditLogs}
+            size="sm"
+          />
         ) : (
           <div className="overflow-x-auto rounded-md border max-h-96 overflow-y-auto">
             <Table>

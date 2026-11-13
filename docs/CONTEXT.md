@@ -187,7 +187,8 @@ ZFundPilot/
 
 - 版本: `FastAPI(title="ZFundPilot API", version="0.26.0")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
-- 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复），`GET /api/audit` 查看最近 100 条，前端 detail 可展开查看格式化 JSON
+- 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复）。`GET /api/audit` 支持 `limit`(1–1000)/`offset` 分页与 `action`/`username`/`from`/`to` 精确筛选（`from`/`to` 接受纯日期或 ISO 时间串，纯日期按整天包含式处理，`from` 晚于 `to` 返回 422）；默认 `limit=100` 行为不变。设置页「操作日志」提供动作/用户/日期筛选，前端 detail 可展开查看格式化 JSON
+- Agent token 临期提示: 设置页令牌列表在 `expires_at` 未来 7 天内显示「即将过期」徽章（前端本地判断，不影响后端鉴权与过期语义）
 - 启动: `@app.lifespan` → `db.init_db()` + T+1 历史修复（一次性）+ `scheduler.init_scheduler()`；把遗留刷新任务标为 `interrupted`，并把过期提案标为 `expired`
 - 关闭: lifespan 退出 → `scheduler.shutdown_scheduler()`
 - 静态文件: 生产模式挂载 `frontend/dist/` 到 `/`

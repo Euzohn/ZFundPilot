@@ -471,9 +471,24 @@ export const api = {
   getFundEstimate: (code: string) =>
     request<FundEstimate>(`/funds/${encodeURIComponent(code)}/estimate`),
 
-  // Audit log
-  getAuditLogs: (limit = 100) =>
-    request<AuditLog[]>(`/audit?limit=${limit}`),
+  // Audit log（支持动作/用户/时间范围过滤与偏移分页）
+  getAuditLogs: (params: {
+    limit?: number
+    offset?: number
+    action?: string
+    username?: string
+    from?: string
+    to?: string
+  } = {}) => {
+    const query = new URLSearchParams()
+    query.set("limit", String(params.limit ?? 100))
+    if (params.offset) query.set("offset", String(params.offset))
+    if (params.action) query.set("action", params.action)
+    if (params.username) query.set("username", params.username)
+    if (params.from) query.set("from", params.from)
+    if (params.to) query.set("to", params.to)
+    return request<AuditLog[]>(`/audit?${query.toString()}`)
+  },
 
   // Fund filter
   filterFunds: (params: { types?: string[]; sectors?: string[]; keyword?: string; limit?: number; offset?: number; with_metrics?: boolean }) =>

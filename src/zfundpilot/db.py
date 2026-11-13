@@ -17,7 +17,7 @@ import sqlite3
 import uuid
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from . import config
@@ -1399,12 +1399,50 @@ def log_audit(action: str, ip: str | None = None,
         return own_conn.execute(sql, params).lastrowid
 
 
-def fetch_audit_logs(limit: int = 100) -> list[dict]:
-    """返回最近 N 条审计日志。"""
+def fetch_audit_logs(
+    limit: int = 100,
+    *,
+    action: str | None = None,
+    username: str | None = None,
+    ts_from: str | None = None,
+    ts_to: str | None = None,
+    offset: int = 0,
+) -> list[dict]:
+    """返回审计日志（按 id 倒序），支持动作/用户/时间范围过滤与分页。
+
+    ``action``/``username`` 为精确匹配。``ts_from`` 接受 ``YYYY-MM-DD`` 或
+    ISO 时间串，按 ``ts >=`` 比较；``ts_to`` 为纯日期时按「次日零点前」包含
+    当天全部记录，否则按 ``ts <=`` 比较。``limit`` 保持既有位置参数语义，
+    其余参数仅限关键字，避免旧调用受影响。
+    """
+    where: list[str] = []
+    params: list[Any] = []
+    if action:
+        where.append("action = ?")
+        params.append(action)
+    if username:
+        where.append("username = ?")
+        params.append(username)
+    if ts_from:
+        where.append("ts >= ?")
+        params.append(ts_from)
+    if ts_to:
+        try:
+            day = datetime.strptime(ts_to, "%Y-%m-%d")
+        except ValueError:
+            where.append("ts <= ?")
+            params.append(ts_to)
+        else:
+            # 纯日期按「次日零点前」处理，包含 to 当天的全部记录。
+            where.append("ts < ?")
+            params.append((day + timedelta(days=1)).strftime("%Y-%m-%d"))
+    sql = "SELECT * FROM audit_log"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
 
 

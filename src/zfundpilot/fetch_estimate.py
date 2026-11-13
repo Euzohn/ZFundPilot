@@ -1,12 +1,15 @@
 """基金实时估值获取模块。
 
-数据源：
-1. AkShare fund_value_estimation_em（东方财富基金估值表）— 主源
-2. 天天基金 fundgz API（单只基金估值 JSONP）— 替补源，主源无数据时逐只补取
+数据源（2026-02 起上游供给受限，按优先级兜底）：
+1. AkShare fund_value_estimation_em — 主源。东方财富旧统一估值接口已停止返回数据，
+   新版 akshare 改抓东财仍公开的静态估值页，仅覆盖 LOF/ETF联接/QDII（约 786 只），
+   主动权益基金当前无公开估值源；空表属正常情况。
+2. 天天基金 fundgz API（单只基金估值 JSONP）— 替补源，上游已下线（返回 404 页）；
+   保留为尽力而为，若服务恢复可自动继续工作。
 3. 指数/ETF 实时行情兜底 — 对指数型基金，用跟踪指数或 ETF 的实时涨跌估算
 
-一次调用获取全市场基金估值 + 公布净值，30s 内存缓存。
-仅权益类基金（股票型/混合型/指数型/QDII）有估值数据，债券型/货币型无估值。
+一次调用获取估值表 + 公布净值，30s 内存缓存。
+仅权益类基金有估值数据，债券型/货币型无估值。
 
 对外主要函数：
 - fetch_estimate(fund_code)         获取单只基金实时估值
@@ -143,7 +146,11 @@ def _parse_dataframe(df: pd.DataFrame) -> list[FundEstimate]:
 
 
 def _get_all_estimates() -> list[FundEstimate]:
-    """获取全市场基金估值（带缓存，失败时 stale-if-error）。"""
+    """获取全市场估值表（带缓存，失败时 stale-if-error）。
+
+    上游停止提供全市场实时估值后，新版 akshare 仅返回 LOF/ETF联接/QDII
+    的静态估值页数据（约 786 只）；空表属正常情况，不做额外重试。
+    """
     cached = _batch_cache.get(_BATCH_KEY)
     if cached and time.time() - cached[0] < _CACHE_TTL:
         return cached[1]

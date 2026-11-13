@@ -274,7 +274,8 @@ ZFundPilot/
 
 ### fetch_estimate.py — 实时估值
 
-- 主数据源：AkShare `fund_value_estimation_em()`（覆盖全市场基金），天天基金 fundgz API 作为 AkShare 不可用时的替补源
+- 主数据源：AkShare `fund_value_estimation_em()`。**2026-02 起东财旧统一估值接口停止返回数据**（行业性下线实时估值），新版 akshare（≥1.20）改抓东财仍公开的静态估值页，仅覆盖 LOF/ETF联接/QDII（实测 786 只、约 2s，30s 缓存）；主动权益基金暂无公开估值源，空表属正常情况
+- 天天基金 fundgz API（单只 JSONP）：替补源，上游已下线（返回 404 页），保留为尽力而为，服务恢复可自动继续工作
 - 指数估值兜底：东财估值不可用时，对指数型基金用跟踪指数/ETF 实时涨跌估算
   - `fetch_index_quotes(keywords)`: 批量获取指数/ETF 实时涨跌幅，两级匹配（指数实时 → ETF 实时，仅按需）
   - `estimate_from_index(fund_code, tracking_index, prev_nav, prev_date)`: 用指数涨跌构建 FundEstimate
@@ -529,7 +530,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ## 十一、数据源
 
 - **AkShare** (`ak.fund_open_fund_info_em`): 主数据源，基金净值历史
-- **AkShare** (`ak.fund_value_estimation_em`): 实时估值（覆盖全市场基金，交易日实时估算涨跌幅，目前不可用）
+- **AkShare** (`ak.fund_value_estimation_em`): 实时估值。东财旧统一估值接口已停止返回数据（2026-02 起行业性下线实时估值），新版 akshare 仅覆盖 LOF/ETF联接/QDII（约 786 只）；主动权益基金无公开估值源，指数型基金走指数/ETF 行情兜底
 - **AkShare** (`ak.stock_zh_index_spot_sina` / `ak.index_global_spot_em` / `ak.stock_hk_index_spot_em`): 指数实时行情（A 股/全球/港股），指数基金估值兜底
 - **AkShare** (`ak.stock_zh_index_daily`): 指数历史日线（新浪源），基准对比用（沪深300/上证指数/创业板指）
 - **AkShare** (`ak.fund_etf_spot_em`): ETF 实时行情（1566 只），行业/主题指数基金估值代理

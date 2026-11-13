@@ -171,6 +171,56 @@ Authorization: Bearer zfag_xxxxxxxx
 
 > `/api/agent/tools/*` 由独立的 Agent 鉴权中间件保护：即使访问一个不存在的工具路径，没有有效 token 也会先返回 `401`，不会暴露路由是否存在。
 
+### 四类响应模型
+
+成功响应共用上面的统一信封；`data` 的字段按调用性质分为四类。客户端应按下表解析，**不要假设所有成功响应都有同一组 `data` 字段**。
+
+| 类别 | 代表工具 | `data` 关键字段 | 幂等 / 重试 |
+|---|---|---|---|
+| 查询 | `get_portfolio_summary`、`list_positions`、`get_data_status`、`precheck_*` | 业务字段；涉及金额时带 `valuation_basis`，涉及时间截面时带 `as_of_date`/`as_of_date_semantics`；分页工具带 `pagination{limit,offset,total,has_more}` | 只读，可直接重试（仍受限流） |
+| 写入 | `add_watchlist_item`、`update_watchlist_item`、`remove_watchlist_item`、`start_data_refresh`、`record_transaction` | 必带 `ok`/`code`/`message`/`replayed`，再按工具追加字段（见下） | 必须带 `Idempotency-Key`；同键同参返回 `replayed=true` 且不重复写入 |
+| 提案 | `create_operation_proposal`、`list_operation_proposals`、`get_operation_proposal`、`cancel_operation_proposal` | `proposal_id`/`operation_type`/`status`/`expires_at`/`summary`/`params`/`can_approve`/`can_cancel`/`execution_result` | 创建按幂等键去重；取消天然幂等；批准/拒绝只能走网页登录端点 |
+| 作业 | `start_data_refresh`、`get_job_status` | `job_id`/`job_type`/`status`/`progress{done,total,current,phase}`/`result`/`error`/`created_at`/`updated_at`/`expires_at`/`can_cancel` | 启动按幂等键去重；查询只读，可轮询 |
+
+**查询类**
+
+- 只有业务字段，没有 `ok`/`code`/`replayed`；成功与否由 HTTP 状态码决定。
+- 金额口径统一为最新正式净值，`data.valuation_basis="latest_formal_nav"`；`as_of_date` 是各持仓正式净值日期的最大值，不代表所有基金都已更新。
+- 分页工具（`list_transactions`/`list_watchlist`/`list_operation_proposals`/`list_alerts`/`search_funds`/`screen_funds`）返回 `pagination{limit,offset,total,has_more}`；`list_positions` 返回 `count`/`total`/`limit`，不带 `pagination` 块。
+
+**写入类**
+
+- `ok` 在 2xx 中恒为 `true`；失败一律是非 2xx 错误响应，不会出现 `ok=false` 的 2xx。
+- `code` 是**成功码**（如 `created`/`updated`/`unchanged`/`removed`/`queued`/`recorded`/`downgraded`/`replayed`），与 `error.code` 分属两套命名空间，不要混用。
+- `replayed` 表示本次是否命中幂等重放；重放不产生第二次写入。
+- 自选写追加 `fund_code`/`changed`/`revision`/`before`/`after`。
+- 刷新启动追加 `job_id`/`status`/`fund_count`/`expires_at`，HTTP `202`。
+- 直记追加 `execution_mode`、`transaction_id`（直记）或 `proposal_id`（降级）、`operation_id`/`receipt`/`daily_quota`/`verify_path`。
+- **`execution_mode` 定稿为 `direct` / `proposal` 两个取值，没有 `rejected`。** 被拒绝的直记一律返回非 2xx 稳定错误码（如 `409 duplicate_candidate`、`429 daily_quota_exceeded`），客户端不得把错误响应当作「成功但被拒绝」。
+
+**提案类**
+
+- `status ∈ {pending,succeeded,failed,conflict,rejected,cancelled,expired}`；`pending` 之外均为终态。
+- 批准成功为 `succeeded`（**不是** `approved`）；审批执行失败为 `failed`，执行期目标变更/并发冲突为 `conflict`，管理员拒绝为 `rejected`，超时为 `expired`，创建者取消为 `cancelled`。
+- `execution_result` 仅终态有值，内容由 `operation_type` 决定；`can_approve`/`can_cancel` 仅在 `pending` 为 `true`。
+- 批准/拒绝只能走网页登录端点 `POST /api/proposals/{id}/approve|reject`，Agent token 无法调用。
+
+**作业类**
+
+- 当前 `job_type="data_refresh"`；`status ∈ {queued,running,succeeded,failed,interrupted}`，后三者为终态。
+- `result` 按 `job_type` 区分结构：`data_refresh` 为 `{ok,updated,failed,errors[]}`。新增任务类型必须复用同一响应包与同一查询端点，并在此处补充 `result` 结构。
+- 服务重启会把遗留的 `queued`/`running` 标为 `interrupted`，不会误报成功。
+- `can_cancel` 目前恒为 `false`（预留字段）。
+
+### 契约版本与兼容策略
+
+- `schema_version` 描述**响应信封**结构，当前为 `1`。新增字段、新增错误码、新增工具**不**递增；删除/重命名字段、改变字段类型或语义才递增，并同步 `CHANGELOG.md`。
+- `error.code`、成功码 `code`、`execution_mode`、提案 `status`、作业 `status`/`job_type` 是稳定契约；`error.message`/`detail` 只是中文兜底文案，可能变化，**不要匹配文案**。
+- 新增枚举值（新 `operation_type`、新 `job_type`、新提案状态）视为向后兼容；客户端必须对未知值安全降级（展示原始 code，禁止据此发起写操作）。
+- 时间以服务端为准：`generated_at` 为响应生成时间，数据时间一律看 `data.as_of_date`/`updated_at`，不要依赖客户端时钟。
+- 旧字段保留至少一个 minor 版本；删除或改名会先在 `CHANGELOG.md` 的 `Deprecated` 段标注。
+- 文档与实现不一致时，以端点 OpenAPI 与 `get_agent_capabilities` 返回为准，并视为文档缺陷修复。
+
 ### 限流
 
 每个 token、每个端点默认 **120 次/分钟**。路径参数按同一端点计（例如不同基金代码共用 `funds/{code}` 的额度），避免通过枚举代码绕过限流。较重端点使用更低限额：`search` 为 60 次/分钟，`screen`、`backtest/dca`、`benchmark`、`industry-exposure` 为 20 次/分钟；自选写端点（`POST`/`PATCH`/`DELETE watchlist`）为 30 次/分钟且与同路径的 `GET` 分开计数，`POST refresh` 为 10 次/分钟（联网抓取，避免高频触发），`POST /api/agent/tools/transactions`（可信单笔直记）为 10 次/分钟且与同路径的 `GET` 流水列表分开计数。筛选无论是否补指标都共用同一个桶，切换参数不能绕过。超限返回 `429`，并按 `Retry-After` 秒数重试。限流与指标增强的并发上限都是**进程内**状态，多 worker 部署时各进程独立计数。
@@ -1343,7 +1393,7 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
 # 3) Agent 侧核对提案结果与账本流水
 curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
   "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals/18" | jq '.data | {status, execution_result}'
-# {"status":"approved","execution_result":{"ok":true,"message":"..."}}
+# {"status":"succeeded","execution_result":{"ok":true,"message":"..."}}
 
 curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
   "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions?fund_code=005827&limit=5" | jq '.data.transactions[0]'

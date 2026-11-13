@@ -172,6 +172,56 @@ Generic codes: `bad_request`, `unauthorized`, `forbidden`, `not_found`, `method_
 
 > `/api/agent/tools/*` is protected by a dedicated Agent auth middleware. Even a nonexistent tool path returns `401` without a valid token, so route existence is not leaked.
 
+### Four response classes
+
+Successful responses share the envelope above; the fields inside `data` fall into four classes depending on what the call does. Parse by class — **do not assume every success response has the same set of `data` fields**.
+
+| Class | Representative tools | Key `data` fields | Idempotency / retry |
+|---|---|---|---|
+| Query | `get_portfolio_summary`, `list_positions`, `get_data_status`, `precheck_*` | Business fields; `valuation_basis` when amounts are involved; `as_of_date`/`as_of_date_semantics` for time snapshots; `pagination{limit,offset,total,has_more}` for lists | Read-only; safe to retry (still rate-limited) |
+| Write | `add_watchlist_item`, `update_watchlist_item`, `remove_watchlist_item`, `start_data_refresh`, `record_transaction` | Always `ok`/`code`/`message`/`replayed`, plus tool-specific fields (below) | Requires `Idempotency-Key`; same key + same params returns `replayed=true` without a second write |
+| Proposal | `create_operation_proposal`, `list_operation_proposals`, `get_operation_proposal`, `cancel_operation_proposal` | `proposal_id`/`operation_type`/`status`/`expires_at`/`summary`/`params`/`can_approve`/`can_cancel`/`execution_result` | Creation deduped by idempotency key; cancel is naturally idempotent; approval/rejection only via web login endpoints |
+| Job | `start_data_refresh`, `get_job_status` | `job_id`/`job_type`/`status`/`progress{done,total,current,phase}`/`result`/`error`/`created_at`/`updated_at`/`expires_at`/`can_cancel` | Start deduped by idempotency key; status is read-only and pollable |
+
+**Query**
+
+- Business fields only — no `ok`/`code`/`replayed`; success is determined by the HTTP status.
+- Amounts use the latest formal NAV with `data.valuation_basis="latest_formal_nav"`; `as_of_date` is the maximum formal-NAV date across holdings and does not mean every fund was updated.
+- Paginated tools (`list_transactions`/`list_watchlist`/`list_operation_proposals`/`list_alerts`/`search_funds`/`screen_funds`) return `pagination{limit,offset,total,has_more}`; `list_positions` returns `count`/`total`/`limit` without a `pagination` block.
+
+**Write**
+
+- `ok` is always `true` on 2xx; failures are non-2xx error responses, never a 2xx with `ok=false`.
+- `code` is a **success code** (`created`/`updated`/`unchanged`/`removed`/`queued`/`recorded`/`downgraded`/`replayed`), a separate namespace from `error.code` — do not mix them.
+- `replayed` means the call hit an idempotent replay; a replay never writes twice.
+- Watchlist writes add `fund_code`/`changed`/`revision`/`before`/`after`.
+- Refresh start adds `job_id`/`status`/`fund_count`/`expires_at` and responds `202`.
+- Direct record adds `execution_mode`, `transaction_id` (direct) or `proposal_id` (downgraded), `operation_id`/`receipt`/`daily_quota`/`verify_path`.
+- **`execution_mode` is finalized as `direct` / `proposal`; there is no `rejected`.** A rejected direct record always returns a non-2xx stable error code (e.g. `409 duplicate_candidate`, `429 daily_quota_exceeded`); clients must not treat an error response as "succeeded but rejected".
+
+**Proposal**
+
+- `status ∈ {pending,succeeded,failed,conflict,rejected,cancelled,expired}`; everything except `pending` is terminal.
+- Successful approval is `succeeded` (**not** `approved`); execution failure is `failed`, target changes/concurrent conflicts during execution are `conflict`, an administrator rejection is `rejected`, timeout is `expired`, creator cancellation is `cancelled`.
+- `execution_result` is present only in terminal states and depends on `operation_type`; `can_approve`/`can_cancel` are `true` only while `pending`.
+- Approval/rejection is only available via web login endpoints `POST /api/proposals/{id}/approve|reject`; Agent tokens cannot call them.
+
+**Job**
+
+- Currently `job_type="data_refresh"`; `status ∈ {queued,running,succeeded,failed,interrupted}`, the last three being terminal.
+- `result` depends on `job_type`: `data_refresh` is `{ok,updated,failed,errors[]}`. New job types must reuse the same envelope and the same status endpoint, and must document their `result` shape here.
+- On restart, leftover `queued`/`running` jobs are marked `interrupted` — never falsely reported as succeeded.
+- `can_cancel` is currently always `false` (reserved field).
+
+### Contract versioning and compatibility
+
+- `schema_version` describes the **response envelope**, currently `1`. Adding fields, error codes, or tools does **not** bump it; removing/renaming fields or changing types/semantics does, together with a `CHANGELOG.md` entry.
+- `error.code`, success `code`, `execution_mode`, proposal `status`, and job `status`/`job_type` are stable contract values; `error.message`/`detail` are Chinese fallback text that may change — **do not match on text**.
+- New enum values (a new `operation_type`, `job_type`, or proposal status) are backward-compatible; clients must degrade safely on unknown values (display the raw code, and never launch a write based on it).
+- Times are server-authoritative: `generated_at` is the response time; data timestamps are always `data.as_of_date`/`updated_at` — never rely on the client clock.
+- Old fields are kept for at least one minor version; removal or renaming is first marked in the `Deprecated` section of `CHANGELOG.md`.
+- When docs and implementation disagree, the endpoint OpenAPI and `get_agent_capabilities` output win, and the discrepancy is treated as a documentation defect.
+
 ### Rate limiting
 
 **120 requests per minute** per token per endpoint by default. Path parameters count as the same endpoint (for example, different fund codes share the `funds/{code}` budget), so enumerating codes cannot bypass the limit. Heavier endpoints use lower limits: `search` is 60/min; `screen`, `backtest/dca`, `benchmark`, and `industry-exposure` are 20/min; watchlist writes (`POST`/`PATCH`/`DELETE`) are 30/min and count separately from `GET` on the same path; `POST refresh` is 10/min (network-fetching, so avoid high-frequency triggers); `POST /api/agent/tools/transactions` (trusted single direct write) is 10/min and counts separately from the `GET` ledger list on the same path. Screening shares one bucket whether or not metrics are requested, so switching parameters cannot bypass it. Exceeding a limit returns `429`; retry after the `Retry-After` seconds. Rate-limit and metric-enrichment concurrency are **in-process** state; multiple workers count independently.
@@ -1341,7 +1391,7 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals" \
 # 3) The agent verifies the proposal result and the ledger row
 curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
   "$ZFUNDPILOT_BASE_URL/api/agent/tools/proposals/18" | jq '.data | {status, execution_result}'
-# {"status":"approved","execution_result":{"ok":true,"message":"..."}}
+# {"status":"succeeded","execution_result":{"ok":true,"message":"..."}}
 
 curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
   "$ZFUNDPILOT_BASE_URL/api/agent/tools/transactions?fund_code=005827&limit=5" | jq '.data.transactions[0]'

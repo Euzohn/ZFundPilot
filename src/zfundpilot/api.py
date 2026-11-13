@@ -1849,8 +1849,10 @@ def agent_record_transaction(
 ) -> dict[str, Any]:
     """仅在用户明确陈述外部已完成的买入/卖出时直接记账。
 
-    ``execution_mode`` 显式区分 ``direct``（已写账本）与 ``proposal``
-    （预检异常转人工审批）；``receipt.unconfirmed_fields`` 列出待回填字段。
+    ``execution_mode`` 定稿为 ``direct``（已写账本）或 ``proposal``
+    （预检异常转人工审批），**没有** ``rejected`` 取值：被拒绝的直记一律返回
+    非 2xx 稳定错误码，客户端不应把错误响应当作成功。
+    ``receipt.unconfirmed_fields`` 列出待回填字段。
     """
     _require_agent_write_enabled(request, ctx)
     try:
@@ -2077,7 +2079,11 @@ def agent_get_refresh_job(
         Depends(require_agent_scope(agent_tokens.SCOPE_DATA_REFRESH)),
     ],
 ) -> dict[str, Any]:
-    """返回任务进度与结果；仅创建者 token 可读。"""
+    """返回任务进度与结果；仅创建者 token 可读。
+
+    ``data.job_type`` 区分任务类型（当前为 ``data_refresh``），``result``
+    结构随 ``job_type`` 不同；响应结构见文档「四类响应模型」。
+    """
     try:
         result = refresh_service.get_job_status(
             _agent_refresh_principal(ctx), job_id)

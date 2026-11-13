@@ -71,7 +71,7 @@ def _nav_to_series(points: list[NavPoint]) -> pd.Series:
     navs = [p.nav for p in points]
     s = pd.Series(navs, index=pd.to_datetime(dates))
     s = s[~s.index.duplicated(keep="last")]
-    s.sort_index(inplace=True)
+    s = s.sort_index()
     return s
 
 

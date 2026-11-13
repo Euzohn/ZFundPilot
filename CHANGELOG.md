@@ -22,6 +22,8 @@
 - 提案界面标签本地化（英文界面后端文案翻译 R3 首期）：网页「待确认提案」页改为**基于稳定 code 前端映射**展示操作/方向/频率/排期/手续费来源/提醒类型/标题，不再直出后端渲染的中文 `operation_label`/`action_label`/`cadence_label`/`schedule`/`fee_source_label`/`alert_type_label`/`summary.title`，使英文界面这些字段显示英文。新增 `frontend/src/lib/operationLabels.ts`（`operationLabel`/`cadenceLabel`/`planScheduleLabel`/`feeSourceLabel`/`alertTypeLabel`/`proposalTitle`，双语 + `getCurrentLang()`，与既有 `actionLabel` 同模式；`planScheduleLabel`/`proposalTitle` 基于 `cadence`/`day_of_week`/`day_of_month`/`operation_type`/`fund_code`/`plan_id` 等 code 重拼）；`actionLabels.ts` 补 `conversion`（仅提案页使用）。`PLAN_CADENCE_LABELS` 迁入复用。**已知残留**：后端渲染的中文自由文本（`warnings`/`note`/`reason`/`scheduler_hint`/审批失败 `message`）仍中文直出，留待后续按 code 化或客户端映射处理；后端错误 `message` 中文直出同样为已知残留。新增 `frontend/src/lib/operationLabels.test.ts`（12 例）
 
 ### Fixed
+- 修复新版 akshare（≥1.20）移除 `macro_china_money_supply` 导致 CI 失败与 M2 水位线无法在线刷新的问题：新增 `_fetch_m2_df` 兼容层，优先新接口名 `macro_china_money_supply_em`（同一东方财富数据源、列名不变）、回退旧名；接口全缺失时仍走 DB 缓存容灾。新增 5 例版本兼容回归测试（含模拟 CI 的旧名移除场景）
+- 消除 pandas 3.x 弃用警告：`compare._nav_to_series` 的 `sort_index(inplace=True)` 改为返回新对象
 - 修复刷新任务首次状态写入失败（如备份/恢复期间数据库忙）时共享运行态未清除、导致后续刷新永久返回 `refresh_busy` 的问题：首次写入纳入异常处理，失败也清除运行态并把任务标为 `failed`（回测任务同类加固，见 R5 条目）
 - 修复生产模式下 SPA 静态兜底挂载遮蔽 `/api` 路由的问题：`app.mount("/", StaticFiles(...))` 会 FULL 匹配 `/api/*` 的 GET 请求，使「路径存在但方法不对」的 POST-only 路由返回 404（静态文件不存在）而非更准确的 405，未知 `/api` 路径也会被静默吞掉。新增 `_SpaMount` 让 `/api`/`/api/*` 返回 `Match.NONE` 交回 FastAPI 路由，保留正确的 405/404/鉴权语义；非 `/api` 路径行为不变。新增 `tests/test_spa_mount.py`（3 例）
 

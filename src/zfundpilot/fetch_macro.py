@@ -4,8 +4,10 @@
 1. CPI: ak.macro_china_cpi() — 全国-当月 为同比指数（base 100=上年同月），
    通过链乘「全国-环比增长」重建定基价格水平（2008-01=100），
    得到累计通胀序列。2008-01 起。
-2. M2: ak.macro_china_money_supply() — 货币和准货币(M2)-数量(亿元)，
+2. M2: ak.macro_china_money_supply_em() — 货币和准货币(M2)-数量(亿元)，
    为货币存量绝对值，累计增速 = M2_latest / M2_baseline - 1。2008-01 起。
+   新版 akshare 把 macro_china_money_supply 更名为 macro_china_money_supply_em
+   （同一东方财富数据源，列名不变）；_fetch_m2_df 兼容新旧两个名字。
 
 对外主要函数：
 - fetch_macro_history(code, start, end)  获取累计财富水位序列（与指数基准同构）
@@ -37,9 +39,10 @@ _MACRO_TTL = 3600  # 秒（1h，月度数据几乎不变）
 _MACRO_FRESH_DAYS = 45
 
 # 代码 → 名称（与 config.MACRO_INDICES 保持一致）
+# M2 接口新版 akshare 更名为 macro_china_money_supply_em，旧名运行时回退兼容
 MACRO_SOURCES: dict[str, str] = {
     "CPI": "macro_china_cpi",
-    "M2": "macro_china_money_supply",
+    "M2": "macro_china_money_supply_em",
 }
 
 _MONTH_RE = re.compile(r"(\d{4})年(\d{2})月份")
@@ -91,6 +94,23 @@ def _build_cpi_level(df: pd.DataFrame) -> list[dict]:
     return result
 
 
+def _fetch_m2_df() -> pd.DataFrame:
+    """拉取 M2 货币供应量，兼容 akshare 新旧接口名。
+
+    新版 akshare 将 ``macro_china_money_supply`` 更名为
+    ``macro_china_money_supply_em``（同一东方财富数据源，列名与月份格式不变）。
+    优先新名、回退旧名；两者都缺失时抛 AttributeError，
+    由 ``_fetch_macro_full`` 捕获后走 DB 缓存容灾。
+    """
+    for name in ("macro_china_money_supply_em", "macro_china_money_supply"):
+        fn = getattr(ak, name, None)
+        if fn is not None:
+            return fn()
+    raise AttributeError(
+        "akshare 缺少货币供应量接口"
+        "（macro_china_money_supply_em / macro_china_money_supply）")
+
+
 def _fetch_macro_full(code: str) -> list[dict]:
     """从 AkShare 拉取宏观数据全量序列，失败返回空列表。
 
@@ -103,7 +123,7 @@ def _fetch_macro_full(code: str) -> list[dict]:
                 return []
             result = _build_cpi_level(df)
         elif code == "M2":
-            df = ak.macro_china_money_supply()
+            df = _fetch_m2_df()
             if df is None or len(df) == 0:
                 return []
             result = []

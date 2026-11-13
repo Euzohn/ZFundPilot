@@ -4,7 +4,9 @@ import os
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
+from zfundpilot import fetch_macro
 from zfundpilot.fetch_macro import (
     _build_cpi_level,
     _macro_is_fresh,
@@ -175,7 +177,7 @@ class TestFetchMacroHistory:
         """M2 在线拉取 → 升序返回 + 持久化。"""
         db, original = _setup_db(tmp_path)
         try:
-            with patch("zfundpilot.fetch_macro.ak.macro_china_money_supply",
+            with patch("zfundpilot.fetch_macro._fetch_m2_df",
                        return_value=_m2_df()):
                 result = fetch_macro_history("M2", "2024-01-01", "2024-12-31")
             assert [r["date"] for r in result] == [
@@ -235,6 +237,78 @@ class TestFetchMacroHistory:
                 result = fetch_macro_history("CPI", "2024-02-01", "2024-02-29")
             assert len(result) == 1
             assert result[0]["date"] == "2024-02-29"
+        finally:
+            _teardown(original)
+
+
+# ---------------------------------------------------------------------------
+# M2 接口名兼容：新版 akshare 移除 macro_china_money_supply，更名 _em
+# ---------------------------------------------------------------------------
+class TestM2SourceCompat:
+    def test_prefers_em_when_both_exist(self, monkeypatch):
+        """新旧接口都在时优先新名（旧名未来可能彻底移除）。"""
+        calls = []
+        monkeypatch.setattr(
+            fetch_macro.ak, "macro_china_money_supply_em",
+            lambda: calls.append("em") or _m2_df(), raising=False)
+        monkeypatch.setattr(
+            fetch_macro.ak, "macro_china_money_supply",
+            lambda: calls.append("old") or _m2_df(), raising=False)
+        df = fetch_macro._fetch_m2_df()
+        assert calls == ["em"]
+        assert len(df) == 3
+
+    def test_falls_back_to_legacy_name(self, monkeypatch):
+        """旧版 akshare 只有旧名时回退使用。"""
+        monkeypatch.delattr(
+            fetch_macro.ak, "macro_china_money_supply_em", raising=False)
+        monkeypatch.setattr(
+            fetch_macro.ak, "macro_china_money_supply",
+            lambda: _m2_df(), raising=False)
+        df = fetch_macro._fetch_m2_df()
+        assert len(df) == 3
+
+    def test_both_missing_raises(self, monkeypatch):
+        """两个名字都缺失时抛 AttributeError（由上层捕获走 DB 容灾）。"""
+        monkeypatch.delattr(
+            fetch_macro.ak, "macro_china_money_supply_em", raising=False)
+        monkeypatch.delattr(
+            fetch_macro.ak, "macro_china_money_supply", raising=False)
+        with pytest.raises(AttributeError):
+            fetch_macro._fetch_m2_df()
+
+    def test_fetch_m2_with_legacy_removed(self, tmp_path, monkeypatch):
+        """CI 场景复现：新版 akshare 无旧名，M2 仍经 _em 拉取并持久化。"""
+        db, original = _setup_db(tmp_path)
+        try:
+            monkeypatch.delattr(
+                fetch_macro.ak, "macro_china_money_supply", raising=False)
+            monkeypatch.setattr(
+                fetch_macro.ak, "macro_china_money_supply_em",
+                lambda: _m2_df(), raising=False)
+            result = fetch_macro_history("M2", "2024-01-01", "2024-12-31")
+            assert [r["date"] for r in result] == [
+                "2024-01-31", "2024-02-29", "2024-03-31",
+            ]
+            assert result[2]["close"] == 300000.0
+            assert db.get_index_latest_date("M2") == "2024-03-31"
+        finally:
+            _teardown(original)
+
+    def test_both_missing_falls_back_to_db(self, tmp_path, monkeypatch):
+        """接口全缺失时不崩溃，离线容灾返回 DB 缓存。"""
+        db, original = _setup_db(tmp_path)
+        try:
+            db.upsert_index_history("M2", [
+                ("2024-01-31", 290000.0),
+            ], source="macro")
+            monkeypatch.delattr(
+                fetch_macro.ak, "macro_china_money_supply_em", raising=False)
+            monkeypatch.delattr(
+                fetch_macro.ak, "macro_china_money_supply", raising=False)
+            result = fetch_macro_history("M2", "2024-01-01", "2024-03-01")
+            assert len(result) == 1
+            assert result[0]["close"] == 290000.0
         finally:
             _teardown(original)
 

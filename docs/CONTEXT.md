@@ -291,7 +291,7 @@ ZFundPilot/
 
 ### fetch_macro.py — 宏观财富水位线
 
-- 数据源：`ak.macro_china_cpi()`（国家统计局月度 CPI，全国-当月为同比指数 base 100=上年同月）+ `ak.macro_china_money_supply()`（央行月度 M2 存量亿元），2008-01 起
+- 数据源：`ak.macro_china_cpi()`（国家统计局月度 CPI，全国-当月为同比指数 base 100=上年同月）+ `ak.macro_china_money_supply_em()`（东方财富月度 M2 存量亿元；新版 akshare 由 `macro_china_money_supply` 更名而来，`_fetch_m2_df` 运行时兼容新旧两名），2008-01 起
 - CPI 价格水平重建：全国-当月不可直接累计，链乘「全国-环比增长」(MoM) 重建 2008-01=100 定基价格水平。`_build_cpi_level()` 先按日期升序排序（AkShare 返回降序）再链乘，确保水平值与月份一一对应
 - M2 存量：`货币和准货币(M2)-数量(亿元)` 直接取用，累计增速 = M2_latest/M2_baseline - 1
 - `_parse_cn_month("2026年07月份")` → `"2026-07-31"`（月末），用 `calendar.monthrange` 处理闰年

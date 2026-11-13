@@ -1516,6 +1516,8 @@ const en: typeof zh = {
     metricsLoading: "Loading metrics...",
     searchFailed: "Search failed",
     return1y: "1Y Return",
+    indexTag: "Index type",
+    trend: "1Y trend",
     addToCompare: "Compare",
     addedToCompare: "Added {count} funds to compare basket",
     addToWatchlist: "Watch",

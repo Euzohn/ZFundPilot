@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from . import compare as _compare
 from . import config
-from .fetch_fund import _guess_fund_type, _guess_sector
+from .fetch_fund import _classify_index, _guess_fund_type, _guess_sector
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ class FundFilterItem:
     inception_date: str = ""
     returns: dict[str, float | None] = None
     risk: dict[str, float | None] = None
+    index_tag: str = ""  # 指数型基金分类：broad / sector / theme / ""
 
 
 @dataclass
@@ -305,7 +306,13 @@ def filter_funds(
     total = len(matched)
     page = matched[offset : offset + limit]
 
-    items = [FundFilterItem(code=f["code"], name=f["name"], type=f["type"], sector=f["sector"]) for f in page]
+    items = [
+        FundFilterItem(
+            code=f["code"], name=f["name"], type=f["type"], sector=f["sector"],
+            index_tag=_classify_index(f["name"], f["type"]),
+        )
+        for f in page
+    ]
 
     if with_metrics and items:
         _enrich_with_metrics(items)

@@ -57,7 +57,8 @@ ZFundPilot/
 │   ├── fetch_macro.py     # 宏观财富水位数据（CPI 链乘价格水平 + M2 存量，三级缓存，复用 index_history 表）
 │   ├── fetch_dividend.py  # 基金分红检测（AkShare 分红送配 + 90 天窗口 + 交易去重 + 幽灵提醒自动清理）
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
-│   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）+ resolve_fund_code 名称→代码解析 + verify_fund_code 校验
+│   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30 + index_tag 宽基/行业/主题分类）+ resolve_fund_code 名称→代码解析 + verify_fund_code 校验
+│   ├── sparkline.py         # 选基列表迷你走势（近 250 交易日归一化净值，只读 DB，单只失败降级空序列）
 │   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）+ reconcile_holdings 截图持仓对账 + 行业穿透聚合 + 单基金 XIRR
 │   ├── returns.py            # XIRR 年化收益率（二分法 + 现金流构建，供 analysis/backtest 共用）
 │   ├── health.py             # 组合体检四维评分（配置/风险/流动性/收益）+ 综合体检报告，供 api/ai 共用
@@ -270,7 +271,14 @@ ZFundPilot/
 - `load_fund_universe()`: 天天基金 `fundcode_search.js` 全市场基金池（24h 本地缓存），自动分类类型/板块
 - `filter_funds(types, sectors, keyword, limit, offset, with_metrics)`: 按条件筛选
 - `with_metrics=True` 时 `_enrich_with_metrics()` 用 `_EXECUTOR`（6 线程池）对 Top 30 并发补充：`_enrich_one()` 复用 `compare.py` 的 `_get_cached_nav()`/`_get_fund_archive()`/`_calculate_period_return()`/`_calculate_max_drawdown()`/`_calculate_volatility()`/`_calculate_sharpe()`
-- `FundFilterItem`: `code`/`name`/`type`/`sector`（基础）+ `scale`/`manager`/`inception_date`（档案）+ `returns`/`risk`（指标）
+- `FundFilterItem`: `code`/`name`/`type`/`sector`（基础）+ `scale`/`manager`/`inception_date`（档案）+ `returns`/`risk`（指标）+ `index_tag`（指数分类）
+- `index_tag`：`fetch_fund._classify_index(name, type)` 按名称关键词把指数型基金归入 `broad`（宽基）/ `sector`（行业）/ `theme`（主题），非指数型或无法判断为 `""`。匹配顺序主题→行业→宽基（「中证500信息技术」等窄基归行业）；QDII 需名称含指数/ETF/联接/LOF 才视为指数产品；债券指数与「混合/股票且无指数信号」的 LOF 误判主动基金不打标。仅用名称关键词，无新数据源
+
+### sparkline.py — 选基迷你走势
+
+- `GET /api/funds/sparklines?codes=...`（≤50 只，逗号分隔）：每只返回近 250 交易日归一化净值序列（首值=1）+ `start`/`end` 日期；只读 DB（`db.get_nav_history_tail`），不触发在线拉取；单只缺失/异常降级为空序列，不阻塞整页
+- 路由必须先于 `/api/funds/{code}` 注册，否则被通配路由吞掉
+- 前端 `Screener.tsx` 每行 `MiniSparkline`（recharts，涨绿跌红）+ 宽基/行业/主题徽章（`taxonomyLabels.translateIndexTag`）
 
 ### fetch_estimate.py — 实时估值
 

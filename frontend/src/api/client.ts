@@ -36,6 +36,7 @@ import type {
   HealthReport,
   KeywordMaps,
   SchedulerStatus,
+  SparklinesResponse,
   TpSlConfig,
   VisionConfig,
   ParseScreenshotResult,
@@ -496,6 +497,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify(params),
     }),
+
+  // Fund sparklines（选基列表迷你走势，≤50 只）
+  getSparklines: (codes: string[]) =>
+    request<SparklinesResponse>(`/funds/sparklines?codes=${encodeURIComponent(codes.join(","))}`),
 
   // Fund compare
   compareFunds: (codes: string[]) =>

@@ -78,6 +78,13 @@ export const SECTORS: Record<string, Bilingual> = {
   "其它": { zh: "其它", en: "Other" },
 }
 
+// ── 指数分类（选基页 index_tag：宽基 / 行业 / 主题）──
+export const INDEX_TAGS: Record<string, Bilingual> = {
+  broad: { zh: "宽基", en: "Broad" },
+  sector: { zh: "行业", en: "Sector" },
+  theme: { zh: "主题", en: "Theme" },
+}
+
 // ── Fund type dot colors (avoid green/red to not clash with gain/loss) ──
 export const FUND_TYPE_DOT: Record<string, string> = {
   "混合型": "bg-amber-500",
@@ -199,6 +206,11 @@ export function translateChannel(channel: string): string {
 export function translateSector(sector: string): string {
   const lang = getCurrentLang()
   return SECTORS[sector]?.[lang] ?? sector
+}
+
+export function translateIndexTag(tag: string): string {
+  const lang = getCurrentLang()
+  return INDEX_TAGS[tag]?.[lang] ?? tag
 }
 
 export function translateRiskLevel(level: string): string {

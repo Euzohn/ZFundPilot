@@ -554,6 +554,19 @@ export interface FundFilterItem {
   inception_date: string
   returns: Record<string, number | null> | null
   risk: Record<string, number | null> | null
+  index_tag: string // broad / sector / theme / ""（非指数型为空）
+}
+
+export interface FundSparkline {
+  code: string
+  points: number[] // 归一化净值（首值=1），空数组表示无数据
+  start: string
+  end: string
+}
+
+export interface SparklinesResponse {
+  ok: boolean
+  sparklines: FundSparkline[]
 }
 
 export interface FilterResponse {

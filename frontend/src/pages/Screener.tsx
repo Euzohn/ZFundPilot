@@ -1,14 +1,15 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import { api } from "@/api/client"
-import type { FundFilterItem } from "@/api/types"
+import type { FundFilterItem, FundSparkline } from "@/api/types"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { translateFundType, translateSector } from "@/lib/taxonomyLabels"
+import { translateFundType, translateIndexTag, translateSector } from "@/lib/taxonomyLabels"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
+import MiniSparkline from "@/components/MiniSparkline"
 import { makeSortHeader } from "@/components/SortHeader"
 import { pct, pnlColor } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -19,6 +20,13 @@ import { Search, RefreshCw, Check, Star, GitCompare, Loader2 } from "lucide-reac
 
 type SortField = "code" | "1y" | "max_drawdown" | "volatility" | "scale"
 
+// 指数分类徽章配色（宽基/行业/主题）
+const INDEX_TAG_STYLE: Record<string, string> = {
+  broad: "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  sector: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  theme: "border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-400",
+}
+
 export default function Screener() {
   const { t } = useLang()
   const { addCodes } = useCompare()
@@ -27,6 +35,7 @@ export default function Screener() {
   const [sectors, setSectors] = useState<string[]>([])
   const [keyword, setKeyword] = useState("")
   const [results, setResults] = useState<FundFilterItem[]>([])
+  const [sparklines, setSparklines] = useState<Record<string, FundSparkline>>({})
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [metricsLoading, setMetricsLoading] = useState(false)
@@ -62,6 +71,7 @@ export default function Screener() {
     setError("")
     setSelected(new Set())
     setMetricsLoading(false)
+    setSparklines({})
 
     // Phase 1: basic results (fast)
     setLoading(true)
@@ -76,6 +86,13 @@ export default function Screener() {
       if (res.ok) {
         setResults(res.funds)
         setTotal(res.total)
+        // 迷你走势：一次批量取回（本地 DB 读取，快）；失败静默降级，不阻塞列表
+        api.getSparklines(res.funds.map(f => f.code)).then((sres) => {
+          if (mySearchId !== searchIdRef.current) return
+          const map: Record<string, FundSparkline> = {}
+          for (const s of sres.sparklines) map[s.code] = s
+          setSparklines(map)
+        }).catch(() => { /* 走势缺失时显示「—」 */ })
       } else {
         setError(res.message)
         setLoading(false)
@@ -302,7 +319,9 @@ export default function Screener() {
                   <SortHeader field="code" className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{t.common.code}</SortHeader>
                   <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.name}</TableHead>
                   <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">{t.common.type}</TableHead>
+                  <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{t.screener.indexTag}</TableHead>
                   <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">{t.compare.sector}</TableHead>
+                  <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{t.screener.trend}</TableHead>
                   <SortHeader field="1y" className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">{t.screener.return1y}</SortHeader>
                   <SortHeader field="max_drawdown" className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">{t.compare.maxDrawdown}</SortHeader>
                   <SortHeader field="volatility" className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">{t.compare.volatility}</SortHeader>
@@ -319,7 +338,29 @@ export default function Screener() {
                     <TableCell className="px-2 py-1.5 font-mono text-xs">{f.code}</TableCell>
                     <TableCell className="max-w-[200px] truncate px-2 py-1.5 text-xs" title={f.name}>{f.name}</TableCell>
                     <TableCell className="px-2 py-1.5 text-xs">{translateFundType(f.type)}</TableCell>
+                    <TableCell className="px-2 py-1.5 text-xs">
+                      {f.index_tag ? (
+                        <span className={cn(
+                          "inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap",
+                          INDEX_TAG_STYLE[f.index_tag],
+                        )}>
+                          {translateIndexTag(f.index_tag)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="px-2 py-1.5 text-xs">{f.sector ? translateSector(f.sector) : "—"}</TableCell>
+                    <TableCell className="px-2 py-1.5">
+                      <div className="w-20">
+                        <MiniSparkline
+                          data={sparklines[f.code]?.points ?? []}
+                          title={sparklines[f.code]?.start
+                            ? `${sparklines[f.code].start} ~ ${sparklines[f.code].end}`
+                            : undefined}
+                        />
+                      </div>
+                    </TableCell>
                     <TableCell className="px-2 py-1.5 text-right text-xs">
                       <MetricCell value={f.returns?.["1y"]} color={pnlColor(f.returns?.["1y"] ?? 0)} />
                     </TableCell>

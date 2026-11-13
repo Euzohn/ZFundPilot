@@ -68,6 +68,7 @@ from . import (
     refresh_service,
     risk,
     scheduler,
+    sparkline,
     transaction_service,
     watchlist_service,
 )
@@ -4060,6 +4061,23 @@ def compare_funds(body: CompareRequest) -> dict[str, Any]:
     """对比多只基金。"""
     result = compare.compare_funds(body.codes)
     return result.__dict__
+
+
+@app.get("/api/funds/sparklines")
+def get_fund_sparklines(codes: str = "") -> dict[str, Any]:
+    """批量获取近 250 个交易日归一化净值序列（选基列表迷你走势）。
+
+    只读 DB 净值历史，不触发在线拉取；单只缺失降级为空序列。
+    注意：本路由必须先于 ``/api/funds/{code}`` 注册，否则会被通配路由吞掉。
+    """
+    try:
+        parsed = sparkline.parse_codes(codes)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {
+        "ok": True,
+        "sparklines": [s.to_dict() for s in sparkline.build_sparklines(parsed)],
+    }
 
 
 class WatchlistRequest(BaseModel):

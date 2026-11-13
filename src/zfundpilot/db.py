@@ -1088,6 +1088,18 @@ def get_nav_history(fund_code: str) -> list[sqlite3.Row]:
         ).fetchall()
 
 
+def get_nav_history_tail(fund_code: str, limit: int = 250) -> list[sqlite3.Row]:
+    """返回最近 limit 条净值（date ASC），供迷你走势图使用。"""
+    if limit <= 0:
+        return []
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM nav_history WHERE fund_code=? ORDER BY date DESC LIMIT ?",
+            (fund_code, limit),
+        ).fetchall()
+    return list(reversed(rows))
+
+
 def get_nav_history_by_period(
     fund_code: str, start_date: str, end_date: str
 ) -> list[sqlite3.Row]:

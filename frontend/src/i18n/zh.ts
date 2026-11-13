@@ -1514,6 +1514,8 @@ const zh = {
     metricsLoading: "指标加载中...",
     searchFailed: "筛选请求失败",
     return1y: "近1年",
+    indexTag: "指数类型",
+    trend: "近1年走势",
     addToCompare: "加入对比",
     addedToCompare: "已加入 {count} 只基金到对比篮",
     addToWatchlist: "加自选",

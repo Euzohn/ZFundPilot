@@ -484,18 +484,23 @@ def test_run_dca_backtest_posts_json(mock_api):
     def handler(request: httpx.Request) -> httpx.Response:
         seen["method"] = request.method
         seen["path"] = request.url.path
+        seen["key"] = request.headers.get("idempotency-key")
         seen["body"] = json.loads(request.content)
-        return httpx.Response(200, json={"data": {"ok": True}})
+        return httpx.Response(202, json={"data": {
+            "job_id": 7, "status": "queued", "job_type": "dca_backtest"}})
 
     mock_api(handler)
-    _run(mcp_server.run_dca_backtest(
+    result = _run(mcp_server.run_dca_backtest(
         ["000001", " 000001 ", "110011"],
         "2024-01-01", "2024-03-31", 1000.0,
+        "mcp-backtest-key-0001",
         cadence="week", include_lumpsum=False,
         include_curve=False, include_periods=True, max_points=20))
 
     assert seen["method"] == "POST"
     assert seen["path"] == "/api/agent/tools/backtest/dca"
+    assert seen["key"] == "mcp-backtest-key-0001"
+    assert result["data"]["job_id"] == 7
     assert seen["body"] == {
         "fund_codes": ["000001", "110011"],
         "start_date": "2024-01-01",
@@ -514,7 +519,11 @@ def test_run_dca_backtest_validation_without_network():
         "start_date": "2024-01-01",
         "end_date": "2024-03-31",
         "amount_per_period": 1000.0,
+        "idempotency_key": "mcp-backtest-key-0001",
     }
+    with pytest.raises(ToolError, match="idempotency_key"):
+        _run(mcp_server.run_dca_backtest(
+            ["000001"], **{**base, "idempotency_key": "short"}))
     with pytest.raises(ToolError, match="at least one"):
         _run(mcp_server.run_dca_backtest([], **base))
     with pytest.raises(ToolError, match="at most 5"):
@@ -529,15 +538,18 @@ def test_run_dca_backtest_validation_without_network():
     with pytest.raises(ToolError, match="earlier than end_date"):
         _run(mcp_server.run_dca_backtest(
             ["000001"], start_date="2024-03-31", end_date="2024-01-01",
-            amount_per_period=1000.0))
+            amount_per_period=1000.0,
+            idempotency_key="mcp-backtest-key-0001"))
     with pytest.raises(ToolError, match="later than today"):
         _run(mcp_server.run_dca_backtest(
             ["000001"], start_date="2024-01-01", end_date="2999-01-01",
-            amount_per_period=1000.0))
+            amount_per_period=1000.0,
+            idempotency_key="mcp-backtest-key-0001"))
     with pytest.raises(ToolError, match="must not exceed 10 years"):
         _run(mcp_server.run_dca_backtest(
             ["000001"], start_date="2014-01-01", end_date="2024-01-02",
-            amount_per_period=1000.0))
+            amount_per_period=1000.0,
+            idempotency_key="mcp-backtest-key-0001"))
     with pytest.raises(ToolError, match="positive"):
         _run(mcp_server.run_dca_backtest(
             ["000001"], **{**base, "amount_per_period": 0}))

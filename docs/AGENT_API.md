@@ -71,14 +71,14 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 | Scope | 允许的工具 |
 |---|---|
 | `portfolio:read` | `portfolio-summary`、`positions`、`returns`、`portfolio-curve`、`benchmark`、`industry-exposure` |
-| `funds:read` | `funds/{code}`、`funds/compare`、`search`、`screen`、`backtest/dca` |
+| `funds:read` | `funds/{code}`、`funds/compare`、`search`、`screen`、`backtest/dca`、`refresh/{job_id}`（回测任务） |
 | `health:read` | `data-status`、`portfolio-health`、`risk-report` |
 | `transactions:read` | `transactions`、`transactions/{tx_id}` |
 | `watchlist:read` | `watchlist` |
 | `alerts:read` | `alerts` |
 | `plans:read` | `auto-invest-plans` |
 | `watchlist:write` | `watchlist`（新增/更新/删除自选，需同时开启服务端写开关） |
-| `data:refresh` | `refresh`（启动/查询任务化数据刷新，仅净值/元数据，需开启写开关） |
+| `data:refresh` | `refresh`（启动任务化数据刷新，仅净值/元数据，需开启写开关）、`refresh/{job_id}`（查询刷新任务） |
 | `transactions:propose` | `proposals`（创建/查看/取消自己的待审批**账本**提案，需开启写开关；执行权只属于网页管理员） |
 | `plans:propose` | `proposals`（创建/查看/取消自己的待审批**定投计划**提案，需开启写开关；执行权只属于网页管理员；新计划默认停用） |
 | `alerts:propose` | `proposals`（创建/查看/取消自己的待审批**提醒处理**提案，需开启写开关；只推进提醒状态，不写账本；执行权只属于网页管理员） |
@@ -180,7 +180,7 @@ Authorization: Bearer zfag_xxxxxxxx
 | 查询 | `get_portfolio_summary`、`list_positions`、`get_data_status`、`precheck_*` | 业务字段；涉及金额时带 `valuation_basis`，涉及时间截面时带 `as_of_date`/`as_of_date_semantics`；分页工具带 `pagination{limit,offset,total,has_more}` | 只读，可直接重试（仍受限流） |
 | 写入 | `add_watchlist_item`、`update_watchlist_item`、`remove_watchlist_item`、`start_data_refresh`、`record_transaction` | 必带 `ok`/`code`/`message`/`replayed`，再按工具追加字段（见下） | 必须带 `Idempotency-Key`；同键同参返回 `replayed=true` 且不重复写入 |
 | 提案 | `create_operation_proposal`、`list_operation_proposals`、`get_operation_proposal`、`cancel_operation_proposal` | `proposal_id`/`operation_type`/`status`/`expires_at`/`summary`/`params`/`can_approve`/`can_cancel`/`execution_result` | 创建按幂等键去重；取消天然幂等；批准/拒绝只能走网页登录端点 |
-| 作业 | `start_data_refresh`、`get_job_status` | `job_id`/`job_type`/`status`/`progress{done,total,current,phase}`/`result`/`error`/`created_at`/`updated_at`/`expires_at`/`can_cancel` | 启动按幂等键去重；查询只读，可轮询 |
+| 作业 | `start_data_refresh`、`run_dca_backtest`、`get_job_status` | `job_id`/`job_type`/`status`/`progress{done,total,current,phase}`/`result`/`error`/`created_at`/`updated_at`/`expires_at`/`can_cancel` | 启动按幂等键去重；查询只读，可轮询 |
 
 **查询类**
 
@@ -194,7 +194,7 @@ Authorization: Bearer zfag_xxxxxxxx
 - `code` 是**成功码**（如 `created`/`updated`/`unchanged`/`removed`/`queued`/`recorded`/`downgraded`/`replayed`），与 `error.code` 分属两套命名空间，不要混用。
 - `replayed` 表示本次是否命中幂等重放；重放不产生第二次写入。
 - 自选写追加 `fund_code`/`changed`/`revision`/`before`/`after`。
-- 刷新启动追加 `job_id`/`status`/`fund_count`/`expires_at`，HTTP `202`。
+- 任务启动（刷新/回测）追加 `job_id`/`status`/`fund_count`/`expires_at`，HTTP `202`。
 - 直记追加 `execution_mode`、`transaction_id`（直记）或 `proposal_id`（降级）、`operation_id`/`receipt`/`daily_quota`/`verify_path`。
 - **`execution_mode` 定稿为 `direct` / `proposal` 两个取值，没有 `rejected`。** 被拒绝的直记一律返回非 2xx 稳定错误码（如 `409 duplicate_candidate`、`429 daily_quota_exceeded`），客户端不得把错误响应当作「成功但被拒绝」。
 
@@ -207,8 +207,9 @@ Authorization: Bearer zfag_xxxxxxxx
 
 **作业类**
 
-- 当前 `job_type="data_refresh"`；`status ∈ {queued,running,succeeded,failed,interrupted}`，后三者为终态。
-- `result` 按 `job_type` 区分结构：`data_refresh` 为 `{ok,updated,failed,errors[]}`。新增任务类型必须复用同一响应包与同一查询端点，并在此处补充 `result` 结构。
+- `job_type` 当前为 `data_refresh`（数据刷新）或 `dca_backtest`（只读定投回测）；`status ∈ {queued,running,succeeded,failed,interrupted}`，后三者为终态。
+- `result` 按 `job_type` 区分结构：`data_refresh` 为 `{ok,updated,failed,partial,errors[]}`；`dca_backtest` 为 §5.20 的结果结构（`ok`/`message`/`simulation_note`/`requested`/`fund_count`/`result_count`/`failed_count`/`results[]`）。`results[].status` 与任务 `status` 相互独立：单只基金失败不影响任务本身成功。新增任务类型必须复用同一响应包与同一查询端点，并在此处补充 `result` 结构。
+- `get_job_status` 以 `data:refresh` 或 `funds:read` 任一 scope 进入，再按 `job_type` 精确复核（刷新→`data:refresh`，回测→`funds:read`，未知类型 `403`）；归属校验优先，他人任务一律 `404`。
 - 服务重启会把遗留的 `queued`/`running` 标为 `interrupted`，不会误报成功。
 - `can_cancel` 目前恒为 `false`（预留字段）。
 
@@ -258,7 +259,7 @@ FastAPI 自动生成以下页面：
 | `get_data_status` | `GET` | `/api/agent/tools/data-status` | health:read | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited |
 | `get_fund_detail` | `GET` | `/api/agent/tools/funds/{code}` | funds:read | 只读 | 只读 | 否 | nav_limit 1-250 (default 30) | validation_error, insufficient_scope, rate_limited, not_found |
 | `get_industry_exposure` | `GET` | `/api/agent/tools/industry-exposure` | portfolio:read | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited |
-| `get_job_status` | `GET` | `/api/agent/tools/refresh/{job_id}` | data:refresh | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited, not_found |
+| `get_job_status` | `GET` | `/api/agent/tools/refresh/{job_id}` | data:refresh / funds:read（按 `job_type` 复核） | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited, not_found |
 | `get_operation_proposal` | `GET` | `/api/agent/tools/proposals/{proposal_id}` | transactions/plans/alerts:propose 任一 | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited, not_found |
 | `get_portfolio_curve` | `GET` | `/api/agent/tools/portfolio-curve` | portfolio:read | 只读 | 只读 | 否 | max_points 10-2000 (default 365) | validation_error, insufficient_scope, rate_limited |
 | `get_portfolio_health` | `GET` | `/api/agent/tools/portfolio-health` | health:read | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited |
@@ -275,7 +276,7 @@ FastAPI 自动生成以下页面：
 | `precheck_backfill` | `POST` | `/api/agent/tools/precheck/backfill` | transactions:propose | 提案 | 只读 | 否 | tx_ids 1-50 | validation_error, insufficient_scope, rate_limited |
 | `precheck_reconciliation` | `POST` | `/api/agent/tools/precheck/reconciliation` | transactions:propose | 提案 | 只读 | 否 | holdings 1-100 | validation_error, insufficient_scope, rate_limited |
 | `precheck_transactions` | `POST` | `/api/agent/tools/precheck/transactions` | transactions:propose | 提案 | 只读 | 否 | items 1-200; csv_text <=5MB | validation_error, insufficient_scope, rate_limited |
-| `run_dca_backtest` | `POST` | `/api/agent/tools/backtest/dca` | funds:read | 只读 | 只读 | 否 | fund_codes 1-5; max_points 10-2000 (default 365); amount_per_period >0 and <=1000000 | validation_error, insufficient_scope, rate_limited, not_found |
+| `run_dca_backtest` | `POST` | `/api/agent/tools/backtest/dca` | funds:read | 只读 | 只读 | 否 | fund_codes 1-5; max_points 10-2000 (default 365); amount_per_period >0 and <=1000000; Idempotency-Key 16-128 | validation_error, insufficient_scope, rate_limited, not_found, idempotency_conflict, idempotency_expired, backtest_busy |
 | `screen_funds` | `GET` | `/api/agent/tools/screen` | funds:read | 只读 | 只读 | 否 | limit 1-200 (default 50) | validation_error, insufficient_scope, rate_limited |
 | `search_funds` | `GET` | `/api/agent/tools/search` | funds:read | 只读 | 只读 | 否 | limit 1-200 (default 50) | validation_error, insufficient_scope, rate_limited |
 | `add_watchlist_item` | `POST` | `/api/agent/tools/watchlist` | watchlist:write | 写 | 追加 | 否 | note <=500 chars; group_name <=50 chars | validation_error, insufficient_scope, write_disabled, rate_limited, idempotency_conflict, idempotency_expired, already_exists |
@@ -292,7 +293,7 @@ FastAPI 自动生成以下页面：
 
 ## 5. 工具列表
 
-5.1–5.20 为只读或只读模拟工具（5.20 的回测使用 `POST`）；5.21–5.23 为受控写能力，均默认关闭。任何工具都不接受设置、导入导出或资金划转操作，账本写入只能经由网页管理员批准提案。
+5.1–5.20 为只读或只读模拟工具（5.20 的回测使用 `POST` 创建任务后轮询）；5.21–5.23 为受控写能力，均默认关闭。任何工具都不接受设置、导入导出或资金划转操作，账本写入只能经由网页管理员批准提案。
 
 ### 5.1 `GET /api/agent/tools/portfolio-summary`
 
@@ -749,7 +750,11 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 
 ### 5.20 `POST /api/agent/tools/backtest/dca`
 
-在历史净值上模拟定投，可选一次性投入对照，scope：`funds:read`。这是**只读历史模拟**：不会写入正式净值表、交易、定投计划、自选或基金元数据，也不代表未来收益或配置建议。
+启动一次**只读定投回测任务**，scope：`funds:read`。这是**只读历史模拟**：不会写入正式净值表、交易、定投计划、自选或基金元数据，也不代表未来收益或配置建议。
+
+端点创建任务后立即返回 `202` 与 `job_id`；用 `GET /api/agent/tools/refresh/{job_id}` 轮询（该端点同时服务刷新与回测任务，按 `job_type` 精确复核 scope，见 §5.22）。回测在后台按基金逐个执行，`progress.done/total` 反映已完成的基金数。
+
+必须带 `Idempotency-Key`（16–128 安全 ASCII）：同键同参返回原 `job_id`（`replayed=true`），同键异参或异操作返回 `409 idempotency_conflict`，过期返回 `409 idempotency_expired`。创建响应的 `data`：`ok`、`code`（`queued`/`replayed`）、`message`、`replayed`、`job_id`、`status`、`fund_count`、`expires_at`。
 
 请求体（JSON；未知字段、类型错误或约束不满足返回 `422`）：
 
@@ -764,9 +769,9 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 | `include_periods` | bool | `false` | 是否返回逐期买入明细（响应体更大） |
 | `max_points` | int | `365` | 曲线等距抽样上限，10–2000，保留首尾 |
 
-区间最长 10 年；月/双周/周的计划期数最多分别约为 120/261/522。非法 JSON、缺少必填字段或未知字段返回 `422`；认证与 scope 语义与其他工具一致（`401`/`403`）。
+区间最长 10 年；月/双周/周的计划期数最多分别约为 120/261/522。非法 JSON、缺少必填字段或未知字段返回 `422`；认证与 scope 语义与其他工具一致（`401`/`403`）。并发已满返回 `429 backtest_busy`（带 `Retry-After`），不排队。
 
-`data` 字段：`ok`、`message`、`simulation_note`、`requested`、`fund_count`、`result_count`、`failed_count`、`results[]`。`failed_count` 按结果条数计（同一基金的 `dca` 与 `lumpsum` 各自计一条）；`ok` 仅在全部结果失败时为 `false`，部分失败仍为 `true`，由 `message` 与各结果的 `status` 说明。
+轮询到 `status="succeeded"` 后，`data.result` 字段：`ok`、`message`、`simulation_note`、`requested`、`fund_count`、`result_count`、`failed_count`、`results[]`。`failed_count` 按结果条数计（同一基金的 `dca` 与 `lumpsum` 各自计一条）；`ok` 仅在全部结果失败时为 `false`，部分失败仍为 `true`，由 `message` 与各结果的 `status` 说明。
 
 每条结果包含：
 
@@ -778,7 +783,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 - `status="failed"` 时 `code` 为 `insufficient_nav`（有效净值少于 2 个）或 `no_periods`（没有可执行的计划扣款日），不输出看似有效的零收益指标。
 - `status="partial"` 且 `code="partial_coverage"` 表示部分计划期因净值未覆盖或与其他期落在同一净值日而跳过；`skipped_periods` 给出数量。请求止日晚于最后一个可用净值日时，末期未被覆盖的计划期即属于此情形——回测仍按可用数据计算，`valuation_date`/`data_end` 反映实际覆盖范围。
 
-> 计划扣款日不早于请求起日。多个计划期落到同一净值日时只执行第一期，避免把多期投入堆到同一天。期末估值、赎回费持有天数与 XIRR 终值统一使用最后一个可用净值日（`valuation_date`），而不是请求止日。净值优先读取数据库，覆盖不足时通过外部接口在内存中补齐，不写库；`data_end` 可能早于 `end_date`。费率表按每只基金一次快照使用。结果未模拟分红、拆分与红利再投资；最大回撤与夏普基于市值曲线，定投现金流会影响可比性。单次请求最多 5 只基金，耗时受外部净值/费率抓取影响，建议先查 `data-status`，并遵守 20 次/分钟的限额。回测并发上限为 2（进程内），满额立即返回 `429`，不排队；多 worker 部署时各进程独立计数。
+> 计划扣款日不早于请求起日。多个计划期落到同一净值日时只执行第一期，避免把多期投入堆到同一天。期末估值、赎回费持有天数与 XIRR 终值统一使用最后一个可用净值日（`valuation_date`），而不是请求止日。净值优先读取数据库，覆盖不足时通过外部接口在内存中补齐，不写库；`data_end` 可能早于 `end_date`。费率表按每只基金一次快照使用。结果未模拟分红、拆分与红利再投资；最大回撤与夏普基于市值曲线，定投现金流会影响可比性。单次请求最多 5 只基金，耗时受外部净值/费率抓取影响，建议先查 `data-status`，并遵守 20 次/分钟的限额。回测并发上限为 2（进程内），满额在创建阶段立即返回 `429 backtest_busy`（`Retry-After: 60`），不排队；多 worker 部署时各进程独立计数。任务 `status="failed"` 表示执行期异常（`data.error` 给出原因），与单只基金 `results[].status="failed"` 不同——后者任务本身仍为 `succeeded`。
 
 ## 6. 最小接入示例
 
@@ -862,7 +867,9 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/watchlist" \
 | MCP 工具 | HTTP | 说明 |
 |---|---|---|
 | `start_data_refresh` | `POST /api/agent/tools/refresh` | 创建任务，返回 `202` + `job_id` |
-| `get_job_status` | `GET /api/agent/tools/refresh/{job_id}` | 查询进度与结果，仅创建者 token 可读 |
+| `get_job_status` | `GET /api/agent/tools/refresh/{job_id}` | 查询进度与结果，仅创建者 token 可读；同时服务刷新与回测任务 |
+
+`get_job_status` 同时用于查询回测任务（`job_type="dca_backtest"`，见 §5.20）。端点以 `data:refresh` 或 `funds:read` 任一 scope 进入，再按任务类型精确复核：刷新任务需要 `data:refresh`，回测任务需要 `funds:read`，未知 `job_type` 一律 `403`；先按归属校验，他人任务仍返回 `404`。
 
 ```bash
 # 启动（缺省刷新当前开仓持仓；也可显式传 fund_codes，最多 50 只）
@@ -1286,7 +1293,7 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 ```
 
 暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`search_funds`、`screen_funds`、`run_dca_backtest`、`get_agent_capabilities`、`add_watchlist_item`、`update_watchlist_item`、`remove_watchlist_item`、`start_data_refresh`、`get_job_status`、`create_operation_proposal`、`list_operation_proposals`、`get_operation_proposal`、`cancel_operation_proposal`、`record_transaction`。
-写工具需要在客户端同时提供 `idempotency_key`，并映射到 HTTP 的 `Idempotency-Key`；MCP 客户端只负责传参，不能替代服务端鉴权、scope 与写开关。
+写工具与任务化回测（`run_dca_backtest`）需要在客户端提供 `idempotency_key`，并映射到 HTTP 的 `Idempotency-Key`；MCP 客户端只负责传参，不能替代服务端鉴权、scope 与写开关。
 
 每个 MCP 工具都带 `ToolAnnotations`（`readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`），便于 MCP 客户端在 UI 上区分只读查询与写操作：
 

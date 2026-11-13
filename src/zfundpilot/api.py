@@ -2029,7 +2029,12 @@ def _refresh_result_data(result: refresh_service.RefreshResult) -> dict:
             "code": result.code, "message": result.message}
         # 保留 busy 时的 current_job_id 等可操作信息，便于客户端轮询。
         detail.update(result.data)
-        raise HTTPException(status_code=result.http_status, detail=detail)
+        headers = (
+            {"Retry-After": str(result.retry_after)}
+            if result.retry_after is not None else None
+        )
+        raise HTTPException(
+            status_code=result.http_status, detail=detail, headers=headers)
     return {
         "ok": True,
         "code": result.code,
@@ -2067,28 +2072,68 @@ def agent_start_data_refresh(
     return _agent_tool_response("start_data_refresh", _refresh_result_data(result))
 
 
+_JOB_TYPE_SCOPES: dict[str, str] = {
+    refresh_service.JOB_TYPE: agent_tokens.SCOPE_DATA_REFRESH,
+    refresh_service.BACKTEST_JOB_TYPE: agent_tokens.SCOPE_FUNDS_READ,
+}
+
+
+def _require_job_type_scope(
+    request: Request,
+    ctx: agent_tokens.AgentTokenContext,
+    job_type: object,
+) -> None:
+    """按 ``job_type`` 精确复核 scope。
+
+    任务状态端点用 any-of scope 进入（``data:refresh`` 或 ``funds:read``），
+    但每个任务类型仍只认自己的 scope，避免一个只读 token 借道读取刷新任务
+    或反之。未知任务类型一律拒绝，新增类型必须显式登记。
+    """
+    required = _JOB_TYPE_SCOPES.get(str(job_type))
+    if required is not None and required in ctx.scopes:
+        return
+    db.log_audit(
+        "agent_auth_failed", ip=_get_client_ip(request),
+        detail={"path": request.url.path, "scope": required or "unknown",
+                "reason": "job_type_scope", "job_type": str(job_type),
+                "request_id": api_errors.get_request_id(),
+                "token_id": ctx.id, "token_prefix": ctx.prefix},
+    )
+    if required is None:
+        detail = "未知任务类型，拒绝读取"
+    else:
+        detail = f"读取该任务需要权限：{required}"
+    raise api_errors.ApiError(
+        status_code=403, detail=detail, code="insufficient_scope")
+
+
 @app.get("/api/agent/tools/refresh/{job_id}", tags=["agent"],
-         summary="查询数据刷新任务状态（只读）",
+         summary="查询任务状态（只读）",
          responses={**_AGENT_ERROR_RESPONSES,
+                    403: {"description": "缺少该任务类型所需的 scope"},
                     404: {"description": "任务不存在或不属于当前 token"}},
          dependencies=[Security(_agent_bearer_scheme)])
 def agent_get_refresh_job(
     job_id: int,
+    request: Request,
     ctx: Annotated[
         agent_tokens.AgentTokenContext,
-        Depends(require_agent_scope(agent_tokens.SCOPE_DATA_REFRESH)),
+        Depends(require_any_agent_scope((
+            agent_tokens.SCOPE_DATA_REFRESH, agent_tokens.SCOPE_FUNDS_READ))),
     ],
 ) -> dict[str, Any]:
     """返回任务进度与结果；仅创建者 token 可读。
 
-    ``data.job_type`` 区分任务类型（当前为 ``data_refresh``），``result``
-    结构随 ``job_type`` 不同；响应结构见文档「四类响应模型」。
+    ``data.job_type`` 区分任务类型（``data_refresh`` / ``dca_backtest``），
+    ``result`` 结构随 ``job_type`` 不同；响应结构见文档「四类响应模型」。
     """
     try:
         result = refresh_service.get_job_status(
             _agent_refresh_principal(ctx), job_id)
     except refresh_service.RefreshValidationError as exc:
         raise _refresh_validation_error(exc) from exc
+    if result.ok:
+        _require_job_type_scope(request, ctx, result.data.get("job_type"))
     return _agent_tool_response("get_job_status", _refresh_result_data(result))
 
 
@@ -2535,13 +2580,8 @@ def _agent_data_quality(status: DataStatus) -> dict[str, Any]:
 
 def _agent_sample_points(points: list[dict[str, Any]],
                          max_points: int) -> list[dict[str, Any]]:
-    """等距抽样并保留首尾，控制大响应；点数未超限时原样返回。"""
-    total = len(points)
-    if total <= max_points:
-        return points
-    step = (total - 1) / (max_points - 1)
-    indices = sorted({int(round(i * step)) for i in range(max_points)})
-    return [points[i] for i in indices]
+    """等距抽样并保留首尾，控制大响应；实现复用 ``backtest.sample_points``。"""
+    return backtest.sample_points(points, max_points)
 
 
 @app.get("/api/agent/tools/portfolio-curve", tags=["agent"],
@@ -2878,11 +2918,11 @@ def agent_screen_funds(
 # ---------------------------------------------------------------------------
 # Agent 只读查询工具（P1.5-A 第 3 批：只读定投回测）
 # ---------------------------------------------------------------------------
-_AGENT_BACKTEST_MAX_AMOUNT = 1_000_000.0
-_AGENT_BACKTEST_MAX_YEARS = 10
-# 回测会抓取净值与费率，按进程限制同时执行数；满额快速拒绝而不是排队。
-_AGENT_BACKTEST_MAX_CONCURRENCY = 2
-_AGENT_BACKTEST_GATE = threading.BoundedSemaphore(_AGENT_BACKTEST_MAX_CONCURRENCY)
+_AGENT_BACKTEST_MAX_AMOUNT = refresh_service.BACKTEST_MAX_AMOUNT
+_AGENT_BACKTEST_MAX_YEARS = refresh_service.BACKTEST_MAX_YEARS
+_AGENT_BACKTEST_MAX_FUNDS = refresh_service.BACKTEST_MAX_FUNDS
+_AGENT_BACKTEST_MIN_POINTS = refresh_service.BACKTEST_MIN_POINTS
+_AGENT_BACKTEST_MAX_POINTS = refresh_service.BACKTEST_MAX_POINTS
 
 
 class AgentDcaBacktestRequest(BaseModel):
@@ -2890,7 +2930,8 @@ class AgentDcaBacktestRequest(BaseModel):
 
     model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
 
-    fund_codes: list[str] = Field(min_length=1, max_length=5)
+    fund_codes: list[str] = Field(
+        min_length=1, max_length=_AGENT_BACKTEST_MAX_FUNDS)
     start_date: str
     end_date: str
     amount_per_period: float = Field(gt=0, le=_AGENT_BACKTEST_MAX_AMOUNT)
@@ -2898,7 +2939,9 @@ class AgentDcaBacktestRequest(BaseModel):
     include_lumpsum: bool = True
     include_curve: bool = True
     include_periods: bool = False
-    max_points: int = Field(default=365, ge=10, le=2000)
+    max_points: int = Field(
+        default=365, ge=_AGENT_BACKTEST_MIN_POINTS,
+        le=_AGENT_BACKTEST_MAX_POINTS)
 
     @field_validator("fund_codes")
     @classmethod
@@ -2951,85 +2994,41 @@ class AgentDcaBacktestRequest(BaseModel):
 
 
 @app.post("/api/agent/tools/backtest/dca", tags=["agent"],
-          summary="定投回测（只读）",
-          responses={**_AGENT_ERROR_RESPONSES,
-                     422: {"description": "请求体字段缺失、类型错误或含未知字段"}},
+          summary="启动定投回测任务（只读）",
+          responses={**_AGENT_WRITE_ERROR_RESPONSES,
+                     202: {"description": "回测任务已创建，返回 job_id"},
+                     429: {"description": "回测并发已满（backtest_busy）"}},
+          status_code=202,
           dependencies=[Security(_agent_bearer_scheme)])
 def agent_run_dca_backtest(
+    request: Request,
     req: AgentDcaBacktestRequest,
     ctx: Annotated[
         agent_tokens.AgentTokenContext,
         Depends(require_agent_scope(agent_tokens.SCOPE_FUNDS_READ)),
     ],
 ) -> dict[str, Any]:
-    """在历史净值上模拟定投，可选附带一次性投入对照（只读）。
+    """创建只读定投回测任务，202 返回 ``job_id``；用 ``get_job_status`` 轮询。
 
     复用 ``backtest.run_dca_backtest()`` 的计算逻辑，但通过
     ``readonly_nav_rows`` 只读获取净值：不调用 ``update_fund_nav()``，
     不会写入正式净值表、交易、计划或基金元数据。数据不足或费率缺失时
     在结果中显式标注，不把未知费用或失败项伪装成有效收益。
+
+    回测按基金逐个执行以推进进度；同键同参重试返回原 ``job_id``，
+    并发已满返回 429 ``backtest_busy``（带 ``Retry-After``）。
     """
-    del ctx
-    if not _AGENT_BACKTEST_GATE.acquire(blocking=False):
-        raise HTTPException(
-            status_code=429,
-            detail="回测并发已满，请稍后再试",
-            headers={"Retry-After": str(_AGENT_RATE_WINDOW)},
-        )
     try:
-        results = backtest.run_dca_backtest(
-            fund_codes=req.fund_codes,
-            start_date=req.start_date,
-            end_date=req.end_date,
-            amount_per_period=req.amount_per_period,
-            cadence=req.cadence,
-            include_lumpsum=req.include_lumpsum,
-            nav_provider=backtest.readonly_nav_rows,
+        result = refresh_service.start_backtest(
+            _agent_refresh_principal(ctx),
+            params=req.model_dump(),
+            idempotency_key=_idempotency_key_header(request),
+            ip=_get_client_ip(request),
         )
-    finally:
-        _AGENT_BACKTEST_GATE.release()
-
-    payload: list[dict[str, Any]] = []
-    for result in results:
-        row = result.to_dict()
-        curve = row.get("curve") or []
-        periods = row.get("periods_detail") or []
-        row["curve"] = (
-            _agent_sample_points(curve, req.max_points)
-            if req.include_curve else []
-        )
-        row["periods_detail"] = periods if req.include_periods else []
-        row["curve_points"] = len(row["curve"])
-        row["periods_detail_count"] = len(periods)
-        payload.append(row)
-
-    failed = sum(1 for row in payload if row["status"] == "failed")
-    ok = failed < len(payload) and bool(payload)
-    message = ""
-    if not ok:
-        message = "所有基金回测失败，详见各结果的 status/code/message"
-    elif failed:
-        message = f"{failed} 个回测失败，详见各结果的 status/code/message"
-
-    return _agent_tool_response("run_dca_backtest", {
-        "ok": ok,
-        "message": message,
-        "simulation_note": (
-            "定投与一次性投入为历史模拟，不是组合配置建议，也不代表未来收益；"
-            "未模拟分红、拆分与红利再投资。"
-        ),
-        "requested": {
-            "start_date": req.start_date,
-            "end_date": req.end_date,
-            "cadence": req.cadence,
-            "amount_per_period": req.amount_per_period,
-            "include_lumpsum": req.include_lumpsum,
-        },
-        "fund_count": len(req.fund_codes),
-        "result_count": len(payload),
-        "failed_count": failed,
-        "results": payload,
-    })
+    except refresh_service.RefreshValidationError as exc:
+        raise _refresh_validation_error(exc) from exc
+    return _agent_tool_response(
+        "run_dca_backtest", _refresh_result_data(result))
 
 
 # 只读工具登记表：供能力发现；新增工具时同步维护。
@@ -3112,7 +3111,8 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
      "risk": "write", "requires_confirmation": False},
     {"name": "get_job_status", "method": "GET",
      "path": "/api/agent/tools/refresh/{job_id}",
-     "scope": agent_tokens.SCOPE_DATA_REFRESH},
+     "any_of_scopes": (agent_tokens.SCOPE_DATA_REFRESH,
+                       agent_tokens.SCOPE_FUNDS_READ)},
     {"name": "create_operation_proposal", "method": "POST",
      "path": "/api/agent/tools/proposals",
      "any_of_scopes": (agent_tokens.SCOPE_TRANSACTIONS_PROPOSE,
@@ -3225,7 +3225,9 @@ _AGENT_TOOL_CONTRACT: dict[str, dict[str, Any]] = {
                          "limits": {"fund_codes": "1-5",
                                     "max_points": "10-2000 (default 365)",
                                     "amount_per_period": ">0 and <=1000000"},
-                         "error_codes": _COMMON_READ_ERROR_CODES + ("not_found",)},
+                         "error_codes": _COMMON_READ_ERROR_CODES + (
+                             "not_found", "idempotency_conflict",
+                             "idempotency_expired", "backtest_busy")},
     "get_agent_capabilities": {"side_effect": "read", "idempotent": True,
                                "limits": {}, "error_codes": ()},
     # ---- 只读：precheck（不写账本、不建提案） ----

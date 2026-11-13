@@ -15,7 +15,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from zfundpilot import agent_tokens, analysis, api, config, db
+from zfundpilot import agent_tokens, analysis, api, config, db, refresh_service
 from zfundpilot.fetch_fund import FeeRates, PurchaseTier, RedemptionTier
 from zfundpilot.models import DataStatus, Fund, NavPoint, Transaction
 
@@ -325,6 +325,25 @@ class TestAgentTools:
     def _headers(self, *scopes: str) -> dict[str, str]:
         plaintext, _ = agent_tokens.issue_token("agent", list(scopes))
         return {"Authorization": f"Bearer {plaintext}"}
+
+    def _start_backtest(self, client, headers, payload, key):
+        return client.post(
+            "/api/agent/tools/backtest/dca",
+            json=payload,
+            headers={**headers, "Idempotency-Key": key})
+
+    def _backtest_result(self, client, headers, payload, key):
+        """创建回测任务（202）并轮询到终态，返回 result 数据。"""
+        resp = self._start_backtest(client, headers, payload, key)
+        assert resp.status_code == 202, resp.text
+        job_id = resp.json()["data"]["job_id"]
+        status = client.get(
+            f"/api/agent/tools/refresh/{job_id}", headers=headers)
+        assert status.status_code == 200, status.text
+        data = status.json()["data"]
+        assert data["job_type"] == "dca_backtest"
+        assert data["status"] == "succeeded", data
+        return data["result"]
 
     def test_portfolio_summary_scope(self, temp_db, monkeypatch):
         monkeypatch.setattr(config, "AUTH_ENABLED", True)
@@ -1225,6 +1244,7 @@ class TestAgentTools:
     def test_backtest_success_curve_sampling_and_periods(
             self, temp_db, monkeypatch):
         monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        monkeypatch.setattr(refresh_service, "_spawn", lambda fn: fn())
         rows = [
             {"date": "2024-01-02", "nav": 1.0},
             {"date": "2024-02-01", "nav": 1.1},
@@ -1237,23 +1257,29 @@ class TestAgentTools:
             api.fetch_fund, "fetch_fund_fee_rates",
             lambda code: self._fee_rates())
         client = TestClient(api.app)
+        headers = self._headers("funds:read")
 
-        resp = client.post(
-            "/api/agent/tools/backtest/dca",
-            json={
-                "fund_codes": ["000001", "000001"],
-                "start_date": "2024-01-01",
-                "end_date": "2024-03-31",
-                "amount_per_period": 1000,
-                "include_curve": True,
-                "include_periods": False,
-                "max_points": 10,
-            },
-            headers=self._headers("funds:read"))
-        assert resp.status_code == 200
-        body = resp.json()
+        payload = {
+            "fund_codes": ["000001", "000001"],
+            "start_date": "2024-01-01",
+            "end_date": "2024-03-31",
+            "amount_per_period": 1000,
+            "include_curve": True,
+            "include_periods": False,
+            "max_points": 10,
+        }
+        start = self._start_backtest(
+            client, headers, payload, "backtest-success-key-0001")
+        assert start.status_code == 202
+        body = start.json()
         assert body["tool"] == "run_dca_backtest"
-        data = body["data"]
+        assert body["data"]["status"] == "queued"
+        job_id = body["data"]["job_id"]
+
+        status = client.get(
+            f"/api/agent/tools/refresh/{job_id}", headers=headers)
+        assert status.status_code == 200
+        data = status.json()["data"]["result"]
         assert data["ok"] is True
         assert data["fund_count"] == 1
         assert data["result_count"] == 2  # dca + lumpsum
@@ -1276,6 +1302,7 @@ class TestAgentTools:
 
     def test_backtest_partial_and_failed_results(self, temp_db, monkeypatch):
         monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        monkeypatch.setattr(refresh_service, "_spawn", lambda fn: fn())
         gap_rows = [
             {"date": "2024-01-01", "nav": 1.0},
             {"date": "2024-02-01", "nav": 1.1},
@@ -1293,19 +1320,15 @@ class TestAgentTools:
         client = TestClient(api.app)
         headers = self._headers("funds:read")
 
-        resp = client.post(
-            "/api/agent/tools/backtest/dca",
-            json={
+        data = self._backtest_result(
+            client, headers, {
                 "fund_codes": ["000001", "000002"],
                 "start_date": "2024-01-01",
                 "end_date": "2024-02-01",
                 "amount_per_period": 100,
                 "cadence": "week",
                 "include_lumpsum": False,
-            },
-            headers=headers)
-        assert resp.status_code == 200
-        data = resp.json()["data"]
+            }, "backtest-partial-key-0001")
         assert data["ok"] is True
         assert data["failed_count"] == 1
         assert "1 个回测失败" in data["message"]
@@ -1318,21 +1341,19 @@ class TestAgentTools:
         assert failed["code"] == "insufficient_nav"
         assert failed["net_final_value"] == 0
 
-        all_failed = client.post(
-            "/api/agent/tools/backtest/dca",
-            json={
+        body = self._backtest_result(
+            client, headers, {
                 "fund_codes": ["000002"],
                 "start_date": "2024-01-01",
                 "end_date": "2024-02-01",
                 "amount_per_period": 100,
-            },
-            headers=headers)
-        body = all_failed.json()["data"]
+            }, "backtest-all-failed-key-1")
         assert body["ok"] is False
         assert body["message"]
 
     def test_backtest_zero_fee_unknown_is_explicit(self, temp_db, monkeypatch):
         monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        monkeypatch.setattr(refresh_service, "_spawn", lambda fn: fn())
         rows = [{"date": "2024-01-02", "nav": 1.0},
                 {"date": "2024-02-01", "nav": 1.1}]
         monkeypatch.setattr(
@@ -1343,16 +1364,14 @@ class TestAgentTools:
             lambda code: self._fee_rates(ok=False))
         client = TestClient(api.app)
 
-        resp = client.post(
-            "/api/agent/tools/backtest/dca",
-            json={
+        data = self._backtest_result(
+            client, self._headers("funds:read"), {
                 "fund_codes": ["000001"],
                 "start_date": "2024-01-01",
                 "end_date": "2024-02-01",
                 "amount_per_period": 100,
-            },
-            headers=self._headers("funds:read"))
-        dca = resp.json()["data"]["results"][0]
+            }, "backtest-fee-unknown-key1")
+        dca = data["results"][0]
         assert dca["fee_ok"] is False
         assert dca["total_fees"] == 0
         assert any("费率表获取失败" in item for item in dca["caveats"])
@@ -1362,21 +1381,20 @@ class TestAgentTools:
         monkeypatch.setattr(config, "AUTH_ENABLED", True)
         gate = threading.BoundedSemaphore(1)
         assert gate.acquire(blocking=False)
-        monkeypatch.setattr(api, "_AGENT_BACKTEST_GATE", gate)
+        monkeypatch.setattr(refresh_service, "_backtest_gate", gate)
         client = TestClient(api.app)
 
-        resp = client.post(
-            "/api/agent/tools/backtest/dca",
-            json={
+        resp = self._start_backtest(
+            client, self._headers("funds:read"), {
                 "fund_codes": ["000001"],
                 "start_date": "2024-01-01",
                 "end_date": "2024-03-31",
                 "amount_per_period": 1000,
-            },
-            headers=self._headers("funds:read"))
+            }, "backtest-busy-key-000001")
 
         assert resp.status_code == 429
         assert resp.headers["Retry-After"] == "60"
+        assert resp.json()["detail"]["code"] == "backtest_busy"
         gate.release()
 
     def test_agent_capabilities_filters_by_scope(self, temp_db, monkeypatch):

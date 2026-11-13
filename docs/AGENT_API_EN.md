@@ -71,14 +71,14 @@ Request body:
 | Scope | Allowed tools |
 |---|---|
 | `portfolio:read` | `portfolio-summary`, `positions`, `returns`, `portfolio-curve`, `benchmark`, `industry-exposure` |
-| `funds:read` | `funds/{code}`, `funds/compare`, `search`, `screen`, `backtest/dca` |
+| `funds:read` | `funds/{code}`, `funds/compare`, `search`, `screen`, `backtest/dca`, `refresh/{job_id}` (backtest jobs) |
 | `health:read` | `data-status`, `portfolio-health`, `risk-report` |
 | `transactions:read` | `transactions`, `transactions/{tx_id}` |
 | `watchlist:read` | `watchlist` |
 | `alerts:read` | `alerts` |
 | `plans:read` | `auto-invest-plans` |
 | `watchlist:write` | `watchlist` (add/update/remove; requires the server write switch) |
-| `data:refresh` | `refresh` (start/query task-based data refresh; NAV/metadata only; requires the server write switch) |
+| `data:refresh` | `refresh` (start a task-based data refresh; NAV/metadata only; requires the server write switch), `refresh/{job_id}` (query refresh jobs) |
 | `transactions:propose` | `proposals` (create/list/cancel your pending **ledger** proposals; requires the server write switch; execution belongs to the web administrator) |
 | `plans:propose` | `proposals` (create/list/cancel your pending **auto-invest plan** proposals; requires the server write switch; execution belongs to the web administrator; new plans start disabled) |
 | `alerts:propose` | `proposals` (create/list/cancel your pending **alert resolution** proposals; requires the server write switch; only advances the alert state, never writes the ledger; execution belongs to the web administrator) |
@@ -181,7 +181,7 @@ Successful responses share the envelope above; the fields inside `data` fall int
 | Query | `get_portfolio_summary`, `list_positions`, `get_data_status`, `precheck_*` | Business fields; `valuation_basis` when amounts are involved; `as_of_date`/`as_of_date_semantics` for time snapshots; `pagination{limit,offset,total,has_more}` for lists | Read-only; safe to retry (still rate-limited) |
 | Write | `add_watchlist_item`, `update_watchlist_item`, `remove_watchlist_item`, `start_data_refresh`, `record_transaction` | Always `ok`/`code`/`message`/`replayed`, plus tool-specific fields (below) | Requires `Idempotency-Key`; same key + same params returns `replayed=true` without a second write |
 | Proposal | `create_operation_proposal`, `list_operation_proposals`, `get_operation_proposal`, `cancel_operation_proposal` | `proposal_id`/`operation_type`/`status`/`expires_at`/`summary`/`params`/`can_approve`/`can_cancel`/`execution_result` | Creation deduped by idempotency key; cancel is naturally idempotent; approval/rejection only via web login endpoints |
-| Job | `start_data_refresh`, `get_job_status` | `job_id`/`job_type`/`status`/`progress{done,total,current,phase}`/`result`/`error`/`created_at`/`updated_at`/`expires_at`/`can_cancel` | Start deduped by idempotency key; status is read-only and pollable |
+| Job | `start_data_refresh`, `run_dca_backtest`, `get_job_status` | `job_id`/`job_type`/`status`/`progress{done,total,current,phase}`/`result`/`error`/`created_at`/`updated_at`/`expires_at`/`can_cancel` | Start deduped by idempotency key; status is read-only and pollable |
 
 **Query**
 
@@ -195,7 +195,7 @@ Successful responses share the envelope above; the fields inside `data` fall int
 - `code` is a **success code** (`created`/`updated`/`unchanged`/`removed`/`queued`/`recorded`/`downgraded`/`replayed`), a separate namespace from `error.code` — do not mix them.
 - `replayed` means the call hit an idempotent replay; a replay never writes twice.
 - Watchlist writes add `fund_code`/`changed`/`revision`/`before`/`after`.
-- Refresh start adds `job_id`/`status`/`fund_count`/`expires_at` and responds `202`.
+- Job start (refresh/backtest) adds `job_id`/`status`/`fund_count`/`expires_at` and responds `202`.
 - Direct record adds `execution_mode`, `transaction_id` (direct) or `proposal_id` (downgraded), `operation_id`/`receipt`/`daily_quota`/`verify_path`.
 - **`execution_mode` is finalized as `direct` / `proposal`; there is no `rejected`.** A rejected direct record always returns a non-2xx stable error code (e.g. `409 duplicate_candidate`, `429 daily_quota_exceeded`); clients must not treat an error response as "succeeded but rejected".
 
@@ -208,8 +208,9 @@ Successful responses share the envelope above; the fields inside `data` fall int
 
 **Job**
 
-- Currently `job_type="data_refresh"`; `status ∈ {queued,running,succeeded,failed,interrupted}`, the last three being terminal.
-- `result` depends on `job_type`: `data_refresh` is `{ok,updated,failed,errors[]}`. New job types must reuse the same envelope and the same status endpoint, and must document their `result` shape here.
+- `job_type` is currently `data_refresh` (data refresh) or `dca_backtest` (read-only DCA backtest); `status ∈ {queued,running,succeeded,failed,interrupted}`, the last three being terminal.
+- `result` depends on `job_type`: `data_refresh` is `{ok,updated,failed,partial,errors[]}`; `dca_backtest` is the result structure from §5.20 (`ok`/`message`/`simulation_note`/`requested`/`fund_count`/`result_count`/`failed_count`/`results[]`). `results[].status` and the task `status` are independent: a single fund failing does not make the task fail. New job types must reuse the same envelope and the same status endpoint, and must document their `result` shape here.
+- `get_job_status` is entered with either `data:refresh` or `funds:read`, then re-checked by `job_type` (refresh→`data:refresh`, backtest→`funds:read`, unknown type→`403`); ownership is checked first, so another token's job always returns `404`.
 - On restart, leftover `queued`/`running` jobs are marked `interrupted` — never falsely reported as succeeded.
 - `can_cancel` is currently always `false` (reserved field).
 
@@ -259,7 +260,7 @@ The table below summarizes the contract metadata for all Agent tools (matching t
 | `get_data_status` | `GET` | `/api/agent/tools/data-status` | health:read | Read | Read | No | — | validation_error, insufficient_scope, rate_limited |
 | `get_fund_detail` | `GET` | `/api/agent/tools/funds/{code}` | funds:read | Read | Read | No | nav_limit 1-250 (default 30) | validation_error, insufficient_scope, rate_limited, not_found |
 | `get_industry_exposure` | `GET` | `/api/agent/tools/industry-exposure` | portfolio:read | Read | Read | No | — | validation_error, insufficient_scope, rate_limited |
-| `get_job_status` | `GET` | `/api/agent/tools/refresh/{job_id}` | data:refresh | Read | Read | No | — | validation_error, insufficient_scope, rate_limited, not_found |
+| `get_job_status` | `GET` | `/api/agent/tools/refresh/{job_id}` | data:refresh / funds:read (checked by `job_type`) | Read | Read | No | — | validation_error, insufficient_scope, rate_limited, not_found |
 | `get_operation_proposal` | `GET` | `/api/agent/tools/proposals/{proposal_id}` | any of transactions/plans/alerts:propose | Read | Read | No | — | validation_error, insufficient_scope, rate_limited, not_found |
 | `get_portfolio_curve` | `GET` | `/api/agent/tools/portfolio-curve` | portfolio:read | Read | Read | No | max_points 10-2000 (default 365) | validation_error, insufficient_scope, rate_limited |
 | `get_portfolio_health` | `GET` | `/api/agent/tools/portfolio-health` | health:read | Read | Read | No | — | validation_error, insufficient_scope, rate_limited |
@@ -276,7 +277,7 @@ The table below summarizes the contract metadata for all Agent tools (matching t
 | `precheck_backfill` | `POST` | `/api/agent/tools/precheck/backfill` | transactions:propose | Propose | Read | No | tx_ids 1-50 | validation_error, insufficient_scope, rate_limited |
 | `precheck_reconciliation` | `POST` | `/api/agent/tools/precheck/reconciliation` | transactions:propose | Propose | Read | No | holdings 1-100 | validation_error, insufficient_scope, rate_limited |
 | `precheck_transactions` | `POST` | `/api/agent/tools/precheck/transactions` | transactions:propose | Propose | Read | No | items 1-200; csv_text <=5MB | validation_error, insufficient_scope, rate_limited |
-| `run_dca_backtest` | `POST` | `/api/agent/tools/backtest/dca` | funds:read | Read | Read | No | fund_codes 1-5; max_points 10-2000 (default 365); amount_per_period >0 and <=1000000 | validation_error, insufficient_scope, rate_limited, not_found |
+| `run_dca_backtest` | `POST` | `/api/agent/tools/backtest/dca` | funds:read | Read | Read | No | fund_codes 1-5; max_points 10-2000 (default 365); amount_per_period >0 and <=1000000; Idempotency-Key 16-128 | validation_error, insufficient_scope, rate_limited, not_found, idempotency_conflict, idempotency_expired, backtest_busy |
 | `screen_funds` | `GET` | `/api/agent/tools/screen` | funds:read | Read | Read | No | limit 1-200 (default 50) | validation_error, insufficient_scope, rate_limited |
 | `search_funds` | `GET` | `/api/agent/tools/search` | funds:read | Read | Read | No | limit 1-200 (default 50) | validation_error, insufficient_scope, rate_limited |
 | `add_watchlist_item` | `POST` | `/api/agent/tools/watchlist` | watchlist:write | Write | Additive | No | note <=500 chars; group_name <=50 chars | validation_error, insufficient_scope, write_disabled, rate_limited, idempotency_conflict, idempotency_expired, already_exists |
@@ -293,7 +294,7 @@ The table below summarizes the contract metadata for all Agent tools (matching t
 
 ## 5. Tools
 
-Sections 5.1–5.20 are read-only or read-only simulations (5.20 uses `POST`); 5.21–5.23 are controlled writes, all off by default. No tool accepts settings, import/export, or fund-moving operations, and ledger writes happen only after a web administrator approves a proposal.
+Sections 5.1–5.20 are read-only or read-only simulations (5.20 creates a backtest job via `POST` and then polls); 5.21–5.23 are controlled writes, all off by default. No tool accepts settings, import/export, or fund-moving operations, and ledger writes happen only after a web administrator approves a proposal.
 
 ### 5.1 `GET /api/agent/tools/portfolio-summary`
 
@@ -750,7 +751,11 @@ Parameters:
 
 ### 5.20 `POST /api/agent/tools/backtest/dca`
 
-Simulate a historical DCA plan, optionally with a lump-sum comparison. Scope: `funds:read`. This is a **read-only historical simulation**: it does not write the formal NAV table, transactions, auto-invest plans, watchlist, or fund metadata, and it is neither a forecast nor allocation advice.
+Start a **read-only DCA backtest job**. Scope: `funds:read`. This is a **read-only historical simulation**: it does not write the formal NAV table, transactions, auto-invest plans, watchlist, or fund metadata, and it is neither a forecast nor allocation advice.
+
+The endpoint creates the job and immediately returns `202` with a `job_id`; poll `GET /api/agent/tools/refresh/{job_id}` (the same endpoint serves refresh and backtest jobs and re-checks scope by `job_type`, see §5.22). The backtest runs in the background fund by fund, so `progress.done/total` reflects completed funds.
+
+An `Idempotency-Key` is required (16–128 safe ASCII chars): the same key and parameters replay the original `job_id` (`replayed=true`); the same key with different parameters or a different operation returns `409 idempotency_conflict`, and expired keys return `409 idempotency_expired`. Creation response `data`: `ok`, `code` (`queued`/`replayed`), `message`, `replayed`, `job_id`, `status`, `fund_count`, `expires_at`.
 
 JSON body (unknown fields, type errors, or constraint violations return `422`):
 
@@ -765,9 +770,9 @@ JSON body (unknown fields, type errors, or constraint violations return `422`):
 | `include_periods` | bool | `false` | Return per-period purchase details (larger response) |
 | `max_points` | int | `365` | Curve sampling cap, 10–2000, first/last preserved |
 
-The range is limited to 10 years; monthly/biweekly/weekly plans produce at most roughly 120/261/522 periods. Invalid JSON, missing required fields, or unknown fields return `422`; authentication and scope semantics match the other tools (`401`/`403`).
+The range is limited to 10 years; monthly/biweekly/weekly plans produce at most roughly 120/261/522 periods. Invalid JSON, missing required fields, or unknown fields return `422`; authentication and scope semantics match the other tools (`401`/`403`). When concurrency is full the creation returns `429 backtest_busy` with `Retry-After` instead of queueing.
 
-`data` fields: `ok`, `message`, `simulation_note`, `requested`, `fund_count`, `result_count`, `failed_count`, `results[]`. `failed_count` counts result rows (a fund's `dca` and `lumpsum` rows count separately); `ok` is `false` only when every result failed. Partial failures keep `ok=true`; use `message` and each result's `status` for details.
+Once polling reaches `status="succeeded"`, `data.result` contains: `ok`, `message`, `simulation_note`, `requested`, `fund_count`, `result_count`, `failed_count`, `results[]`. `failed_count` counts result rows (a fund's `dca` and `lumpsum` rows count separately); `ok` is `false` only when every result failed. Partial failures keep `ok=true`; use `message` and each result's `status` for details.
 
 Each result contains:
 
@@ -779,7 +784,7 @@ Each result contains:
 - `status="failed"` uses `code="insufficient_nav"` (fewer than 2 valid NAV points) or `no_periods` (no executable planned date), and does not output apparently valid zero-return metrics.
 - `status="partial"` with `code="partial_coverage"` means some planned periods were skipped because NAV data did not cover them or because multiple periods mapped to the same NAV date; `skipped_periods` gives the count. When the requested end is later than the last available NAV date, the trailing uncovered periods fall into this case — the backtest still runs on the available data, and `valuation_date`/`data_end` reflect the actual coverage.
 
-> Planned dates never precede the requested start. When multiple plans map to the same NAV date, only the first executes so that periods are not stacked onto one day. The closing valuation, redemption holding-period calculation, and XIRR terminal cash flow all use the last available NAV date (`valuation_date`), not the requested end date. NAV data is read from the database first and fetched in memory only when coverage is insufficient; nothing is written, and `data_end` may be earlier than `end_date`. Each fund's fee table is used as a single snapshot. Dividends, splits, and reinvestment are not simulated; max drawdown and Sharpe use the market-value curve, so DCA cash flows affect comparability. A request is capped at 5 funds, may be slowed by external NAV/fee fetches, should be preceded by `data-status`, and is limited to 20 requests per minute. Backtest concurrency is capped at 2 in-process; when full it returns `429` immediately instead of queueing, and multiple workers count independently.
+> Planned dates never precede the requested start. When multiple plans map to the same NAV date, only the first executes so that periods are not stacked onto one day. The closing valuation, redemption holding-period calculation, and XIRR terminal cash flow all use the last available NAV date (`valuation_date`), not the requested end date. NAV data is read from the database first and fetched in memory only when coverage is insufficient; nothing is written, and `data_end` may be earlier than `end_date`. Each fund's fee table is used as a single snapshot. Dividends, splits, and reinvestment are not simulated; max drawdown and Sharpe use the market-value curve, so DCA cash flows affect comparability. A request is capped at 5 funds, may be slowed by external NAV/fee fetches, should be preceded by `data-status`, and is limited to 20 requests per minute. Backtest concurrency is capped at 2 in-process; when full, creation immediately returns `429 backtest_busy` (`Retry-After: 60`) instead of queueing, and multiple workers count independently. A task `status="failed"` means an execution-time exception (`data.error` explains it), which is different from a per-fund `results[].status="failed"` — in the latter case the task itself still ends as `succeeded`.
 
 ## 6. Minimal integration
 
@@ -861,7 +866,9 @@ Start a **NAV/metadata-only** refresh job. Scope: `data:refresh`, also gated by 
 | MCP tool | HTTP | Behavior |
 |---|---|---|
 | `start_data_refresh` | `POST /api/agent/tools/refresh` | Create a job; returns `202` + `job_id` |
-| `get_job_status` | `GET /api/agent/tools/refresh/{job_id}` | Query progress/result; only the creating token can read |
+| `get_job_status` | `GET /api/agent/tools/refresh/{job_id}` | Query progress/result; only the creating token can read; serves both refresh and backtest jobs |
+
+`get_job_status` also queries backtest jobs (`job_type="dca_backtest"`, see §5.20). The endpoint is entered with either `data:refresh` or `funds:read`, then re-checks by job type: refresh jobs need `data:refresh`, backtest jobs need `funds:read`, and an unknown `job_type` always returns `403`; ownership is checked first, so another token's job still returns `404`.
 
 ```bash
 # Start (default: current open holdings; or pass fund_codes, max 50)
@@ -1283,7 +1290,7 @@ Claude Desktop example (`claude_desktop_config.json`):
 ```
 
 Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`, `add_watchlist_item`, `update_watchlist_item`, `remove_watchlist_item`, `start_data_refresh`, `get_job_status`, `create_operation_proposal`, `list_operation_proposals`, `get_operation_proposal`, `cancel_operation_proposal`, `record_transaction`.
-Write tools require an `idempotency_key` argument, mapped to the HTTP `Idempotency-Key` header. The MCP client only passes parameters; server-side auth, scope, and the write switch remain authoritative.
+Write tools and the task-based backtest (`run_dca_backtest`) require an `idempotency_key` argument, mapped to the HTTP `Idempotency-Key` header. The MCP client only passes parameters; server-side auth, scope, and the write switch remain authoritative.
 
 Every MCP tool carries `ToolAnnotations` (`readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`) so MCP clients can distinguish read queries from writes in their UI:
 

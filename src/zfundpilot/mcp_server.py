@@ -541,10 +541,15 @@ async def start_data_refresh(
 
 @mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def get_job_status(job_id: int) -> dict[str, Any]:
-    """Get the status of a data refresh job started with start_data_refresh.
+    """Get the status of a job started by start_data_refresh or run_dca_backtest.
+
+    ``data.job_type`` is ``data_refresh`` or ``dca_backtest`` and determines the
+    shape of ``data.result``; ``data.status`` is queued/running and then
+    succeeded/failed/interrupted. Requires ``data:refresh`` for refresh jobs or
+    ``funds:read`` for backtest jobs.
 
     Args:
-        job_id: The job_id returned by start_data_refresh.
+        job_id: The job_id returned by start_data_refresh or run_dca_backtest.
     """
     if not isinstance(job_id, int) or job_id <= 0:
         raise ToolError("job_id must be a positive integer.")
@@ -1128,15 +1133,19 @@ async def run_dca_backtest(
     start_date: str,
     end_date: str,
     amount_per_period: float,
+    idempotency_key: str,
     cadence: str = "month",
     include_lumpsum: bool = True,
     include_curve: bool = True,
     include_periods: bool = False,
     max_points: Annotated[int, Field(ge=10, le=2000)] = 365,
 ) -> dict[str, Any]:
-    """Simulate a historical DCA plan, optionally with a lump-sum comparison.
+    """Start a historical DCA simulation job; poll ``get_job_status`` for results.
 
     Read-only: it never writes NAV data, transactions, plans, or fund metadata.
+    The call returns HTTP 202 with a ``job_id``; pass that job_id to
+    ``get_job_status`` until ``status`` is ``succeeded``/``failed``/
+    ``interrupted``. Same key + same params returns the same job_id.
     Results are historical simulations, not forecasts or allocation advice.
     Per-fund status/code/message explain insufficient NAV or partial coverage;
     unknown fee tables are flagged instead of being reported as zero cost.
@@ -1146,12 +1155,15 @@ async def run_dca_backtest(
         start_date: Inclusive start date (YYYY-MM-DD), before end_date.
         end_date: Inclusive end date (YYYY-MM-DD), not after today in China time.
         amount_per_period: Amount per fund per period, > 0 and <= 1,000,000.
+        idempotency_key: Unique retry key (16-128 chars); same key+params
+            returns the same job_id.
         cadence: "month", "week", or "biweek".
         include_lumpsum: Add a lump-sum comparison per fund.
         include_curve: Return the sampled portfolio value curve.
         include_periods: Return per-period purchase details (larger response).
         max_points: Maximum curve points (10-2000, first/last preserved).
     """
+    _validate_write_key(idempotency_key)
     if len(fund_codes) > 5:
         raise ToolError("fund_codes supports at most 5 items.")
     cleaned: list[str] = []
@@ -1206,7 +1218,7 @@ async def run_dca_backtest(
         "include_curve": include_curve,
         "include_periods": include_periods,
         "max_points": max_points,
-    })
+    }, headers={"Idempotency-Key": idempotency_key})
 
 
 @mcp.tool(annotations=_ANNOT_READ_ONLY)

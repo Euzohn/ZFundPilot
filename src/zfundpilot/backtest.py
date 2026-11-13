@@ -617,6 +617,16 @@ def readonly_nav_rows(
 # ---------------------------------------------------------------------------
 # 对外接口
 # ---------------------------------------------------------------------------
+def sample_points(points: list[dict], max_points: int) -> list[dict]:
+    """等距抽样并保留首尾，控制大响应；点数未超限时原样返回。"""
+    total = len(points)
+    if total <= max_points:
+        return points
+    step = (total - 1) / (max_points - 1)
+    indices = sorted({int(round(i * step)) for i in range(max_points)})
+    return [points[i] for i in indices]
+
+
 def run_dca_backtest(
     fund_codes: list[str],
     start_date: str,

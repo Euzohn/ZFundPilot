@@ -3245,7 +3245,8 @@ _AGENT_TOOL_CONTRACT: dict[str, dict[str, Any]] = {
                                  "limits": {"limit": "1-200 (default 50)"},
                                  "error_codes": _COMMON_READ_ERROR_CODES},
     "get_operation_proposal": {"side_effect": "read", "idempotent": True,
-                               "limits": {}, "error_codes": _COMMON_READ_ERROR_CODES + ("not_found",)},
+                               "limits": {},
+                               "error_codes": _COMMON_READ_ERROR_CODES + ("not_found",)},
     # ---- additive 写：只追加、幂等键可安全重试 ----
     "add_watchlist_item": {"side_effect": "additive", "idempotent": True,
                            "limits": {"note": "<=500 chars", "group_name": "<=50 chars"},

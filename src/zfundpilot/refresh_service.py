@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from . import analysis, backtest, config, db, fetch_fund, scheduler
+from .models import BacktestResult
 from .nav_update_state import nav_update_lock, nav_update_state
 
 JOB_TYPE = "data_refresh"
@@ -443,7 +444,7 @@ def start_backtest(principal: Any, *, params: object,
     return RefreshResult(202, "queued", "回测任务已创建", data, replayed=False)
 
 
-def _backtest_result_data(results: list[Any],
+def _backtest_result_data(results: list[BacktestResult],
                           params: dict[str, Any]) -> dict[str, Any]:
     """把 ``BacktestResult`` 列表整理为任务结果（抽样曲线、按需返回明细）。"""
     payload: list[dict[str, Any]] = []
@@ -504,7 +505,7 @@ def _run_backtest_job(job_id: int, params: dict[str, Any],
             db.update_refresh_job(
                 conn, job_id, status="running", total=len(codes),
                 phase="backtest", updated_at=ts)
-        results: list[Any] = []
+        results: list[BacktestResult] = []
         for index, code in enumerate(codes, start=1):
             ts = _now().isoformat()
             with db.get_connection(write=True) as conn:

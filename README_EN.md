@@ -148,14 +148,23 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 
 ### Agent Access (API / MCP)
 
+**Supported today**
+
 - **Dedicated Agent tokens** — High-entropy tokens physically isolated from web login sessions; only SHA-256 digests are stored; authorized by read and optional write scopes, default-deny, revocable/expiring; disabled when no admin password is set
-- **Twenty read-only tools** — Portfolio summary, data status, positions, fund detail, health, returns, comparison, transactions, watchlist, alerts, plans, curve, benchmark, risk, industry exposure, fund search, screening, backtesting, and capability discovery; stable response envelope and formal-NAV semantics, with no write endpoints exposed
+- **26 read-only tools** — Portfolio summary, data status, positions, fund detail, health, returns, comparison, transactions, watchlist, alerts, plans, curve, benchmark, risk, industry exposure, fund search, screening, backtesting, job status, and capability discovery; stable response envelope and formal-NAV semantics, writing nothing to the ledger (precheck tools are still gated by the write switch)
 - **Write master switch** — Agent writes are off by default and toggled on the web Settings page ("Agent Access"), requiring the login password and persisting across restarts; cannot be enabled without a password
-- **Controlled writes** — Watchlist maintenance (`watchlist:write`) and NAV/metadata refresh (`data:refresh`) run directly; `record_transaction` (`transactions:create`) directly records a confirmed single buy/sell within quotas, downgrading to a pending proposal on precheck anomalies
-- **Ledger / plan / alert proposals** — Four proposal tools (`create_operation_proposal` and friends) submit pending proposals only, authorized via `transactions:propose`/`plans:propose`/`alerts:propose`; after web approval the server re-checks and writes in one transaction, never bypassing approval; mutations (update/delete/toggle/alert handling/backfill/manual plan execution) use `row_digest` as a version precondition. Manual plan execution inserts one buy and advances plan bookkeeping only — it never recomputes `next_run` or triggers the scheduler
+- **Controlled writes: watchlist / refresh / trusted direct record** — Watchlist maintenance (`watchlist:write`) and NAV/metadata refresh (`data:refresh`) run directly; `record_transaction` (`transactions:create`) directly records a single ordinary buy/sell the user **explicitly states already happened on an external platform**, within quotas, downgrading to a pending proposal on precheck anomalies
+- **Approval-based bookkeeping: proposal tools** — Four proposal tools (`create_operation_proposal` and friends) submit pending proposals only, authorized via `transactions:propose`/`plans:propose`/`alerts:propose`, covering single add/update/delete, fund conversion and paired deletion, **batch import**, dividend-alert linking, plan create/update/toggle/delete, transaction NAV backfill, alert resolution, and manual plan execution; after web approval the server re-checks and writes in one transaction, never bypassing approval; mutations use `row_digest` as a version precondition. Manual plan execution inserts one buy and advances plan bookkeeping only — it never recomputes `next_run` or triggers the scheduler
 - **CSV/screenshot precheck, reconciliation & NAV-backfill inventory** — Validate CSV/items and reconcile holdings before proposing, or inventory the transactions whose NAV can be backfilled; returns a report only, never writing the ledger, calling the network, or creating proposals
 - **MCP adapter** — Optional stdio bridge (`python -m zfundpilot.mcp_server`) for Claude Desktop / Cursor within scope boundaries; authentication, scopes, and rate limits reuse the HTTP entry point
 - **Auditable boundary** — Auth success/failure, rate limiting, issuance, and revocation are audited (token prefix only); rate limiting is per token + endpoint, and HTTPS is required for remote access. Every response carries `X-Request-ID`, and errors include a stable `error.code` plus `retryable`. See [docs/AGENT_API_EN.md](docs/AGENT_API_EN.md) for endpoints, examples, and setup
+
+> **Boundary**: ZFundPilot is a personal fund analysis and risk-management tool. It **never auto-trades, never connects to a broker for order placement, and never predicts prices**. The agent may read data, maintain the watchlist, refresh NAV, or — when authorized — record trades the user **already completed on an external platform**. Trusted direct record is a **pre-authorization** the administrator granted to a token; it is not proof that the server verified human confirmation in this conversation, and it is not a recommendation to trade.
+
+**Planned (not shipped, not a commitment)**
+
+- **Index valuation & fund-screening visualization** — Index valuation percentiles, index size and constituent holdings, broad-based vs. sector classification, and fund trend comparison
+- **P3 explainable suggestions & unified in-app alerts** — Turn health/rebalancing suggestions into "rationale → affected holdings → before/after → risks and limits"; unify take-profit/stop-loss, dividend, skipped auto-invest, data-refresh failure, and data-health alerts with dedupe, read state, and failure reasons; off-site notifications stay minimal-disclosure and off by default
 
 ### Security & Customization
 

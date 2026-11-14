@@ -395,6 +395,30 @@ const handleDelete = async (txId: number) => {
                   <span className="font-medium tabular-nums">{profileData.scale.toFixed(2)} {t.fundDetail.profileScaleUnit}</span>
                 </div>
               )}
+              {profileData.institution_ratio != null && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">{t.fundDetail.profileInstitutionRatio}</span>
+                  <span className="font-medium tabular-nums">{profileData.institution_ratio.toFixed(1)}%</span>
+                </div>
+              )}
+              {profileData.individual_ratio != null && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">{t.fundDetail.profileIndividualRatio}</span>
+                  <span className="font-medium tabular-nums">{profileData.individual_ratio.toFixed(1)}%</span>
+                </div>
+              )}
+              {profileData.internal_ratio != null && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">{t.fundDetail.profileInternalRatio}</span>
+                  <span className="font-medium tabular-nums">{profileData.internal_ratio.toFixed(1)}%</span>
+                </div>
+              )}
+              {profileData.holder_report_date && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-muted-foreground">{t.fundDetail.profileHolderDate}</span>
+                  <span className="font-medium tabular-nums">{profileData.holder_report_date}</span>
+                </div>
+              )}
               {profileData.tenure_return != null && (
                 <div className="flex items-center gap-1.5">
                   <span className="text-muted-foreground">{t.fundDetail.profileTenureReturn}</span>

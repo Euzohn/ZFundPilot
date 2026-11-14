@@ -437,6 +437,10 @@ export interface FundProfile {
   custodian_fee: number | null
   sales_fee: number | null
   risk_level: string                  // 风险等级
+  institution_ratio: number | null    // 机构持有比例（%）
+  individual_ratio: number | null     // 个人持有比例（%）
+  internal_ratio: number | null       // 内部持有比例（%）
+  holder_report_date: string          // 持有人结构报告期（YYYY-MM-DD）
 }
 
 // ── 关键词映射 ──
@@ -555,6 +559,10 @@ export interface FundFilterItem {
   returns: Record<string, number | null> | null
   risk: Record<string, number | null> | null
   index_tag: string // broad / sector / theme / ""（非指数型为空）
+  institution_ratio: number | null // 机构持有比例（%）
+  individual_ratio: number | null  // 个人持有比例（%）
+  internal_ratio: number | null    // 内部持有比例（%）
+  holder_report_date: string       // 持有人结构报告期（YYYY-MM-DD）
 }
 
 export interface FundSparkline {

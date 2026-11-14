@@ -18,7 +18,7 @@ import { useCompare } from "@/contexts/CompareContext"
 import { toast } from "sonner"
 import { Search, RefreshCw, Check, Star, GitCompare, Loader2 } from "lucide-react"
 
-type SortField = "code" | "1y" | "max_drawdown" | "volatility" | "scale"
+type SortField = "code" | "1y" | "max_drawdown" | "volatility" | "scale" | "institution_ratio"
 
 // 指数分类徽章配色（宽基/行业/主题）
 const INDEX_TAG_STYLE: Record<string, string> = {
@@ -119,7 +119,7 @@ export default function Screener() {
         const metricsMap = new Map(res2.funds.map(f => [f.code, f]))
         setResults(prev => prev.map(f => {
           const m = metricsMap.get(f.code)
-          return m ? { ...f, returns: m.returns, risk: m.risk, scale: m.scale, manager: m.manager, inception_date: m.inception_date } : f
+          return m ? { ...f, returns: m.returns, risk: m.risk, scale: m.scale, manager: m.manager, inception_date: m.inception_date, institution_ratio: m.institution_ratio, individual_ratio: m.individual_ratio, internal_ratio: m.internal_ratio, holder_report_date: m.holder_report_date } : f
         }))
       }
     } catch {
@@ -169,6 +169,7 @@ export default function Screener() {
       case "max_drawdown": return f.risk?.max_drawdown ?? Infinity
       case "volatility": return f.risk?.volatility ?? Infinity
       case "scale": return f.scale ?? -Infinity
+      case "institution_ratio": return f.institution_ratio ?? -Infinity
     }
   }
 
@@ -326,6 +327,7 @@ export default function Screener() {
                   <SortHeader field="max_drawdown" className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">{t.compare.maxDrawdown}</SortHeader>
                   <SortHeader field="volatility" className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">{t.compare.volatility}</SortHeader>
                   <SortHeader field="scale" className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">{t.compare.scale}</SortHeader>
+                  <SortHeader field="institution_ratio" className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">{t.screener.institutionRatio}</SortHeader>
                   <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">{t.compare.manager}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -372,6 +374,16 @@ export default function Screener() {
                     </TableCell>
                     <TableCell className="px-2 py-1.5 text-right text-xs tabular-nums">
                       {f.scale != null ? f.scale.toFixed(1) : <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell
+                      className="px-2 py-1.5 text-right text-xs tabular-nums"
+                      title={f.holder_report_date
+                        ? `${t.screener.institutionRatio} · ${f.holder_report_date}`
+                        : undefined}
+                    >
+                      {f.institution_ratio != null
+                        ? `${f.institution_ratio.toFixed(1)}%`
+                        : <span className="text-muted-foreground">—</span>}
                     </TableCell>
                     <TableCell className="max-w-[100px] truncate px-2 py-1.5 text-xs text-muted-foreground" title={f.manager}>{f.manager || "—"}</TableCell>
                   </TableRow>

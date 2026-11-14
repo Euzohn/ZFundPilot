@@ -2801,6 +2801,8 @@ def _agent_fund_full(item: fund_filter.FundFilterItem,
     if snapshot is None:
         data.update({
             "scale": None, "manager": "", "inception_date": "",
+            "institution_ratio": None, "individual_ratio": None,
+            "internal_ratio": None, "holder_report_date": "",
             "returns": None, "risk": None, "metrics_status": status,
         })
         return data
@@ -2808,6 +2810,10 @@ def _agent_fund_full(item: fund_filter.FundFilterItem,
         "scale": snapshot.get("scale"),
         "manager": snapshot.get("manager", ""),
         "inception_date": snapshot.get("inception_date", ""),
+        "institution_ratio": snapshot.get("institution_ratio"),
+        "individual_ratio": snapshot.get("individual_ratio"),
+        "internal_ratio": snapshot.get("internal_ratio"),
+        "holder_report_date": snapshot.get("holder_report_date", ""),
         "returns": snapshot.get("returns") or {},
         "risk": snapshot.get("risk") or {},
         "metrics_status": status,

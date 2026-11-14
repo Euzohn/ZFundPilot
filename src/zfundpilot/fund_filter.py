@@ -17,7 +17,12 @@ from dataclasses import dataclass
 
 from . import compare as _compare
 from . import config
-from .fetch_fund import _classify_index, _guess_fund_type, _guess_sector
+from .fetch_fund import (
+    _classify_index,
+    _guess_fund_type,
+    _guess_sector,
+    fetch_holder_structure,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +57,10 @@ class FundFilterItem:
     returns: dict[str, float | None] = None
     risk: dict[str, float | None] = None
     index_tag: str = ""  # 指数型基金分类：broad / sector / theme / ""
+    institution_ratio: float | None = None  # 机构持有比例（%）
+    individual_ratio: float | None = None   # 个人持有比例（%）
+    internal_ratio: float | None = None     # 内部持有比例（%）
+    holder_report_date: str = ""            # 持有人结构报告期（YYYY-MM-DD）
 
 
 @dataclass
@@ -150,10 +159,15 @@ def _enrich_snapshot(item: FundFilterItem) -> dict:
     """
     nav = _compare._get_cached_nav(item.code)
     archive = _compare._get_fund_archive(item.code)
+    holder = fetch_holder_structure(item.code)
     snapshot: dict = {
         "scale": archive.get("scale"),
         "manager": archive.get("manager", ""),
         "inception_date": archive.get("inception", ""),
+        "institution_ratio": holder["institution_ratio"] if holder else None,
+        "individual_ratio": holder["individual_ratio"] if holder else None,
+        "internal_ratio": holder["internal_ratio"] if holder else None,
+        "holder_report_date": holder["report_date"] if holder else "",
         "returns": {},
         "risk": {},
     }
@@ -190,6 +204,10 @@ def _enrich_one(item: FundFilterItem) -> None:
     item.scale = snapshot["scale"]
     item.manager = snapshot["manager"]
     item.inception_date = snapshot["inception_date"]
+    item.institution_ratio = snapshot["institution_ratio"]
+    item.individual_ratio = snapshot["individual_ratio"]
+    item.internal_ratio = snapshot["internal_ratio"]
+    item.holder_report_date = snapshot["holder_report_date"]
     item.returns = snapshot["returns"]
     item.risk = snapshot["risk"]
 

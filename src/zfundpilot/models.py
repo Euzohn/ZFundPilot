@@ -446,6 +446,10 @@ class FundProfile:
     custodian_fee: float | None = None       # 托管费（年化）
     sales_fee: float | None = None           # 销售服务费（年化）
     risk_level: str = ""                     # 风险等级（低风险/中低风险/中风险/中高风险/高风险）
+    institution_ratio: float | None = None   # 机构持有比例（%，最新报告期）
+    individual_ratio: float | None = None    # 个人持有比例（%，最新报告期）
+    internal_ratio: float | None = None      # 内部持有比例（%，最新报告期）
+    holder_report_date: str = ""             # 持有人结构报告期（YYYY-MM-DD）
 
     def to_dict(self) -> dict:
         return asdict(self)

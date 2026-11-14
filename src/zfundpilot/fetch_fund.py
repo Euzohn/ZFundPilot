@@ -1612,6 +1612,69 @@ def _parse_work_days(text: str) -> int | None:
     return total if total > 0 else None
 
 
+# ---------------------------------------------------------------------------
+# 持有人结构（机构 / 个人 / 内部持有比例）
+# ---------------------------------------------------------------------------
+_holder_cache: dict[str, dict] = {}
+_HOLDER_CACHE_TTL = 6 * 3600  # 6 小时（半年报/年报更新，无需频繁拉取）
+_HOLDER_FAILURE_TTL = 30 * 60  # 失败/无数据 30 分钟后重试
+
+_HOLDER_ROW_RE = re.compile(
+    r"<tr><td>(\d{4}-\d{2}-\d{2})</td>"
+    r"<td[^>]*>([\d.]+)%</td>"
+    r"<td[^>]*>([\d.]+)%</td>"
+    r"<td[^>]*>([\d.]+)%</td>"
+    r"<td[^>]*>([\d.]+)</td></tr>"
+)
+
+
+def fetch_holder_structure(fund_code: str) -> dict | None:
+    """获取最新一期持有人结构（机构/个人/内部持有比例 + 总份额）。
+
+    数据源：天天基金 F10 ``FundArchivesDatas.aspx?type=cyrjg``（约 2–6 KB，
+    半年报/年报更新，需 ``fundf10`` Referer；全局 ``_HTTP_HEADERS`` 已满足）。
+    返回 ``None`` 表示暂无数据或抓取失败；不抛异常。成功缓存 6 小时，
+    失败/无数据缓存 30 分钟后重试。
+    """
+    now = time.time()
+    cached = _holder_cache.get(fund_code)
+    if cached:
+        ttl = _HOLDER_CACHE_TTL if cached["data"] else _HOLDER_FAILURE_TTL
+        if now - cached["ts"] < ttl:
+            return cached["data"]
+
+    data: dict | None = None
+    try:
+        url = (
+            "https://fundf10.eastmoney.com/FundArchivesDatas.aspx"
+            f"?type=cyrjg&code={fund_code}&rt={now}"
+        )
+        text = _http_get(url)
+        rows = _HOLDER_ROW_RE.findall(text)
+        if rows:
+            # 接口按报告期倒序返回；再取最大日期，避免上游顺序变化
+            report_date, inst, indiv, internal, shares = max(
+                rows, key=lambda row: row[0]
+            )
+            data = {
+                "report_date": report_date,
+                "institution_ratio": round(float(inst), 2),
+                "individual_ratio": round(float(indiv), 2),
+                "internal_ratio": round(float(internal), 2),
+                "total_shares": round(float(shares), 2),
+            }
+    except Exception:  # noqa: BLE001
+        logger.debug("持有人结构抓取失败 %s", fund_code, exc_info=True)
+
+    _holder_cache[fund_code] = {"ts": now, "data": data}
+    return data
+
+
+def clear_holder_cache() -> None:
+    """清空持有人结构缓存。"""
+    _holder_cache.clear()
+
+
 def fetch_fund_profile(fund_code: str) -> FundProfile:
     """获取基金档案：基金经理、从业时间、基金规模、任期收益、运作费率。
 
@@ -1662,6 +1725,14 @@ def fetch_fund_profile(fund_code: str) -> FundProfile:
     except Exception as exc:  # noqa: BLE001
         profile.message = str(exc)
         profile.code = "fetch_error"
+
+    # 持有人结构（失败不影响档案主体）
+    holder = fetch_holder_structure(fund_code)
+    if holder:
+        profile.institution_ratio = holder["institution_ratio"]
+        profile.individual_ratio = holder["individual_ratio"]
+        profile.internal_ratio = holder["internal_ratio"]
+        profile.holder_report_date = holder["report_date"]
 
     # 风险等级（失败不影响档案主体）
     profile.risk_level = fetch_risk_level(fund_code)

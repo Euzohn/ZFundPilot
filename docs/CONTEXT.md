@@ -49,6 +49,7 @@ ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
 │   ├── __init__.py          # __version__ = "0.26.0"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
+│   ├── ak_compat.py         # akshare 跨版本改名兼容层（优先新名、回退旧名）
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
 │   ├── models.py            # 数据结构（Fund/Transaction/Position/PortfolioSummary）
@@ -248,7 +249,7 @@ ZFundPilot/
   - **申购状态可投性校验**：`_check_purchasable(fund_code, amount)` 在 `calc_purchase_fee` 前执行 gate——`purchase_status` 为「暂停申购」/「封闭期」→ skip `suspended`；`daily_limit > 0` 且 `amount > daily_limit` → skip `limit_exceeded`；`min_purchase > 0` 且 `amount < min_purchase` → skip `below_minimum`。被跳过的计划不更新 `next_run`（次日自动重试）。手动执行（`manual=True`）不跳过，仅在返回值 `warnings` 数组中告警。基金不在库或状态未知时放行，避免误伤
 - `run_all_due()`: 被 `scheduler.py` 每天 09:00 调用，检查所有 `enabled=1` 且 `next_run <= today` 的计划，逐个执行；skipped 的状态标记为 `skip_code`（`suspended`/`limit_exceeded`/`below_minimum`）或 `skipped`（今日已执行）。**休市 gate**：执行前检查今日可投性——周末、国内法定节假日/调休（`db.is_trading_day`）、或 QDII + 美股休市 → 跳过（不建仓、不更新 next_run，下一交易日自动重试顺延），结果标记 `status="holiday"`。手动执行不受此限制
 - **QDII 美股休市跳过**：QDII 基金（`fund_type == "QDII"`）在美股休市日通常暂停申购，即使是中国工作日也不可定投。`_next_trading_day` 和 `run_all_due` 均用 `us_calendar` 校验美股开市（QDII 在休市日仍发持平净值，不能凭净值存在与否判断）
-- **国内法定节假日跳过**：A 股交易日历（`trade_calendar` 表，`ak.tool_trade_date_hist_sina` 含法定节假日 + 调休）由 `fetch_fund.refresh_trade_calendar` 每日刷新。`_next_trading_day` 和 `run_all_due` 均用 `db.is_trading_day` 排除节假日（国庆/春节等）。日历为空或超覆盖范围（跨年未更新）时退化周末判断，NAV 回填机制兜底
+- **国内法定节假日跳过**：A 股交易日历（`trade_calendar` 表，`calendar_trade_date_hist_sina`（旧版 `tool_trade_date_hist_sina`）含法定节假日 + 调休）由 `fetch_fund.refresh_trade_calendar` 每日刷新。`_next_trading_day` 和 `run_all_due` 均用 `db.is_trading_day` 排除节假日（国庆/春节等）。日历为空或超覆盖范围（跨年未更新）时退化周末判断，NAV 回填机制兜底
 - API: 6 个端点 `POST/GET/PUT/DELETE /api/auto-invest/plans` + `/toggle` + `/execute`
 
 ### fetch_fund.py — 净值获取
@@ -260,11 +261,12 @@ ZFundPilot/
 - `fetch_fund_holdings(fund_code)`: 重仓股 + 资产配置（AkShare `fund_portfolio_hold_em`，1h 缓存，取最新季度前 10）
 - `fetch_fund_industry_allocation(fund_code)`: 行业配置（AkShare `fund_portfolio_industry_allocation_em`，证监会 ~19 类，当年无数据回退上一年，1h 缓存，覆盖全持仓）。基金穿透聚合数据源
 - `fetch_fund_ranking(fund_code)`: 同类排名百分位走势（AkShare `fund_open_fund_info_em(indicator="同类排名百分比")`，1h 缓存）
-- `fetch_fund_profile(fund_code)`: 基金档案（天天基金 `pingzhongdata` 的 `Data_currentFundManager` + `Data_fluctuationScale`，单请求，1h 缓存）
-- 缓存均带 `clear_*_cache()` 清空函数；费率 `fetch_fund_fee_rates` 另有 HTML 解析（`fundf10.eastmoney.com/jjfl_<code>.html`）
+- `fetch_fund_profile(fund_code)`: 基金档案（天天基金 `pingzhongdata` 的 `Data_currentFundManager` + `Data_fluctuationScale`，1h 缓存；另加 1 次 ~3 KB 的持有人结构请求）
+- `fetch_holder_structure(fund_code)`: 最新一期机构/个人/内部持有比例 + 总份额（天天基金 F10 `FundArchivesDatas.aspx?type=cyrjg`，约 2–6 KB，半年报/年报更新；6h 成功缓存 / 30min 失败缓存；失败返回 `None` 不抛异常）
+- 缓存均带 `clear_*_cache()` 清空函数（含 `clear_holder_cache()`）；费率 `fetch_fund_fee_rates` 另有 HTML 解析（`fundf10.eastmoney.com/jjfl_<code>.html`）
 - `fetch_purchase_status(fund_codes)`: 批量获取基金申购状态（`ak.fund_purchase_em` 全市场表本地过滤，24h 内存缓存 + stale-if-error）。返回 `{code: {status, daily_limit, min_purchase}}`，表中不存在的基金不出现在结果里（调用方按「未知」放行）
 - `refresh_purchase_status(fund_codes)`: 拉取申购状态并写回 `funds` 表 3 个字段，返回更新数量。scheduler 净值更新后 + 定投执行前（清缓存强制刷新）调用
-- `fetch_trade_calendar()`: 获取 A 股交易日历（`ak.tool_trade_date_hist_sina`，含法定节假日 + 调休），24h 内存缓存 + stale-if-error，返回 `"YYYY-MM-DD"` 集合
+- `fetch_trade_calendar()`: 获取 A 股交易日历（akshare `calendar_trade_date_hist_sina`，旧版 `tool_trade_date_hist_sina`；含法定节假日 + 调休），24h 内存缓存 + stale-if-error，返回 `"YYYY-MM-DD"` 集合
 - `refresh_trade_calendar()`: 拉取日历并持久化到 `trade_calendar` 表，返回天数。scheduler 净值更新后 + 定投执行前调用
 - `fetch_risk_level(fund_code)`: 轻量抓取单只基金风险等级（`fund.eastmoney.com/{code}.html` HTML 正则，仅 1 个请求，从 `fetch_fund_profile` 抽出复用），返回 `""` 表示未获取到
 - `refresh_risk_levels(fund_codes)`: 批量抓取风险等级并写回 `funds.risk_level`，返回更新数量（空值不写回）。scheduler 净值更新后 + 手动刷新 + 启动补全时调用。6 线程并发抓取（`ThreadPoolExecutor`，与 compare/fund_filter 一致）+ 随机抖动；DB 写入主线程串行
@@ -274,7 +276,8 @@ ZFundPilot/
 - `load_fund_universe()`: 天天基金 `fundcode_search.js` 全市场基金池（24h 本地缓存），自动分类类型/板块
 - `filter_funds(types, sectors, keyword, limit, offset, with_metrics)`: 按条件筛选
 - `with_metrics=True` 时 `_enrich_with_metrics()` 用 `_EXECUTOR`（6 线程池）对 Top 30 并发补充：`_enrich_one()` 复用 `compare.py` 的 `_get_cached_nav()`/`_get_fund_archive()`/`_calculate_period_return()`/`_calculate_max_drawdown()`/`_calculate_volatility()`/`_calculate_sharpe()`
-- `FundFilterItem`: `code`/`name`/`type`/`sector`（基础）+ `scale`/`manager`/`inception_date`（档案）+ `returns`/`risk`（指标）+ `index_tag`（指数分类）
+- `FundFilterItem`: `code`/`name`/`type`/`sector`（基础）+ `scale`/`manager`/`inception_date`（档案）+ `institution_ratio`/`individual_ratio`/`internal_ratio`/`holder_report_date`（持有结构）+ `returns`/`risk`（指标）+ `index_tag`（指数分类）
+- 指标增强（Top 30，6 线程）同时补充持有结构（`fetch_holder_structure` 单只约 2–6 KB，失败不阻断其他字段）；选基页展示「机构占比」列（可排序，悬停显示报告期）
 - `index_tag`：`fetch_fund._classify_index(name, type)` 按名称关键词把指数型基金归入 `broad`（宽基）/ `sector`（行业）/ `theme`（主题），非指数型或无法判断为 `""`。匹配顺序主题→行业→宽基（「中证500信息技术」等窄基归行业）；QDII 需名称含指数/ETF/联接/LOF 才视为指数产品；债券指数与「混合/股票且无指数信号」的 LOF 误判主动基金不打标。仅用名称关键词，无新数据源
 
 ### sparkline.py — 选基迷你走势
@@ -302,7 +305,7 @@ ZFundPilot/
 - 指数估值兜底：东财估值不可用时，对指数型基金用跟踪指数/ETF 实时涨跌估算
   - `fetch_index_quotes(keywords)`: 批量获取指数/ETF 实时涨跌幅，两级匹配（指数实时 → ETF 实时，仅按需）
   - `estimate_from_index(fund_code, tracking_index, prev_nav, prev_date)`: 用指数涨跌构建 FundEstimate
-  - 数据源：`stock_zh_index_spot_sina`（A 股 562）+ `index_global_spot_em`（全球 56）+ `stock_hk_index_spot_em`（港股 359）+ `fund_etf_spot_em`（ETF 1566，行业/主题代理）
+  - 数据源：`index_zh_spot_sina`（旧版 `stock_zh_index_spot_sina`，A 股 562）+ `index_global_spot_em`（全球 56）+ `index_hk_spot_em`（旧版 `stock_hk_index_spot_em`，港股 359）+ `fund_etf_spot_em`（ETF 1566，行业/主题代理）；旧名经 `ak_compat` 兼容
   - 指数缓存 30s，ETF 缓存 60s（拉取较慢）
 - `fetch_estimate(fund_code)`: 获取单只基金估值（`gsz`/`gszzl`/`gztime`），30s 内存缓存
 - `fetch_estimates(fund_codes)`: 批量获取，30s 批量缓存
@@ -311,7 +314,7 @@ ZFundPilot/
 - `gztime` 从估值列名提取日期（如 `2024-07-30-估算数据-估算值` → `2024-07-30 15:00`），而非用 `datetime.now()`，避免跨日数据时间戳错误
 - 估算失效检测：`jzrq == gztime[:10]` 时标记 `ok=False`（真实净值已公布）
 - API: `GET /api/estimate`（批量 + 组合汇总，含指数兜底）+ `GET /api/funds/{code}/estimate`（单只，含指数兜底）
-- `fetch_index_history(symbol, start_date, end_date)`: 获取指数历史收盘价（新浪源 `ak.stock_zh_index_daily`），三级缓存（L1 内存 1h → L2 SQLite `index_history` 表 → L3 新浪在线）。在线拉取后自动持久化到 DB，离线时从 DB 返回已有数据。`_to_sina_symbol()` 转换代码格式（000300→sh000300），用于基准对比。`BENCHMARK_INDICES` 定义在 `config.py` 共享
+- `fetch_index_history(symbol, start_date, end_date)`: 获取指数历史收盘价（新浪源 `index_zh_daily_sina`，旧版 `stock_zh_index_daily`，经 `ak_compat` 兼容），三级缓存（L1 内存 1h → L2 SQLite `index_history` 表 → L3 新浪在线）。在线拉取后自动持久化到 DB，离线时从 DB 返回已有数据。`_to_sina_symbol()` 转换代码格式（000300→sh000300），用于基准对比。`BENCHMARK_INDICES` 定义在 `config.py` 共享
 
 ### fetch_macro.py — 宏观财富水位线
 
@@ -365,7 +368,7 @@ ZFundPilot/
 - **净值更新共享锁**：`_run_nav_update()` 与 `api.py` 的手动触发共用 `nav_update_lock`/`nav_update_state`（定义在 `nav_update_state.py`，避免循环导入）。定时与手动两路更新互斥，且共享进度/结果状态供前端显示。`running=True` 在锁内同步设置，`finally` 复位也加锁，进程启动（前）后无 TOCTOU 竞态。`phase` 字段在尾部任务（回填/止盈止损/基准指数/元数据刷新）期间实时上报当前阶段，供前端在净值抓取完成后显示「刷新风险等级…」等标签而非停在 100% 静默等待
 - **基准指数持久化**：`_update_benchmark_indices()` 在净值更新后调用，遍历 `config.BENCHMARK_INDICES`（沪深300/上证指数/创业板指）逐只拉取并持久化到 `index_history` 表，确保离线时基准对比数据可用。DB 已有最新数据时跳过
 - **申购状态刷新**：`_refresh_purchase_status()` 在净值更新后 + 定投执行前调用，拉取 `ak.fund_purchase_em` 全市场申购状态表，过滤库内基金写回 `funds` 表（`purchase_status`/`daily_limit`/`min_purchase`）。定投执行前 `clear_purchase_status_cache()` 强制刷新确保数据新鲜
-- **交易日历刷新**：`_refresh_trade_calendar()` 在净值更新后 + 定投执行前调用，拉取 `ak.tool_trade_date_hist_sina` 持久化到 `trade_calendar` 表，供 `db.is_trading_day` 判断法定节假日
+- **交易日历刷新**：`_refresh_trade_calendar()` 在净值更新后 + 定投执行前调用，拉取 `calendar_trade_date_hist_sina`（旧版 `tool_trade_date_hist_sina`）持久化到 `trade_calendar` 表，供 `db.is_trading_day` 判断法定节假日
 - **风险等级刷新**：`_refresh_risk_levels()` 逐只轻量抓取库内基金风险等级（每只仅 1 个 HTML 请求）写回 `funds.risk_level`，供持仓/纵览/收益/体检页展示
 - **基金元数据刷新（共享）**：`refresh_fund_metadata()` = `_refresh_purchase_status()` + `_refresh_trade_calendar()` + `_refresh_risk_levels()` 三项。定时净值更新后（`_run_nav_update`）与手动刷新（`api.update_nav`）共用，刷新后清 `analysis` 缓存，确保两路行为一致、接口立即返回新值
 - **风险等级启动补全**：`_bootstrap_risk_levels()` 在调度器启动时补抓 `risk_level` 为空的基金（部署后无需等到 21:00 定时任务即可展示），仅处理空值避免每次重启全量抓取
@@ -554,14 +557,14 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 - **AkShare** (`ak.fund_open_fund_info_em`): 主数据源，基金净值历史
 - **AkShare** (`ak.fund_value_estimation_em`): 实时估值。东财旧统一估值接口已停止返回数据（2026-02 起行业性下线实时估值），新版 akshare 仅覆盖 LOF/ETF联接/QDII（约 786 只）；主动权益基金无公开估值源，指数型基金走指数/ETF 行情兜底
-- **AkShare** (`ak.stock_zh_index_spot_sina` / `ak.index_global_spot_em` / `ak.stock_hk_index_spot_em`): 指数实时行情（A 股/全球/港股），指数基金估值兜底
-- **AkShare** (`ak.stock_zh_index_daily`): 指数历史日线（新浪源），基准对比用（沪深300/上证指数/创业板指）
+- **AkShare** (`ak.index_zh_spot_sina` / `ak.index_global_spot_em` / `ak.index_hk_spot_em`): 指数实时行情（A 股/全球/港股），指数基金估值兜底；旧名 `stock_zh_index_spot_sina`/`stock_hk_index_spot_em` 经 `ak_compat` 兼容
+- **AkShare** (`ak.index_zh_daily_sina`): 指数历史日线（新浪源），基准对比用（沪深300/上证指数/创业板指）；旧名 `stock_zh_index_daily` 经 `ak_compat` 兼容
 - **AkShare** (`ak.fund_etf_spot_em`): ETF 实时行情（1566 只），行业/主题指数基金估值代理
 - **天天基金** (`fund.eastmoney.com/pingzhongdata`): fallback 数据源 + 基金档案（经理/规模）
 - **天天基金** (`fund.eastmoney.com/{code}.html`): 风险等级抓取（HTML 解析）
 - **天天基金** (`fundf10.eastmoney.com`): 费率抓取（HTML 解析）
 - **AkShare** (`ak.fund_purchase_em`): 全市场基金申购状态（申购状态/日累计限定金额/购买起点，供定投可投性校验）
-- **AkShare** (`ak.tool_trade_date_hist_sina`): A 股交易日历（法定节假日 + 调休，供定投可投性校验）
+- **AkShare** (`ak.calendar_trade_date_hist_sina`): A 股交易日历（法定节假日 + 调休，供定投可投性校验）；旧名 `tool_trade_date_hist_sina` 经 `ak_compat` 兼容
 - **乐咕乐股** (`ak.stock_index_pe_lg` / `ak.stock_index_pb_lg`): 宽基指数 PE/PB 月度长历史（12 个宽基，2005 年至今），供指数估值页；反爬脆弱（JS token + cookie/csrf，间歇失败），依赖本地缓存 + `stale-if-error` + 单只降级；无官方 API key、非东方财富系
 - 其余均为东方财富旗下，无需额外 API key
 
@@ -571,6 +574,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- feat: 选基持有结构（机构/个人/内部持有比例）——新增 `fetch_fund.fetch_holder_structure()`（天天基金 F10 `cyrjg`，2–6 KB，6h 成功/30min 失败缓存），`FundProfile` 与 `FundFilterItem` 各加 4 字段；选基表新增「机构占比」列（可排序），基金详情展示机构/个人/内部比例与报告期；Agent `screen_funds` 快照同步。免费公开源无单只「持有人户数」，以持有比例替代，未纳入 PDF 户数。新增 `tests/test_holder_structure.py`（12 例）
+- fix: 兼容 akshare 1.20.44+ 接口批量改名——新增 `ak_compat.resolve()/call()`（优先新名、回退旧名），覆盖指数日线/实时、港股指数、交易日历、A 股指数历史 5 组接口；修复 CI 安装最新 akshare 后旧属性缺失导致的测试失败。新增 `tests/test_ak_compat.py`（4 例）
 - feat: 指数估值 P2——新增 `valuation.py`、`index_valuation` 缓存表与 3 个只读接口（`/api/valuation/indices`、`/indices/{code}/history`、`/indices/{code}/funds`），覆盖 12 个宽基；百分位按日期窗口自算（默认近 10 年，历史不足用全历史并标注），温度按 PE(TTM) 百分位 `<30`/`30–70`/`>70` 分档；乐咕源 TTL 24h + `stale-if-error` + 单只降级；前端新增 `/valuation` 独立页（排序、温度徽章、百分位条、历史曲线、跟踪基金、降级提示）与侧栏入口；新增 `tests/test_valuation.py`（52 例）。边界：只做宽基（行业/主题无免费 PE+PB 历史源），数据仅供参考
 - feat: 选基可视化 P1——`FundFilterItem.index_tag`（宽基/行业/主题）+ `fetch_fund._classify_index`，新增 `sparkline.py` 与 `GET /api/funds/sparklines`（近 250 交易日归一化净值，只读 DB），选基页新增指数徽章列与近 1 年走势列；新增 `tests/test_index_classify.py`（37 例）与 `tests/test_sparkline.py`（16 例）
 - feat: Agent HTTP 统一请求 ID 与错误契约——所有响应带 `X-Request-ID`（可透传合法客户端值），Agent 工具成功响应包新增 `request_id`；错误响应保留既有 `detail`（形状不变）并新增 `error` 对象（`code`/`message`/`request_id`/`retryable`，可选 `details`/`retry_after`）。`429`/`503` 为 `retryable=true` 并从 `Retry-After` 回填秒数，`503 database_busy` 保留原 `detail.code`；鉴权错误稳定码 `invalid_token`/`expired`/`revoked`/`auth_disabled`/`insufficient_scope`，限流 `rate_limited`，参数校验 `validation_error`（`details` 精简为 `loc/type/msg`），未处理异常统一 500 `internal_error` 且不泄漏细节。新增 `api_errors.py`；CORS 暴露 `X-Request-ID`/`Retry-After`；前端错误解析优先 `error`、回退 `detail`，MCP 错误解析优先 `error` 并回显 `request_id`；新增 `tests/test_agent_error_contract.py`（16 例）

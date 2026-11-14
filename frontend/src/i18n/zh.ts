@@ -1537,6 +1537,7 @@ const zh = {
     loading: "估值加载中...",
     loadFailed: "估值数据加载失败",
     degraded: "部分指数估值暂不可用（上游接口不稳定），已展示最近一次成功缓存。",
+    refreshing: "上游限流，正在后台逐只刷新，数据会自动补全…",
     empty: "暂无估值数据",
     retry: "重试",
     index: "指数",

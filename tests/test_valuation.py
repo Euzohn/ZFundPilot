@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import math
+import threading
+import time
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -47,6 +49,49 @@ class FakeProvider(valuation.ValuationProvider):
         if self.fail:
             return None
         return self.points
+
+
+@pytest.fixture(autouse=True)
+def _fast_legulegu(monkeypatch):
+    """测试不等待真实请求间隔/退避。"""
+    monkeypatch.setattr(valuation, "_REQUEST_INTERVAL", 0.0)
+    monkeypatch.setattr(valuation, "_RETRY_BACKOFF", (0.0, 0.0))
+
+
+class SlowProvider(valuation.ValuationProvider):
+    """慢速 provider：记录并发度，用于验证串行与后台续跑。"""
+
+    name = "slow"
+
+    def __init__(self, delay: float = 0.05, fail: bool = False):
+        self.delay = delay
+        self.fail = fail
+        self.points = make_series(150)
+        self.calls: list[str] = []
+        self.concurrent = 0
+        self.max_concurrent = 0
+        self._lock = threading.Lock()
+
+    def fetch_history(self, meta: IndexMeta) -> list[dict] | None:
+        with self._lock:
+            self.calls.append(meta.code)
+            self.concurrent += 1
+            self.max_concurrent = max(self.max_concurrent, self.concurrent)
+        try:
+            time.sleep(self.delay)
+            return None if self.fail else self.points
+        finally:
+            with self._lock:
+                self.concurrent -= 1
+
+
+def wait_idle(timeout: float = 10.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not valuation.is_refreshing():
+            return True
+        time.sleep(0.02)
+    return False
 
 
 @pytest.fixture
@@ -316,6 +361,67 @@ class TestListValuations:
         ]
 
 
+class TestSerializedFetch:
+    """乐咕调用必须串行（V8 非线程安全），且超时后后台继续抓取落库。"""
+
+    def test_calls_never_overlap(self, temp_db):
+        provider = SlowProvider(delay=0.01)
+        valuation.list_valuations(provider=provider)
+        assert provider.max_concurrent == 1
+        assert len(provider.calls) == 12
+
+    def test_background_continues_after_timeout(self, temp_db):
+        provider = SlowProvider(delay=0.15)
+        values = valuation.list_valuations(provider=provider, timeout=0.05)
+        assert any(not v.ok for v in values)  # 有界等待先返回部分结果
+        assert valuation.is_refreshing() is True
+        assert wait_idle()  # 后台任务继续完成
+        assert len(db.get_index_valuations()) == 12
+        again = valuation.list_valuations(provider=provider)
+        assert all(v.ok and not v.stale for v in again)
+
+    def test_single_flight_dedup(self, temp_db):
+        provider = SlowProvider(delay=0.1)
+        valuation.list_valuations(provider=provider, timeout=0.01)
+        valuation.list_valuations(provider=provider, timeout=0.01)
+        assert wait_idle()
+        assert sorted(provider.calls) == sorted(
+            meta.code for meta in valuation.INDEX_REGISTRY
+        )
+
+    def test_background_failure_keeps_placeholder(self, temp_db):
+        provider = SlowProvider(delay=0.01, fail=True)
+        values = valuation.list_valuations(provider=provider, timeout=5.0)
+        assert all(not v.ok for v in values)
+        assert wait_idle()
+        assert db.get_index_valuations() == []
+
+
+class TestLgCallRetry:
+    def test_retries_then_succeeds(self):
+        calls: list[str] = []
+
+        def flaky(symbol):
+            calls.append(symbol)
+            if len(calls) < 3:
+                raise RuntimeError("429")
+            return "ok"
+
+        assert valuation._lg_call(flaky, "沪深300") == "ok"
+        assert len(calls) == 3
+
+    def test_gives_up_after_max_attempts(self):
+        calls: list[str] = []
+
+        def boom(symbol):
+            calls.append(symbol)
+            raise RuntimeError("429")
+
+        with pytest.raises(RuntimeError):
+            valuation._lg_call(boom, "沪深300")
+        assert len(calls) == 3
+
+
 class TestGetHistory:
     def test_cached_history_and_consistency(self, temp_db):
         valuation.list_valuations(provider=FakeProvider())
@@ -406,6 +512,7 @@ class TestValuationEndpoints:
         assert body["ok"] is True
         assert len(body["indices"]) == 12
         assert body["degraded"] is False
+        assert body["refreshing"] is False
         assert body["as_of"]
         item = body["indices"][0]
         assert item["index_code"] == "000300"

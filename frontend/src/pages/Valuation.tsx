@@ -106,18 +106,18 @@ export default function Valuation() {
   const [fundsLoading, setFundsLoading] = useState<Record<string, boolean>>({})
 
   const load = useCallback(
-    async (force: boolean) => {
+    async (force: boolean, silent = false) => {
       if (force) setRefreshing(true)
-      else setLoading(true)
-      setError("")
+      else if (!silent) setLoading(true)
+      if (!silent) setError("")
       try {
         const res = await api.getIndexValuations(force)
         setData(res)
       } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : t.valuation.loadFailed)
+        if (!silent) setError(e instanceof Error ? e.message : t.valuation.loadFailed)
       } finally {
-        setLoading(false)
-        setRefreshing(false)
+        if (force) setRefreshing(false)
+        if (!silent) setLoading(false)
       }
     },
     [t.valuation.loadFailed],
@@ -126,6 +126,21 @@ export default function Valuation() {
   useEffect(() => {
     load(false)
   }, [load])
+
+  // 上游限流：后台仍在逐只刷新时，轮询直到数据补全（约 4 分钟上限）
+  const [pollTick, setPollTick] = useState(0)
+  useEffect(() => {
+    if (!data?.refreshing) {
+      if (pollTick !== 0) setPollTick(0)
+      return
+    }
+    if (pollTick >= 80) return
+    const timer = window.setTimeout(() => {
+      setPollTick((n) => n + 1)
+      load(false, true)
+    }, 3000)
+    return () => window.clearTimeout(timer)
+  }, [data?.refreshing, pollTick, load])
 
   const toggleExpand = (code: string) => {
     if (expanded === code) {
@@ -364,9 +379,15 @@ export default function Valuation() {
             ? t.valuation.asOf.replace("{date}", data.as_of)
             : t.valuation.expandHint}
         </p>
+        {data?.refreshing && (
+          <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {t.valuation.refreshing}
+          </p>
+        )}
       </div>
 
-      {data?.degraded && (
+      {data?.degraded && !data.refreshing && (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
           {t.valuation.degraded}
         </div>

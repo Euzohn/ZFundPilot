@@ -292,7 +292,7 @@ ZFundPilot/
 - `percentile(values, current)`：当前值在样本中的百分位；`rolling_percentiles(points, field, years)` 按**日期窗口**逐点滚动（非固定点数），保证历史曲线末点与列表当前百分位一致；`select_window` 默认近 10 年，历史不足 10 年回退 `all` 并在 UI 标注
 - `classify_temperature(pe_pct)`：PE(TTM) 百分位 `<30` → `low`、`30–70` → `fair`、`>70` → `high`，`None` → `unknown`；PB 百分位并列展示
 - `IndexValuation`：`code`/`name`/`pe`/`pe_percentile`/`pb`/`pb_percentile`/`window`/`window_months`/`temperature`/`history_months`/`data_date`/`source`/`stale`/`ok`/`message`
-- `list_valuations(refresh=False)`：批量估值；`TTL_HOURS=24` 内读 `index_valuation` 缓存，`refresh=true` 强制拉取；6 线程有界并发（`_MAX_WORKERS`）+ 单只超时；失败时保留旧值标 `stale`（`stale-if-error`），无旧值则单只 `ok=false` 降级，不抛 500
+- `list_valuations(refresh=False)`：批量估值；`TTL_HOURS=24` 内读 `index_valuation` 缓存，`refresh=true` 强制拉取。乐咕经 akshare 用 PyMiniRacer(V8) 解 JS token，**V8 非线程安全**（并发会 SIGTRAP），因此所有抓取走**单 worker 串行队列** + V8 锁 + 请求最小间隔 1.5s + 3 次退避重试（4s/8s）；列表接口有界等待 10s（`LIST_REFRESH_TIMEOUT`）先返回已完成项，超时项转后台继续抓取并逐只落库（响应 `refreshing=true`，前端每 3s 轮询补全）；失败时保留旧值标 `stale`（`stale-if-error`），无旧值则单只 `ok=false` 降级，不抛 500
 - `get_history(code, window=None)`：返回 `index` + `points[]`（`date`/`pe`/`pb`/`pe_percentile`/`pb_percentile`）；未知代码返回 `None` → API 404
 - `tracking_funds(meta, limit=20)`：从全市场基金池按名称关键词匹配跟踪基金（`IndexMeta.exclude` 防子串误判，如「中证100」排除「中证1000」）
 - API：`GET /api/valuation/indices`、`GET /api/valuation/indices/{code}/history`、`GET /api/valuation/indices/{code}/funds`
@@ -574,9 +574,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- fix: 指数估值页拉不到数据 / 后端崩溃——乐咕经 akshare 用 PyMiniRacer(V8) 解 JS token，V8 非线程安全，原 6 线程并发会让进程 SIGTRAP；且上游对突发请求返回 429/504。改为单 worker 串行 + V8 锁 + 请求最小间隔 1.5s + 3 次退避重试（4s/8s）；列表接口有界等待 10s 先返回已完成项，超时项后台续跑并逐只落库，响应新增 `refreshing`；前端每 3s 静默轮询渐进补全（约 4 分钟上限），刷新中不误报「部分指数暂不可用」。新增串行/后台续跑/单飞去重/重试用例（6 例），全量测试 1384 例
 - feat: 选基持有结构（机构/个人/内部持有比例）——新增 `fetch_fund.fetch_holder_structure()`（天天基金 F10 `cyrjg`，2–6 KB，6h 成功/30min 失败缓存），`FundProfile` 与 `FundFilterItem` 各加 4 字段；选基表新增「机构占比」列（可排序），基金详情展示机构/个人/内部比例与报告期；Agent `screen_funds` 快照同步。免费公开源无单只「持有人户数」，以持有比例替代，未纳入 PDF 户数。新增 `tests/test_holder_structure.py`（12 例）
 - fix: 兼容 akshare 1.20.44+ 接口批量改名——新增 `ak_compat.resolve()/call()`（优先新名、回退旧名），覆盖指数日线/实时、港股指数、交易日历、A 股指数历史 5 组接口；修复 CI 安装最新 akshare 后旧属性缺失导致的测试失败。新增 `tests/test_ak_compat.py`（4 例）
-- feat: 指数估值 P2——新增 `valuation.py`、`index_valuation` 缓存表与 3 个只读接口（`/api/valuation/indices`、`/indices/{code}/history`、`/indices/{code}/funds`），覆盖 12 个宽基；百分位按日期窗口自算（默认近 10 年，历史不足用全历史并标注），温度按 PE(TTM) 百分位 `<30`/`30–70`/`>70` 分档；乐咕源 TTL 24h + `stale-if-error` + 单只降级；前端新增 `/valuation` 独立页（排序、温度徽章、百分位条、历史曲线、跟踪基金、降级提示）与侧栏入口；新增 `tests/test_valuation.py`（52 例）。边界：只做宽基（行业/主题无免费 PE+PB 历史源），数据仅供参考
+- feat: 指数估值 P2——新增 `valuation.py`、`index_valuation` 缓存表与 3 个只读接口（`/api/valuation/indices`、`/indices/{code}/history`、`/indices/{code}/funds`），覆盖 12 个宽基；百分位按日期窗口自算（默认近 10 年，历史不足用全历史并标注），温度按 PE(TTM) 百分位 `<30`/`30–70`/`>70` 分档；乐咕源 TTL 24h + `stale-if-error` + 单只降级；前端新增 `/valuation` 独立页（排序、温度徽章、百分位条、历史曲线、跟踪基金、降级提示）与侧栏入口；新增 `tests/test_valuation.py`（58 例）。边界：只做宽基（行业/主题无免费 PE+PB 历史源），数据仅供参考
 - feat: 选基可视化 P1——`FundFilterItem.index_tag`（宽基/行业/主题）+ `fetch_fund._classify_index`，新增 `sparkline.py` 与 `GET /api/funds/sparklines`（近 250 交易日归一化净值，只读 DB），选基页新增指数徽章列与近 1 年走势列；新增 `tests/test_index_classify.py`（37 例）与 `tests/test_sparkline.py`（16 例）
 - feat: Agent HTTP 统一请求 ID 与错误契约——所有响应带 `X-Request-ID`（可透传合法客户端值），Agent 工具成功响应包新增 `request_id`；错误响应保留既有 `detail`（形状不变）并新增 `error` 对象（`code`/`message`/`request_id`/`retryable`，可选 `details`/`retry_after`）。`429`/`503` 为 `retryable=true` 并从 `Retry-After` 回填秒数，`503 database_busy` 保留原 `detail.code`；鉴权错误稳定码 `invalid_token`/`expired`/`revoked`/`auth_disabled`/`insufficient_scope`，限流 `rate_limited`，参数校验 `validation_error`（`details` 精简为 `loc/type/msg`），未处理异常统一 500 `internal_error` 且不泄漏细节。新增 `api_errors.py`；CORS 暴露 `X-Request-ID`/`Retry-After`；前端错误解析优先 `error`、回退 `detail`，MCP 错误解析优先 `error` 并回显 `request_id`；新增 `tests/test_agent_error_contract.py`（16 例）
 

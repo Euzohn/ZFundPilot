@@ -1075,6 +1075,7 @@ export interface IndexValuationListResponse {
   ok: boolean
   indices: IndexValuation[]
   degraded: boolean
+  refreshing: boolean
   as_of: string
   window: string
   source: string

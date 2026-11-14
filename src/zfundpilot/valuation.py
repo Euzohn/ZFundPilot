@@ -11,6 +11,9 @@
   UI 必须标注口径。
 - 乐咕反爬脆弱（JS token + cookie/csrf，实测间歇失败）：缓存 +
   stale-if-error + 单只降级，绝不阻塞其他页面。
+- akshare 用 PyMiniRacer(V8) 解 JS token，V8 非线程安全：所有乐咕调用
+  串行（单 worker）+ 最小请求间隔 + 退避重试；请求只做有界等待，超时项
+  转后台继续抓取并逐只落库，前端轮询渐进填充。
 - 温度以 PE(TTM) 百分位分档；PB 百分位并列展示。仅供参考，非投资建议。
 """
 
@@ -18,7 +21,10 @@ from __future__ import annotations
 
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor, wait
+import threading
+import time
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -30,7 +36,17 @@ logger = logging.getLogger(__name__)
 TTL_HOURS = 24.0
 DEFAULT_WINDOW_YEARS = 10
 REFRESH_TIMEOUT = 20.0
-_MAX_WORKERS = 6
+LIST_REFRESH_TIMEOUT = 10.0
+
+# 乐咕反爬约束（实测）：akshare 用 PyMiniRacer(V8) 解 JS token，V8 非线程安全，
+# 多线程并发会让进程直接 SIGTRAP；上游对突发请求还会返回 429/504。
+# 因此所有乐咕调用必须串行，并保持请求间隔 + 退避重试。
+_REQUEST_INTERVAL = 1.5  # 两次上游请求的最小间隔（秒）
+_MAX_ATTEMPTS = 3
+_RETRY_BACKOFF = (4.0, 8.0)  # 第 1/2 次失败后的等待（秒）
+
+_V8_LOCK = threading.Lock()
+_last_request_ts = 0.0
 
 # 温度阈值（PE 百分位，百分比）
 LOW_MAX = 30.0
@@ -396,6 +412,30 @@ def merge_series(pe_df: Any, pb_df: Any) -> list[dict[str, Any]]:
     return points
 
 
+def _lg_call(fn: Callable[..., Any], symbol: str) -> Any:
+    """串行调用乐咕接口：V8 锁 + 最小请求间隔 + 指数退避重试。"""
+    global _last_request_ts
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_ATTEMPTS):
+        with _V8_LOCK:
+            delay = _REQUEST_INTERVAL - (time.monotonic() - _last_request_ts)
+            if delay > 0:
+                time.sleep(delay)
+            try:
+                result = fn(symbol=symbol)
+            except Exception as exc:  # noqa: BLE001 - 429/网络错误统一重试
+                last_exc = exc
+            else:
+                _last_request_ts = time.monotonic()
+                return result
+            _last_request_ts = time.monotonic()
+        if attempt < _MAX_ATTEMPTS - 1:
+            backoff = _RETRY_BACKOFF[min(attempt, len(_RETRY_BACKOFF) - 1)]
+            if backoff > 0:
+                time.sleep(backoff)
+    raise last_exc  # type: ignore[misc]
+
+
 class LeguleguValuationProvider(ValuationProvider):
     """乐咕乐股：PE(TTM) + PB 月度长历史（仅 12 宽基，反爬脆弱）。"""
 
@@ -408,8 +448,8 @@ class LeguleguValuationProvider(ValuationProvider):
             logger.warning("akshare 不可用，指数估值降级: %s", exc)
             return None
         try:
-            pe_df = ak.stock_index_pe_lg(symbol=meta.lg_symbol)
-            pb_df = ak.stock_index_pb_lg(symbol=meta.lg_symbol)
+            pe_df = _lg_call(ak.stock_index_pe_lg, meta.lg_symbol)
+            pb_df = _lg_call(ak.stock_index_pb_lg, meta.lg_symbol)
         except Exception as exc:  # noqa: BLE001 - 反爬/网络失败一律降级
             logger.warning("乐咕估值抓取失败 %s(%s): %s", meta.code, meta.lg_symbol, exc)
             return None
@@ -466,32 +506,73 @@ def _store(val: IndexValuation, points: list[dict[str, Any]]) -> None:
     )
 
 
+# 单 worker 串行队列：既满足乐咕的串行/限流要求，也天然避免重复抓取；
+# 任务内部逐只落库，HTTP 请求超时后仍在后台继续，下次调用即可读到。
+_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="valuation")
+_inflight: dict[str, Future] = {}
+_inflight_lock = threading.Lock()
+
+
+def _fetch_and_store(
+    code: str, provider: ValuationProvider
+) -> tuple[IndexValuation, list[dict[str, Any]]] | None:
+    """抓取单只并立即落库（后台继续完成时也能被下次请求读到）。"""
+    meta = INDEX_BY_CODE[code]
+    points = provider.fetch_history(meta)
+    if not points:
+        return None
+    val = build_valuation(meta, points)
+    _store(val, points)
+    return val, points
+
+
+def _submit_missing(codes: list[str], provider: ValuationProvider) -> dict[str, Future]:
+    """复用已在途任务，只为缺失代码提交新任务（单飞，避免重复抓取）。"""
+    futures: dict[str, Future] = {}
+    with _inflight_lock:
+        for code in codes:
+            future = _inflight.get(code)
+            if future is not None and not future.done():
+                futures[code] = future
+                continue
+            _inflight.pop(code, None)
+            future = _EXECUTOR.submit(_fetch_and_store, code, provider)
+            _inflight[code] = future
+            futures[code] = future
+    return futures
+
+
+def is_refreshing() -> bool:
+    """是否有后台抓取仍在进行（前端据此轮询进度）。"""
+    with _inflight_lock:
+        for code, future in list(_inflight.items()):
+            if future.done():
+                _inflight.pop(code, None)
+        return bool(_inflight)
+
+
 def _fetch_many(
     codes: list[str], provider: ValuationProvider, timeout: float
-) -> dict[str, list[dict[str, Any]] | None]:
-    """有界并发抓取；超时/异常的单只返回 None（由调用方降级）。"""
+) -> dict[str, tuple[IndexValuation, list[dict[str, Any]]] | None]:
+    """有界等待：返回已完成的结果；超时项留在后台继续抓取并落库。"""
     if not codes:
         return {}
-    results: dict[str, list[dict[str, Any]] | None] = {}
-    executor = ThreadPoolExecutor(max_workers=min(_MAX_WORKERS, len(codes)))
-    try:
-        futures = {
-            executor.submit(provider.fetch_history, INDEX_BY_CODE[code]): code
-            for code in codes
-        }
-        wait(set(futures), timeout=timeout)
-        for future, code in futures.items():
-            if not future.done():
-                logger.warning("指数估值抓取超时 %s", code)
-                results[code] = None
-                continue
-            try:
-                results[code] = future.result()
-            except Exception as exc:  # noqa: BLE001 - 单只失败不影响整页
-                logger.warning("指数估值抓取异常 %s: %s", code, exc)
-                results[code] = None
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
+    futures = _submit_missing(codes, provider)
+    wait(set(futures.values()), timeout=timeout)
+    results: dict[str, tuple[IndexValuation, list[dict[str, Any]]] | None] = {}
+    for code, future in futures.items():
+        if not future.done():
+            results[code] = None
+            continue
+        try:
+            results[code] = future.result()
+        except Exception as exc:  # noqa: BLE001 - 单只失败不影响整页
+            logger.warning("指数估值抓取异常 %s: %s", code, exc)
+            results[code] = None
+        finally:
+            with _inflight_lock:
+                if _inflight.get(code) is future:
+                    _inflight.pop(code, None)
     return results
 
 
@@ -499,13 +580,14 @@ def list_valuations(
     refresh: bool = False,
     provider: ValuationProvider | None = None,
     ttl_hours: float = TTL_HOURS,
-    timeout: float = REFRESH_TIMEOUT,
+    timeout: float = LIST_REFRESH_TIMEOUT,
     codes: list[str] | None = None,
 ) -> list[IndexValuation]:
     """返回宽基估值列表。
 
-    缓存未过期直接返回；过期/为空时并发刷新，失败保留旧值并标 ``stale``，
-    无旧值则降级为 ``ok=False``（不抛异常）。
+    缓存未过期直接返回；过期/为空时抓取，最多等待 ``timeout`` 秒：
+    已完成的立即返回，超时项转后台继续抓取（逐只落库），下次调用即可见。
+    抓取失败保留旧值并标 ``stale``，无旧值则降级为 ``ok=False``（不抛异常）。
     """
     metas = (
         [INDEX_BY_CODE[c] for c in codes if c in INDEX_BY_CODE]
@@ -519,14 +601,15 @@ def list_valuations(
         if refresh or _is_stale(rows.get(meta.code), ttl_hours)
     ]
     fetched = _fetch_many(need, provider or get_provider(), timeout) if need else {}
+    if fetched:
+        # 后台任务可能已写入新行，重新读取以便未完成项拿到最新缓存
+        rows = {row["index_code"]: dict(row) for row in db.get_index_valuations()}
 
     results: list[IndexValuation] = []
     for meta in metas:
-        points = fetched.get(meta.code)
-        if points:
-            val = build_valuation(meta, points)
-            _store(val, points)
-            results.append(val)
+        result = fetched.get(meta.code)
+        if result:
+            results.append(result[0])
             continue
         row = rows.get(meta.code)
         if row is not None:
@@ -578,18 +661,19 @@ def get_history(
     row = db.get_index_valuation(code)
     row = dict(row) if row else None
     if row is None or _is_stale(row, ttl_hours):
-        fetched = _fetch_many(
-            [code], provider or get_provider(), timeout
-        ).get(code)
+        fetched = _fetch_many([code], provider or get_provider(), timeout).get(code)
         if fetched:
-            val = build_valuation(meta, fetched)
-            _store(val, fetched)
+            val, points = fetched
             win = window if window in ("10y", "all") else val.window
             return {
                 "ok": True,
                 "index": val.to_dict(),
-                "points": history_points(fetched, win),
+                "points": history_points(points, win),
             }
+        # 超时的任务可能刚在后台落库，回读一次
+        refreshed = db.get_index_valuation(code)
+        if refreshed is not None:
+            row = dict(refreshed)
 
     if row is None:
         return {

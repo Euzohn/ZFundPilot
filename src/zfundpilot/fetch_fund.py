@@ -28,7 +28,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-from . import config, db
+from . import ak_compat, config, db
 from .models import (
     FundHoldingsResult,
     FundProfile,
@@ -1823,7 +1823,7 @@ _trade_cal_lock = threading.Lock()
 
 
 def fetch_trade_calendar() -> set[str]:
-    """获取 A 股交易日历（ak.tool_trade_date_hist_sina），24h 缓存。
+    """获取 A 股交易日历（akshare 新浪交易日历），24h 缓存。
 
     返回 "YYYY-MM-DD" 字符串集合。交易所官方日历，含法定节假日 + 调休。
     网络失败时优先返回过期缓存（stale-if-error），无缓存则返回空集。
@@ -1834,9 +1834,9 @@ def fetch_trade_calendar() -> set[str]:
         if _trade_cal_cache and now - _trade_cal_cache_ts < _TRADE_CAL_CACHE_TTL:
             return _trade_cal_cache
         try:
-            import akshare as ak
-
-            df = ak.tool_trade_date_hist_sina()
+            df = ak_compat.call(
+                "calendar_trade_date_hist_sina", "tool_trade_date_hist_sina"
+            )
             dates = {str(v)[:10] for v in df["trade_date"] if str(v)[:1].isdigit()}
             if dates:
                 _trade_cal_cache.clear()

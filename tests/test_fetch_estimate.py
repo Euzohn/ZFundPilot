@@ -1,7 +1,7 @@
 """fetch_estimate 模块测试：安全转换、关键词匹配、指数行情、指数估值兜底。"""
 
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 from zfundpilot.fetch_estimate import (
@@ -416,7 +416,7 @@ class TestIndexHistoryDB:
                 "date": ["2026-01-01", "2026-01-02", "2026-01-03"],
                 "close": [3800.0, 3850.0, 3900.0],
             })
-            with patch("zfundpilot.fetch_estimate.ak.stock_zh_index_daily",
+            with patch("zfundpilot.fetch_estimate._fetch_index_daily_sina",
                        return_value=mock_df):
                 from zfundpilot.fetch_estimate import fetch_index_history
                 result = fetch_index_history("000300", "2026-01-01", "2026-01-03")
@@ -441,7 +441,7 @@ class TestIndexHistoryDB:
             # 模拟今天日期 = 2026-01-03（DB 最新 01-02 < today → need_fetch=True）
             # AkShare 失败 → fallback DB
             with (
-                patch("zfundpilot.fetch_estimate.ak.stock_zh_index_daily",
+                patch("zfundpilot.fetch_estimate._fetch_index_daily_sina",
                       side_effect=Exception("network error")),
                 patch("zfundpilot.fetch_estimate.datetime") as mock_dt,
             ):
@@ -467,10 +467,43 @@ class TestIndexHistoryDB:
                 ("2026-01-01", 3800.0),
                 (today_str, 3900.0),
             ])
-            with patch("zfundpilot.fetch_estimate.ak.stock_zh_index_daily") as mock_ak:
+            with patch("zfundpilot.fetch_estimate._fetch_index_daily_sina") as mock_ak:
                 from zfundpilot.fetch_estimate import fetch_index_history
                 result = fetch_index_history("000300", "2026-01-01", today_str)
                 mock_ak.assert_not_called()
             assert len(result) == 2
         finally:
             self._teardown(original)
+
+
+
+class TestIndexDailySinaCompat:
+    """akshare 1.20.44 起 stock_zh_index_daily 改为 index_zh_daily_sina。"""
+
+    def test_prefers_new_name(self):
+        import sys
+        from types import ModuleType
+
+        from zfundpilot import fetch_estimate
+
+        fake = ModuleType("akshare")
+        fake.index_zh_daily_sina = MagicMock(return_value="new")
+        fake.stock_zh_index_daily = MagicMock(return_value="old")
+        with patch.dict(sys.modules, {"akshare": fake}):
+            assert fetch_estimate._fetch_index_daily_sina("sh000300") == "new"
+
+        fake.index_zh_daily_sina.assert_called_once_with(symbol="sh000300")
+        fake.stock_zh_index_daily.assert_not_called()
+
+    def test_falls_back_to_old_name(self):
+        import sys
+        from types import ModuleType
+
+        from zfundpilot import fetch_estimate
+
+        fake = ModuleType("akshare")
+        fake.stock_zh_index_daily = MagicMock(return_value="old")
+        with patch.dict(sys.modules, {"akshare": fake}):
+            assert fetch_estimate._fetch_index_daily_sina("sz399006") == "old"
+
+        fake.stock_zh_index_daily.assert_called_once_with(symbol="sz399006")

@@ -32,7 +32,7 @@ from datetime import datetime
 import akshare as ak
 import pandas as pd
 
-from . import config
+from . import ak_compat, config
 
 logger = logging.getLogger(__name__)
 
@@ -298,7 +298,7 @@ def _fetch_index_spot() -> dict[str, float]:
     """合并三个指数实时 API → {名称: 涨跌幅}。"""
     result: dict[str, float] = {}
     try:
-        df = ak.stock_zh_index_spot_sina()
+        df = ak_compat.call("index_zh_spot_sina", "stock_zh_index_spot_sina")
         for _, row in df.iterrows():
             name = str(row.get("名称", "")).strip()
             pct = _safe_float(row.get("涨跌幅"))
@@ -316,7 +316,7 @@ def _fetch_index_spot() -> dict[str, float]:
     except Exception:  # noqa: BLE001
         logger.debug("全球指数行情失败", exc_info=True)
     try:
-        df = ak.stock_hk_index_spot_em()
+        df = ak_compat.call("index_hk_spot_em", "stock_hk_index_spot_em")
         for _, row in df.iterrows():
             name = str(row.get("名称", "")).strip()
             pct = _safe_float(row.get("涨跌幅"))
@@ -457,6 +457,17 @@ def _to_sina_symbol(code: str) -> str:
     return code
 
 
+def _fetch_index_daily_sina(sina_symbol: str):
+    """调用 akshare 新浪指数日线接口（兼容新旧版本）。
+
+    akshare 1.20.44 起 ``stock_zh_index_daily`` 改名为
+    ``index_zh_daily_sina``（同为新浪源、返回列一致）。
+    """
+    return ak_compat.call(
+        "index_zh_daily_sina", "stock_zh_index_daily", symbol=sina_symbol
+    )
+
+
 def _fetch_index_full_from_sina(symbol: str) -> list[dict]:
     """从新浪数据源拉取指数全量历史收盘价。
 
@@ -464,7 +475,7 @@ def _fetch_index_full_from_sina(symbol: str) -> list[dict]:
     """
     sina_symbol = _to_sina_symbol(symbol)
     try:
-        df = ak.stock_zh_index_daily(symbol=sina_symbol)
+        df = _fetch_index_daily_sina(sina_symbol)
         if df is None or len(df) == 0:
             logger.warning("fetch_index_history: no data for %s", symbol)
             return []

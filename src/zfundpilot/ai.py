@@ -16,7 +16,7 @@ from typing import Any
 
 import httpx
 
-from . import analysis, config, db, fetch_macro, health, rebalance, risk
+from . import ak_compat, analysis, config, db, fetch_macro, health, rebalance, risk
 
 logger = logging.getLogger(__name__)
 
@@ -158,8 +158,6 @@ def build_portfolio_context() -> str:
 def _fetch_market_index() -> str:
     """获取主要大盘指数数据（失败返回空字符串）。"""
     try:
-        import akshare as ak
-
         end = datetime.now(config.TIMEZONE).strftime("%Y%m%d")
         start = (datetime.now(config.TIMEZONE) - timedelta(days=7)).strftime("%Y%m%d")
         results = []
@@ -169,7 +167,8 @@ def _fetch_market_index() -> str:
             ("399006", "创业板指"),
         ]:
             try:
-                df = ak.index_zh_a_hist(
+                df = ak_compat.call(
+                    "index_zh_hist_em", "index_zh_a_hist",
                     symbol=symbol, period="daily",
                     start_date=start, end_date=end,
                 )

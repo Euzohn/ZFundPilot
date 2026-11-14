@@ -70,6 +70,7 @@ from . import (
     scheduler,
     sparkline,
     transaction_service,
+    valuation,
     watchlist_service,
 )
 from .models import (
@@ -4078,6 +4079,51 @@ def get_fund_sparklines(codes: str = "") -> dict[str, Any]:
         "ok": True,
         "sparklines": [s.to_dict() for s in sparkline.build_sparklines(parsed)],
     }
+
+
+@app.get("/api/valuation/indices")
+def get_index_valuations(refresh: bool = False) -> dict[str, Any]:
+    """宽基指数估值列表（PE/PB 百分位 + 温度）。
+
+    默认读缓存（TTL 24h）；``refresh=true`` 强制刷新。
+    乐咕失败时保留旧值并标 ``stale``，无旧值则单只降级为 ``ok=false``，
+    不抛 500、不阻塞其他页面。
+    """
+    values = valuation.list_valuations(refresh=refresh)
+    items = [v.to_dict() for v in values]
+    degraded = any((not v.ok) or v.stale for v in values)
+    data_dates = [v.data_date for v in values if v.ok and v.data_date]
+    return {
+        "ok": True,
+        "indices": items,
+        "degraded": degraded,
+        "as_of": max(data_dates) if data_dates else "",
+        "window": "10y",
+        "source": "legulegu",
+        "note": (
+            "百分位由月度历史自算：默认近10年窗口（历史不足10年用全历史）；"
+            "温度按 PE(TTM) 百分位 <30/30–70/>70 分档。数据源乐咕，仅供参考，非投资建议。"
+        ),
+    }
+
+
+@app.get("/api/valuation/indices/{code}/history")
+def get_index_valuation_history(code: str, window: str = "") -> dict[str, Any]:
+    """单只宽基指数估值历史（原始 PE/PB + 滚动百分位）。"""
+    result = valuation.get_history(code, window=window or None)
+    if result is None:
+        raise HTTPException(404, f"未知指数代码: {code}")
+    return result
+
+
+@app.get("/api/valuation/indices/{code}/funds")
+def get_index_valuation_funds(code: str, limit: int = 20) -> dict[str, Any]:
+    """跟踪该指数的基金（按名称关键词匹配全市场池）。"""
+    meta = valuation.INDEX_BY_CODE.get(code)
+    if meta is None:
+        raise HTTPException(404, f"未知指数代码: {code}")
+    bounded = max(1, min(limit, 50))
+    return {"ok": True, "funds": valuation.tracking_funds(meta, limit=bounded)}
 
 
 class WatchlistRequest(BaseModel):

@@ -279,6 +279,23 @@ def init_db() -> None:
                 created_at TEXT DEFAULT (datetime('now','localtime'))
             );
 
+            CREATE TABLE IF NOT EXISTS index_valuation (
+                index_code     TEXT PRIMARY KEY,
+                index_name     TEXT NOT NULL DEFAULT '',
+                pe             REAL,
+                pe_percentile  REAL,
+                pb             REAL,
+                pb_percentile  REAL,
+                window         TEXT NOT NULL DEFAULT '10y',
+                window_months  INTEGER NOT NULL DEFAULT 0,
+                temperature    TEXT NOT NULL DEFAULT 'unknown',
+                history_months INTEGER NOT NULL DEFAULT 0,
+                data_date      TEXT NOT NULL DEFAULT '',
+                source         TEXT NOT NULL DEFAULT 'legulegu',
+                payload        TEXT NOT NULL DEFAULT '[]',
+                updated_at     TEXT NOT NULL DEFAULT ''
+            );
+
             CREATE TABLE IF NOT EXISTS agent_tokens (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 name         TEXT NOT NULL,
@@ -1225,6 +1242,72 @@ def get_index_latest_date(code: str) -> str | None:
             (code,),
         ).fetchone()
     return row["d"] if row and row["d"] else None
+
+
+# ---------------------------------------------------------------------------
+# 指数估值缓存（valuation.py 写入；payload 保存原始月度 PE/PB 序列）
+# ---------------------------------------------------------------------------
+def upsert_index_valuation(index_code: str,
+                           index_name: str,
+                           pe: float | None,
+                           pe_percentile: float | None,
+                           pb: float | None,
+                           pb_percentile: float | None,
+                           window: str,
+                           window_months: int,
+                           temperature: str,
+                           history_months: int,
+                           data_date: str,
+                           source: str,
+                           payload: str,
+                           updated_at: str) -> None:
+    """写入/更新单只指数估值缓存（一个指数一行，幂等）。"""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO index_valuation(
+                index_code, index_name, pe, pe_percentile, pb, pb_percentile,
+                window, window_months, temperature, history_months, data_date,
+                source, payload, updated_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(index_code) DO UPDATE SET
+                index_name=excluded.index_name,
+                pe=excluded.pe,
+                pe_percentile=excluded.pe_percentile,
+                pb=excluded.pb,
+                pb_percentile=excluded.pb_percentile,
+                window=excluded.window,
+                window_months=excluded.window_months,
+                temperature=excluded.temperature,
+                history_months=excluded.history_months,
+                data_date=excluded.data_date,
+                source=excluded.source,
+                payload=excluded.payload,
+                updated_at=excluded.updated_at
+            """,
+            (
+                index_code, index_name, pe, pe_percentile, pb, pb_percentile,
+                window, window_months, temperature, history_months, data_date,
+                source, payload, updated_at,
+            ),
+        )
+
+
+def get_index_valuations() -> list[sqlite3.Row]:
+    """返回全部指数估值缓存行（按代码升序）。"""
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM index_valuation ORDER BY index_code ASC"
+        ).fetchall()
+
+
+def get_index_valuation(index_code: str) -> sqlite3.Row | None:
+    """返回单只指数估值缓存行；不存在返回 None。"""
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM index_valuation WHERE index_code=?",
+            (index_code,),
+        ).fetchone()
 
 
 # ---------------------------------------------------------------------------

@@ -37,6 +37,9 @@ import type {
   KeywordMaps,
   SchedulerStatus,
   SparklinesResponse,
+  IndexValuationListResponse,
+  ValuationHistoryResponse,
+  TrackedFundsResponse,
   TpSlConfig,
   VisionConfig,
   ParseScreenshotResult,
@@ -501,6 +504,16 @@ export const api = {
   // Fund sparklines（选基列表迷你走势，≤50 只）
   getSparklines: (codes: string[]) =>
     request<SparklinesResponse>(`/funds/sparklines?codes=${encodeURIComponent(codes.join(","))}`),
+
+  // Index valuation（宽基指数估值，TTL 24h；refresh=true 强制刷新）
+  getIndexValuations: (refresh = false) =>
+    request<IndexValuationListResponse>(`/valuation/indices${refresh ? "?refresh=1" : ""}`),
+  getIndexValuationHistory: (code: string, window?: string) =>
+    request<ValuationHistoryResponse>(
+      `/valuation/indices/${encodeURIComponent(code)}/history${window ? `?window=${encodeURIComponent(window)}` : ""}`,
+    ),
+  getIndexValuationFunds: (code: string, limit = 20) =>
+    request<TrackedFundsResponse>(`/valuation/indices/${encodeURIComponent(code)}/funds?limit=${limit}`),
 
   // Fund compare
   compareFunds: (codes: string[]) =>

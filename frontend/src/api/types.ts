@@ -1041,3 +1041,61 @@ export interface BackupRestoreResult {
   safety_backup: string
   replace_all: boolean
 }
+
+// ── 指数估值（宽基 PE/PB 百分位 + 温度）──
+export interface IndexValuation {
+  index_code: string
+  index_name: string
+  keyword: string
+  pe: number | null
+  pe_percentile: number | null
+  pb: number | null
+  pb_percentile: number | null
+  window: string // "10y" | "all"
+  window_months: number
+  history_months: number
+  temperature: string // low / fair / high / unknown
+  data_date: string
+  updated_at: string
+  stale: boolean
+  source: string
+  ok: boolean
+  message: string
+}
+
+export interface IndexValuationListResponse {
+  ok: boolean
+  indices: IndexValuation[]
+  degraded: boolean
+  as_of: string
+  window: string
+  source: string
+  note: string
+}
+
+export interface ValuationHistoryPoint {
+  date: string
+  pe: number | null
+  pb: number | null
+  pe_percentile: number | null
+  pb_percentile: number | null
+}
+
+export interface ValuationHistoryResponse {
+  ok: boolean
+  index: IndexValuation
+  points: ValuationHistoryPoint[]
+}
+
+export interface TrackedFund {
+  code: string
+  name: string
+  type: string
+  sector: string
+  index_tag: string
+}
+
+export interface TrackedFundsResponse {
+  ok: boolean
+  funds: TrackedFund[]
+}

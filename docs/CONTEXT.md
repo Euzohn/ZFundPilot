@@ -59,6 +59,7 @@ ZFundPilot/
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
 │   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30 + index_tag 宽基/行业/主题分类）+ resolve_fund_code 名称→代码解析 + verify_fund_code 校验
 │   ├── sparkline.py         # 选基列表迷你走势（近 250 交易日归一化净值，只读 DB，单只失败降级空序列）
+│   ├── valuation.py         # 指数估值（12 个宽基 PE/PB 月度长历史 + 日期窗口百分位 + 温度；乐咕源，TTL 24h/stale-if-error/单只降级）
 │   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）+ reconcile_holdings 截图持仓对账 + 行业穿透聚合 + 单基金 XIRR
 │   ├── returns.py            # XIRR 年化收益率（二分法 + 现金流构建，供 analysis/backtest 共用）
 │   ├── health.py             # 组合体检四维评分（配置/风险/流动性/收益）+ 综合体检报告，供 api/ai 共用
@@ -81,7 +82,7 @@ ZFundPilot/
 │   └── data_io.py           # CSV 导入/导出（全量备份由 backup_service.py 提供）
 ├── frontend/src/            # React 前端
 │   ├── App.tsx              # 路由（/ → Home 独立页，其余在 Layout 内）
-│   ├── pages/               # 16 个页面
+│   ├── pages/               # 17 个页面
 │   │   ├── Home.tsx         # 首页（brutalist 战术终端风格，中英双语切换）
 │   │   ├── Overview.tsx     # 组合总览
 │   │   ├── Transactions.tsx # 交易管理（录入/流水/CSV/定投计划/截图导入）
@@ -92,6 +93,7 @@ ZFundPilot/
 │   │   ├── Risk.tsx         # 组合体检（四维评分 banner + 维度卡片 + 风险指标/提示/建议）
 │   │   ├── FundCompare.tsx     # 基金对比（多维度同框对比 + 相关性矩阵）
 │   │   ├── Screener.tsx       # 基金筛选（全市场筛选 + 指标排序 + 加自选/对比）
+│   │   ├── Valuation.tsx      # 指数估值（宽基 PE/PB 百分位 + 温度 + 历史曲线 + 跟踪基金）
 │   │   ├── Watchlist.tsx      # 自选关注列表（追踪未持有基金，已持有的标「持仓中」badge，列头可排序）
 │   │   ├── Backtest.tsx       # 定投回测（DCA vs 一次性投入 + 累计曲线 + 每期明细）
 │   │   ├── AIChat.tsx       # AI 投顾对话
@@ -139,6 +141,7 @@ ZFundPilot/
 | `dividend_alerts` | 提醒列表（分红 + 止盈止损，`alert_type` 区分 `dividend`/`take_profit`/`stop_loss`，`triggered_return`/`threshold` 仅 tp_sl 用） |
 | `tp_sl_alert_states` | 止盈止损状态机（fund_code + alert_type → armed/last_triggered_return/handled_at），控制重复提醒 |
 | `index_history` | 指数历史收盘价（沪深300/上证/创业板，持久化缓存，`UNIQUE(code, date)`） |
+| `index_valuation` | 宽基指数估值缓存（PE/PB/百分位/温度/窗口 + 原始月度序列 JSON，TTL 24h，`index_code` 主键） |
 | `trade_calendar` | A 股交易日历（`date` 主键，法定节假日/调休，供定投可投性校验） |
 | `portfolio_snapshots` | 组合每日快照（市值/投入/收益，用于曲线与缓存） |
 | `auto_invest_plans` | 定投计划（频率/金额/渠道/状态/下次执行） |
@@ -280,6 +283,18 @@ ZFundPilot/
 - 路由必须先于 `/api/funds/{code}` 注册，否则被通配路由吞掉
 - 前端 `Screener.tsx` 每行 `MiniSparkline`（recharts，涨绿跌红）+ 宽基/行业/主题徽章（`taxonomyLabels.translateIndexTag`）
 
+### valuation.py — 指数估值
+
+- 数据源：乐咕乐股（`ak.stock_index_pe_lg` / `ak.stock_index_pb_lg`），月度长历史（约 260 点，2005 年至今），**仅 12 个宽基**（registry 顺序即 UI 顺序）；上游不提供百分位
+- `percentile(values, current)`：当前值在样本中的百分位；`rolling_percentiles(points, field, years)` 按**日期窗口**逐点滚动（非固定点数），保证历史曲线末点与列表当前百分位一致；`select_window` 默认近 10 年，历史不足 10 年回退 `all` 并在 UI 标注
+- `classify_temperature(pe_pct)`：PE(TTM) 百分位 `<30` → `low`、`30–70` → `fair`、`>70` → `high`，`None` → `unknown`；PB 百分位并列展示
+- `IndexValuation`：`code`/`name`/`pe`/`pe_percentile`/`pb`/`pb_percentile`/`window`/`window_months`/`temperature`/`history_months`/`data_date`/`source`/`stale`/`ok`/`message`
+- `list_valuations(refresh=False)`：批量估值；`TTL_HOURS=24` 内读 `index_valuation` 缓存，`refresh=true` 强制拉取；6 线程有界并发（`_MAX_WORKERS`）+ 单只超时；失败时保留旧值标 `stale`（`stale-if-error`），无旧值则单只 `ok=false` 降级，不抛 500
+- `get_history(code, window=None)`：返回 `index` + `points[]`（`date`/`pe`/`pb`/`pe_percentile`/`pb_percentile`）；未知代码返回 `None` → API 404
+- `tracking_funds(meta, limit=20)`：从全市场基金池按名称关键词匹配跟踪基金（`IndexMeta.exclude` 防子串误判，如「中证100」排除「中证1000」）
+- API：`GET /api/valuation/indices`、`GET /api/valuation/indices/{code}/history`、`GET /api/valuation/indices/{code}/funds`
+- 边界：行业/主题指数无免费 PE+PB 历史源（中证源仅近 20 日 PE 快照），本期只做宽基；数据仅供参考，非投资建议
+
 ### fetch_estimate.py — 实时估值
 
 - 主数据源：AkShare `fund_value_estimation_em()`。**2026-02 起东财旧统一估值接口停止返回数据**（行业性下线实时估值），新版 akshare（≥1.20）改抓东财仍公开的静态估值页，仅覆盖 LOF/ETF联接/QDII（实测 786 只、约 2s，30s 缓存）；主动权益基金暂无公开估值源，空表属正常情况
@@ -364,7 +379,7 @@ ZFundPilot/
 ### 路由（App.tsx）
 
 - `/` → `<Home />`（独立全屏页，不在 Layout 内，无侧边栏）
-- `/overview`、`/transactions`、`/nav`、`/positions`、`/returns`、`/risk`、`/compare`、`/screener`、`/watchlist`、`/backtest`、`/ai`、`/settings` → 在 `<Layout />` 内（含侧边栏）
+- `/overview`、`/transactions`、`/nav`、`/positions`、`/returns`、`/risk`、`/compare`、`/screener`、`/valuation`、`/watchlist`、`/backtest`、`/ai`、`/settings` → 在 `<Layout />` 内（含侧边栏）
 - 页面内 Tab 状态同步到 `?tab=` 查询参数（`useTabParam` hook，`replace` 写入，白名单校验），刷新/分享/前进后退可恢复 Tab
 
 ### 首页（Home.tsx）
@@ -547,7 +562,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 - **天天基金** (`fundf10.eastmoney.com`): 费率抓取（HTML 解析）
 - **AkShare** (`ak.fund_purchase_em`): 全市场基金申购状态（申购状态/日累计限定金额/购买起点，供定投可投性校验）
 - **AkShare** (`ak.tool_trade_date_hist_sina`): A 股交易日历（法定节假日 + 调休，供定投可投性校验）
-- 均为东方财富旗下，无需额外 API key
+- **乐咕乐股** (`ak.stock_index_pe_lg` / `ak.stock_index_pb_lg`): 宽基指数 PE/PB 月度长历史（12 个宽基，2005 年至今），供指数估值页；反爬脆弱（JS token + cookie/csrf，间歇失败），依赖本地缓存 + `stale-if-error` + 单只降级；无官方 API key、非东方财富系
+- 其余均为东方财富旗下，无需额外 API key
 
 ---
 
@@ -555,6 +571,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- feat: 指数估值 P2——新增 `valuation.py`、`index_valuation` 缓存表与 3 个只读接口（`/api/valuation/indices`、`/indices/{code}/history`、`/indices/{code}/funds`），覆盖 12 个宽基；百分位按日期窗口自算（默认近 10 年，历史不足用全历史并标注），温度按 PE(TTM) 百分位 `<30`/`30–70`/`>70` 分档；乐咕源 TTL 24h + `stale-if-error` + 单只降级；前端新增 `/valuation` 独立页（排序、温度徽章、百分位条、历史曲线、跟踪基金、降级提示）与侧栏入口；新增 `tests/test_valuation.py`（52 例）。边界：只做宽基（行业/主题无免费 PE+PB 历史源），数据仅供参考
+- feat: 选基可视化 P1——`FundFilterItem.index_tag`（宽基/行业/主题）+ `fetch_fund._classify_index`，新增 `sparkline.py` 与 `GET /api/funds/sparklines`（近 250 交易日归一化净值，只读 DB），选基页新增指数徽章列与近 1 年走势列；新增 `tests/test_index_classify.py`（37 例）与 `tests/test_sparkline.py`（16 例）
 - feat: Agent HTTP 统一请求 ID 与错误契约——所有响应带 `X-Request-ID`（可透传合法客户端值），Agent 工具成功响应包新增 `request_id`；错误响应保留既有 `detail`（形状不变）并新增 `error` 对象（`code`/`message`/`request_id`/`retryable`，可选 `details`/`retry_after`）。`429`/`503` 为 `retryable=true` 并从 `Retry-After` 回填秒数，`503 database_busy` 保留原 `detail.code`；鉴权错误稳定码 `invalid_token`/`expired`/`revoked`/`auth_disabled`/`insufficient_scope`，限流 `rate_limited`，参数校验 `validation_error`（`details` 精简为 `loc/type/msg`），未处理异常统一 500 `internal_error` 且不泄漏细节。新增 `api_errors.py`；CORS 暴露 `X-Request-ID`/`Retry-After`；前端错误解析优先 `error`、回退 `detail`，MCP 错误解析优先 `error` 并回显 `request_id`；新增 `tests/test_agent_error_contract.py`（16 例）
 
 ### [0.26.0] - 2026-11-07

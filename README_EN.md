@@ -126,7 +126,8 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **Wealth Waterlines (CPI/M2)** — Portfolio return curve overlaid with inflation purchasing power line (CPI MoM-chained price level) and social wealth ranking line (M2 stock expansion), answering "am I actually richer after inflation". Waterline uses last month-end before portfolio start as baseline, exactly 0 at start date. AI advisor context includes real return (inflation-adjusted) and wealth ranking direction
 - **Live Estimates** — Real-time fund change estimates during trading hours. Auto-invalidates when actual NAV is published. Auto-falls back to fundgz API (6 threads) when primary source is unavailable, with index/ETF fallback tier
 - **Fund Compare** — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix. Global compare basket with add/remove, badge count in nav bar
-- **Fund Screener** — Filter from full market universe by type/sector/keyword, top 30 auto-enriched with returns/risk metrics, sortable columns, one-click add to compare or watchlist
+- **Fund Screener** — Filter from full market universe by type/sector/keyword, top 30 auto-enriched with returns/risk metrics, sortable columns, one-click add to compare or watchlist; index funds tagged broad-based/sector/theme with a 1-year mini trend
+- **Index Valuation** — PE/PB percentiles and valuation temperature for 12 broad-based indices (PE TTM percentile <30 low / 30–70 fair / >70 high), default 10-year window (full history when shorter, labeled in UI), expandable history curve and tracking funds; Legulegu source with 24h cache and graceful degradation, for reference only
 - **Watchlist** — Track funds of interest, held funds show a "Held" badge, sortable columns, auto-fetch name/type/sector on add, quick links to detail/compare/buy
 - **Screenshot Import** — Upload purchase record or holdings screenshots for AI vision model recognition. Holdings reconcile mode compares recorded shares by channel, one-click generates adjustment transactions. Vision model independently configurable (Zhipu GLM-4V / Qwen VL / GPT-4o / Kimi Vision), auto-matches fund codes from names when screenshots lack them
 - **Fund Details** — NAV trend + asset allocation pie chart + top 10 holdings + peer ranking trend + fund profile (manager/assets/inception date) + risk level + quick actions (compare/watchlist/buy/sell/auto-invest)
@@ -163,7 +164,6 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 
 **Planned (not shipped, not a commitment)**
 
-- **Index valuation & fund-screening visualization** — Index valuation percentiles, index size and constituent holdings, broad-based vs. sector classification, and fund trend comparison
 - **P3 explainable suggestions & unified in-app alerts** — Turn health/rebalancing suggestions into "rationale → affected holdings → before/after → risks and limits"; unify take-profit/stop-loss, dividend, skipped auto-invest, data-refresh failure, and data-health alerts with dedupe, read state, and failure reasons; off-site notifications stay minimal-disclosure and off by default
 
 ### Security & Customization

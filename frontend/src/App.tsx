@@ -17,6 +17,7 @@ import FundCompare from "@/pages/FundCompare"
 import Backtest from "@/pages/Backtest"
 import Watchlist from "@/pages/Watchlist"
 import Screener from "@/pages/Screener"
+import Valuation from "@/pages/Valuation"
 import Login from "@/pages/Login"
 import NotFound from "@/pages/NotFound"
 import { api } from "@/api/client"
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="ai" element={<AIChat />} />
           <Route path="compare" element={<FundCompare />} />
           <Route path="screener" element={<Screener />} />
+          <Route path="valuation" element={<Valuation />} />
           <Route path="watchlist" element={<Watchlist />} />
           <Route path="backtest" element={<Backtest />} />
           <Route path="settings" element={<Settings />} />

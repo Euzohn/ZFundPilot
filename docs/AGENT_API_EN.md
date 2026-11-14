@@ -744,7 +744,7 @@ Parameters:
 `data` fields: `ok`, `code`, `message`, `count`, `total`, `pagination`, `with_metrics`, `metrics`, `funds[]`.
 
 - `metrics`: `{requested, limit=30, attempted, succeeded, failed, timed_out, complete}`.
-- Each fund: `{code, name, type, sector, scale, manager, inception_date, returns, risk, metrics_status}`.
+- Each fund: `{code, name, type, sector, scale, manager, inception_date, institution_ratio, individual_ratio, internal_ratio, holder_report_date, returns, risk, metrics_status}`. `*_ratio` are percentages for the latest reporting period; `holder_report_date` is `YYYY-MM-DD`; missing values are `null` / empty string, never zero-filled.
 - `metrics_status`: `not_requested`, `over_limit` (beyond the first 30), `ok`, or `unavailable` (failed or timed out). `null` means missing, never zero-filled.
 
 > `with_metrics=true` calls external NAV/archive services and **may be slow**. It only covers the **first 30 funds of the current page in ascending code order**, not a market-wide return ranking. Enrichment concurrency is capped at 2; when full it returns `429` immediately instead of queueing. A timeout returns only completed items and marks the rest `unavailable`; the concurrency slot is released only after background work finishes. Use `funds/compare` for precise comparison. Unknown types/sectors, more than 20 filter values, or an over-long keyword return `400`.

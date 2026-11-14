@@ -743,7 +743,7 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 `data` 字段：`ok`、`code`、`message`、`count`、`total`、`pagination`、`with_metrics`、`metrics`、`funds[]`。
 
 - `metrics`：`{requested, limit=30, attempted, succeeded, failed, timed_out, complete}`。
-- 每只基金：`{code, name, type, sector, scale, manager, inception_date, returns, risk, metrics_status}`。
+- 每只基金：`{code, name, type, sector, scale, manager, inception_date, institution_ratio, individual_ratio, internal_ratio, holder_report_date, returns, risk, metrics_status}`。`*_ratio` 为百分比（最新报告期），`holder_report_date` 为报告期 `YYYY-MM-DD`；无数据为 `null` / 空串，不补零。
 - `metrics_status`：`not_requested`（未请求）、`over_limit`（超出前 30 项）、`ok`（已补）、`unavailable`（失败或超时）；值为 `null` 表示未取到，不补零。
 
 > `with_metrics=true` 会访问外部净值/档案接口，**可能较慢**，且只覆盖**当前页按代码升序的前 30 项**，不是全市场收益排名。增强并发上限为 2，满额立即返回 `429`（不排队）；超时只返回已完成项，未完成项标为 `unavailable`，后台任务结束后才释放并发额度。需要精确对比时用 `funds/compare`。未知类型/板块、超过 20 个过滤值或关键词超长返回 `400`。

@@ -1112,6 +1112,10 @@ class TestAgentTools:
         assert data["funds"][0]["metrics_status"] == "not_requested"
         assert data["funds"][0]["returns"] is None
         assert data["funds"][0]["risk"] is None
+        assert data["funds"][0]["institution_ratio"] is None
+        assert data["funds"][0]["individual_ratio"] is None
+        assert data["funds"][0]["internal_ratio"] is None
+        assert data["funds"][0]["holder_report_date"] == ""
 
         assert client.get(
             "/api/agent/tools/screen?types=股票型",

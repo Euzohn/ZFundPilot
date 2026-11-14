@@ -206,7 +206,7 @@ ZFundPilot/
 - 可信单笔直记: Agent `POST /api/agent/tools/transactions`（scope `transactions:create`，仅 buy/sell）在限额内直接写入账本，预检异常时按 `transactions:propose` 降级为待审提案或稳定报错；逻辑下沉到 `transaction_service`，与提案共用参数校验
 - 预检（只读）: Agent `POST /api/agent/tools/precheck/transactions`（CSV 文本或条目数组，≤200 条，逐条基金识别/字段校验/重复检测，返回 `valid`/`invalid`/`duplicate` 与 `proposal_ready`；`fund_code`/`fund_name` 均只查账本已收录基金，离线可用；命中他人待审提案只判重复、不返回其 ID）与 `POST /api/agent/tools/precheck/reconciliation`（≤100 条持仓，先做基金识别+`shares` 校验，合法条目复用 `analysis.reconcile_holdings` 生成差额与建议交易；`maybe_sold` 仅提示、`proposal_ready=false`）；两者 scope `transactions:propose`、受写总闸约束、限流 10 次/分钟，不写账本、不联网、不创建提案，成功时写计数审计
 - 截图导入: `POST /api/ai/parse-screenshot`（multipart 上传截图 → 视觉模型解析 → 返回结构化数据，不落库）+ `POST /api/ai/reconcile`（持仓对账 → 生成差额调整交易建议）+ `GET/PUT /api/settings/vision`（视觉模型配置）+ `POST /api/ai/vision-test`（测试视觉模型）。批量保存复用 `POST /api/csv/import`
-- 数据备份: `GET /api/export/zip` 导出格式 v2（`manifest.json` + 12 张表 JSONL，含净值历史与 SHA-256）；`POST /api/backup/preflight` 只读预检，`POST /api/backup/restore` 需 `RESTORE` 确认后先备份当前数据再事务化整体恢复，失败回滚。审计日志、AI 密钥、Agent token、Agent 幂等记录、任务（刷新/回测）与提案不进入普通备份；恢复时清空 `agent_operations`、`refresh_jobs`、`operation_proposals`，避免旧记录指向已替换的数据
+- 数据备份: `GET /api/export/zip` 导出格式 v2（`manifest.json` + 12 张表 JSONL，含净值历史与 SHA-256）；`POST /api/backup/preflight` 只读预检，`POST /api/backup/restore` 需 `RESTORE` 确认后先备份当前数据再事务化整体恢复，失败回滚。审计日志、AI 密钥、Agent token、Agent 幂等记录、任务（刷新/回测）、提案与指数估值缓存（可重建）不进入普通备份；恢复时清空 `agent_operations`、`refresh_jobs`、`operation_proposals`，避免旧记录指向已替换的数据
 - 基准对比: `GET /api/portfolio/benchmark?indices=000300,000001,399006`，返回基准累计收益率（`close / close_at_start - 1`），按组合曲线日期 ffill 对齐。`BENCHMARK_INDICES` 白名单控制可选指数
 
 ### config.py — 全局配置

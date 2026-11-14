@@ -80,7 +80,7 @@ docker-compose.yml       # 单服务 + data 卷
 ## 提交规范
 
 - Commit message **使用中文**
-- 前缀：`feat:` / `fix:` / `docs:` / `perf:` / `chore:`
+- 前缀：`feat:` / `fix:` / `docs:` / `perf:` / `refactor:` / `test:` / `style:` / `chore:`（偶用 `ci:` / `release:` / `deploy:` / `ui:`），可带作用域如 `fix(api):`
 - 格式：`feat: 简短描述`，空行后可选详细说明
 - PR 请描述清楚改动内容与动机
 

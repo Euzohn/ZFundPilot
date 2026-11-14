@@ -164,7 +164,7 @@ export default function Valuation() {
       setSortDir((dir) => (dir === "asc" ? "desc" : "asc"))
     } else {
       setSortField(field as SortField)
-      setSortDir(field === "name" ? "asc" : "asc")
+      setSortDir("asc")
     }
   }
 

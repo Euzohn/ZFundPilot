@@ -12,6 +12,7 @@ MIT License 仅适用于本项目的源代码与原创文档，**不适用于**�
 
 - **东方财富 / 天天基金**（`fund.eastmoney.com`、`fundf10.eastmoney.com`、`fundgz` 等接口）
 - **AkShare** 所封装的各数据源（新浪财经、东方财富等）
+- **乐咕乐股**（`legulegu.com`，经 AkShare `stock_index_pe_lg` / `stock_index_pb_lg` 接口获取宽基指数 PE/PB 历史，供指数估值页）
 
 ### 使用约定
 
@@ -43,6 +44,7 @@ This project retrieves data from the following third-party sources at runtime. T
 
 - **东方财富 (East Money) / 天天基金 (Tiantian Fund)** (`fund.eastmoney.com`, `fundf10.eastmoney.com`, `fundgz` and other interfaces)
 - **AkShare**-wrapped data sources (Sina Finance, East Money, etc.)
+- **Legulegu** (`legulegu.com`, broad-based index PE/PB history via AkShare's `stock_index_pe_lg` / `stock_index_pb_lg` interfaces, used by the index valuation page)
 
 ### Terms of Use
 

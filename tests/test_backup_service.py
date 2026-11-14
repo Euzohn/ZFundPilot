@@ -75,6 +75,20 @@ class TestExport:
         # 待审批提案不进备份，恢复时也会被清空（避免指向已替换的数据）。
         assert "operation_proposals" in manifest["excluded"]
 
+    def test_all_db_tables_registered(self, temp_env):
+        """每张表必须进备份白名单或显式排除（带理由），防止新表「隐形」。"""
+        with db.get_connection() as conn:
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+                )
+            }
+        covered = set(bs.TABLE_COLUMNS) | set(bs.EXCLUDED_TABLES)
+        assert tables <= covered, f"未登记的表：{sorted(tables - covered)}"
+        assert all(reason for reason in bs.EXCLUDED_TABLES.values())
+
     def test_nav_history_roundtrip(self, temp_env):
         db.upsert_nav_batch([type("P", (), {
             "fund_code": "005827", "date": "2026-01-02",
@@ -171,6 +185,22 @@ class TestRestore:
 
         with db.get_connection() as conn:
             assert db.count_proposals(conn) == 0
+
+    def test_restore_keeps_valuation_cache(self, temp_env):
+        """估值缓存不进备份，恢复也不清空（可重建缓存，保留现状）。"""
+        db.upsert_index_valuation(
+            index_code="000300", index_name="沪深300", pe=12.5,
+            pe_percentile=45.0, pb=1.4, pb_percentile=40.0, window="10y",
+            window_months=120, temperature="fair", history_months=260,
+            data_date="2026-10-31", source="legulegu", payload="[]",
+            updated_at="2026-11-15T00:00:00")
+        payload = bs.export_backup_zip()
+        assert "index_valuation" in bs.EXCLUDED_TABLES
+
+        bs.restore_backup(payload, username="tester")
+
+        row = db.get_index_valuation("000300")
+        assert row is not None and row["pe"] == 12.5
 
     def test_failure_rolls_back(self, temp_env, monkeypatch):
         payload = bs.export_backup_zip()

@@ -128,6 +128,7 @@ EXCLUDED_TABLES = {
     "agent_operations": "临时幂等记录，恢复后无意义",
     "operation_proposals": "待审批提案，恢复后指向已替换数据",
     "refresh_jobs": "临时刷新任务，恢复后无意义",
+    "index_valuation": "指数估值缓存（TTL 24h）可由上游重建，不进入备份",
 }
 
 EXCLUDED_SECRETS = {

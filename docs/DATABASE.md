@@ -352,6 +352,8 @@
 
 **刷新策略**（`valuation.py`）：`TTL_HOURS=24` 内直接读缓存；`refresh=true` 强制拉取；上游失败时保留旧值标 `stale`，无旧值则单只 `ok=false` 降级，不抛 500。
 
+**备份**：不进入备份 ZIP（可重建缓存，见 `backup_service.EXCLUDED_TABLES`）；恢复备份不清空本表。
+
 ---
 
 ## 13. trade_calendar — A 股交易日历

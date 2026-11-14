@@ -21,6 +21,7 @@
 | `dividend_alerts` | 提醒列表（分红 + 止盈止损） | `id` (自增) |
 | `tp_sl_alert_states` | 止盈止损状态机 | `(fund_code, alert_type)` |
 | `index_history` | 指数历史收盘价（基准对比，持久化缓存） | `id` (自增)，`UNIQUE(code, date)` |
+| `index_valuation` | 宽基指数估值缓存（PE/PB/百分位/温度 + 原始月度序列） | `index_code` |
 | `trade_calendar` | A 股交易日历（法定节假日/调休，定投可投性校验） | `date` |
 | `portfolio_snapshots` | 组合每日快照（投入/市值/收益，曲线缓存） | `id` (自增)，`UNIQUE(date)` |
 | `watchlist_tombstones` | 自选删除墓碑（保留前值与单调 revision，供恢复） | `fund_code` |
@@ -317,15 +318,45 @@
 **三级缓存**（`fetch_estimate.fetch_index_history`）：
 1. L1 内存缓存（`_index_hist_cache`，1h TTL）→ 命中即返回
 2. L2 SQLite（`index_history` 表）→ DB 最新日期 < today 时触发 L3
-3. L3 新浪在线（`ak.stock_zh_index_daily`）→ 成功后持久化到 L2，失败时从 L2 返回
+3. L3 新浪在线（`ak.index_zh_daily_sina`，旧版 `stock_zh_index_daily`，经 `ak_compat` 兼容）→ 成功后持久化到 L2，失败时从 L2 返回
 
 **scheduler 集成**：`_update_benchmark_indices()` 在净值更新后调用，遍历 `config.BENCHMARK_INDICES` 逐只拉取并持久化。
 
 ---
 
-## 12. trade_calendar — A 股交易日历
+## 12. index_valuation — 宽基指数估值缓存
 
-存储 A 股交易日历（`ak.tool_trade_date_hist_sina`，含法定节假日 + 调休），供定投可投性校验（`auto_invest.run_all_due` / `_next_trading_day` 判断某日是否可定投）。
+缓存乐咕乐股宽基指数 PE/PB 月度序列与自算百分位，供 `/api/valuation/*` 只读接口使用（TTL 24h，失败时保留旧值并标 `stale`）。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `index_code` | TEXT | PRIMARY KEY | 指数代码（如 `000300`） |
+| `index_name` | TEXT | DEFAULT '' | 指数名称 |
+| `pe` | REAL | | 最新 PE(TTM) |
+| `pe_percentile` | REAL | | PE 百分位（0–100，按 `window` 自算） |
+| `pb` | REAL | | 最新 PB |
+| `pb_percentile` | REAL | | PB 百分位（0–100） |
+| `window` | TEXT | DEFAULT '10y' | 百分位窗口：`10y` / `all`（历史不足 10 年时回退 `all`） |
+| `window_months` | INTEGER | DEFAULT 0 | 窗口覆盖月数 |
+| `temperature` | TEXT | DEFAULT 'unknown' | 估值温度：`low` / `fair` / `high` / `unknown`（按 PE 百分位 <30 / 30–70 / >70） |
+| `history_months` | INTEGER | DEFAULT 0 | 可用历史总月数 |
+| `data_date` | TEXT | DEFAULT '' | 上游数据最新日期 `YYYY-MM-DD` |
+| `source` | TEXT | DEFAULT 'legulegu' | 数据源标识 |
+| `payload` | TEXT | DEFAULT '[]' | 原始月度序列 JSON（`[{date, pe, pb}, ...]`），用于历史曲线与滚动百分位 |
+| `updated_at` | TEXT | DEFAULT '' | 最近成功拉取时间（ISO） |
+
+**相关函数**（db.py）：
+- `upsert_index_valuation(...)`: 按 `index_code` 覆盖写入
+- `get_index_valuations()`: 全量读取（列表接口）
+- `get_index_valuation(index_code)`: 单只读取（历史接口，`valuation.get_history` 使用）
+
+**刷新策略**（`valuation.py`）：`TTL_HOURS=24` 内直接读缓存；`refresh=true` 强制拉取；上游失败时保留旧值标 `stale`，无旧值则单只 `ok=false` 降级，不抛 500。
+
+---
+
+## 13. trade_calendar — A 股交易日历
+
+存储 A 股交易日历（`ak.calendar_trade_date_hist_sina`，旧版 `tool_trade_date_hist_sina`，经 `ak_compat` 兼容；含法定节假日 + 调休），供定投可投性校验（`auto_invest.run_all_due` / `_next_trading_day` 判断某日是否可定投）。
 
 | 字段 | 类型 | 约束 | 说明 |
 |---|---|---|---|
@@ -342,7 +373,7 @@
 
 ---
 
-## 13. operation_proposals — 账本操作提案
+## 14. operation_proposals — 账本操作提案
 
 Agent 默认只能提交**待审批提案**。网页管理员在「待确认提案」页面批准后，服务端在同一 SQLite 事务内复核实例认证、写总开关、创建者 token/scope 与业务规则，写入交易/计划或推进提醒与计划簿记，并记录审计。支持的操作类型以 `proposal_service.ALLOWED_OPERATIONS` 为准（当前清单见 `docs/AGENT_API.md` §5.23）。
 
@@ -387,7 +418,7 @@ Agent 默认只能提交**待审批提案**。网页管理员在「待确认提�
 
 ---
 
-## 14. Agent 与后台任务表
+## 15. Agent 与后台任务表
 
 ### agent_tokens
 

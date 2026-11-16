@@ -1543,6 +1543,7 @@ const en: typeof zh = {
     refreshProgress: "Progress {done}/{total} · current: {current}",
     refreshWaiting: "waiting for the next request (rate-limit interval / retry backoff)...",
     refreshFailed: " · {failed} failed (hover the \"unavailable\" badge for the reason)",
+    pollFailed: "Cannot connect to the backend service; auto-refresh paused.",
     empty: "No valuation data",
     retry: "Retry",
     index: "Index",

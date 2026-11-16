@@ -99,6 +99,8 @@ export default function Valuation() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
 
   const [expanded, setExpanded] = useState("")
+  // 连续静默轮询失败次数：后端挂掉时停止刷屏，改显错误+重试
+  const [pollFail, setPollFail] = useState(0)
   const [history, setHistory] = useState<Record<string, ValuationHistoryResponse>>({})
   const [historyLoading, setHistoryLoading] = useState<Record<string, boolean>>({})
   const [historyError, setHistoryError] = useState<Record<string, string>>({})
@@ -113,8 +115,10 @@ export default function Valuation() {
       try {
         const res = await api.getIndexValuations(force)
         setData(res)
+        setPollFail(0)
       } catch (e: unknown) {
-        if (!silent) setError(e instanceof Error ? e.message : t.valuation.loadFailed)
+        if (silent) setPollFail((n) => n + 1)
+        else setError(e instanceof Error ? e.message : t.valuation.loadFailed)
       } finally {
         if (force) setRefreshing(false)
         if (!silent) setLoading(false)
@@ -135,13 +139,13 @@ export default function Valuation() {
       if (pollTick !== 0) setPollTick(0)
       return
     }
-    if (pollTick >= 160) return
+    if (pollTick >= 160 || pollFail >= 3) return
     const timer = window.setTimeout(() => {
       setPollTick((n) => n + 1)
       load(false, true)
     }, 3000)
     return () => window.clearTimeout(timer)
-  }, [data?.refreshing, pollTick, load])
+  }, [data?.refreshing, pollTick, pollFail, load])
 
   const toggleExpand = (code: string) => {
     if (expanded === code) {
@@ -382,25 +386,43 @@ export default function Valuation() {
         </p>
         {data?.refreshing && (
           <div className="space-y-0.5 text-xs text-amber-600 dark:text-amber-400">
-            <p className="flex items-center gap-1.5">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              {t.valuation.refreshing}
-            </p>
-            {data.progress && (
-              <p className="pl-[18px] text-amber-600/80 dark:text-amber-400/80">
-                {t.valuation.refreshProgress
-                  .replace("{done}", String(data.progress.total - data.progress.remaining))
-                  .replace("{total}", String(data.progress.total))
-                  .replace(
-                    "{current}",
-                    data.progress.current ?? t.valuation.refreshWaiting,
-                  )}
-                {data.progress.failed > 0 &&
-                  t.valuation.refreshFailed.replace(
-                    "{failed}",
-                    String(data.progress.failed),
-                  )}
-              </p>
+            {pollFail >= 3 ? (
+              <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                <span>{t.valuation.pollFailed}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setPollFail(0)
+                    load(false, true)
+                  }}
+                >
+                  {t.valuation.retry}
+                </Button>
+              </div>
+            ) : (
+              <>
+                <p className="flex items-center gap-1.5">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {t.valuation.refreshing}
+                </p>
+                {data.progress && (
+                  <p className="pl-[18px] text-amber-600/80 dark:text-amber-400/80">
+                    {t.valuation.refreshProgress
+                      .replace("{done}", String(data.progress.total - data.progress.remaining))
+                      .replace("{total}", String(data.progress.total))
+                      .replace(
+                        "{current}",
+                        data.progress.current ?? t.valuation.refreshWaiting,
+                      )}
+                    {data.progress.failed > 0 &&
+                      t.valuation.refreshFailed.replace(
+                        "{failed}",
+                        String(data.progress.failed),
+                      )}
+                  </p>
+                )}
+              </>
             )}
           </div>
         )}

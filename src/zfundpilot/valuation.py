@@ -11,9 +11,12 @@
   UI 必须标注口径。
 - 乐咕反爬脆弱（JS token + cookie/csrf，实测间歇失败）：缓存 +
   stale-if-error + 单只降级，绝不阻塞其他页面。
-- akshare 用 PyMiniRacer(V8) 解 JS token，V8 非线程安全：所有乐咕调用
-  串行（单 worker）+ 最小请求间隔 + 退避重试；请求只做有界等待，超时项
-  转后台继续抓取并逐只落库，前端轮询渐进填充。
+- akshare 用 PyMiniRacer(V8) 解 JS token，V8 非线程安全：py_mini_racer
+  由 `ak_compat._ensure_v8_serialized()` 做进程级串行（覆盖乐咕/新浪/
+  交易日历等所有 V8 使用方）；本模块的乐咕请求另加单 worker 串行 +
+  最小请求间隔 + 退避重试，满足反爬限速的同时绝不并发撞 V8。
+- 请求只做有界等待（列表 10s），超时项转后台继续抓取并逐只落库，
+  前端在 `refreshing=true` 时轮询渐进填充。
 - 旧版 akshare（≤1.18.x）乐咕请求不带 timeout，上游挂起会永远阻塞：
   本模块给未显式指定 timeout 的 requests 调用注入默认超时 (10s, 30s)。
 - 失败冷却：单只抓取失败后 5 分钟内不再自动重提（手动刷新/展开历史除外），

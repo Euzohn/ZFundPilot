@@ -1541,6 +1541,7 @@ const zh = {
     refreshProgress: "进度 {done}/{total} · 当前：{current}",
     refreshWaiting: "等待下一次请求（限速间隔/重试退避）…",
     refreshFailed: " · {failed} 只抓取失败（悬停「暂不可用」徽章查看原因）",
+    pollFailed: "无法连接后端服务，自动刷新已暂停。",
     empty: "暂无估值数据",
     retry: "重试",
     index: "指数",

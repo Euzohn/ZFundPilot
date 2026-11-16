@@ -574,6 +574,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- chore: akshare pin 1.18.82 → 1.20.61（requirements.txt，与 CI 一致，用户已确认）：消除 CI/Docker 版本差（两轮服务器估值故障的漏测根源）；ak_compat 已覆盖改名接口，超时注入/失败冷却兜底保留。部署需重新构建镜像（pip 层重建）
 - feat: 估值刷新进度可视化——列表响应新增 `progress`（`refresh_progress()` 快照：total/remaining/current/current_code/failed，`_current_code` 记录单 worker 正在抓取的指数，failed 按 `_last_failed_at` 统计）；前端刷新中横幅显示「进度 x/12 · 当前：xxx」+ 失败只数，请求间隙显示「等待下一次请求（限速间隔/重试退避）」。新增 3 例（test_valuation 共 69 例，全量 1395 例）
 - fix: 上游不可达时估值页仍永远「刷新中」——失败不落缓存，此前每次请求（含前端轮询）都重提刚失败的指数，串行队列永远不空、refreshing 永远为 true。新增失败冷却 `_FAILURE_COOLDOWN=300s`（`_last_failed_at` 记录）：冷却期内不自动重提，队列排空后页面落定为降级态；手动刷新（refresh=true）与展开单只历史（get_history force=True）不受限制。前端轮询上限 80→160 轮（约 35 分钟）。新增 4 例（test_valuation 共 66 例，全量 1392 例）
 - fix: 服务器侧指数估值页一直「刷新中」却永远无数据——requirements.txt 钉住的 akshare 1.18.82（Docker 部署版本）乐咕请求不带任何超时（本地/CI 的新版自带默认超时，故此前未暴露），服务器网络到乐咕挂起时请求永远阻塞、串行队列卡死。`valuation._ensure_requests_timeout()` 幂等注入默认超时 (10s, 30s)（仅对未显式传 timeout 的 requests 调用生效）；单只失败原因记入降级占位 `message`，前端「暂不可用」徽章悬停可见。已用服务器同款 1.18.82 真实验证（超时全部注入、沪深300 260 点抓取成功）。新增 4 例（test_valuation 共 62 例，全量 1388 例）。注意：CI 装最新 akshare 而 Docker 钉 1.18.82，版本不一致是本次漏测根源

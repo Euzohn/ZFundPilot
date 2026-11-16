@@ -12,7 +12,7 @@
 
 ## 前置条件
 
-- Python 3.10+
+- Python 3.11.5+（akshare 1.20.61 的最低要求；Docker 部署不受影响，镜像内置 3.11）
 - Node.js 18+ / npm 9+
 - 网络可访问 `fund.eastmoney.com`（获取基金净值）
 

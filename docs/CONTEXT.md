@@ -117,7 +117,7 @@ ZFundPilot/
 ├── DEPLOY.md                # 部署文档
 ├── .env.example             # 环境变量示例
 ├── .github/workflows/       # GitHub Actions CI/CD
-│   └── ci.yml               #   ruff → pytest (3.10/3.11/3.12 并行) → tsc → build
+│   └── ci.yml               #   ruff → pytest (3.11/3.12 并行) → tsc → build
 ├── tests/                   # Pytest 测试套件
 │   ├── conftest.py          #   共享 fixtures（make_plan/make_tx_row/PatchAutoInvest）
 │   └── test_*.py            #   数百个测试用例
@@ -574,6 +574,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- chore: 彻底消除 CI/Docker akshare 版本漂移——pyproject 钉 `akshare==1.20.61`（此前 `>=1.12.0` 浮动：CI 装最新、3.10 上 pip 静默回退旧版，矩阵各 Python 实测不同 akshare）。1.20.61 要求 Python ≥3.11.5，支持基线提升至 3.11.5+（用户已确认）：requires-python/classifiers、CI 矩阵（3.11/3.12）、ruff target py311、DEPLOY 前置条件同步，与 Docker `python:3.11-slim` 一致；requirements.txt 加注 pin 须与 pyproject 同步
 - fix: 估值抓取全站熔断——实测服务器 IP 被乐咕整站 504（本地住宅 IP 正常，判定为上游对服务器 IP 的频控/WAF 封禁）。单只 5 分钟冷却在整站失败时仍每 5 分钟重提一整轮，可能让封禁续期；现连续失败 ≥6 次全局静默 1 小时（`_BREAKER_THRESHOLD`/`_BREAKER_COOLDOWN`），手动刷新/展开历史可穿透，任一成功立即合闸。新增 5 例（test_valuation 共 74 例，全量 1403 例）。后续方向待用户决定：等封禁自然解除 / 乐咕走国内住宅代理（LEGULEGU_PROXY）/ 换备选源（funddb 已从 akshare 1.20.61 移除，danjuan 待评估）
 - fix: 服务器估值页后端崩溃（ERR_CONNECTION_REFUSED 刷屏）——akshare 1.20.x 起交易日历/新浪指数日线等也走 py_mini_racer(V8)，估值 worker 与定时刷新任务并发即随机 SIGTRAP，仅串行估值不够。`ak_compat._ensure_v8_serialized()` 在引擎层给 MiniRacer 构造/eval/call 统一加进程级锁（import 即生效、幂等，一处覆盖全部 V8 使用方）。新增 3 例（test_ak_compat 共 7 例，全量 1398 例）；同款 pin 环境（3.11+1.20.61）乐咕/日历/新浪日线三路并发真实抓取冒烟通过。另：前端静默轮询连续 3 次失败即暂停并显示「无法连接后端服务」+ 重试，不再对挂掉的后端刷屏 160 轮
 - chore: akshare pin 1.18.82 → 1.20.61（requirements.txt，与 CI 一致，用户已确认）：消除 CI/Docker 版本差（两轮服务器估值故障的漏测根源）；ak_compat 已覆盖改名接口，超时注入/失败冷却兜底保留。部署需重新构建镜像（pip 层重建）

@@ -9,13 +9,12 @@ description = "个人基金分析与风险管理系统"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{name = "Euzohn"}]
-requires-python = ">=3.10"
+requires-python = ">=3.11.5"
 keywords = ["fund", "portfolio", "investment", "risk-analysis"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Operating System :: OS Independent",
@@ -24,7 +23,7 @@ classifiers = [
 dependencies = [
     "pandas>=2.0.0",
     "numpy>=1.24.0",
-    "akshare>=1.12.0",
+    "akshare==1.20.61",
     "fastapi>=0.110.0",
     "python-multipart>=0.0.22",
     "uvicorn[standard]>=0.29.0",
@@ -58,7 +57,7 @@ where = ["src"]
 # ---------------------------------------------------------------------------
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 src = ["src", "tests"]
 
 [tool.ruff.lint]

@@ -16,6 +16,8 @@
   转后台继续抓取并逐只落库，前端轮询渐进填充。
 - 旧版 akshare（≤1.18.x）乐咕请求不带 timeout，上游挂起会永远阻塞：
   本模块给未显式指定 timeout 的 requests 调用注入默认超时 (10s, 30s)。
+- 失败冷却：单只抓取失败后 5 分钟内不再自动重提（手动刷新/展开历史除外），
+  否则上游不可达时每次轮询都重提失败项，队列永远不空、页面永远「刷新中」。
 - 温度以 PE(TTM) 百分位分档；PB 百分位并列展示。仅供参考，非投资建议。
 """
 
@@ -59,6 +61,12 @@ _timeout_patched = False
 
 # 单只最近一次抓取失败原因（供降级占位透出到 UI，便于定位网络/反爬问题）
 _last_errors: dict[str, str] = {}
+
+# 失败冷却：上游不可达时若每次请求都重提刚失败的指数，串行队列永远不空，
+# refreshing 永远为 true（页面永远「刷新中」）。失败后冷却期内不再自动重提，
+# 让页面落定为降级态；手动刷新（refresh=true）与展开单只历史不受冷却限制。
+_FAILURE_COOLDOWN = 300.0  # 秒
+_last_failed_at: dict[str, float] = {}
 
 
 def _ensure_requests_timeout() -> None:
@@ -560,18 +568,28 @@ def _fetch_and_store(
         points = provider.fetch_history(meta)
     except Exception as exc:  # noqa: BLE001 - 记录原因后交由上层降级
         _record_error(code, exc)
+        _last_failed_at[code] = time.monotonic()
         raise
     if not points:
+        _last_failed_at[code] = time.monotonic()
         return None
     val = build_valuation(meta, points)
     _store(val, points)
     _last_errors.pop(code, None)
+    _last_failed_at.pop(code, None)
     return val, points
 
 
-def _submit_missing(codes: list[str], provider: ValuationProvider) -> dict[str, Future]:
-    """复用已在途任务，只为缺失代码提交新任务（单飞，避免重复抓取）。"""
+def _submit_missing(
+    codes: list[str], provider: ValuationProvider, force: bool = False
+) -> dict[str, Future]:
+    """复用已在途任务，只为缺失代码提交新任务（单飞，避免重复抓取）。
+
+    冷却期内刚失败的代码不再自动重提（``force=True`` 除外），
+    防止上游不可达时队列永远不空、页面永远「刷新中」。
+    """
     futures: dict[str, Future] = {}
+    now = time.monotonic()
     with _inflight_lock:
         for code in codes:
             future = _inflight.get(code)
@@ -579,6 +597,13 @@ def _submit_missing(codes: list[str], provider: ValuationProvider) -> dict[str, 
                 futures[code] = future
                 continue
             _inflight.pop(code, None)
+            failed_at = _last_failed_at.get(code)
+            if (
+                not force
+                and failed_at is not None
+                and now - failed_at < _FAILURE_COOLDOWN
+            ):
+                continue
             future = _EXECUTOR.submit(_fetch_and_store, code, provider)
             _inflight[code] = future
             futures[code] = future
@@ -595,12 +620,12 @@ def is_refreshing() -> bool:
 
 
 def _fetch_many(
-    codes: list[str], provider: ValuationProvider, timeout: float
+    codes: list[str], provider: ValuationProvider, timeout: float, force: bool = False
 ) -> dict[str, tuple[IndexValuation, list[dict[str, Any]]] | None]:
     """有界等待：返回已完成的结果；超时项留在后台继续抓取并落库。"""
     if not codes:
         return {}
-    futures = _submit_missing(codes, provider)
+    futures = _submit_missing(codes, provider, force=force)
     wait(set(futures.values()), timeout=timeout)
     results: dict[str, tuple[IndexValuation, list[dict[str, Any]]] | None] = {}
     for code, future in futures.items():
@@ -643,7 +668,11 @@ def list_valuations(
         for meta in metas
         if refresh or _is_stale(rows.get(meta.code), ttl_hours)
     ]
-    fetched = _fetch_many(need, provider or get_provider(), timeout) if need else {}
+    fetched = (
+        _fetch_many(need, provider or get_provider(), timeout, force=refresh)
+        if need
+        else {}
+    )
     if fetched:
         # 后台任务可能已写入新行，重新读取以便未完成项拿到最新缓存
         rows = {row["index_code"]: dict(row) for row in db.get_index_valuations()}
@@ -706,7 +735,10 @@ def get_history(
     row = db.get_index_valuation(code)
     row = dict(row) if row else None
     if row is None or _is_stale(row, ttl_hours):
-        fetched = _fetch_many([code], provider or get_provider(), timeout).get(code)
+        # 展开单只是用户显式动作，不受失败冷却限制
+        fetched = _fetch_many(
+            [code], provider or get_provider(), timeout, force=True
+        ).get(code)
         if fetched:
             val, points = fetched
             win = window if window in ("10y", "all") else val.window

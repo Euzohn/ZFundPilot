@@ -127,14 +127,15 @@ export default function Valuation() {
     load(false)
   }, [load])
 
-  // 上游限流：后台仍在逐只刷新时，轮询直到数据补全（约 4 分钟上限）
+  // 后台仍在逐只刷新时轮询直到数据补全；每轮约 13s（10s 有界等待 + 3s 间隔），
+  // 160 轮约 35 分钟，覆盖最坏情况（12 只全部读超时重试）
   const [pollTick, setPollTick] = useState(0)
   useEffect(() => {
     if (!data?.refreshing) {
       if (pollTick !== 0) setPollTick(0)
       return
     }
-    if (pollTick >= 80) return
+    if (pollTick >= 160) return
     const timer = window.setTimeout(() => {
       setPollTick((n) => n + 1)
       load(false, true)

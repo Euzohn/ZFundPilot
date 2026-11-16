@@ -53,9 +53,11 @@ class FakeProvider(valuation.ValuationProvider):
 
 @pytest.fixture(autouse=True)
 def _fast_legulegu(monkeypatch):
-    """测试不等待真实请求间隔/退避。"""
+    """测试不等待真实请求间隔/退避，且失败状态不跨用例残留。"""
     monkeypatch.setattr(valuation, "_REQUEST_INTERVAL", 0.0)
     monkeypatch.setattr(valuation, "_RETRY_BACKOFF", (0.0, 0.0))
+    valuation._last_errors.clear()
+    valuation._last_failed_at.clear()
 
 
 class SlowProvider(valuation.ValuationProvider):
@@ -471,8 +473,8 @@ class TestFailureMessage:
         values = valuation.list_valuations(provider=BoomProvider(), timeout=5.0)
         assert all(not v.ok for v in values)
         assert all("connect timeout" in v.message for v in values)
-        # 成功后清除失败原因
-        again = valuation.list_valuations(provider=FakeProvider())
+        # 成功后清除失败原因（手动刷新绕过失败冷却）
+        again = valuation.list_valuations(provider=FakeProvider(), refresh=True)
         assert all(v.ok for v in again)
         assert not valuation._last_errors
 
@@ -486,6 +488,44 @@ class TestFailureMessage:
         values = valuation.list_valuations(timeout=5.0)
         assert all(not v.ok for v in values)
         assert all("504" in v.message for v in values)
+
+
+class TestFailureCooldown:
+    """失败后冷却期内不自动重提：否则上游不可达时队列永远不空，页面永远「刷新中」。"""
+
+    def test_failed_codes_not_resubmitted(self, temp_db):
+        boom = FakeProvider(fail=True)
+        values = valuation.list_valuations(provider=boom, timeout=5.0)
+        assert all(not v.ok for v in values)
+        assert len(boom.calls) == 12
+        assert valuation.is_refreshing() is False
+        # 冷却期内的后续请求（含前端轮询）不再重提
+        again = valuation.list_valuations(provider=boom, timeout=5.0)
+        assert all(not v.ok for v in again)
+        assert len(boom.calls) == 12
+        assert valuation.is_refreshing() is False
+
+    def test_force_refresh_bypasses_cooldown(self, temp_db):
+        boom = FakeProvider(fail=True)
+        valuation.list_valuations(provider=boom, timeout=5.0)
+        assert len(boom.calls) == 12
+        valuation.list_valuations(provider=boom, refresh=True, timeout=5.0)
+        assert len(boom.calls) == 24
+
+    def test_cooldown_expiry_allows_retry(self, temp_db, monkeypatch):
+        boom = FakeProvider(fail=True)
+        valuation.list_valuations(provider=boom, timeout=5.0)
+        monkeypatch.setattr(valuation, "_FAILURE_COOLDOWN", 0.0)
+        valuation.list_valuations(provider=boom, timeout=5.0)
+        assert len(boom.calls) == 24
+
+    def test_success_after_cooldown_via_history(self, temp_db):
+        boom = FakeProvider(fail=True)
+        valuation.list_valuations(provider=boom, timeout=5.0)
+        # 展开单只历史是显式动作，不受冷却限制
+        result = valuation.get_history("000300", provider=FakeProvider())
+        assert result is not None and result["ok"]
+        assert "000300" not in valuation._last_failed_at
 
 
 class TestGetHistory:

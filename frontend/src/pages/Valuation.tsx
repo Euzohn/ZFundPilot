@@ -381,10 +381,28 @@ export default function Valuation() {
             : t.valuation.expandHint}
         </p>
         {data?.refreshing && (
-          <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            {t.valuation.refreshing}
-          </p>
+          <div className="space-y-0.5 text-xs text-amber-600 dark:text-amber-400">
+            <p className="flex items-center gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {t.valuation.refreshing}
+            </p>
+            {data.progress && (
+              <p className="pl-[18px] text-amber-600/80 dark:text-amber-400/80">
+                {t.valuation.refreshProgress
+                  .replace("{done}", String(data.progress.total - data.progress.remaining))
+                  .replace("{total}", String(data.progress.total))
+                  .replace(
+                    "{current}",
+                    data.progress.current ?? t.valuation.refreshWaiting,
+                  )}
+                {data.progress.failed > 0 &&
+                  t.valuation.refreshFailed.replace(
+                    "{failed}",
+                    String(data.progress.failed),
+                  )}
+              </p>
+            )}
+          </div>
         )}
       </div>
 

@@ -528,6 +528,50 @@ class TestFailureCooldown:
         assert "000300" not in valuation._last_failed_at
 
 
+class TestRefreshProgress:
+    """刷新进度快照必须反映「当前正在做什么」（前端横幅展示）。"""
+
+    def test_current_code_tracked_serially(self, temp_db):
+        seen: list[str | None] = []
+
+        class SpyProvider(valuation.ValuationProvider):
+            name = "spy"
+
+            def fetch_history(self, meta):
+                seen.append(valuation._current_code)
+                return make_series(150)
+
+        valuation.list_valuations(provider=SpyProvider())
+        assert seen == [meta.code for meta in valuation.INDEX_REGISTRY]
+        assert valuation._current_code is None
+        assert valuation.refresh_progress() == {
+            "total": 12,
+            "remaining": 0,
+            "current": None,
+            "current_code": None,
+            "failed": 0,
+        }
+
+    def test_progress_during_background(self, temp_db):
+        provider = SlowProvider(delay=0.15)
+        valuation.list_valuations(provider=provider, timeout=0.05)
+        progress = valuation.refresh_progress()
+        assert progress["total"] == 12
+        assert progress["remaining"] > 0
+        names = {meta.name for meta in valuation.INDEX_REGISTRY}
+        assert progress["current"] is None or progress["current"] in names
+        assert wait_idle()
+        progress = valuation.refresh_progress()
+        assert progress["remaining"] == 0
+        assert progress["current"] is None
+
+    def test_failed_count(self, temp_db):
+        valuation.list_valuations(provider=FakeProvider(fail=True), timeout=5.0)
+        progress = valuation.refresh_progress()
+        assert progress["failed"] == 12
+        assert progress["remaining"] == 0
+
+
 class TestGetHistory:
     def test_cached_history_and_consistency(self, temp_db):
         valuation.list_valuations(provider=FakeProvider())
@@ -619,6 +663,13 @@ class TestValuationEndpoints:
         assert len(body["indices"]) == 12
         assert body["degraded"] is False
         assert body["refreshing"] is False
+        assert body["progress"] == {
+            "total": 12,
+            "remaining": 0,
+            "current": None,
+            "current_code": None,
+            "failed": 0,
+        }
         assert body["as_of"]
         item = body["indices"][0]
         assert item["index_code"] == "000300"
@@ -632,6 +683,7 @@ class TestValuationEndpoints:
         assert body["ok"] is True  # 请求本身成功
         assert body["degraded"] is True
         assert all(item["ok"] is False for item in body["indices"])
+        assert body["progress"]["failed"] == 12
 
     def test_list_refresh_param(self, client, monkeypatch):
         monkeypatch.setattr(valuation, "get_provider", lambda: FakeProvider())

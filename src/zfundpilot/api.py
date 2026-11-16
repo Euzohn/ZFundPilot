@@ -4104,6 +4104,7 @@ def get_index_valuations(refresh: bool = False) -> dict[str, Any]:
         "indices": items,
         "degraded": degraded,
         "refreshing": valuation.is_refreshing(),
+        "progress": valuation.refresh_progress(),
         "as_of": max(data_dates) if data_dates else "",
         "window": "10y",
         "source": "legulegu",

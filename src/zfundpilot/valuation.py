@@ -52,7 +52,7 @@ _RETRY_BACKOFF = (4.0, 8.0)  # 第 1/2 次失败后的等待（秒）
 _V8_LOCK = threading.Lock()
 _last_request_ts = 0.0
 
-# 旧版 akshare（如 requirements.txt 钉住的 1.18.82）乐咕请求不带 timeout：
+# 旧版 akshare（如曾钉住的 1.18.82）乐咕请求不带 timeout：
 # 上游挂起/网络不可达时请求会永远阻塞，串行队列卡死在第一只指数，
 # 前端一直显示「刷新中」却永远没有数据。给未显式指定 timeout 的 requests
 # 调用注入默认超时兜底（新版 akshare 自带 timeout，不受影响）。
@@ -563,21 +563,26 @@ def _fetch_and_store(
     code: str, provider: ValuationProvider
 ) -> tuple[IndexValuation, list[dict[str, Any]]] | None:
     """抓取单只并立即落库（后台继续完成时也能被下次请求读到）。"""
+    global _current_code
     meta = INDEX_BY_CODE[code]
+    _current_code = code
     try:
-        points = provider.fetch_history(meta)
-    except Exception as exc:  # noqa: BLE001 - 记录原因后交由上层降级
-        _record_error(code, exc)
-        _last_failed_at[code] = time.monotonic()
-        raise
-    if not points:
-        _last_failed_at[code] = time.monotonic()
-        return None
-    val = build_valuation(meta, points)
-    _store(val, points)
-    _last_errors.pop(code, None)
-    _last_failed_at.pop(code, None)
-    return val, points
+        try:
+            points = provider.fetch_history(meta)
+        except Exception as exc:  # noqa: BLE001 - 记录原因后交由上层降级
+            _record_error(code, exc)
+            _last_failed_at[code] = time.monotonic()
+            raise
+        if not points:
+            _last_failed_at[code] = time.monotonic()
+            return None
+        val = build_valuation(meta, points)
+        _store(val, points)
+        _last_errors.pop(code, None)
+        _last_failed_at.pop(code, None)
+        return val, points
+    finally:
+        _current_code = None
 
 
 def _submit_missing(
@@ -617,6 +622,32 @@ def is_refreshing() -> bool:
             if future.done():
                 _inflight.pop(code, None)
         return bool(_inflight)
+
+
+# 单 worker 当前正在抓取的指数代码（任务间隙为 None）
+_current_code: str | None = None
+
+
+def refresh_progress() -> dict[str, Any]:
+    """后台刷新进度快照（前端展示「当前正在做什么」）。
+
+    ``remaining`` 为排队+在抓的任务数；``current`` 为正在抓取的指数名；
+    ``failed`` 为最近一次抓取失败且尚未成功的指数数。
+    """
+    with _inflight_lock:
+        for code, future in list(_inflight.items()):
+            if future.done():
+                _inflight.pop(code, None)
+        remaining = len(_inflight)
+    current = _current_code
+    meta = INDEX_BY_CODE.get(current) if current else None
+    return {
+        "total": len(INDEX_REGISTRY),
+        "remaining": remaining,
+        "current": meta.name if meta else None,
+        "current_code": current,
+        "failed": len(_last_failed_at),
+    }
 
 
 def _fetch_many(

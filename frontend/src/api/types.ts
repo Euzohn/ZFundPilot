@@ -1071,11 +1071,20 @@ export interface IndexValuation {
   message: string
 }
 
+export interface ValuationProgress {
+  total: number
+  remaining: number
+  current: string | null
+  current_code: string | null
+  failed: number
+}
+
 export interface IndexValuationListResponse {
   ok: boolean
   indices: IndexValuation[]
   degraded: boolean
   refreshing: boolean
+  progress: ValuationProgress | null
   as_of: string
   window: string
   source: string

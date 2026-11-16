@@ -58,6 +58,8 @@ def _fast_legulegu(monkeypatch):
     monkeypatch.setattr(valuation, "_RETRY_BACKOFF", (0.0, 0.0))
     valuation._last_errors.clear()
     valuation._last_failed_at.clear()
+    valuation._breaker_until = 0.0
+    valuation._consecutive_failures = 0
 
 
 class SlowProvider(valuation.ValuationProvider):
@@ -513,6 +515,8 @@ class TestFailureCooldown:
         assert len(boom.calls) == 24
 
     def test_cooldown_expiry_allows_retry(self, temp_db, monkeypatch):
+        # 本用例只验证单只冷却语义，关掉全站熔断避免干扰
+        monkeypatch.setattr(valuation, "_BREAKER_THRESHOLD", 10_000)
         boom = FakeProvider(fail=True)
         valuation.list_valuations(provider=boom, timeout=5.0)
         monkeypatch.setattr(valuation, "_FAILURE_COOLDOWN", 0.0)
@@ -526,6 +530,78 @@ class TestFailureCooldown:
         result = valuation.get_history("000300", provider=FakeProvider())
         assert result is not None and result["ok"]
         assert "000300" not in valuation._last_failed_at
+
+
+class TestCircuitBreaker:
+    """全站不可用（如上游 WAF 封禁服务器 IP、整站 504）时连续失败触发全局熔断。
+
+    仅靠单只 5 分钟冷却，整站失败时每 5 分钟仍会重提一整轮请求，
+    可能让上游频控封禁一直续期。熔断后自动请求静默 1 小时，
+    手动刷新/展开历史可穿透，任一成功立即合闸。
+    """
+
+    def test_trips_after_consecutive_failures(self, temp_db, monkeypatch):
+        monkeypatch.setattr(valuation, "_BREAKER_THRESHOLD", 3)
+        boom = FakeProvider(fail=True)
+        valuation.list_valuations(provider=boom, timeout=5.0)
+        # 本批已排队的任务仍会执行完（熔断在提交时检查）
+        assert len(boom.calls) == 12
+        assert valuation._breaker_until > time.monotonic()
+        # 熔断期内的自动请求（含前端轮询）不再触碰上游
+        again = valuation.list_valuations(provider=boom, timeout=5.0)
+        assert len(boom.calls) == 12
+        assert all(not v.ok for v in again)
+        assert valuation.is_refreshing() is False
+
+    def test_force_refresh_bypasses_breaker(self, temp_db, monkeypatch):
+        monkeypatch.setattr(valuation, "_BREAKER_THRESHOLD", 3)
+        boom = FakeProvider(fail=True)
+        valuation.list_valuations(provider=boom, timeout=5.0)
+        assert valuation._breaker_until > 0
+        valuation.list_valuations(provider=boom, refresh=True, timeout=5.0)
+        assert len(boom.calls) == 24
+
+    def test_history_bypasses_and_success_closes_breaker(self, temp_db, monkeypatch):
+        monkeypatch.setattr(valuation, "_BREAKER_THRESHOLD", 3)
+        boom = FakeProvider(fail=True)
+        valuation.list_valuations(provider=boom, timeout=5.0)
+        assert valuation._breaker_until > 0
+        # 展开单只历史是显式动作，可穿透熔断；成功立即合闸
+        result = valuation.get_history("000300", provider=FakeProvider())
+        assert result is not None and result["ok"]
+        assert valuation._breaker_until == 0.0
+        assert valuation._consecutive_failures == 0
+
+    def test_breaker_expiry_allows_retry(self, temp_db, monkeypatch):
+        monkeypatch.setattr(valuation, "_BREAKER_THRESHOLD", 3)
+        boom = FakeProvider(fail=True)
+        valuation.list_valuations(provider=boom, timeout=5.0)
+        assert len(boom.calls) == 12
+        # 模拟熔断与单只冷却同时到期
+        monkeypatch.setattr(valuation, "_breaker_until", 0.0)
+        monkeypatch.setattr(valuation, "_FAILURE_COOLDOWN", 0.0)
+        valuation.list_valuations(provider=boom, timeout=5.0)
+        assert len(boom.calls) == 24
+
+    def test_partial_failures_do_not_trip(self, temp_db, monkeypatch):
+        monkeypatch.setattr(valuation, "_BREAKER_THRESHOLD", 3)
+
+        class FlakyProvider(valuation.ValuationProvider):
+            name = "flaky"
+
+            def __init__(self):
+                self.calls: list[str] = []
+
+            def fetch_history(self, meta):
+                self.calls.append(meta.code)
+                # 每 3 只失败 1 只：失败不连续累计到阈值（成功会清零）
+                if len(self.calls) % 3 == 0:
+                    return None
+                return make_series(150)
+
+        valuation.list_valuations(provider=FlakyProvider(), timeout=5.0)
+        assert valuation._breaker_until == 0.0
+        assert valuation._consecutive_failures < 3
 
 
 class TestRefreshProgress:

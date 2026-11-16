@@ -21,6 +21,9 @@
   本模块给未显式指定 timeout 的 requests 调用注入默认超时 (10s, 30s)。
 - 失败冷却：单只抓取失败后 5 分钟内不再自动重提（手动刷新/展开历史除外），
   否则上游不可达时每次轮询都重提失败项，队列永远不空、页面永远「刷新中」。
+- 全站熔断：连续失败达阈值（如上游 WAF 封禁服务器 IP、整站 504）后全局
+  静默 1 小时不再自动抓取——仅靠单只 5 分钟冷却仍会每 5 分钟打一轮请求，
+  可能让频控封禁一直续期。手动刷新/展开历史可穿透，任一成功立即恢复。
 - 温度以 PE(TTM) 百分位分档；PB 百分位并列展示。仅供参考，非投资建议。
 """
 
@@ -70,6 +73,30 @@ _last_errors: dict[str, str] = {}
 # 让页面落定为降级态；手动刷新（refresh=true）与展开单只历史不受冷却限制。
 _FAILURE_COOLDOWN = 300.0  # 秒
 _last_failed_at: dict[str, float] = {}
+
+# 全站熔断：单只冷却挡不住「整站不可用」——12 只全失败时，每 5 分钟冷却
+# 到期仍会重提一整轮（12 只 × 重试 3 次），高频请求可能让上游频控封禁
+# 一直续期（实测乐咕对服务器 IP 整站 504）。连续失败（跨指数累计）达到
+# 阈值后全局静默 1 小时，让 IP 真正冷却；期间自动请求（含前端轮询）不再
+# 触碰上游。手动刷新与展开单只历史可穿透；任一只成功立即合闸恢复。
+# 写入只发生在单 worker 线程，读取在 HTTP 线程（float 赋值原子，无需加锁）。
+_BREAKER_THRESHOLD = 6  # 连续失败次数
+_BREAKER_COOLDOWN = 3600.0  # 秒
+_breaker_until = 0.0
+_consecutive_failures = 0
+
+
+def _note_failure() -> None:
+    global _consecutive_failures, _breaker_until
+    _consecutive_failures += 1
+    if _consecutive_failures >= _BREAKER_THRESHOLD:
+        _breaker_until = time.monotonic() + _BREAKER_COOLDOWN
+
+
+def _note_success() -> None:
+    global _consecutive_failures, _breaker_until
+    _consecutive_failures = 0
+    _breaker_until = 0.0
 
 
 def _ensure_requests_timeout() -> None:
@@ -575,14 +602,17 @@ def _fetch_and_store(
         except Exception as exc:  # noqa: BLE001 - 记录原因后交由上层降级
             _record_error(code, exc)
             _last_failed_at[code] = time.monotonic()
+            _note_failure()
             raise
         if not points:
             _last_failed_at[code] = time.monotonic()
+            _note_failure()
             return None
         val = build_valuation(meta, points)
         _store(val, points)
         _last_errors.pop(code, None)
         _last_failed_at.pop(code, None)
+        _note_success()
         return val, points
     finally:
         _current_code = None
@@ -595,9 +625,13 @@ def _submit_missing(
 
     冷却期内刚失败的代码不再自动重提（``force=True`` 除外），
     防止上游不可达时队列永远不空、页面永远「刷新中」。
+    全站熔断打开期间（连续失败达阈值）自动请求整体静默，
+    不再触碰上游；``force=True``（手动刷新/展开历史）可穿透。
     """
     futures: dict[str, Future] = {}
     now = time.monotonic()
+    if not force and now < _breaker_until:
+        return futures
     with _inflight_lock:
         for code in codes:
             future = _inflight.get(code)

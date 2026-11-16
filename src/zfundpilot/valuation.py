@@ -14,6 +14,8 @@
 - akshare 用 PyMiniRacer(V8) 解 JS token，V8 非线程安全：所有乐咕调用
   串行（单 worker）+ 最小请求间隔 + 退避重试；请求只做有界等待，超时项
   转后台继续抓取并逐只落库，前端轮询渐进填充。
+- 旧版 akshare（≤1.18.x）乐咕请求不带 timeout，上游挂起会永远阻塞：
+  本模块给未显式指定 timeout 的 requests 调用注入默认超时 (10s, 30s)。
 - 温度以 PE(TTM) 百分位分档；PB 百分位并列展示。仅供参考，非投资建议。
 """
 
@@ -47,6 +49,37 @@ _RETRY_BACKOFF = (4.0, 8.0)  # 第 1/2 次失败后的等待（秒）
 
 _V8_LOCK = threading.Lock()
 _last_request_ts = 0.0
+
+# 旧版 akshare（如 requirements.txt 钉住的 1.18.82）乐咕请求不带 timeout：
+# 上游挂起/网络不可达时请求会永远阻塞，串行队列卡死在第一只指数，
+# 前端一直显示「刷新中」却永远没有数据。给未显式指定 timeout 的 requests
+# 调用注入默认超时兜底（新版 akshare 自带 timeout，不受影响）。
+_HTTP_TIMEOUT = (10.0, 30.0)  # (连接, 读取) 秒
+_timeout_patched = False
+
+# 单只最近一次抓取失败原因（供降级占位透出到 UI，便于定位网络/反爬问题）
+_last_errors: dict[str, str] = {}
+
+
+def _ensure_requests_timeout() -> None:
+    """幂等地给 requests 注入默认超时（仅对未显式传 timeout 的调用生效）。"""
+    global _timeout_patched
+    if _timeout_patched:
+        return
+    import requests
+
+    original = requests.Session.request
+
+    def request_with_timeout(self: Any, method: str, url: str, **kwargs: Any) -> Any:
+        kwargs.setdefault("timeout", _HTTP_TIMEOUT)
+        return original(self, method, url, **kwargs)
+
+    requests.Session.request = request_with_timeout  # type: ignore[method-assign]
+    _timeout_patched = True
+
+
+def _record_error(code: str, exc: Exception | str) -> None:
+    _last_errors[code] = str(exc)[:200]
 
 # 温度阈值（PE 百分位，百分比）
 LOW_MAX = 30.0
@@ -415,6 +448,7 @@ def merge_series(pe_df: Any, pb_df: Any) -> list[dict[str, Any]]:
 def _lg_call(fn: Callable[..., Any], symbol: str) -> Any:
     """串行调用乐咕接口：V8 锁 + 最小请求间隔 + 指数退避重试。"""
     global _last_request_ts
+    _ensure_requests_timeout()
     last_exc: Exception | None = None
     for attempt in range(_MAX_ATTEMPTS):
         with _V8_LOCK:
@@ -446,17 +480,21 @@ class LeguleguValuationProvider(ValuationProvider):
             import akshare as ak
         except Exception as exc:  # noqa: BLE001 - 依赖缺失时降级
             logger.warning("akshare 不可用，指数估值降级: %s", exc)
+            _record_error(meta.code, exc)
             return None
         try:
             pe_df = _lg_call(ak.stock_index_pe_lg, meta.lg_symbol)
             pb_df = _lg_call(ak.stock_index_pb_lg, meta.lg_symbol)
         except Exception as exc:  # noqa: BLE001 - 反爬/网络失败一律降级
             logger.warning("乐咕估值抓取失败 %s(%s): %s", meta.code, meta.lg_symbol, exc)
+            _record_error(meta.code, exc)
             return None
         points = merge_series(pe_df, pb_df)
         if not points:
             logger.warning("乐咕估值返回空数据 %s(%s)", meta.code, meta.lg_symbol)
+            _record_error(meta.code, "上游返回空数据")
             return None
+        _last_errors.pop(meta.code, None)
         return points
 
 
@@ -518,11 +556,16 @@ def _fetch_and_store(
 ) -> tuple[IndexValuation, list[dict[str, Any]]] | None:
     """抓取单只并立即落库（后台继续完成时也能被下次请求读到）。"""
     meta = INDEX_BY_CODE[code]
-    points = provider.fetch_history(meta)
+    try:
+        points = provider.fetch_history(meta)
+    except Exception as exc:  # noqa: BLE001 - 记录原因后交由上层降级
+        _record_error(code, exc)
+        raise
     if not points:
         return None
     val = build_valuation(meta, points)
     _store(val, points)
+    _last_errors.pop(code, None)
     return val, points
 
 
@@ -615,7 +658,9 @@ def list_valuations(
         if row is not None:
             results.append(_from_row(meta, row, stale=_is_stale(row, ttl_hours)))
         else:
-            results.append(_placeholder(meta))
+            results.append(
+                _placeholder(meta, message=_last_errors.get(meta.code) or "估值数据暂不可用")
+            )
     return results
 
 
@@ -678,7 +723,9 @@ def get_history(
     if row is None:
         return {
             "ok": False,
-            "index": _placeholder(meta).to_dict(),
+            "index": _placeholder(
+                meta, message=_last_errors.get(code) or "估值数据暂不可用"
+            ).to_dict(),
             "points": [],
         }
 

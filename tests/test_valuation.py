@@ -422,6 +422,72 @@ class TestLgCallRetry:
         assert len(calls) == 3
 
 
+class TestRequestsTimeout:
+    """旧版 akshare 乐咕请求不带 timeout：必须注入默认超时，防止串行队列永远挂起。"""
+
+    def test_default_timeout_injected(self, monkeypatch):
+        import requests
+        from requests.adapters import HTTPAdapter
+
+        valuation._ensure_requests_timeout()
+        captured: dict = {}
+
+        def fake_send(self, request, **kwargs):
+            captured.update(kwargs)
+            raise requests.exceptions.ConnectionError("stop")
+
+        monkeypatch.setattr(HTTPAdapter, "send", fake_send)
+        with pytest.raises(requests.exceptions.ConnectionError):
+            requests.get("https://example.invalid")
+        assert captured["timeout"] == valuation._HTTP_TIMEOUT
+
+    def test_explicit_timeout_preserved(self, monkeypatch):
+        import requests
+        from requests.adapters import HTTPAdapter
+
+        valuation._ensure_requests_timeout()
+        captured: dict = {}
+
+        def fake_send(self, request, **kwargs):
+            captured.update(kwargs)
+            raise requests.exceptions.ConnectionError("stop")
+
+        monkeypatch.setattr(HTTPAdapter, "send", fake_send)
+        with pytest.raises(requests.exceptions.ConnectionError):
+            requests.get("https://example.invalid", timeout=5)
+        assert captured["timeout"] == 5
+
+
+class TestFailureMessage:
+    """降级占位必须带上失败原因，便于在服务器侧定位网络/反爬问题。"""
+
+    def test_placeholder_carries_error(self, temp_db):
+        class BoomProvider(valuation.ValuationProvider):
+            name = "boom"
+
+            def fetch_history(self, meta):
+                raise RuntimeError("connect timeout")
+
+        values = valuation.list_valuations(provider=BoomProvider(), timeout=5.0)
+        assert all(not v.ok for v in values)
+        assert all("connect timeout" in v.message for v in values)
+        # 成功后清除失败原因
+        again = valuation.list_valuations(provider=FakeProvider())
+        assert all(v.ok for v in again)
+        assert not valuation._last_errors
+
+    def test_legulegu_failure_recorded(self, temp_db, monkeypatch):
+        import akshare
+
+        def boom(symbol):
+            raise RuntimeError("504 Gateway Time-out")
+
+        monkeypatch.setattr(akshare, "stock_index_pe_lg", boom)
+        values = valuation.list_valuations(timeout=5.0)
+        assert all(not v.ok for v in values)
+        assert all("504" in v.message for v in values)
+
+
 class TestGetHistory:
     def test_cached_history_and_consistency(self, temp_db):
         valuation.list_valuations(provider=FakeProvider())

@@ -527,7 +527,10 @@ function FragmentRow({
               </span>
             )}
             {!item.ok && (
-              <span className="rounded border border-border bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+              <span
+                className="rounded border border-border bg-muted px-1 py-0.5 text-[10px] text-muted-foreground"
+                title={item.message || undefined}
+              >
                 {unavailableLabel}
               </span>
             )}

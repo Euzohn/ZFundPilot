@@ -1539,7 +1539,7 @@ const en: typeof zh = {
     loading: "Loading valuation...",
     loadFailed: "Failed to load valuation data",
     degraded: "Some indices are temporarily unavailable (upstream instability); the last successful cache is shown.",
-    refreshing: "Upstream rate-limited; refreshing indices in the background. Data will fill in automatically...",
+    refreshing: "Refreshing indices one by one in the background (slow or rate-limited upstream). Data will fill in automatically...",
     empty: "No valuation data",
     retry: "Retry",
     index: "Index",

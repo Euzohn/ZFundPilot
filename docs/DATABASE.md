@@ -350,7 +350,7 @@
 - `get_index_valuations()`: 全量读取（列表接口）
 - `get_index_valuation(index_code)`: 单只读取（历史接口，`valuation.get_history` 使用）
 
-**刷新策略**（`valuation.py`）：`TTL_HOURS=24` 内直接读缓存；`refresh=true` 强制拉取。抓取串行执行（akshare 内部 V8 非线程安全，并发会崩溃），请求最小间隔 1.5s，失败按 4s/8s 退避重试 3 次；列表接口有界等待 10s（`LIST_REFRESH_TIMEOUT`）先返回已完成项，超时项转后台继续抓取并逐只落库，响应带 `refreshing` 供前端轮询补全。上游失败时保留旧值标 `stale`，无旧值则单只 `ok=false` 降级，不抛 500。
+**刷新策略**（`valuation.py`）：`TTL_HOURS=24` 内直接读缓存；`refresh=true` 强制拉取。抓取串行执行（akshare 内部 V8 非线程安全，并发会崩溃），请求最小间隔 1.5s，失败按 4s/8s 退避重试 3 次；旧版 akshare（≤1.18.x，如 requirements.txt 钉住的 1.18.82）乐咕请求不带超时，`_ensure_requests_timeout()` 给未显式指定 timeout 的 requests 调用注入默认 (10s, 30s)，防止上游挂起时串行队列永远卡死；列表接口有界等待 10s（`LIST_REFRESH_TIMEOUT`）先返回已完成项，超时项转后台继续抓取并逐只落库，响应带 `refreshing` 供前端轮询补全。上游失败时保留旧值标 `stale`，无旧值则单只 `ok=false` 降级（`message` 带失败原因），不抛 500。
 
 **备份**：不进入备份 ZIP（可重建缓存，见 `backup_service.EXCLUDED_TABLES`）；恢复备份不清空本表。
 

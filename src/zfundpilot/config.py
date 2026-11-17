@@ -503,13 +503,14 @@ AI_VISION_MODEL: str = _ai_config.get("vision_model", "")
 # ---------------------------------------------------------------------------
 # 定时任务配置
 # ---------------------------------------------------------------------------
-# 时区配置，默认东八区（Asia/Shanghai）
-# 影响：定时任务触发时间、datetime.now()、SQLite localtime
+# 应用时区，供定时任务和显式指定时区的 datetime 使用。
 TIMEZONE_STR = os.environ.get("ZFUNDPILOT_TIMEZONE", "Asia/Shanghai")
 TIMEZONE = ZoneInfo(TIMEZONE_STR)
-# 确保 SQLite datetime('now','localtime') 与 Python 时区一致
-os.environ["TZ"] = TIMEZONE_STR
-time.tzset()
+# 支持 tzset() 的平台将进程本地时间（包括 SQLite localtime）同步到应用时区。
+# Windows 原生 CPython 缺少该接口，本地时间仍取决于宿主机。
+if hasattr(time, "tzset"):
+    os.environ["TZ"] = TIMEZONE_STR
+    time.tzset()
 
 # 净值自动更新 cron 表达式，默认工作日 21:00
 # 可通过 ZFUNDPILOT_NAV_CRON 环境变量覆盖

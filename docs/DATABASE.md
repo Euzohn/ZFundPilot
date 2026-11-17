@@ -342,8 +342,8 @@
 | `temperature` | TEXT | DEFAULT 'unknown' | 估值温度：`low` / `fair` / `high` / `unknown`（按 PE 百分位 <30 / 30–70 / >70） |
 | `history_months` | INTEGER | DEFAULT 0 | 可用历史总月数 |
 | `data_date` | TEXT | DEFAULT '' | 上游数据最新日期 `YYYY-MM-DD` |
-| `source` | TEXT | DEFAULT 'legulegu' | 数据源标识 |
-| `payload` | TEXT | DEFAULT '[]' | 原始月度序列 JSON（`[{date, pe, pb}, ...]`），用于历史曲线与滚动百分位 |
+| `source` | TEXT | DEFAULT 'legulegu' | 数据源标识：`jiucaishuo`（韭圈儿，主源，日频）/ `legulegu`（乐咕，备用源，月频） |
+| `payload` | TEXT | DEFAULT '[]' | 原始序列 JSON（`[{date, pe, pb}, ...]`，主源日频 / 备源月频），用于历史曲线与滚动百分位 |
 | `updated_at` | TEXT | DEFAULT '' | 最近成功拉取时间（ISO） |
 
 **相关函数**（db.py）：

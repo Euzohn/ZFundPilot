@@ -319,6 +319,200 @@ class TestLeguleguProvider:
 
 
 # ---------------------------------------------------------------------------
+# 韭圈儿 Provider / 回退链
+# ---------------------------------------------------------------------------
+class TestJqSymbol:
+    def test_shanghai_codes(self):
+        assert valuation._jq_symbol("000300") == "000300.SH"
+        assert valuation._jq_symbol("000905") == "000905.SH"
+        assert valuation._jq_symbol("000015") == "000015.SH"
+
+    def test_shenzhen_codes(self):
+        assert valuation._jq_symbol("399330") == "399330.SZ"
+        assert valuation._jq_symbol("399673") == "399673.SZ"
+
+
+class TestParseJqPoints:
+    def test_basic_parse_sorted(self):
+        data = [
+            ["日期", "收盘价", "pe", "pb", "roe"],
+            ["2024-01-03", "4000.0", "13.5", "1.33", "0.10"],
+            ["2024-01-02", "3990.0", "13.4", "1.32", "0.10"],
+        ]
+        points = valuation._parse_jq_points(data)
+        assert [p["date"] for p in points] == ["2024-01-02", "2024-01-03"]
+        assert points[0]["pe"] == 13.4 and points[0]["pb"] == 1.32
+
+    def test_zero_values_treated_as_missing(self):
+        data = [
+            ["日期", "收盘价", "pe", "pb", "roe"],
+            ["2024-01-02", "0", "0", "0", "0"],
+            ["2024-01-03", "4000", "13.5", "1.33", "0.1"],
+        ]
+        points = valuation._parse_jq_points(data)
+        assert points[0]["pe"] is None and points[0]["pb"] is None
+        assert points[1]["pe"] == 13.5
+
+    def test_malformed_rows_skipped(self):
+        data = [
+            ["日期", "收盘价", "pe", "pb", "roe"],
+            ["bad-date", "0", "0", "0", "0"],
+            ["2024-01-03"],
+            ["2024-01-04", "4000", "abc", "1.33", "0.1"],
+        ]
+        points = valuation._parse_jq_points(data)
+        assert len(points) == 1
+        assert points[0]["date"] == "2024-01-04"
+        assert points[0]["pe"] is None
+
+    def test_empty_or_bad_shape(self):
+        assert valuation._parse_jq_points(None) == []
+        assert valuation._parse_jq_points([]) == []
+        assert valuation._parse_jq_points([["日期"]]) == []
+        assert valuation._parse_jq_points([["foo", "bar"], ["1", "2"]]) == []
+
+
+class _FakeJqResponse:
+    def __init__(self, payload, status: int = 200):
+        self._payload = payload
+        self.status_code = status
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+
+            raise requests.HTTPError(f"{self.status_code} error")
+
+    def json(self):
+        return self._payload
+
+
+class TestJiucaishuoProvider:
+    def _payload(self):
+        return {
+            "code": 0,
+            "message": "ok",
+            "data": [
+                ["日期", "收盘价", "pe", "pb", "roe"],
+                ["2024-01-02", "3990.0", "13.4", "1.32", "0.10"],
+                ["2024-01-03", "4000.0", "13.5", "1.33", "0.10"],
+            ],
+        }
+
+    def test_success(self, monkeypatch):
+        import requests
+
+        captured = {}
+
+        def fake_post(url, **kwargs):
+            captured["url"] = url
+            captured.update(kwargs)
+            return _FakeJqResponse(self._payload())
+
+        monkeypatch.setattr(requests, "post", fake_post)
+        points = valuation.JiucaishuoValuationProvider().fetch_history(
+            valuation.INDEX_BY_CODE["000300"]
+        )
+        assert points is not None and len(points) == 2
+        assert points[-1]["pe"] == 13.5
+        assert captured["json"]["code"] == "000300.SH"
+        assert captured["json"]["start_time"] == valuation._JQ_START
+        assert captured["timeout"] == valuation._JQ_TIMEOUT
+        assert not valuation._last_errors
+
+    def test_upstream_error_code_fails(self, monkeypatch):
+        import requests
+
+        monkeypatch.setattr(
+            requests, "post", lambda url, **kw: _FakeJqResponse({"code": 1, "message": "bad"})
+        )
+        points = valuation.JiucaishuoValuationProvider().fetch_history(
+            valuation.INDEX_BY_CODE["000300"]
+        )
+        assert points is None
+        assert "000300" in valuation._last_errors
+
+    def test_http_error_fails(self, monkeypatch):
+        import requests
+
+        monkeypatch.setattr(
+            requests, "post", lambda url, **kw: _FakeJqResponse({}, status=503)
+        )
+        points = valuation.JiucaishuoValuationProvider().fetch_history(
+            valuation.INDEX_BY_CODE["000300"]
+        )
+        assert points is None
+        assert "韭圈儿" in valuation._last_errors["000300"]
+
+    def test_empty_data_fails(self, monkeypatch):
+        import requests
+
+        monkeypatch.setattr(
+            requests,
+            "post",
+            lambda url, **kw: _FakeJqResponse(
+                {"code": 0, "data": [["日期", "收盘价", "pe", "pb", "roe"]]}
+            ),
+        )
+        assert (
+            valuation.JiucaishuoValuationProvider().fetch_history(
+                valuation.INDEX_BY_CODE["000300"]
+            )
+            is None
+        )
+
+
+class TestFallbackProvider:
+    class _Stub(valuation.ValuationProvider):
+        def __init__(self, name: str, points):
+            self.name = name
+            self._points = points
+            self.calls = 0
+
+        def fetch_history(self, meta):
+            self.calls += 1
+            return self._points
+
+    def test_primary_success_skips_secondary(self):
+        primary = self._Stub("primary", [{"date": "2024-01-02", "pe": 13.0, "pb": 1.3}])
+        secondary = self._Stub("secondary", [{"date": "2024-01-02", "pe": 1.0, "pb": 1.0}])
+        fb = valuation.FallbackValuationProvider(primary, secondary)
+        points = fb.fetch_history(valuation.INDEX_BY_CODE["000300"])
+        assert points == [{"date": "2024-01-02", "pe": 13.0, "pb": 1.3}]
+        assert fb.name == "primary"
+        assert secondary.calls == 0
+
+    def test_primary_fail_uses_secondary(self):
+        primary = self._Stub("primary", None)
+        secondary = self._Stub("legulegu", [{"date": "2024-01-02", "pe": 12.0, "pb": 1.2}])
+        fb = valuation.FallbackValuationProvider(primary, secondary)
+        points = fb.fetch_history(valuation.INDEX_BY_CODE["000300"])
+        assert points is not None
+        assert fb.name == "legulegu"
+        assert primary.calls == 1 and secondary.calls == 1
+
+    def test_both_fail(self):
+        primary = self._Stub("primary", None)
+        secondary = self._Stub("secondary", None)
+        fb = valuation.FallbackValuationProvider(primary, secondary)
+        assert fb.fetch_history(valuation.INDEX_BY_CODE["000300"]) is None
+        assert fb.name == "primary"
+
+
+class TestSpanMonths:
+    def test_monthly_series(self):
+        points = [{"date": f"{y}-{m:02d}-28"} for y, m in [(2012, 1), (2024, 6)]]
+        assert valuation._span_months(points) == 150
+
+    def test_daily_series_counts_months(self):
+        points = [{"date": "2016-01-04"}, {"date": "2016-12-30"}]
+        assert valuation._span_months(points) == 12
+
+    def test_empty(self):
+        assert valuation._span_months([]) == 0
+
+
+# ---------------------------------------------------------------------------
 # 缓存 / 刷新 / 降级
 # ---------------------------------------------------------------------------
 class TestListValuations:
@@ -487,7 +681,11 @@ class TestFailureMessage:
             raise RuntimeError("504 Gateway Time-out")
 
         monkeypatch.setattr(akshare, "stock_index_pe_lg", boom)
-        values = valuation.list_valuations(timeout=5.0)
+        # 显式指定乐咕源：默认源已切换为韭圈儿（主）+ 乐咕（备），
+        # 本用例只验证乐咕失败原因的记录与透出。
+        values = valuation.list_valuations(
+            provider=valuation.LeguleguValuationProvider(), timeout=5.0
+        )
         assert all(not v.ok for v in values)
         assert all("504" in v.message for v in values)
 

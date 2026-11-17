@@ -1,20 +1,27 @@
 """指数估值（宽基 PE/PB 百分位 + 估值温度）。
 
-数据源：乐咕乐股（akshare ``stock_index_pe_lg`` / ``stock_index_pb_lg``），
-月度长历史（2005 年至今，约 260 个点），仅覆盖 12 个宽基指数。
+数据源（主）：韭圈儿 ``pre.jiucaishuo.com/v4/open-ai/index-data``，免鉴权
+JSON POST，单请求返回单只指数的每日 PE/PB/ROE 完整历史（2008 年至今
+约 2600+ 点，12 个宽基全覆盖，含深证 399 系）；失败时回退乐咕乐股
+（akshare ``stock_index_pe_lg`` / ``stock_index_pb_lg``，月度历史）。
 上游不直接提供百分位，本模块用历史序列自算。
+
+选型背景：乐咕对服务器 IP 整站 504（频控封禁）且免费端点在收紧，
+韭圈儿实测服务器/本地均可达；韭圈儿接口为纯 JSON（无 V8/无 lxml），
+彻底规避原生并发崩溃风险，故提为主源。蛋卷（9/12、无历史）与中证
+官方文件（无 PB、仅近 20 日）留作后备选项未接入。
 
 设计边界：
 
 - 只做宽基：行业/主题指数无免费 PE+PB 历史源（中证源仅近 20 日 PE 快照）。
 - 百分位默认近 10 年（历史不足 10 年用全历史并标注）；窗口直接改变结论，
   UI 必须标注口径。
-- 乐咕反爬脆弱（JS token + cookie/csrf，实测间歇失败）：缓存 +
-  stale-if-error + 单只降级，绝不阻塞其他页面。
+- 上游反爬/可用性脆弱：缓存 + stale-if-error + 单只降级，绝不阻塞其他页面。
 - akshare 用 PyMiniRacer(V8) 解 JS token，V8 非线程安全：py_mini_racer
   由 `ak_compat._ensure_v8_serialized()` 做进程级串行（覆盖乐咕/新浪/
-  交易日历等所有 V8 使用方）；本模块的乐咕请求另加单 worker 串行 +
-  最小请求间隔 + 退避重试，满足反爬限速的同时绝不并发撞 V8。
+  交易日历等所有 V8 使用方）；本模块另加单 worker 串行 + 最小请求间隔 +
+  退避重试，满足反爬限速的同时绝不并发撞 V8（韭圈儿为直连 requests
+  POST，不涉及 V8/lxml，但仍走同一串行队列与限速）。
 - 请求只做有界等待（列表 10s），超时项转后台继续抓取并逐只落库，
   前端在 `refreshing=true` 时轮询渐进填充。
 - 旧版 akshare（≤1.18.x）乐咕请求不带 timeout，上游挂起会永远阻塞：
@@ -57,6 +64,24 @@ _RETRY_BACKOFF = (4.0, 8.0)  # 第 1/2 次失败后的等待（秒）
 
 _V8_LOCK = threading.Lock()
 _last_request_ts = 0.0
+
+# 韭圈儿历史估值接口（免鉴权，服务器/本地实测可达）：
+# POST https://pre.jiucaishuo.com/v4/open-ai/index-data
+#   {"code":"000300.SH","start_time":"2008-01-01"}
+# → {"code":0,"data":[["日期","收盘价","pe","pb","roe"],[...日度行...]]}
+# 单请求返回单只指数完整历史（升序）；纯 JSON，无 V8/lxml 原生崩溃风险。
+# 实测连发数十次无限流；仍与乐咕共用同一串行队列 + 最小间隔，礼貌限速。
+_JQ_API_URL = "https://pre.jiucaishuo.com/v4/open-ai/index-data"
+_JQ_HEADERS = {
+    "Content-Type": "application/json",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/101.0.4951.64 Safari/537.36"
+    ),
+}
+_JQ_START = "2008-01-01"  # 上游最早数据；换取全窗口灵活性
+_JQ_TIMEOUT = (10.0, 30.0)  # (连接, 读取) 秒
+_JQ_MAX_ATTEMPTS = 2  # API 无反爬：1 次重试足够，限制回退链总耗时
 
 # 旧版 akshare（如曾钉住的 1.18.82）乐咕请求不带 timeout：
 # 上游挂起/网络不可达时请求会永远阻塞，串行队列卡死在第一只指数，
@@ -189,6 +214,21 @@ def _normalize_date(value: Any) -> str:
     """统一日期为 ``YYYY-MM-DD``；非法返回空串。"""
     parsed = _parse_date(value)
     return parsed.strftime("%Y-%m-%d") if parsed else ""
+
+
+def _span_months(points: list[dict[str, Any]]) -> int:
+    """序列首末日期覆盖的月数（含首尾月）；无有效日期返回 0。
+
+    源频率无关：乐咕月频 150 点 ≈ 150 个月，韭圈儿日频 2640 点 ≈ 227 个月。
+    直接拿点数当「月数」会让日频源显示成几千个月，故按日期跨度计算。
+    """
+    if not points:
+        return 0
+    first = _parse_date(points[0].get("date"))
+    last = _parse_date(points[-1].get("date"))
+    if not first or not last:
+        return 0
+    return max(0, (last.year - first.year) * 12 + (last.month - first.month) + 1)
 
 
 def _values(points: list[dict[str, Any]], field: str) -> list[float]:
@@ -381,8 +421,8 @@ def build_valuation(
         pb=round(current_pb, 2) if current_pb is not None else None,
         pb_percentile=pb_percentile,
         window=window,
-        window_months=len(window_points),
-        history_months=len(ordered),
+        window_months=_span_months(window_points),
+        history_months=_span_months(ordered),
         temperature=classify_temperature(pe_percentile),
         data_date=str(ordered[-1].get("date") or ""),
         updated_at=_now_iso(),
@@ -508,6 +548,85 @@ def _lg_call(fn: Callable[..., Any], symbol: str) -> Any:
     raise last_exc  # type: ignore[misc]
 
 
+def _jq_symbol(code: str) -> str:
+    """纯数字指数代码 → 韭圈儿 ``代码.交易所`` 后缀。
+
+    实测规则：000xxx（沪市/中证系列）→ ``.SH``；399xxx（深市）→ ``.SZ``。
+    例：000300 → 000300.SH；399330 → 399330.SZ。
+    """
+    return f"{code}.SZ" if code.startswith("399") else f"{code}.SH"
+
+
+def _parse_jq_points(data: Any) -> list[dict[str, Any]]:
+    """解析韭圈儿二维表 → ``[{"date","pe","pb"}, ...]``（按日期升序）。
+
+    表形态：首行表头 ``["日期","收盘价","pe","pb","roe"]``，其后为日度行，
+    日期已为 ``YYYY-MM-DD`` 字符串。pe/pb 非法或 ≤0 记为 None（百分位计算跳过）。
+    """
+    if not isinstance(data, list) or len(data) < 2:
+        return []
+    header = [str(h) for h in data[0]]
+    try:
+        i_date, i_pe, i_pb = header.index("日期"), header.index("pe"), header.index("pb")
+    except ValueError:
+        return []
+    points: list[dict[str, Any]] = []
+    for row in data[1:]:
+        if not isinstance(row, list) or len(row) <= max(i_date, i_pe, i_pb):
+            continue
+        date = _normalize_date(row[i_date])
+        if not date:
+            continue
+        pe = _safe_float(row[i_pe])
+        pb = _safe_float(row[i_pb])
+        # 韭圈儿停牌/异常日会给 0，视为缺失（否则会污染历史百分位）
+        points.append({
+            "date": date,
+            "pe": pe if pe is not None and pe > 0 else None,
+            "pb": pb if pb is not None and pb > 0 else None,
+        })
+    points.sort(key=lambda p: p["date"])
+    return points
+
+
+def _jq_call(meta: IndexMeta) -> list[dict[str, Any]]:
+    """请求韭圈儿单只指数历史：共用串行限速间隔 + 轻量重试。
+
+    纯 JSON POST（无 V8/lxml），仍与乐咕共用 ``_last_request_ts`` 限制
+    最小请求间隔，避免多源并发突发。失败抛出，由 Provider 转降级。
+    """
+    global _last_request_ts
+    import requests
+
+    last_exc: Exception | None = None
+    for attempt in range(_JQ_MAX_ATTEMPTS):
+        delay = _REQUEST_INTERVAL - (time.monotonic() - _last_request_ts)
+        if delay > 0:
+            time.sleep(delay)
+        try:
+            resp = requests.post(
+                _JQ_API_URL,
+                json={"code": _jq_symbol(meta.code), "start_time": _JQ_START},
+                headers=_JQ_HEADERS,
+                timeout=_JQ_TIMEOUT,
+            )
+            _last_request_ts = time.monotonic()
+            resp.raise_for_status()
+            payload = resp.json()
+            if payload.get("code") not in (0, None):
+                raise RuntimeError(f"上游返回错误: {payload.get('message') or payload}")
+            points = _parse_jq_points(payload.get("data"))
+            if not points:
+                raise RuntimeError("韭圈儿返回空数据")
+            return points
+        except Exception as exc:  # noqa: BLE001 - 网络/结构错误统一重试
+            _last_request_ts = time.monotonic()
+            last_exc = exc
+        if attempt < _JQ_MAX_ATTEMPTS - 1:
+            time.sleep(2.0)
+    raise last_exc  # type: ignore[misc]
+
+
 class LeguleguValuationProvider(ValuationProvider):
     """乐咕乐股：PE(TTM) + PB 月度长历史（仅 12 宽基，反爬脆弱）。"""
 
@@ -539,11 +658,54 @@ class LeguleguValuationProvider(ValuationProvider):
 _PROVIDER: ValuationProvider | None = None
 
 
+class JiucaishuoValuationProvider(ValuationProvider):
+    """韭圈儿：每日 PE/PB 完整历史（2008 至今），12 宽基全覆盖（主源）。"""
+
+    name = "jiucaishuo"
+
+    def fetch_history(self, meta: IndexMeta) -> list[dict[str, Any]] | None:
+        try:
+            points = _jq_call(meta)
+        except Exception as exc:  # noqa: BLE001 - 网络/结构失败一律降级
+            logger.warning("韭圈儿估值抓取失败 %s(%s): %s", meta.code, _jq_symbol(meta.code), exc)
+            _record_error(meta.code, f"韭圈儿: {exc}")
+            return None
+        _last_errors.pop(meta.code, None)
+        return points
+
+
+class FallbackValuationProvider(ValuationProvider):
+    """主源失败自动回退备用源；``name`` 记录实际产出数据的源（供落库标注）。"""
+
+    name = "fallback"
+
+    def __init__(self, primary: ValuationProvider, secondary: ValuationProvider) -> None:
+        self.primary = primary
+        self.secondary = secondary
+
+    def fetch_history(self, meta: IndexMeta) -> list[dict[str, Any]] | None:
+        for provider in (self.primary, self.secondary):
+            points = provider.fetch_history(meta)
+            if points:
+                # 实例属性覆盖类属性：落库 source 如实记录本次数据来源
+                self.name = provider.name
+                return points
+        self.name = self.primary.name
+        return None
+
+
 def get_provider() -> ValuationProvider:
-    """返回默认估值数据源（测试可 monkeypatch 本函数）。"""
+    """返回默认估值数据源（测试可 monkeypatch 本函数）。
+
+    韭圈儿为主源（服务器实测可达、12/12 覆盖、纯 JSON 无原生崩溃风险）；
+    乐咕为备用源（本地可用、反爬脆弱，仅供韭圈儿失败时兜底）。
+    """
     global _PROVIDER
     if _PROVIDER is None:
-        _PROVIDER = LeguleguValuationProvider()
+        _PROVIDER = FallbackValuationProvider(
+            JiucaishuoValuationProvider(),
+            LeguleguValuationProvider(),
+        )
     return _PROVIDER
 
 
@@ -608,7 +770,7 @@ def _fetch_and_store(
             _last_failed_at[code] = time.monotonic()
             _note_failure()
             return None
-        val = build_valuation(meta, points)
+        val = build_valuation(meta, points, source=provider.name)
         _store(val, points)
         _last_errors.pop(code, None)
         _last_failed_at.pop(code, None)

@@ -25,7 +25,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.26.0`（git tag `v0.26.0`）
+- **版本**: `0.27.0`（git tag `v0.27.0`）
 - **License**: MIT
 
 ---
@@ -47,7 +47,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.26.0"
+│   ├── __init__.py          # __version__ = "0.27.0"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── ak_compat.py         # akshare 跨版本改名兼容层（优先新名、回退旧名）＋进程级 V8 串行化（py_mini_racer 非线程安全，多数据源并发会 SIGTRAP）
 │   ├── config.py            # 全局配置、环境变量、认证管理
@@ -190,7 +190,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.26.0")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.27.0")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复）。`GET /api/audit` 支持 `limit`(1–1000)/`offset` 分页与 `action`/`username`/`from`/`to` 精确筛选（`from`/`to` 接受纯日期或 ISO 时间串，纯日期按整天包含式处理，`from` 晚于 `to` 返回 422）；默认 `limit=100` 行为不变。设置页「操作日志」提供动作/用户/日期筛选，前端 detail 可展开查看格式化 JSON
 - Agent token 临期提示: 设置页令牌列表在 `expires_at` 未来 7 天内显示「即将过期」徽章（前端本地判断，不影响后端鉴权与过期语义）
@@ -572,7 +572,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ## 十二、当前工作状态
 
-### [Unreleased]
+### [0.27.0] - 2026-11-17
 
 - change: 指数估值数据源从乐咕乐股切到 **韭圈儿为主 + 乐咕兜底**——乐咕服务器 IP 整站 504（频控封禁）且免费端点在收紧（同类项目 global_index 发现大量端点已要登录态）。韭圈儿 `POST pre.jiucaishuo.com/v4/open-ai/index-data`（`{"code":"000300.SH","start_time":"2008-01-01"}`）免鉴权 JSON，单请求返回单只指数每日 PE/PB/ROE 完整历史（2008 起 2640–4585 行），12/12 宽基覆盖（含乐咕/蛋卷缺的深证系 399330/399673/399324 与中证800/上证380），服务器与本地实测均 200 且无限流迹象；纯 JSON 无 V8/lxml 原生并发崩溃风险。`FallbackValuationProvider` 主源失败自动回退乐咕，`source` 字段如实记录（`jiucaishuo`/`legulegu`）。交叉验证：沪深300 PE 分位与蛋卷官方口径 65.4% vs 65.8%。`history_months`/`window_months` 改按日期跨度计算（原按点数，日频会显示成数千个月）。前端：估值页脚注改为「韭圈儿（主）+ 乐咕（备）」（原写死乐咕、口径也停留在月频）；5 个列头新增 ⓘ 悬停通俗解释（PE=回本年数、百分位=历史相对位置、PB=打折买资产、温度=分档标签，i18n 中英、点击不触发排序）。调研结论留档：蛋卷 `djapi/index_eva/dj` 一次请求 63 指数含官方百分位但仅覆盖 9/12 且无历史；中证官方 `index_value_csindex`（akshare 1.20.61 内置、OSS 静态文件、封禁风险≈0）有 PE/股息率但无 PB、仅近 20 日、仅 000xxx（10/12），均未接入。新增 16 例（test_valuation 共 90 例，全量 1424 例）
 - fix: 分红段错误根因定位并修复（并发 → 串行）——单次 `fund_open_fund_info_em('分红送配详情')` exit=0、完整 `check_dividends()`（3 线程）exit=139；服务器含 V8 锁仍崩排除 V8 单一成因。读 akshare 1.20.61 源码实锤：该接口无条件先在 V8 eval 整份 pingzhongdata JS（fetch_dividend 不经 ak_compat，锁未安装），再用 `pd.read_html`（lxml）解析分红页——lxml 并发解析线程不安全。`_MAX_WORKERS=3→1` 串行化消除两条原生并发路径；新增并发追踪回归用例（改回 3 实测捕获失败，test_fetch_dividend 41 例，全量 1408 例）

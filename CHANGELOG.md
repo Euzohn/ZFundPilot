@@ -4,7 +4,7 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [0.27.0] - 2026-11-17
 
 ### Added
 - 估值刷新进度可视化：`GET /api/valuation/indices` 响应新增 `progress`（`total`/`remaining`/`current`/`current_code`/`failed`，`valuation.refresh_progress()` 快照，`_current_code` 记录单 worker 正在抓取的指数）。前端刷新中横幅额外显示「进度 x/12 · 当前：沪深300」与失败只数（提示悬停「暂不可用」徽章看原因）；worker 处于请求间隙时显示「等待下一次请求（限速间隔/重试退避）」。新增 3 例（test_valuation 共 69 例，全量 1395 例）

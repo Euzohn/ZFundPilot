@@ -127,7 +127,7 @@ cd frontend && npm install && npm run dev
 - **实时估值** — 交易日实时估算基金涨跌幅，组合估算 P&L 一目了然，真实净值公布后自动失效。主源无数据时自动走天天基金 fundgz 替补（6 线程并行），指数/ETF 行情兜底
 - **基金对比** — 多维度同框对比 + 净值走势叠加 + 相关性矩阵。对比篮全局管理，随时增减，导航栏显示数量 badge
 - **基金筛选器** — 从全市场基金池按类型/板块/关键词筛选，Top 30 自动补充收益/风险指标与机构持有比例，列头可排序，一键加入对比或自选；指数型基金标宽基/行业/主题徽章，并展示近 1 年迷你走势
-- **指数估值** — 12 个宽基指数的 PE/PB 百分位与估值温度（PE(TTM) 百分位 <30 低估 / 30–70 合理 / >70 高估），默认近 10 年窗口（历史不足用全历史并标注），可展开历史曲线与跟踪基金；数据源乐咕，24h 缓存 + 失败降级，仅供参考
+- **指数估值** — 12 个宽基指数的 PE/PB 百分位与估值温度（PE(TTM) 百分位 <30 低估 / 30–70 合理 / >70 高估），默认近 10 年窗口（历史不足用全历史并标注），可展开历史曲线与跟踪基金；列头 ⓘ 悬停解释 PE/PB/百分位/温度含义；数据源韭圈儿（主）+ 乐咕（备），完整日频历史（2008 年起），24h 缓存 + 失败降级，仅供参考
 - **自选关注列表** — 追踪关注基金，已持有的自动标「持仓中」badge，列头可排序，添加代码自动获取名称/类型/板块，快捷跳转详情/对比/买入
 - **截图导入** — 上传购买记录或持仓截图，AI 视觉模型自动识别交易/持仓。持仓对账模式按渠道对比已记录份额，一键生成差额调整交易。视觉模型独立配置（智谱 GLM-4V / 通义千问 VL / GPT-4o / Kimi 视觉），截图只有名称时自动匹配代码
 - **基金详情** — 净值走势 + 资产配置饼图 + 前十大重仓股 + 同类排名走势 + 基金档案（基金经理/规模/成立时间/持有人结构）+ 风险等级 + 顶栏快捷入口（加入对比/自选/买入/卖出/定投）
@@ -216,8 +216,11 @@ ZFundPilot/
 │   ├── fetch_fund.py     # 净值获取 + 名称/类型/板块识别 + 费率查询 + 关键词映射 + 持仓/排名/档案/行业配置
 │   ├── fetch_estimate.py # 基金实时估值（AkShare fund_value_estimation_em）
 │   ├── fetch_macro.py    # 宏观财富水位（CPI 价格水平 + M2 存量）
+│   ├── fetch_dividend.py # 基金分红送配检测（天天基金）
 │   ├── compare.py        # 基金对比（收益率/风险/相关性多维度计算）
-│   ├── fund_filter.py    # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30）
+│   ├── fund_filter.py    # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30 + 指数分类）
+│   ├── sparkline.py      # 选基迷你走势（近 250 交易日归一化净值）
+│   ├── valuation.py      # 指数估值（韭圈儿主源 + 乐咕兜底，PE/PB 百分位 + 估值温度）
 │   ├── analysis.py       # 交易流水汇总、收益计算、组合曲线、行业穿透聚合
 │   ├── returns.py        # XIRR 年化收益率（现金流二分法 + 现金流构建）
 │   ├── risk.py           # 风险分析（回撤/波动率/集中度/结构占比）
@@ -228,12 +231,22 @@ ZFundPilot/
 │   ├── crypto.py         # 敏感字段加密（Fernet）
 │   ├── backup_service.py # 备份格式 v2、预检与事务化恢复
 │   ├── data_io.py        # CSV 导入/导出（备份兼容入口）
-│   ├── api.py            # FastAPI REST API（37+ 路由 + 认证中间件）
+│   ├── transaction_service.py # Agent 可信单笔直记（F0）
+│   ├── proposal_service.py    # 账本/计划/提醒操作提案（创建 + 网页确认 + 执行）
+│   ├── watchlist_service.py   # 自选维护业务服务（受控写入）
+│   ├── refresh_service.py     # 任务化服务：数据刷新 + 定投回测作业
+│   ├── nav_update_state.py    # 净值更新共享状态
+│   ├── agent_tokens.py        # Agent 访问 token（scope / 限流 / 幂等）
+│   ├── us_calendar.py         # 美国证券市场（NYSE）交易日历
+│   ├── ak_compat.py      # akshare 跨版本改名兼容层 + 进程级 V8 串行化
+│   ├── api_errors.py     # HTTP 请求 ID 与统一错误响应包
+│   ├── mcp_server.py     # MCP 适配层（stdio，33 个工具）
+│   ├── api.py            # FastAPI REST API（140+ 路由 + 认证中间件）
 │   ├── ai.py             # AI 投顾对话（持仓上下文 + 联网搜索 + LLM 流式调用）
 │   └── scheduler.py      # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查
-├── tests/                # Pytest 测试套件（542 个用例）
+├── tests/                # Pytest 测试套件（1424 个用例）
 │   ├── conftest.py       #   共享 fixtures
-│   └── test_*.py         #   26 个测试模块
+│   └── test_*.py         #   62 个测试模块
 ├── data/
 │   ├── fund.db           # SQLite 数据库（自动生成）
 │   ├── auth.json         # 用户名 / 密码哈希 / token 密钥（自动生成）
@@ -241,7 +254,7 @@ ZFundPilot/
 │   └── sector_map.json   # 基金代码→板块映射（自动维护）
 ├── frontend/             # React + Vite + TypeScript + Tailwind + shadcn/ui
 │   ├── src/
-│   │   ├── pages/        # 13 个页面
+│   │   ├── pages/        # 18 个页面
 │   │   ├── components/   # Layout + shadcn/ui + 业务组件
 │   │   ├── i18n/         # LanguageContext + zh.ts + en.ts 翻译文件
 │   │   ├── api/          # 类型化 API client + streamChat (SSE)

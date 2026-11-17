@@ -127,7 +127,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **Live Estimates** — Real-time fund change estimates during trading hours. Auto-invalidates when actual NAV is published. Auto-falls back to fundgz API (6 threads) when primary source is unavailable, with index/ETF fallback tier
 - **Fund Compare** — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix. Global compare basket with add/remove, badge count in nav bar
 - **Fund Screener** — Filter from full market universe by type/sector/keyword, top 30 auto-enriched with returns/risk metrics and institutional holding ratio, sortable columns, one-click add to compare or watchlist; index funds tagged broad-based/sector/theme with a 1-year mini trend
-- **Index Valuation** — PE/PB percentiles and valuation temperature for 12 broad-based indices (PE TTM percentile <30 low / 30–70 fair / >70 high), default 10-year window (full history when shorter, labeled in UI), expandable history curve and tracking funds; Legulegu source with 24h cache and graceful degradation, for reference only
+- **Index Valuation** — PE/PB percentiles and valuation temperature for 12 broad-based indices (PE TTM percentile <30 low / 30–70 fair / >70 high), default 10-year window (full history when shorter, labeled in UI), expandable history curve and tracking funds; ⓘ hover hints in column headers explain PE/PB/percentile/temperature; Jiucaishuo (primary) + Legulegu (backup) sources with full daily history since 2008, 24h cache and graceful degradation, for reference only
 - **Watchlist** — Track funds of interest, held funds show a "Held" badge, sortable columns, auto-fetch name/type/sector on add, quick links to detail/compare/buy
 - **Screenshot Import** — Upload purchase record or holdings screenshots for AI vision model recognition. Holdings reconcile mode compares recorded shares by channel, one-click generates adjustment transactions. Vision model independently configurable (Zhipu GLM-4V / Qwen VL / GPT-4o / Kimi Vision), auto-matches fund codes from names when screenshots lack them
 - **Fund Details** — NAV trend + asset allocation pie chart + top 10 holdings + peer ranking trend + fund profile (manager/assets/inception date/holder structure) + risk level + quick actions (compare/watchlist/buy/sell/auto-invest)
@@ -216,8 +216,11 @@ ZFundPilot/
 │   ├── fetch_fund.py     # NAV fetching + name/type/sector + fee lookup + holdings/ranking/profile/industry
 │   ├── fetch_estimate.py # Real-time fund estimate (AkShare)
 │   ├── fetch_macro.py    # Macro wealth waterlines (CPI price level + M2 stock)
+│   ├── fetch_dividend.py # Fund dividend detection (Tiantian Fund)
 │   ├── compare.py        # Fund comparison (returns/risk/correlation)
-│   ├── fund_filter.py    # Fund filter (full market universe + metrics enrichment)
+│   ├── fund_filter.py    # Fund filter (full market universe + metrics enrichment + index tagging)
+│   ├── sparkline.py      # Screener mini sparklines (normalized 250-day NAV)
+│   ├── valuation.py      # Index valuation (Jiucaishuo primary + Legulegu fallback, PE/PB percentiles + temperature)
 │   ├── analysis.py       # Transaction aggregation, return calculation, curve, industry exposure
 │   ├── returns.py        # XIRR annualized return (cash-flow bisection + cashflow builder)
 │   ├── risk.py           # Risk analysis (drawdown/volatility/concentration)
@@ -228,12 +231,22 @@ ZFundPilot/
 │   ├── crypto.py         # Field encryption (Fernet)
 │   ├── backup_service.py # Backup format v2, preflight, transactional restore
 │   ├── data_io.py        # CSV import/export (backup compatibility wrapper)
-│   ├── api.py            # FastAPI REST API (37+ routes + auth middleware)
+│   ├── transaction_service.py # Agent trusted direct write (F0)
+│   ├── proposal_service.py    # Ledger/plan/alert operation proposals (create + web confirm + execute)
+│   ├── watchlist_service.py   # Watchlist write service (controlled)
+│   ├── refresh_service.py     # Job service: data refresh + DCA backtest
+│   ├── nav_update_state.py    # Shared NAV update state
+│   ├── agent_tokens.py        # Agent access tokens (scopes / rate limit / idempotency)
+│   ├── us_calendar.py         # US (NYSE) trading calendar
+│   ├── ak_compat.py      # akshare cross-version compat layer + process-wide V8 serialization
+│   ├── api_errors.py     # Request ID + unified error envelope
+│   ├── mcp_server.py     # MCP adapter layer (stdio, 33 tools)
+│   ├── api.py            # FastAPI REST API (140+ routes + auth middleware)
 │   ├── ai.py             # AI advisor chat (portfolio context + web search)
 │   └── scheduler.py      # APScheduler NAV update + auto-invest + dividend check + TP/SL check
-├── tests/                # Pytest test suite (542 tests)
+├── tests/                # Pytest test suite (1424 tests)
 │   ├── conftest.py       #   Shared fixtures
-│   └── test_*.py         #   26 test modules
+│   └── test_*.py         #   62 test modules
 ├── data/
 │   ├── fund.db           # SQLite database (auto-generated)
 │   ├── auth.json         # Password hash / token secret (auto-generated)
@@ -241,7 +254,7 @@ ZFundPilot/
 │   └── sector_map.json   # Fund code → sector mapping (auto-maintained)
 ├── frontend/             # React + Vite + TypeScript + Tailwind + shadcn/ui
 │   ├── src/
-│   │   ├── pages/        # 13 pages
+│   │   ├── pages/        # 18 pages
 │   │   ├── components/   # Layout + shadcn/ui + business components
 │   │   ├── i18n/         # LanguageContext + zh.ts + en.ts translation files
 │   │   ├── api/          # Typed API client + streamChat (SSE)

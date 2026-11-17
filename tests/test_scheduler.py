@@ -7,13 +7,15 @@
 4. _convert_dow 保留字母缩写不转换
 5. refresh_fund_metadata 依次调用申购状态/交易日历/风险等级刷新
 6. _bootstrap_risk_levels 仅补全 risk_level 为空的基金
+7. 分红检测启动引导的崩溃循环防护（落盘「今日已尝试」）
 """
-from unittest.mock import patch
+from datetime import datetime
+from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from zfundpilot import config
+from zfundpilot import config, db, scheduler
 from zfundpilot.scheduler import _convert_dow, _parse_cron
 
 
@@ -166,3 +168,91 @@ class TestTimezoneConfig:
     def test_timezone_is_zoneinfo(self):
         """TIMEZONE 应为 ZoneInfo 实例。"""
         assert isinstance(config.TIMEZONE, ZoneInfo)
+
+
+# ---------------------------------------------------------------------------
+# 分红检测启动引导：崩溃循环防护
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def temp_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "test.db"))
+    db.init_db()
+    yield
+
+
+def _fixed_time(hour: int, minute: int = 0) -> datetime:
+    return datetime(2026, 11, 17, hour, minute, tzinfo=config.TIMEZONE)
+
+
+class _FixedClock:
+    """替身 datetime：只提供 now()，用于把测试钉在 09:30 之后。"""
+
+    def __init__(self, dt: datetime):
+        self._dt = dt
+
+    def now(self, tz=None) -> datetime:
+        return self._dt
+
+
+@pytest.fixture
+def fixed_clock_after_0930(monkeypatch):
+    monkeypatch.setattr(scheduler, "datetime", _FixedClock(_fixed_time(14, 0)))
+
+
+class TestDividendBootstrapCrashGuard:
+    """分红检测若把进程打崩（原生 SIGSEGV，Python 无法捕获），重启后
+    引导逻辑若只看内存变量会立即重跑 → 崩溃循环 → 整站瘫痪。
+    落盘「今日已尝试」标记后，同一进程每日最多尝试一次。"""
+
+    def test_run_records_attempt_before_fetch(
+        self, temp_db, fixed_clock_after_0930, monkeypatch
+    ):
+        import zfundpilot.fetch_dividend as fetch_dividend
+
+        scheduler._last_dividend_run = None
+
+        def boom():
+            raise RuntimeError("simulated upstream crash")
+
+        monkeypatch.setattr(fetch_dividend, "check_dividends", boom)
+        # 异常被吞掉（原生崩溃才是真正的敌人，这里验证落盘先行）
+        scheduler._run_dividend_check()
+        assert (
+            db.get_preference(scheduler._PREF_KEY_DIVIDEND_ATTEMPT)
+            == "2026-11-17"
+        )
+        assert scheduler._last_dividend_run is not None
+
+    def test_bootstrap_skips_when_attempted_today(
+        self, temp_db, fixed_clock_after_0930, monkeypatch
+    ):
+        scheduler._last_dividend_run = None
+        db.upsert_preference(scheduler._PREF_KEY_DIVIDEND, "true")
+        db.upsert_preference(scheduler._PREF_KEY_DIVIDEND_ATTEMPT, "2026-11-17")
+        spy = MagicMock()
+        monkeypatch.setattr(scheduler, "_run_dividend_check", spy)
+        scheduler._bootstrap_dividend_check()
+        spy.assert_not_called()
+        assert scheduler._last_dividend_run is not None
+
+    def test_bootstrap_runs_once_when_not_attempted(
+        self, temp_db, fixed_clock_after_0930, monkeypatch
+    ):
+        scheduler._last_dividend_run = None
+        db.upsert_preference(scheduler._PREF_KEY_DIVIDEND, "true")
+        spy = MagicMock()
+        monkeypatch.setattr(scheduler, "_run_dividend_check", spy)
+        scheduler._bootstrap_dividend_check()
+        spy.assert_called_once()
+
+    def test_bootstrap_skips_when_disabled(
+        self, temp_db, fixed_clock_after_0930, monkeypatch
+    ):
+        scheduler._last_dividend_run = None
+        db.upsert_preference(scheduler._PREF_KEY_DIVIDEND, "false")
+        spy = MagicMock()
+        monkeypatch.setattr(scheduler, "_run_dividend_check", spy)
+        scheduler._bootstrap_dividend_check()
+        spy.assert_not_called()

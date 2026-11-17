@@ -35,6 +35,9 @@ _auto_invest_lock = threading.Lock()
 _PREF_KEY_ENABLED = "nav_auto_update"
 _PREF_KEY_CRON = "nav_cron"
 _PREF_KEY_DIVIDEND = "dividend_auto_check"
+# 分红检测「今日已尝试」落盘标记：任务若将进程打崩（原生段错误无法被
+# try/except 捕获），重启后引导逻辑据此跳过重跑，避免崩溃循环拖垮整站
+_PREF_KEY_DIVIDEND_ATTEMPT = "dividend_check_last_attempt"
 _PREF_KEY_TP_SL_ENABLED = "tp_sl_enabled"
 
 _last_dividend_run: datetime | None = None
@@ -285,6 +288,14 @@ def _run_dividend_check() -> None:
     global _last_dividend_run
     logger.info("[scheduler] 分红检测任务开始")
     try:
+        # 先落盘「今日已尝试」再抓取：抓取路径若原生崩溃（如 SIGSEGV，
+        # Python 无法捕获），得不到执行机会更新 _last_dividend_run；
+        # 有了这个标记，重启后 _bootstrap_dividend_check 会跳过重跑，
+        # 不会陷入「启动→立即执行→崩溃→重启」的无限循环（曾导致整站瘫痪）
+        db.upsert_preference(
+            _PREF_KEY_DIVIDEND_ATTEMPT,
+            datetime.now(config.TIMEZONE).strftime("%Y-%m-%d"),
+        )
         from . import fetch_dividend
         events = fetch_dividend.check_dividends()
         new_count = 0
@@ -535,13 +546,23 @@ def _bootstrap_auto_invest() -> None:
 
 
 def _bootstrap_dividend_check() -> None:
-    """启动时检测：如果今日 09:30 已过且开关开启且尚未运行过，立即执行分红检测。"""
+    """启动时检测：如果今日 09:30 已过且开关开启且尚未运行过，立即执行分红检测。
+
+    判断依据是 DB 里的「今日已尝试」标记而非仅内存变量：任务若原生崩溃
+    （SIGSEGV），进程重启后内存变量归零，若无落盘标记会立即重跑 → 崩溃
+    循环 → 整站不可用。落盘后同一进程每日最多尝试一次。
+    """
+    global _last_dividend_run
     if _last_dividend_run is not None:
         return
     if not _get_dividend_enabled():
         return
     now = datetime.now(config.TIMEZONE)
     if now.hour < 9 or (now.hour == 9 and now.minute < 30):
+        return
+    today = now.strftime("%Y-%m-%d")
+    if db.get_preference(_PREF_KEY_DIVIDEND_ATTEMPT) == today:
+        _last_dividend_run = now  # 今日已尝试过（可能曾崩溃），不再重试
         return
     logger.info("[scheduler] 今日 09:30 已过, 立即执行分红检测")
     _run_dividend_check()

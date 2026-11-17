@@ -163,6 +163,22 @@ docker compose up -d --build
 > Dockerfile 已内置 npm（npmmirror）和 pip（阿里云）国内镜像，构建速度有保障。
 > Dockerfile 已内置 `TZ=Asia/Shanghai` + `tzdata`，定时任务和 `datetime.now()` 使用正确时区，无需额外配置。
 
+#### 从旧版（root 运行镜像）升级：一次性数据目录迁移
+
+0.27.0 之后的镜像改为容器内非 root 运行（`zfundpilot` / UID 1000，compose 里 `user: "${PUID:-1000}:${PGID:-1000}"`）。旧镜像由 root 写出的数据文件（`fund.db`/`auth.json` 等）属主是 root，升级前需迁移一次（先停容器再 chown，避免与 SQLite WAL 写入竞态）：
+
+```bash
+docker compose down
+git pull
+chown -R 1000:1000 data        # 需要宿主机 root/sudo 权限
+docker compose up -d --build
+docker compose exec zfundpilot id   # 应显示 uid=1000(zfundpilot)
+```
+
+- 若数据目录（或宿主机维护用户）属主不是 1000：在 `.env` 里设 `PUID`/`PGID` 对齐即可，无需改镜像。
+- 设 `PUID=0` 可退回 root 运行——仅用于故障排查临时验证，不推荐长期使用。
+- 多实例部署（3.9 节）每个实例挂载的数据目录（如 `data_userA/`）都要做同样的属主迁移。
+
 ### 3.5 防火墙
 
 ```bash
@@ -332,6 +348,7 @@ for f in compose.user*.yml; do docker compose -f "$f" up -d --build; done
 - **启动后出现 `zfundpilot-zfundpilot-1` 这种自动命名的容器**：说明 `container_name` 冲突——第二个实例没拿到预期名字，Docker 退而用 `{项目名}_{服务名}_1`。在 `.env` 里设置 `CONTAINER_NAME=zfundpilot2` 即可。
 - **第二个实例启动后第一个不能访问了**：同上，`container_name` 相同导致冲突，第二个把第一个挤掉了。在 `.env` 里设置不同的 `CONTAINER_NAME` 后重启两个实例。
 - **`update.sh` 后容器名变回 `zfundpilot` 导致冲突**：之前直接改 `docker-compose.yml` 的 `container_name` 会被 `git reset --hard` 覆盖。现在改为在 `.env` 里设 `CONTAINER_NAME`，`.env` 在 `.gitignore` 中不受影响。
+- **升级后启动报 `unable to open database file` / `Permission denied`**：数据目录属主与容器 UID 不一致（旧文件由 root 容器写出）。执行 `docker compose down && chown -R 1000:1000 data && docker compose up -d --build`，或按 3.4 小节在 `.env` 设 `PUID` 对齐宿主机属主。
 - **查看运行中的实例**：`docker ps --format 'table {{.Names}}\t{{.Ports}}\t{{.Status}}'`
 
 ---

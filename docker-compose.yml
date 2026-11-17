@@ -3,6 +3,10 @@ services:
     build: .
     container_name: ${CONTAINER_NAME:-zfundpilot}
     restart: always
+    # 容器内以非 root 运行（镜像内置 USER zfundpilot / UID 1000）。
+    # 若 bind mount 的数据目录属主不是 1000，用 PUID/PGID 覆盖（.env 里设置）；
+    # 设 PUID=0 可退回 root 运行（故障排查逃生门，不推荐长期使用）。
+    user: "${PUID:-1000}:${PGID:-1000}"
     env_file: .env
     volumes:
       - ./data:/app/data

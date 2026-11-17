@@ -4,6 +4,11 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Security
+- 容器非 root 运行：`Dockerfile` 新增 `zfundpilot` 用户（UID 1000）并在镜像内 `USER zfundpilot`；`docker-compose.yml` 新增 `user: "${PUID:-1000}:${PGID:-1000}"`（`.env` 可覆盖，`PUID=0` 为故障排查逃生门）。应用写路径全部位于 `/app/data`（bind mount），已核实无 `$HOME`/`/tmp` 之外的写入；旧镜像 root 写出的数据文件需一次性 `chown -R 1000:1000 data`（先 `docker compose down` 再 chown，避免与 SQLite WAL 竞态），多实例部署每个数据目录都要迁移。DEPLOY.md 增补升级步骤、权限报错排查条目与回退说明
+
 ## [0.27.0] - 2026-11-17
 
 ### Added

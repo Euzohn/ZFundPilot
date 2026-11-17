@@ -433,6 +433,7 @@ ZFundPilot/
 | `ZFUNDPILOT_TRUSTED_PROXIES` | 空 | 信任代理网段（CIDR 逗号分隔），仅在反代后配置 |
 | `ZFUNDPILOT_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 允许的前端源（逗号分隔），部署到非默认域名时需配置 |
 | `CONTAINER_NAME` | `zfundpilot` | Docker 容器名称，多实例部署时需为每个实例设置不同名称 |
+| `PUID` / `PGID` | `1000` / `1000` | 容器内运行 UID/GID（默认非 root `zfundpilot`），按宿主机 `data/` 目录属主覆盖；`0:0` 退回 root（仅排查用） |
 
 ---
 
@@ -456,8 +457,8 @@ docker compose up -d --build   # 构建并启动
 ./update.sh                    # git reset --hard origin/main + 智能构建
 ```
 
-- `Dockerfile`: 多阶段（node 22 构建前端 → python 3.11-slim 运行），内置 `TZ=Asia/Shanghai` + `tzdata`
-- `docker-compose.yml`: 单服务 + `data/` 卷 + `restart: always`
+- `Dockerfile`: 多阶段（node 22 构建前端 → python 3.11-slim 运行），内置 `TZ=Asia/Shanghai` + `tzdata`，容器内以非 root 用户 `zfundpilot`（UID 1000）运行
+- `docker-compose.yml`: 单服务 + `data/` 卷 + `restart: always`；`user: "${PUID:-1000}:${PGID:-1000}"` 可按宿主机数据目录属主覆盖（`PUID=0` 为排查逃生门）
 - 端口映射通过 gitignored `docker-compose.override.yml` 设置
 - 多实例部署：`container_name` 通过 `CONTAINER_NAME` 环境变量控制（写在 `.env` 里，`update.sh` 的 `git reset` 不覆盖 `.env`），详见 `DEPLOY.md` § 3.9
 
@@ -571,6 +572,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ---
 
 ## 十二、当前工作状态
+
+### [Unreleased]
+
+- security: 容器非 root 运行加固——`Dockerfile` 新建 `zfundpilot` 用户（UID 1000）并 `USER zfundpilot`（`/app/data` 镜像内 chown 归 zfundpilot，bind mount 场景靠宿主机 chown）；`docker-compose.yml` 加 `user: "${PUID:-1000}:${PGID:-1000}"`（`.env` 可覆盖，PUID=0 为临时回退逃生门）。已核实全部写路径在 `/app/data` 内（fund.db/auth.json/ai_config.json/secret.key/fund_universe.json/sector_map.json/backups/，原子写 mkstemp 同目录），无 `$HOME`/`~/.cache` 依赖。旧镜像 root 写出的数据文件属主是 root，升级需一次性 `chown -R 1000:1000 data`（先 down 再 chown 避免 SQLite WAL 竞态），多实例每个数据目录都要迁移；DEPLOY.md 增补升级步骤与权限报错排查（审核发现并修正：裸跑无卷时镜像内 data 属主、部署顺序、CHANGELOG 缺 [Unreleased] 段、多实例波及面）
 
 ### [0.27.0] - 2026-11-17
 

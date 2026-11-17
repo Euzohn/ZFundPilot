@@ -34,6 +34,12 @@ COPY --from=frontend-build /app/frontend/dist frontend/dist/
 # 复制数据目录（首次启动自动建表）
 RUN mkdir -p data
 
+# 非 root 运行：新建 zfundpilot 用户（UID 1000）并把数据目录属主交给他。
+# bind mount（./data:/app/data）会遮蔽镜像内属主，宿主机目录需 chown 一致（见 DEPLOY.md）。
+RUN useradd -m -u 1000 zfundpilot && \
+    chown zfundpilot:zfundpilot /app/data
+USER zfundpilot
+
 EXPOSE 8000
 
 CMD ["uvicorn", "zfundpilot.api:app", "--host", "0.0.0.0", "--port", "8000"]

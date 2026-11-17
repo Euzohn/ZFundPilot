@@ -18,8 +18,16 @@ _DIV_CACHE_TTL = 6 * 3600
 # 检测窗口：最近 N 天的分红事件
 _LOOKBACK_DAYS = 90
 
-# 并行抓取的线程数
-_MAX_WORKERS = 3
+# 分红抓取线程数：必须为 1（串行）。
+# akshare fund_open_fund_info_em('分红送配详情') 每次调用都会：
+#   1) 无条件下载整份 pingzhongdata/{code}.js 并在 py_mini_racer(V8) 里 eval
+#      ——本模块不经 ak_compat 导入时 V8 进程锁未安装，并发 eval 会 SIGSEGV；
+#   2) 用 pd.read_html(StringIO(...)) 解析分红页表格（lxml/libxml2），
+#      lxml 解析并发线程不安全，实测服务器（V8 锁已生效）3 线程并发仍
+#      SIGSEGV（退出码 139），单次调用 exit=0。
+# 串行同时消除两条原生并发路径。分红检测是后台低频任务（缓存 6h），
+# 串行 N×~1s 完全可接受。改动前先看 CHANGELOG「分红检测崩溃循环」条目。
+_MAX_WORKERS = 1
 
 # 最近一次 check_dividends 清理的幽灵提醒数量（供 scan 端点读取）
 _last_cleanup_count: int = 0
@@ -199,7 +207,7 @@ def check_dividends() -> list[DividendEvent]:
     """检查持仓基金的分红事件，返回未记录的分红列表。
 
     1. 获取当前持仓（所有 is_open 的基金）
-    2. 并行抓取每只持仓基金的分红历史
+    2. 串行抓取每只持仓基金的分红历史（必须串行，见 _MAX_WORKERS 注释）
     3. 过滤最近 _LOOKBACK_DAYS 天的事件
     4. 查已有 dividend/reinvest 交易做去重
     5. 按基金 dividend_method 预选 action

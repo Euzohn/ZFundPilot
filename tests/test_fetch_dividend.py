@@ -285,6 +285,46 @@ class TestCheckDividends:
         assert len(events) == 1
         assert events[0].dividend_method == "cash"
 
+    def test_fetches_run_serially(self):
+        """回归：分红抓取必须串行（max_concurrent == 1）。
+
+        akshare「分红送配详情」路径含 V8 eval 与 pd.read_html(lxml) 两个
+        原生调用，3 线程并发实测 SIGSEGV（exit 139，曾致整站崩溃循环）。
+        若本用例失败，说明 _MAX_WORKERS 被调回 >1，先读 _MAX_WORKERS 注释。
+        """
+        import threading
+        import time as _time
+
+        codes = [f"00000{i}" for i in range(1, 7)]
+        positions = [_make_position(c) for c in codes]
+        funds_list = [_make_fund(c) for c in codes]
+
+        lock = threading.Lock()
+        state = {"current": 0, "max": 0}
+
+        def slow_fetch(fund_code: str) -> list[dict]:
+            with lock:
+                state["current"] += 1
+                state["max"] = max(state["max"], state["current"])
+            _time.sleep(0.03)
+            with lock:
+                state["current"] -= 1
+            return []
+
+        with (
+            patch("zfundpilot.fetch_dividend.analysis.calculate_positions", return_value=positions),
+            patch("zfundpilot.fetch_dividend.db.get_funds", return_value=funds_list),
+            patch("zfundpilot.fetch_dividend.db.get_transactions", return_value=[]),
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=[]),
+            patch("zfundpilot.fetch_dividend._fetch_fund_dividends", side_effect=slow_fetch),
+        ):
+            fetch_dividend.check_dividends()
+
+        assert state["max"] == 1, (
+            f"分红抓取出现并发（max_concurrent={state['max']}），"
+            "会触发 akshare read_html/lxml 原生段错误，见 _MAX_WORKERS 注释"
+        )
+
 
 class TestCleanupStaleAlerts:
     """_cleanup_stale_alerts 幽灵分红提醒清理测试。"""

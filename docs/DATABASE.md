@@ -225,6 +225,7 @@
 | `type_keywords_custom` | JSON 数组字符串 | 自定义类型关键词映射 |
 | `sector_keywords_custom` | JSON 数组字符串 | 自定义板块关键词映射 |
 | `dividend_auto_check` | 纯文本 | 分红自动检测开关：`true` / `false` |
+| `dividend_check_last_attempt` | 纯文本 | 分红检测「今日已尝试」日期（`YYYY-MM-DD`）：启动引导据此跳过重跑，防止任务原生崩溃（SIGSEGV）引发「启动→执行→崩溃→重启」无限循环拖垮整站 |
 | `t1_nav_fix_done` | 纯文本 | T+1 净值历史修复是否已完成：`1`/`0`（启动时一次性执行） |
 | `tp_sl_enabled` | 纯文本 | 止盈止损总开关：`true` / `false`（默认 `false`） |
 | `tp_sl_take_profit` | 纯文本 | 止盈阈值（数值字符串，如 `0.20` = 20%） |

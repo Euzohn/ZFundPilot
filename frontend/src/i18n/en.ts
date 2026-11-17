@@ -1534,7 +1534,12 @@ const en: typeof zh = {
   valuation: {
     title: "Index Valuation",
     subtitle: "PE/PB percentiles and valuation temperature for broad-based indices",
-    note: "Percentiles are computed from monthly history: last 10 years by default (full history when shorter); temperature buckets on PE(TTM) percentile <30 / 30–70 / >70. Source: Legulegu. For reference only, not investment advice.",
+    note: "Percentiles are computed from daily history: last 10 years by default (full history when shorter); temperature buckets on PE(TTM) percentile <30 / 30–70 / >70. Sources: Jiucaishuo (primary) + Legulegu (backup). For reference only, not investment advice. Hover the ⓘ icons in column headers for plain-language explanations.",
+    hintPe: "Price-to-earnings ratio (trailing 12 months). Roughly: how many years it would take to recoup your investment at the index's current earnings level. Lower usually means cheaper (most useful for broad indices with stable earnings).",
+    hintPePercentile: "Where the current PE ranks within the selected history window. 30% means today is cheaper than 70% of all historical days — lower values are closer to undervalued territory, higher values closer to overvalued.",
+    hintPb: "Price-to-book ratio: total market value of the index's constituents ÷ their net assets, i.e. how expensive stocks are relative to their book value. A PB below 1 means buying assets at a discount (most useful for financial/dividend asset-heavy indices).",
+    hintPbPercentile: "Where the current PB ranks within the selected history window. Same idea as the PE percentile: lower is closer to undervalued.",
+    hintTemperature: "A simple bucket derived from the PE percentile: Undervalued (<30%) / Fair (30–70%) / Overvalued (>70%) — a quick gauge of value for money. For reference only, not a buy/sell recommendation.",
     refresh: "Refresh",
     loading: "Loading valuation...",
     loadFailed: "Failed to load valuation data",

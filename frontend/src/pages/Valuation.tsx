@@ -29,9 +29,37 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { ChevronDown, ChevronRight, Gauge, Loader2, RefreshCw } from "lucide-react"
+import {
+  Tooltip as UiTooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { ChevronDown, ChevronRight, Gauge, Info, Loader2, RefreshCw } from "lucide-react"
 
 type SortField = "name" | "pe_percentile" | "pb_percentile" | "temperature"
+
+/** 列头 ⓘ：悬停显示指标的通俗解释（i18n hintXxx 文案）。 */
+function MetricHint({ text }: { text: string }) {
+  return (
+    <UiTooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={text}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          className="ml-0.5 inline-flex h-4 w-4 shrink-0 cursor-help items-center justify-center align-middle text-muted-foreground/70 hover:text-muted-foreground"
+        >
+          <Info className="h-3 w-3" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-72 text-left leading-relaxed">
+        {text}
+      </TooltipContent>
+    </UiTooltip>
+  )
+}
 
 // 温度徽章配色（低估绿 / 合理灰 / 高估红）
 const TEMP_STYLE: Record<string, string> = {
@@ -355,6 +383,7 @@ export default function Valuation() {
   }
 
   return (
+    <TooltipProvider>
     <div className="space-y-6">
       <PageHeader
         title={t.valuation.title}
@@ -474,28 +503,43 @@ export default function Valuation() {
                   {t.common.code}
                 </TableHead>
                 <TableHead className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">
-                  {t.valuation.pe}
+                  <span className="inline-flex items-center justify-end">
+                    {t.valuation.pe}
+                    <MetricHint text={t.valuation.hintPe} />
+                  </span>
                 </TableHead>
                 <SortHeader
                   field="pe_percentile"
                   className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap"
                 >
-                  {t.valuation.pePercentile}
+                  <span className="inline-flex items-center justify-end">
+                    {t.valuation.pePercentile}
+                    <MetricHint text={t.valuation.hintPePercentile} />
+                  </span>
                 </SortHeader>
                 <TableHead className="px-2 py-2 text-right text-xs font-medium text-muted-foreground">
-                  {t.valuation.pb}
+                  <span className="inline-flex items-center justify-end">
+                    {t.valuation.pb}
+                    <MetricHint text={t.valuation.hintPb} />
+                  </span>
                 </TableHead>
                 <SortHeader
                   field="pb_percentile"
                   className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap"
                 >
-                  {t.valuation.pbPercentile}
+                  <span className="inline-flex items-center justify-end">
+                    {t.valuation.pbPercentile}
+                    <MetricHint text={t.valuation.hintPbPercentile} />
+                  </span>
                 </SortHeader>
                 <SortHeader
                   field="temperature"
                   className="px-2 py-2 text-center text-xs font-medium text-muted-foreground whitespace-nowrap"
                 >
-                  {t.valuation.temperature}
+                  <span className="inline-flex items-center justify-center">
+                    {t.valuation.temperature}
+                    <MetricHint text={t.valuation.hintTemperature} />
+                  </span>
                 </SortHeader>
                 <TableHead className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">
                   {t.valuation.dataDate}
@@ -524,6 +568,7 @@ export default function Valuation() {
         </div>
       )}
     </div>
+    </TooltipProvider>
   )
 }
 

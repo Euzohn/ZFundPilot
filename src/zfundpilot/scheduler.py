@@ -291,11 +291,18 @@ def _run_dividend_check() -> None:
         # 先落盘「今日已尝试」再抓取：抓取路径若原生崩溃（如 SIGSEGV，
         # Python 无法捕获），得不到执行机会更新 _last_dividend_run；
         # 有了这个标记，重启后 _bootstrap_dividend_check 会跳过重跑，
-        # 不会陷入「启动→立即执行→崩溃→重启」的无限循环（曾导致整站瘫痪）
-        db.upsert_preference(
-            _PREF_KEY_DIVIDEND_ATTEMPT,
-            datetime.now(config.TIMEZONE).strftime("%Y-%m-%d"),
-        )
+        # 不会陷入「启动→立即执行→崩溃→重启」的无限循环（曾导致整站瘫痪）。
+        # 标记写入是辅助防护：失败（如精简测试库无 preferences 表）不应
+        # 中断主任务，生产环境 init_db 已建表，防护正常生效。
+        try:
+            db.upsert_preference(
+                _PREF_KEY_DIVIDEND_ATTEMPT,
+                datetime.now(config.TIMEZONE).strftime("%Y-%m-%d"),
+            )
+        except Exception:
+            logger.warning(
+                "[scheduler] 记录分红检测尝试标记失败，继续本次检测", exc_info=True
+            )
         from . import fetch_dividend
         events = fetch_dividend.check_dividends()
         new_count = 0

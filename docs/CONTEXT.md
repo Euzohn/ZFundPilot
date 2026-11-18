@@ -25,7 +25,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.27.0`（git tag `v0.27.0`）
+- **版本**: `0.27.1`（git tag `v0.27.1`）
 - **License**: MIT
 
 ---
@@ -47,7 +47,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.27.0"
+│   ├── __init__.py          # __version__ = "0.27.1"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── ak_compat.py         # akshare 跨版本改名兼容层（优先新名、回退旧名）＋进程级 V8 串行化（py_mini_racer 非线程安全，多数据源并发会 SIGTRAP）
 │   ├── config.py            # 全局配置、环境变量、认证管理
@@ -190,7 +190,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.27.0")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.27.1")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复）。`GET /api/audit` 支持 `limit`(1–1000)/`offset` 分页与 `action`/`username`/`from`/`to` 精确筛选（`from`/`to` 接受纯日期或 ISO 时间串，纯日期按整天包含式处理，`from` 晚于 `to` 返回 422）；默认 `limit=100` 行为不变。设置页「操作日志」提供动作/用户/日期筛选，前端 detail 可展开查看格式化 JSON
 - Agent token 临期提示: 设置页令牌列表在 `expires_at` 未来 7 天内显示「即将过期」徽章（前端本地判断，不影响后端鉴权与过期语义）
@@ -573,7 +573,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ## 十二、当前工作状态
 
-### [Unreleased]
+### [0.27.1] - 2026-11-19
 
 - fix: Windows 原生后端启动失败（外部贡献 PR #5，已审核合并 e4e1833）——Windows CPython 无 `time.tzset()`，config 导入即 `AttributeError`。`hasattr` 守卫（Linux/Docker 路径不变）+ Windows 专用 `tzdata`（`sys_platform == 'win32'`，Docker 依赖树不变）+ 子进程回归测试 2 例。审核流程：隔离 worktree 全量 1426 例 + ruff 通过 → 批准首次贡献者 CI（action_required）→ 3/3 绿后 squash 合并；合并后 main 全量 1436 例。已知限制：宿主时区≠应用时区时 SQLite localtime/日统计跨日错位，DEPLOY/README（中英）已补注
 - fix: 「记为分红」预填渠道错误（根因 + 方案 1：按 (基金, 渠道) 拆分提醒）——整条链路无 channel：`DividendEvent`/`dividend_alerts` 表/`DividendAlert` 类型/`handleConfirm` URL 都没有渠道，前端只能落到默认 `channels[0]`；多渠道持仓时 `check_dividends` 用 `{fund_code: position}` 折叠还会导致份额/金额按最后一条持仓少算。修复：`DividendEvent.channel`；`check_dividends` 逐 (基金, 渠道) `dataclasses.replace` 生成事件；去重 `(tx.channel or "") == ev.channel`；`_cleanup_stale_alerts` 改按 `(code, ex_date, channel)` 判定；`dividend_alerts` 加 `channel` 列、UNIQUE 升级为 `(fund_code, ex_date, alert_type, channel)`（新迁移 `_migrate_dividend_alerts_channel`；旧迁移幂等检查改前缀匹配，防止在 4 列新表上重跑丢列）；单渠道旧提醒回填渠道、多渠道保留空串由下次扫描重建；scheduler/api 落库与 `/check` 响应带 channel；前端行内展示渠道、预填 URL 带 `channel=`。**行为变化**：升级后首次扫描，渠道无法对应的旧 pending 提醒会 ignored 后按渠道重建；旧版错误渠道补记的分红不再跨渠道抑制。新增 10 例（test_fetch_dividend 共 51 例，全量 1434 例）

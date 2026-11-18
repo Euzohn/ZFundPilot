@@ -171,7 +171,7 @@ docker compose up -d --build
 
 #### 从旧版（root 运行镜像）升级：一次性数据目录迁移
 
-0.27.0 之后的镜像改为容器内非 root 运行（`zfundpilot` / UID 1000，compose 里 `user: "${PUID:-1000}:${PGID:-1000}"`）。旧镜像由 root 写出的数据文件（`fund.db`/`auth.json` 等）属主是 root，升级前需迁移一次（先停容器再 chown，避免与 SQLite WAL 写入竞态）：
+0.27.1 起镜像改为容器内非 root 运行（`zfundpilot` / UID 1000，compose 里 `user: "${PUID:-1000}:${PGID:-1000}"`）。旧镜像由 root 写出的数据文件（`fund.db`/`auth.json` 等）属主是 root，升级前需迁移一次（先停容器再 chown，避免与 SQLite WAL 写入竞态）：
 
 ```bash
 docker compose down

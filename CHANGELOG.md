@@ -9,6 +9,11 @@
 ### Security
 - 容器非 root 运行：`Dockerfile` 新增 `zfundpilot` 用户（UID 1000）并在镜像内 `USER zfundpilot`；`docker-compose.yml` 新增 `user: "${PUID:-1000}:${PGID:-1000}"`（`.env` 可覆盖，`PUID=0` 为故障排查逃生门）。应用写路径全部位于 `/app/data`（bind mount），已核实无 `$HOME`/`/tmp` 之外的写入；旧镜像 root 写出的数据文件需一次性 `chown -R 1000:1000 data`（先 `docker compose down` 再 chown，避免与 SQLite WAL 竞态），多实例部署每个数据目录都要迁移。DEPLOY.md 增补升级步骤、权限报错排查条目与回退说明
 
+### Fixed
+- 修复「记为分红」预填渠道错误（此前落到默认 `channels[0]`，多渠道时预填份额还会按最后一条持仓少算）：分红提醒整条链路补上渠道——`DividendEvent` 新增 `channel`，`check_dividends` 改为按 (基金, 渠道) 逐条生成事件，份额/预估金额按渠道拆分，已记录去重也要求同渠道；`dividend_alerts` 表新增 `channel` 列、唯一约束升级为 `UNIQUE(fund_code, ex_date, alert_type, channel)`，迁移把单渠道持仓的旧提醒自动回填渠道（多渠道/无法判定的保留空串，下次扫描按渠道重建），幽灵清理同样按 (基金, 除息日, 渠道) 判定；scheduler 落库、`/api/dividends/check`/`scan` 均携带 channel；前端弹窗行内展示渠道、跳转预填 URL 带 `channel=`（自定义渠道仍走 customChannel）。**行为变化**：升级后首次扫描，渠道无法对应的旧 pending 提醒会被置为 ignored 并按渠道重建；旧版本在错误渠道下补记的分红流水不再跨渠道抑制提醒。新增 10 例（test_fetch_dividend 共 51 例，全量 1434 例）
+- 修复分红提醒红点保存后不消失：`Transactions.tsx` 抽出 `refreshDividendCount`，在挂载、弹窗关闭、表单保存完成后都重新拉取 pending 数（此前仅挂载时拉一次，记为分红后红点常驻）
+- 修复打开分红弹窗时的 Chrome `Blocked aria-hidden` 告警与跳转时序：打开前先 blur 背景焦点（Radix 应用 aria-hidden 时背景不再持有焦点）；「记为分红」的页面跳转改到 Radix `onCloseAutoFocus`（弹窗卸载、背景 aria-hidden 解除后）执行，避免预填表单在弹窗退出动画期间抢先聚焦
+
 ## [0.27.0] - 2026-11-17
 
 ### Added

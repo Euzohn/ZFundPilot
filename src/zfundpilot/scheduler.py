@@ -307,7 +307,7 @@ def _run_dividend_check() -> None:
         events = fetch_dividend.check_dividends()
         new_count = 0
         for ev in events:
-            if not db.dividend_alert_exists(ev.fund_code, ev.ex_date):
+            if not db.dividend_alert_exists(ev.fund_code, ev.ex_date, ev.channel):
                 db.add_dividend_alert({
                     "fund_code": ev.fund_code,
                     "fund_name": ev.fund_name,
@@ -318,6 +318,7 @@ def _run_dividend_check() -> None:
                     "held_shares": ev.held_shares,
                     "estimated_amount": ev.estimated_amount,
                     "dividend_method": ev.dividend_method,
+                    "channel": ev.channel,
                 })
                 new_count += 1
         cleaned = fetch_dividend._last_cleanup_count

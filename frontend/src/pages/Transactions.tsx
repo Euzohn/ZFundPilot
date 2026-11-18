@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { useSearchParams, useLocation, useNavigate } from "react-router-dom"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
@@ -100,11 +100,23 @@ export default function Transactions() {
     }
   }, [location.state])
 
-  useEffect(() => {
-    let active = true
-    api.getPendingDividendAlertCount().then(r => { if (active) setDividendAlertCount(r.count) }).catch(() => {})
-    return () => { active = false }
+  const refreshDividendCount = useCallback(() => {
+    api.getPendingDividendAlertCount()
+      .then((r) => setDividendAlertCount(r.count))
+      .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    refreshDividendCount()
+  }, [refreshDividendCount])
+
+  // 打开弹窗前先移除背景焦点：Radix 在 focus 仍留在背景输入框时
+  // 应用 aria-hidden 会触发 Chrome 的 "Blocked aria-hidden" 告警
+  const openDividendDialog = () => {
+    const el = document.activeElement
+    if (el instanceof HTMLElement) el.blur()
+    setDividendDialogOpen(true)
+  }
 
   const handleEdit = (tx: Transaction) => {
     consumedEditTx.current = false
@@ -117,6 +129,7 @@ export default function Transactions() {
     setEditingTx(null)
     setPrefill(null)
     setListReloadKey((k) => k + 1)
+    refreshDividendCount()
     if (fundCode) navigate(`/fund/${fundCode}`)
   }
 
@@ -125,7 +138,14 @@ export default function Transactions() {
   return (
     <div className="space-y-6">
       <PageHeader title={t.transactions.title} icon={<ArrowLeftRight className="h-5 w-5" />} />
-      <DividendCheckDialog open={dividendDialogOpen} onOpenChange={setDividendDialogOpen} />
+      <DividendCheckDialog
+        open={dividendDialogOpen}
+        onOpenChange={(open) => {
+          setDividendDialogOpen(open)
+          // 关闭时刷新红点：弹窗内忽略/删除/记为分红都会影响 pending 数
+          if (!open) refreshDividendCount()
+        }}
+      />
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-5 sm:inline-flex sm:w-auto">
           <TabsTrigger value="form" className="gap-1.5">
@@ -156,7 +176,7 @@ export default function Transactions() {
             prefill={prefill}
             onPrefillConsumed={() => setPrefill(null)}
             onDone={handleFormDone}
-            onCheckDividends={() => setDividendDialogOpen(true)}
+            onCheckDividends={openDividendDialog}
             dividendAlertCount={dividendAlertCount}
           />
         </TabsContent>
@@ -600,13 +620,14 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
         const result = await api.addTransaction(payload)
         toast.success(t.transactions.txSavedToast.replace("{action}", t.actionLabels[action as keyof typeof t.actionLabels] ?? action).replace("{code}", code.trim()))
         // 从分红提醒跳转来：保存成功后标记 alert 为 confirmed
+        // await：确保父组件 handleFormDone 刷新红点时拿到最新 pending 数
         if (pendingAlertId) {
-          api.updateDividendAlert(pendingAlertId, "confirmed", result.id).catch(() => {})
+          await api.updateDividendAlert(pendingAlertId, "confirmed", result.id).catch(() => {})
           setPendingAlertId(null)
         }
         // 从止盈止损提醒跳转来：保存成功后标记 alert 为 confirmed
         if (pendingTpSlAlertId) {
-          api.updateAlert(pendingTpSlAlertId, "confirmed").catch(() => {})
+          await api.updateAlert(pendingTpSlAlertId, "confirmed").catch(() => {})
           setPendingTpSlAlertId(null)
         }
       }

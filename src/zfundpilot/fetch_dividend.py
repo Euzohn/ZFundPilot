@@ -3,7 +3,7 @@ import logging
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
 from . import analysis, config, db
@@ -52,10 +52,11 @@ class DividendEvent:
     ex_date: str           # 除息日
     per_share: float       # 每份分红(元/份)
     pay_date: str          # 分红发放日
-    held_shares: float = 0.0       # 当前持仓份额
+    held_shares: float = 0.0       # 当前持仓份额（按渠道拆分）
     estimated_amount: float = 0.0  # 预估分红金额 = held_shares × per_share
     dividend_method: str = "cash"  # 基金的默认分红方式
-    already_recorded: bool = False  # 是否已有对应交易
+    channel: str = ""              # 购买渠道（同一基金多渠道各出一条事件）
+    already_recorded: bool = False  # 是否已有对应渠道的交易
 
 
 def _fetch_fund_dividends(fund_code: str) -> list[dict]:
@@ -142,13 +143,14 @@ def _date_close(d1: str, d2: str, tolerance: int = 3) -> bool:
 
 
 def _cleanup_stale_alerts(
-    fetched_ex_dates: set[tuple[str, str]],
+    fetched_ex_dates: set[tuple[str, str, str]],
     fetched_funds: set[str],
 ) -> int:
     """校验 pending 分红提醒是否仍存在于源数据中，不存在则标记为 ignored。
 
-    两层清理：
-    1. fetched_funds 中的基金：源数据无此 ex_date → ignored（幽灵数据清理）
+    提醒按 (基金, 除息日, 渠道) 逐条判定，两层清理：
+    1. fetched_funds 中的基金：源数据无此 (ex_date, channel) → ignored
+       （幽灵数据清理；旧库无渠道的提醒会在多渠道/渠道变化时按渠道重建）
     2. pending 超 _LOOKBACK_DAYS 天：自动 ignore（兜底，覆盖基金已清仓/
        抓取持续失败/缓存返回旧数据等场景）
 
@@ -161,6 +163,7 @@ def _cleanup_stale_alerts(
     for alert in pending:
         code = alert["fund_code"]
         ex_date = alert.get("ex_date", "")
+        channel = alert.get("channel") or ""
         # --- 兜底：pending 超 90 天 → 自动 ignore ---
         created = alert.get("created_at", "")
         if created:
@@ -188,7 +191,7 @@ def _cleanup_stale_alerts(
             continue
         if code not in fetched_funds:
             continue
-        if (code, ex_date) in fetched_ex_dates:
+        if (code, ex_date, channel) in fetched_ex_dates:
             continue
         db.update_dividend_alert(
             alert["id"],
@@ -196,8 +199,8 @@ def _cleanup_stale_alerts(
             resolved_at=now.isoformat(),
         )
         logger.info(
-            "[fetch_dividend] 自动清理幽灵分红提醒: %s %s (源数据已无此记录)",
-            code, ex_date,
+            "[fetch_dividend] 自动清理幽灵分红提醒: %s %s %s (源数据已无此记录)",
+            code, ex_date, channel or "(无渠道)",
         )
         cleaned += 1
     return cleaned
@@ -206,10 +209,10 @@ def _cleanup_stale_alerts(
 def check_dividends() -> list[DividendEvent]:
     """检查持仓基金的分红事件，返回未记录的分红列表。
 
-    1. 获取当前持仓（所有 is_open 的基金）
+    1. 获取当前持仓（所有 is_open 的基金，按渠道拆分）
     2. 串行抓取每只持仓基金的分红历史（必须串行，见 _MAX_WORKERS 注释）
-    3. 过滤最近 _LOOKBACK_DAYS 天的事件
-    4. 查已有 dividend/reinvest 交易做去重
+    3. 过滤最近 _LOOKBACK_DAYS 天的事件；同一基金多渠道各出一条（份额/金额按渠道）
+    4. 查已有 dividend/reinvest 交易做去重（同渠道同日期附近才算已记录）
     5. 按基金 dividend_method 预选 action
 
     同时校验现有 pending 提醒是否仍存在于源数据中，不存在则自动标记为 ignored。
@@ -218,8 +221,13 @@ def check_dividends() -> list[DividendEvent]:
     global _last_cleanup_count
     _last_cleanup_count = 0
     positions = analysis.calculate_positions()
-    held = {p.fund_code: p for p in positions if p.is_open}
-    if not held:
+    # 同一基金可能多渠道持仓：按 (fund_code, channel) 逐条出事件，
+    # 否则多渠道时 held_shares 会被最后一条持仓覆盖、金额少算。
+    positions_by_code: dict[str, list] = {}
+    for p in positions:
+        if p.is_open:
+            positions_by_code.setdefault(p.fund_code, []).append(p)
+    if not positions_by_code:
         return []
 
     funds = {f.fund_code: f for f in db.get_funds()}
@@ -227,17 +235,16 @@ def check_dividends() -> list[DividendEvent]:
     all_events: list[DividendEvent] = []
     cutoff = (datetime.now(config.TIMEZONE) - timedelta(days=_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
 
-    fetched_ex_dates: set[tuple[str, str]] = set()
+    fetched_ex_dates: set[tuple[str, str, str]] = set()
     fetched_funds: set[str] = set()
 
     with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
         future_map = {
             pool.submit(_fetch_fund_dividends, code): code
-            for code in held
+            for code in positions_by_code
         }
         for future in as_completed(future_map):
             code = future_map[future]
-            pos = held[code]
             fund = funds.get(code)
             fund_name = fund.fund_name if fund else code
             method = fund.dividend_method if fund else "cash"
@@ -253,13 +260,21 @@ def check_dividends() -> list[DividendEvent]:
                 ev = _parse_dividend_row(row, code, fund_name)
                 if not ev or not ev.ex_date:
                     continue
-                fetched_ex_dates.add((code, ev.ex_date))
+                for pos in positions_by_code[code]:
+                    fetched_ex_dates.add(
+                        (code, ev.ex_date, pos.channel or "")
+                    )
                 if ev.ex_date < cutoff:
                     continue
-                ev.held_shares = pos.held_shares
-                ev.estimated_amount = round(pos.held_shares * ev.per_share, 2)
-                ev.dividend_method = method
-                all_events.append(ev)
+                for pos in positions_by_code[code]:
+                    channel = pos.channel or ""
+                    all_events.append(replace(
+                        ev,
+                        held_shares=pos.held_shares,
+                        estimated_amount=round(pos.held_shares * ev.per_share, 2),
+                        dividend_method=method,
+                        channel=channel,
+                    ))
 
     try:
         cleaned = _cleanup_stale_alerts(fetched_ex_dates, fetched_funds)
@@ -286,6 +301,8 @@ def check_dividends() -> list[DividendEvent]:
 
     for ev in all_events:
         for tx in tx_by_code.get(ev.fund_code, []):
+            if (tx.channel or "") != ev.channel:
+                continue
             if _date_close(tx.date, ev.ex_date, tolerance=3):
                 ev.already_recorded = True
                 break

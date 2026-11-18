@@ -252,6 +252,7 @@
 | `held_shares` | REAL | | 持有份额（仅分红用） |
 | `estimated_amount` | REAL | | 预计分红金额（仅分红用） |
 | `dividend_method` | TEXT | DEFAULT 'cash' | 分红方式：`cash` / `reinvest`（仅分红用） |
+| `channel` | TEXT | DEFAULT '' | 购买渠道（仅分红用；同一基金多渠道各一条提醒，空串 = 无渠道/旧数据无法判定） |
 | `alert_type` | TEXT | DEFAULT 'dividend' | 提醒类型：`dividend` / `take_profit` / `stop_loss` |
 | `triggered_return` | REAL | | 触发时的收益率（仅 tp_sl 用） |
 | `threshold` | REAL | | 触发时的目标阈值（仅 tp_sl 用） |
@@ -260,19 +261,21 @@
 | `resolved_at` | TEXT | | 处理时间（确认/忽略） |
 | `tx_id` | INTEGER | | 关联交易 ID（分红确认入账时写入） |
 
-索引：`idx_alert_status` on `status`，`idx_alert_code_ex` on `(fund_code, ex_date)`。
+索引：`idx_alert_status` on `status`，`idx_alert_code_ex` on `(fund_code, ex_date)`，`idx_alert_type_status` on `(alert_type, status)`。
 
-**兼容性**：`alert_type`/`triggered_return`/`threshold` 由 `_migrate_tp_sl()` 补充，旧数据 `alert_type` 默认为 `'dividend'` 无需回填。
+唯一约束：`UNIQUE(fund_code, ex_date, alert_type, channel)`——同一基金同一除息日按渠道各一条分红提醒（tp_sl 行 `ex_date` 为 NULL，SQLite 视 NULL 互异，不受影响）。
 
-**幽灵提醒自动清理**：`fetch_dividend.check_dividends()` 抓取数据时同步收集 `fetched_ex_dates`/`fetched_funds`，调用 `_cleanup_stale_alerts()` 校验现有 pending 分红提醒是否仍存在于源数据。不存在则自动标记为 `ignored`（`resolved_at` 设为当前时间）。仅校验成功获取非空数据的基金（`fetched_funds`），避免网络错误误清有效提醒。清理数量存入 `fetch_dividend._last_cleanup_count` 供 `POST /api/dividends/scan` 和 `scheduler._run_dividend_check` 读取。
+**兼容性**：`alert_type`/`triggered_return`/`threshold` 由 `_migrate_tp_sl()` 补充，旧数据 `alert_type` 默认为 `'dividend'` 无需回填；`channel` 与 4 列唯一约束由 `_migrate_dividend_alerts_channel()` 补充，旧库升级后对**单渠道持仓**的分红提醒自动回填渠道，多渠道/无法判定的保留空串（下次扫描按渠道重建，见下方幽灵清理）。
+
+**幽灵提醒自动清理**：`fetch_dividend.check_dividends()` 抓取数据时同步收集 `(基金, 除息日, 渠道)` 集合与已抓取基金集合，调用 `_cleanup_stale_alerts()` 校验现有 pending 分红提醒是否仍存在于源数据。不存在的 `(基金, 除息日, 渠道)` 自动标记为 `ignored`（`resolved_at` 设为当前时间）；旧库无渠道（`''`）的提醒在多渠道抓取结果中天然不匹配，会被清理后按渠道重建。仅校验成功获取非空数据的基金（`fetched_funds`），避免网络错误误清有效提醒。清理数量存入 `fetch_dividend._last_cleanup_count` 供 `POST /api/dividends/scan` 和 `scheduler._run_dividend_check` 读取。
 
 **相关函数**（db.py）：
-- `add_dividend_alert(alert: dict) -> int`: 新增分红提醒，返回 id
+- `add_dividend_alert(alert: dict) -> int`: 新增分红提醒（`channel` 缺省为空串），返回 id
 - `get_dividend_alerts(status: str | None) -> list[dict]`: 获取分红提醒列表（仅 `alert_type='dividend'`），`status` 过滤 pending/confirmed/ignored
 - `get_pending_alert_count(alert_type: str | None) -> int`: 返回 pending 状态的提醒数量
 - `update_dividend_alert(alert_id: int, **fields)`: 更新提醒字段（status/resolved_at/tx_id）
 - `delete_dividend_alert(alert_id: int) -> bool`: 物理删除分红提醒，`WHERE alert_type='dividend' OR alert_type IS NULL` 确保不影响 tp_sl 提醒
-- `dividend_alert_exists(fund_code: str, ex_date: str) -> bool`: 检查提醒是否已存在（任意状态），用于去重
+- `dividend_alert_exists(fund_code: str, ex_date: str, channel: str = "") -> bool`: 检查某基金某除息日**某渠道**的提醒是否已存在（任意状态；不传渠道仅匹配空渠道旧数据），用于去重
 
 ---
 
@@ -557,15 +560,16 @@ Agent 访问令牌元数据。服务端只存 SHA-256 摘要，明文仅在签�
 3. **`_migrate_relax_transactions_schema()`**: 重建 transactions 表，移除 `CHECK(action IN ('buy','sell'))` 约束和 `NOT NULL` 约束，支持 dividend/reinvest 和待确认交易
 4. **`_migrate_legacy_holdings()`**: 旧版 `holdings` 表数据迁移为一条买入流水
 5. **`_migrate_tp_sl()`**: 为 `dividend_alerts` 补充 `alert_type`/`triggered_return`/`threshold` 列，新建 `tp_sl_alert_states` 表
-6. **`_migrate_dividend_alerts_unique()`**: 清理重复分红提醒并补 `UNIQUE(fund_code, ex_date, alert_type)`
-7. **`_migrate_auto_invest_plans_check()`**: 为 `auto_invest_plans` 补 `CHECK(amount > 0)`
-8. **`_migrate_nav_history_check()`**: 为 `nav_history` 补 `CHECK(nav > 0)`
-9. **`_migrate_add_indexes()`**: 补充缺失索引、删除冗余索引
-10. **`_migrate_add_conversion_id()`**: 为 `transactions` 补 `conversion_id`（基金转换链接 ID）
-11. **`_migrate_add_purchase_status()`**: 为 `funds` 补申购状态字段
-12. **`_migrate_add_risk_level()`**: 为 `funds` 补 `risk_level`
-13. **`_migrate_add_transaction_source()`**: 为 `transactions` 补 `source`（可信直记写 `agent`，其余空串）
-14. **`_migrate_watchlist_revision()`**: 为 `watchlist` 补 `revision` 并回填版本 1
+6. **`_migrate_dividend_alerts_unique()`**: 清理重复分红提醒并补 `UNIQUE(fund_code, ex_date, alert_type)`（已含 4 列新约束时跳过）
+7. **`_migrate_dividend_alerts_channel()`**: 为 `dividend_alerts` 补 `channel` 列，唯一约束升级为 `UNIQUE(fund_code, ex_date, alert_type, channel)`；按当前单渠道持仓回填旧提醒渠道（多渠道保留空串）
+8. **`_migrate_auto_invest_plans_check()`**: 为 `auto_invest_plans` 补 `CHECK(amount > 0)`
+9. **`_migrate_nav_history_check()`**: 为 `nav_history` 补 `CHECK(nav > 0)`
+10. **`_migrate_add_indexes()`**: 补充缺失索引、删除冗余索引
+11. **`_migrate_add_conversion_id()`**: 为 `transactions` 补 `conversion_id`（基金转换链接 ID）
+12. **`_migrate_add_purchase_status()`**: 为 `funds` 补申购状态字段
+13. **`_migrate_add_risk_level()`**: 为 `funds` 补 `risk_level`
+14. **`_migrate_add_transaction_source()`**: 为 `transactions` 补 `source`（可信直记写 `agent`，其余空串）
+15. **`_migrate_watchlist_revision()`**: 为 `watchlist` 补 `revision` 并回填版本 1
 
 > `index_history` 表通过 `init_db()` 中的 `CREATE TABLE IF NOT EXISTS` 创建，无需单独迁移函数（新表，无历史数据兼容问题）。
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { useLang } from "@/i18n/LanguageContext"
 import { api } from "@/api/client"
@@ -25,6 +25,9 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
   const [loading, setLoading] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [deletingAlertId, setDeletingAlertId] = useState<number | null>(null)
+  // 关闭动画结束后的跳转目标：在 onCloseAutoFocus 里执行，
+  // 确保预填跳转发生在弹窗卸载、背景 aria-hidden 解除之后
+  const pendingNav = useRef<string | null>(null)
 
   const loadAlerts = useCallback(async () => {
     setLoading(true)
@@ -79,8 +82,11 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
       : t.transactions.dividendCashNote
         .replace("{perShare}", perShare.toFixed(4))
         .replace("{date}", alert.record_date ?? "")
+    const channelParam = alert.channel
+      ? `&channel=${encodeURIComponent(alert.channel)}`
+      : ""
+    pendingNav.current = `/transactions?action=${action}&code=${alert.fund_code}&date=${date}&amount=${alert.estimated_amount ?? 0}&note=${encodeURIComponent(note)}${channelParam}&alert_id=${alert.id}`
     onOpenChange(false)
-    navigate(`/transactions?action=${action}&code=${alert.fund_code}&date=${date}&amount=${alert.estimated_amount ?? 0}&note=${encodeURIComponent(note)}&alert_id=${alert.id}`)
   }
 
   const handleIgnore = async (alertId: number) => {
@@ -103,7 +109,17 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col" onCloseAutoFocus={(e) => e.preventDefault()}>
+      <DialogContent
+        className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col"
+        onCloseAutoFocus={(e) => {
+          e.preventDefault()
+          if (pendingNav.current) {
+            const target = pendingNav.current
+            pendingNav.current = null
+            navigate(target)
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Gift className="h-5 w-5" />
@@ -167,6 +183,11 @@ function DividendAlertRow({ alert, onConfirm, onIgnore, onDelete }: {
           <div className="flex items-center gap-2">
             <span className="font-mono text-sm font-medium">{alert.fund_code}</span>
             <span className="text-sm truncate">{alert.fund_name}</span>
+            {alert.channel && (
+              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                {alert.channel}
+              </span>
+            )}
           </div>
           <div className="mt-1 flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
             <span>{t.transactions.exDate}: {alert.ex_date}</span>

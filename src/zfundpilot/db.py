@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import uuid
 from collections.abc import Iterable, Iterator
@@ -22,6 +23,8 @@ from typing import Any
 
 from . import config
 from .models import Fund, NavPoint, Transaction
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -258,10 +261,16 @@ def init_db() -> None:
                 status           TEXT DEFAULT 'pending',
                 created_at       TEXT DEFAULT (datetime('now','localtime')),
                 resolved_at      TEXT,
-                tx_id            INTEGER
+                tx_id            INTEGER,
+                alert_type       TEXT DEFAULT 'dividend',
+                triggered_return REAL,
+                threshold        REAL,
+                channel          TEXT DEFAULT '',
+                UNIQUE(fund_code, ex_date, alert_type, channel)
             );
             CREATE INDEX IF NOT EXISTS idx_alert_status ON dividend_alerts(status);
             CREATE INDEX IF NOT EXISTS idx_alert_code_ex ON dividend_alerts(fund_code, ex_date);
+            CREATE INDEX IF NOT EXISTS idx_alert_type_status ON dividend_alerts(alert_type, status);
 
             CREATE TABLE IF NOT EXISTS index_history (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -314,6 +323,7 @@ def init_db() -> None:
     _migrate_legacy_holdings()
     _migrate_tp_sl()
     _migrate_dividend_alerts_unique()
+    _migrate_dividend_alerts_channel()
     _migrate_auto_invest_plans_check()
     _migrate_nav_history_check()
     _migrate_add_indexes()
@@ -623,13 +633,15 @@ def _migrate_add_conversion_id() -> None:
 def _migrate_dividend_alerts_unique() -> None:
     """给 dividend_alerts 加 UNIQUE(fund_code, ex_date, alert_type) 约束。
 
-    幂等：目标 UNIQUE 已存在时跳过。重建前先清理重复数据（保留最早 id）。
+    幂等：任意包含该前缀的 UNIQUE 已存在时跳过（新版 4 列 UNIQUE
+    含 channel，由 _migrate_dividend_alerts_channel 负责升级）。
+    重建前先清理重复数据（保留最早 id）。
     """
     with get_connection() as conn:
         sql_text = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='dividend_alerts'"
         ).fetchone()
-        if not sql_text or "UNIQUE(fund_code, ex_date, alert_type)" in sql_text["sql"]:
+        if not sql_text or "UNIQUE(fund_code, ex_date, alert_type" in sql_text["sql"]:
             return
 
         # 清理重复数据：仅对 ex_date 非空的 dividend 行去重（保留每组最早 id）。
@@ -680,6 +692,125 @@ def _migrate_dividend_alerts_unique() -> None:
             CREATE INDEX IF NOT EXISTS idx_alert_type_status ON dividend_alerts(alert_type, status);
             """
         )
+
+
+def _migrate_dividend_alerts_channel() -> None:
+    """给 dividend_alerts 增加 channel 列，唯一约束升级为含渠道的 4 列。
+
+    幂等：目标 UNIQUE 已存在时跳过。旧库重建后按当前单渠道持仓回填
+    channel；多渠道/无法判定归属的保留空串，下次扫描会按渠道重建提醒。
+    """
+    with get_connection() as conn:
+        sql_text = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='dividend_alerts'"
+        ).fetchone()
+        if not sql_text:
+            return
+        if "UNIQUE(fund_code, ex_date, alert_type, channel)" in sql_text["sql"]:
+            return
+        cols = {r["name"] for r in
+                conn.execute("PRAGMA table_info(dividend_alerts)")}
+        has_channel = "channel" in cols
+
+        # 去重（保留每组最早 id）：tp_sl 行 ex_date 为 NULL，
+        # SQLite UNIQUE 视 NULL 互异，不受约束，不能去重。
+        if has_channel:
+            conn.execute(
+                """DELETE FROM dividend_alerts WHERE ex_date IS NOT NULL AND id NOT IN (
+                       SELECT MIN(id) FROM dividend_alerts WHERE ex_date IS NOT NULL
+                       GROUP BY fund_code, ex_date, COALESCE(alert_type, 'dividend'),
+                                COALESCE(channel, '')
+                   )"""
+            )
+        else:
+            conn.execute(
+                """DELETE FROM dividend_alerts WHERE ex_date IS NOT NULL AND id NOT IN (
+                       SELECT MIN(id) FROM dividend_alerts WHERE ex_date IS NOT NULL
+                       GROUP BY fund_code, ex_date, COALESCE(alert_type, 'dividend')
+                   )"""
+            )
+
+        channel_sel = "COALESCE(channel, '')" if has_channel else "''"
+        conn.executescript(
+            f"""
+            CREATE TABLE dividend_alerts_new (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                fund_code        TEXT NOT NULL,
+                fund_name        TEXT DEFAULT '',
+                record_date      TEXT,
+                ex_date          TEXT,
+                per_share        REAL,
+                pay_date         TEXT,
+                held_shares      REAL,
+                estimated_amount REAL,
+                dividend_method  TEXT DEFAULT 'cash',
+                status           TEXT DEFAULT 'pending',
+                created_at       TEXT DEFAULT (datetime('now','localtime')),
+                resolved_at      TEXT,
+                tx_id            INTEGER,
+                alert_type       TEXT DEFAULT 'dividend',
+                triggered_return REAL,
+                threshold        REAL,
+                channel          TEXT DEFAULT '',
+                UNIQUE(fund_code, ex_date, alert_type, channel)
+            );
+            INSERT INTO dividend_alerts_new
+                (id, fund_code, fund_name, record_date, ex_date, per_share,
+                 pay_date, held_shares, estimated_amount, dividend_method,
+                 status, created_at, resolved_at, tx_id,
+                 alert_type, triggered_return, threshold, channel)
+            SELECT id, fund_code, fund_name, record_date, ex_date, per_share,
+                   pay_date, held_shares, estimated_amount, dividend_method,
+                   status, created_at, resolved_at, tx_id,
+                   COALESCE(alert_type, 'dividend'), triggered_return, threshold,
+                   {channel_sel}
+            FROM dividend_alerts;
+            DROP TABLE dividend_alerts;
+            ALTER TABLE dividend_alerts_new RENAME TO dividend_alerts;
+            CREATE INDEX IF NOT EXISTS idx_alert_status ON dividend_alerts(status);
+            CREATE INDEX IF NOT EXISTS idx_alert_code_ex ON dividend_alerts(fund_code, ex_date);
+            CREATE INDEX IF NOT EXISTS idx_alert_type_status ON dividend_alerts(alert_type, status);
+            """
+        )
+
+    _backfill_dividend_alert_channels()
+
+
+def _backfill_dividend_alert_channels() -> None:
+    """按当前持仓回填旧分红提醒的 channel（升级时执行一次）。
+
+    仅当该基金只有一个渠道时回填；多渠道无法判定归属，保留空串，
+    交由下次扫描按 (基金, 除息日, 渠道) 重建。
+    """
+    try:
+        from . import analysis
+        positions = analysis.calculate_positions()
+    except Exception:
+        logger.warning("[db] 回填分红提醒渠道失败（计算持仓异常），跳过",
+                       exc_info=True)
+        return
+    channels_by_code: dict[str, set[str]] = {}
+    for p in positions:
+        if getattr(p, "is_open", False):
+            channels_by_code.setdefault(p.fund_code, set()).add(
+                p.channel or ""
+            )
+    if not channels_by_code:
+        return
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, fund_code FROM dividend_alerts "
+            "WHERE COALESCE(channel, '')='' AND ex_date IS NOT NULL "
+            "AND COALESCE(alert_type, 'dividend')='dividend'"
+        ).fetchall()
+        for row in rows:
+            chans = channels_by_code.get(row["fund_code"])
+            if chans and len(chans) == 1:
+                # OR IGNORE：极端情况下与已有同渠道提醒冲突时保留原记录
+                conn.execute(
+                    "UPDATE OR IGNORE dividend_alerts SET channel=? WHERE id=?",
+                    (next(iter(chans)), row["id"]),
+                )
 
 
 def _migrate_auto_invest_plans_check() -> None:
@@ -2180,13 +2311,15 @@ def add_dividend_alert(alert: dict) -> int:
         cur = conn.execute(
             """INSERT OR IGNORE INTO dividend_alerts
                (fund_code, fund_name, record_date, ex_date, per_share,
-                pay_date, held_shares, estimated_amount, dividend_method)
-               VALUES(?,?,?,?,?,?,?,?,?)""",
+                pay_date, held_shares, estimated_amount, dividend_method,
+                channel)
+               VALUES(?,?,?,?,?,?,?,?,?,?)""",
             (alert["fund_code"], alert.get("fund_name", ""),
              alert.get("record_date"), alert.get("ex_date"),
              alert.get("per_share"), alert.get("pay_date"),
              alert.get("held_shares"), alert.get("estimated_amount"),
-             alert.get("dividend_method", "cash")),
+             alert.get("dividend_method", "cash"),
+             alert.get("channel") or ""),
         )
         return int(cur.lastrowid)
 
@@ -2390,16 +2523,18 @@ def get_pending_tp_sl_alert_count() -> int:
     return row["c"] if row else 0
 
 
-def dividend_alert_exists(fund_code: str, ex_date: str) -> bool:
-    """检查某基金某除息日的分红提醒是否已存在（仅 dividend 类型）。
+def dividend_alert_exists(fund_code: str, ex_date: str,
+                          channel: str = "") -> bool:
+    """检查某基金某除息日（某渠道）的分红提醒是否已存在（仅 dividend 类型）。
 
     查所有状态：ignored 后不再重复提醒；用户改主意可手动调 GET /check（不查本表）。
     """
     with get_connection() as conn:
         row = conn.execute(
             "SELECT 1 FROM dividend_alerts WHERE fund_code=? AND ex_date=? "
-            "AND COALESCE(alert_type, 'dividend')='dividend' LIMIT 1",
-            (fund_code, ex_date),
+            "AND COALESCE(alert_type, 'dividend')='dividend' "
+            "AND COALESCE(channel, '')=? LIMIT 1",
+            (fund_code, ex_date, channel or ""),
         ).fetchone()
     return row is not None
 

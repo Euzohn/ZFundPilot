@@ -575,6 +575,9 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- fix: 「记为分红」预填渠道错误（根因 + 方案 1：按 (基金, 渠道) 拆分提醒）——整条链路无 channel：`DividendEvent`/`dividend_alerts` 表/`DividendAlert` 类型/`handleConfirm` URL 都没有渠道，前端只能落到默认 `channels[0]`；多渠道持仓时 `check_dividends` 用 `{fund_code: position}` 折叠还会导致份额/金额按最后一条持仓少算。修复：`DividendEvent.channel`；`check_dividends` 逐 (基金, 渠道) `dataclasses.replace` 生成事件；去重 `(tx.channel or "") == ev.channel`；`_cleanup_stale_alerts` 改按 `(code, ex_date, channel)` 判定；`dividend_alerts` 加 `channel` 列、UNIQUE 升级为 `(fund_code, ex_date, alert_type, channel)`（新迁移 `_migrate_dividend_alerts_channel`；旧迁移幂等检查改前缀匹配，防止在 4 列新表上重跑丢列）；单渠道旧提醒回填渠道、多渠道保留空串由下次扫描重建；scheduler/api 落库与 `/check` 响应带 channel；前端行内展示渠道、预填 URL 带 `channel=`。**行为变化**：升级后首次扫描，渠道无法对应的旧 pending 提醒会 ignored 后按渠道重建；旧版错误渠道补记的分红不再跨渠道抑制。新增 10 例（test_fetch_dividend 共 51 例，全量 1434 例）
+- fix: 分红提醒红点保存后不消失——`DividendAlertCount` 只在挂载时拉一次（`Transactions.tsx`）。抽 `refreshDividendCount`（`useCallback`），挂载 / 弹窗关闭 / `handleFormDone` 三处刷新（覆盖记为分红、忽略、删除）
+- fix: 打开分红弹窗的 Chrome `Blocked aria-hidden` 告警 + 跳转时序——Radix `DialogContent` 的 `hideOthers` effect 先于 FocusScope 移焦应用 aria-hidden，背景 autoFocus 输入框仍持有焦点即告警；打开前先 `document.activeElement.blur()`。「记为分红」跳转从同步 `navigate` 挪到 `onCloseAutoFocus`（已核实映射 FocusScope `onUnmountAutoFocus`，卸载后 `setTimeout(0)` 触发），预填不会在弹窗退场动画期间抢焦点
 - security: 容器非 root 运行加固——`Dockerfile` 新建 `zfundpilot` 用户（UID 1000）并 `USER zfundpilot`（`/app/data` 镜像内 chown 归 zfundpilot，bind mount 场景靠宿主机 chown）；`docker-compose.yml` 加 `user: "${PUID:-1000}:${PGID:-1000}"`（`.env` 可覆盖，PUID=0 为临时回退逃生门）。已核实全部写路径在 `/app/data` 内（fund.db/auth.json/ai_config.json/secret.key/fund_universe.json/sector_map.json/backups/，原子写 mkstemp 同目录），无 `$HOME`/`~/.cache` 依赖。旧镜像 root 写出的数据文件属主是 root，升级需一次性 `chown -R 1000:1000 data`（先 down 再 chown 避免 SQLite WAL 竞态），多实例每个数据目录都要迁移；DEPLOY.md 增补升级步骤与权限报错排查（审核发现并修正：裸跑无卷时镜像内 data 属主、部署顺序、CHANGELOG 缺 [Unreleased] 段、多实例波及面）
 
 ### [0.27.0] - 2026-11-17

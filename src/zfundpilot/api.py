@@ -4351,6 +4351,7 @@ def check_dividends(request: Request) -> list[dict]:
             "held_shares": ev.held_shares,
             "estimated_amount": ev.estimated_amount,
             "dividend_method": ev.dividend_method,
+            "channel": ev.channel,
         }
         for ev in events
     ]
@@ -4405,7 +4406,7 @@ def scan_dividends(request: Request) -> dict[str, Any]:
     events = fetch_dividend.check_dividends()
     new_count = 0
     for ev in events:
-        if not db.dividend_alert_exists(ev.fund_code, ev.ex_date):
+        if not db.dividend_alert_exists(ev.fund_code, ev.ex_date, ev.channel):
             db.add_dividend_alert({
                 "fund_code": ev.fund_code,
                 "fund_name": ev.fund_name,
@@ -4416,6 +4417,7 @@ def scan_dividends(request: Request) -> dict[str, Any]:
                 "held_shares": ev.held_shares,
                 "estimated_amount": ev.estimated_amount,
                 "dividend_method": ev.dividend_method,
+                "channel": ev.channel,
             })
             new_count += 1
     db.log_audit("dividend_scan", ip=_get_client_ip(request),

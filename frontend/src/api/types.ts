@@ -21,6 +21,7 @@ export interface DividendEvent {
   held_shares: number
   estimated_amount: number
   dividend_method: string
+  channel?: string
 }
 
 export interface DividendAlert {
@@ -34,6 +35,7 @@ export interface DividendAlert {
   held_shares?: number
   estimated_amount?: number
   dividend_method?: string
+  channel?: string
   alert_type?: string
   triggered_return?: number
   threshold?: number

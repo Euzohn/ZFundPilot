@@ -27,11 +27,12 @@ def _div_df(rows):
     return pd.DataFrame(rows)
 
 
-def _make_position(code, shares=1000.0):
+def _make_position(code, shares=1000.0, channel=""):
     """构造一个 open position。"""
     return Position(
         fund_code=code, fund_name=f"基金{code}", fund_type="混合型",
         sector="权益", held_shares=shares, total_cost=1000,
+        channel=channel,
     )
 
 
@@ -285,6 +286,73 @@ class TestCheckDividends:
         assert len(events) == 1
         assert events[0].dividend_method == "cash"
 
+    def test_multi_channel_events_split(self):
+        """同一基金多渠道持仓 → 每渠道各一条事件，份额/金额按渠道拆分。"""
+        from datetime import datetime, timedelta
+        ex_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
+        div_rows = [
+            {"权益登记日": ex_date, "除息日": ex_date, "每份分红": "0.0100", "分红发放日": ex_date},
+        ]
+        df = _div_df(div_rows)
+        fake = _fake_akshare(df)
+        positions = [
+            _make_position("000001", shares=1000, channel="支付宝"),
+            _make_position("000001", shares=3000, channel="理财通"),
+        ]
+        funds_list = [_make_fund("000001")]
+
+        with patch.dict(fetch_dividend._DIV_CACHE, {}, clear=True):
+            with (
+                patch("zfundpilot.fetch_dividend.analysis.calculate_positions", return_value=positions),
+                patch("zfundpilot.fetch_dividend.db.get_funds", return_value=funds_list),
+                patch("zfundpilot.fetch_dividend.db.get_transactions", return_value=[]),
+                patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=[]),
+                patch.dict(sys.modules, {"akshare": fake}),
+            ):
+                with patch.object(fetch_dividend, "_LOOKBACK_DAYS", 36500):
+                    events = fetch_dividend.check_dividends()
+
+        assert len(events) == 2
+        by_channel = {ev.channel: ev for ev in events}
+        assert by_channel["支付宝"].held_shares == 1000
+        assert by_channel["支付宝"].estimated_amount == 10.0
+        assert by_channel["理财通"].held_shares == 3000
+        assert by_channel["理财通"].estimated_amount == 30.0
+
+    def test_dedup_per_channel(self):
+        """已记录渠道 A 的分红，只抑制渠道 A 的事件，渠道 B 仍提醒。"""
+        from datetime import datetime, timedelta
+        ex_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
+        div_rows = [
+            {"权益登记日": ex_date, "除息日": ex_date, "每份分红": "0.0100", "分红发放日": ex_date},
+        ]
+        df = _div_df(div_rows)
+        fake = _fake_akshare(df)
+        positions = [
+            _make_position("000001", shares=1000, channel="支付宝"),
+            _make_position("000001", shares=3000, channel="理财通"),
+        ]
+        funds_list = [_make_fund("000001")]
+        existing_txs = [Transaction(
+            id=1, fund_code="000001", action=ACTION_DIVIDEND,
+            date=ex_date, amount=10.0, shares=None, nav=None,
+            fee=0, channel="支付宝", note="",
+        )]
+
+        with patch.dict(fetch_dividend._DIV_CACHE, {}, clear=True):
+            with (
+                patch("zfundpilot.fetch_dividend.analysis.calculate_positions", return_value=positions),
+                patch("zfundpilot.fetch_dividend.db.get_funds", return_value=funds_list),
+                patch("zfundpilot.fetch_dividend.db.get_transactions", return_value=existing_txs),
+                patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=[]),
+                patch.dict(sys.modules, {"akshare": fake}),
+            ):
+                with patch.object(fetch_dividend, "_LOOKBACK_DAYS", 36500):
+                    events = fetch_dividend.check_dividends()
+
+        assert len(events) == 1
+        assert events[0].channel == "理财通"
+
     def test_fetches_run_serially(self):
         """回归：分红抓取必须串行（max_concurrent == 1）。
 
@@ -334,7 +402,7 @@ class TestCleanupStaleAlerts:
         pending_alerts = [
             {"id": 1, "fund_code": "000001", "ex_date": "2026-06-17"},
         ]
-        fetched_ex_dates = {("000001", "2022-06-23")}  # 只有真实记录
+        fetched_ex_dates = {("000001", "2022-06-23", "")}  # 只有真实记录
         fetched_funds = {"000001"}
 
         with (
@@ -355,7 +423,7 @@ class TestCleanupStaleAlerts:
         pending_alerts = [
             {"id": 1, "fund_code": "000001", "ex_date": "2022-06-23"},
         ]
-        fetched_ex_dates = {("000001", "2022-06-23")}
+        fetched_ex_dates = {("000001", "2022-06-23", "")}
         fetched_funds = {"000001"}
 
         with (
@@ -372,7 +440,7 @@ class TestCleanupStaleAlerts:
         pending_alerts = [
             {"id": 1, "fund_code": "000999", "ex_date": "2026-06-17"},
         ]
-        fetched_ex_dates = {("000001", "2022-06-23")}
+        fetched_ex_dates = {("000001", "2022-06-23", "")}
         fetched_funds = {"000001"}  # 000999 不在其中
 
         with (
@@ -391,7 +459,7 @@ class TestCleanupStaleAlerts:
             {"id": 2, "fund_code": "000001", "ex_date": "2022-06-23"},  # 有效
             {"id": 3, "fund_code": "000002", "ex_date": "2026-06-17"},  # 000002 不在 fetched_funds
         ]
-        fetched_ex_dates = {("000001", "2022-06-23"), ("000001", "2021-12-28")}
+        fetched_ex_dates = {("000001", "2022-06-23", ""), ("000001", "2021-12-28", "")}
         fetched_funds = {"000001"}
 
         with (
@@ -414,6 +482,68 @@ class TestCleanupStaleAlerts:
 
         assert cleaned == 0
         mock_update.assert_not_called()
+
+    def test_channel_match_not_cleaned(self):
+        """提醒渠道与抓取到的渠道一致 → 不清理。"""
+        pending_alerts = [
+            {"id": 1, "fund_code": "008115", "ex_date": "2026-11-18",
+             "channel": "支付宝"},
+        ]
+        fetched_ex_dates = {("008115", "2026-11-18", "支付宝")}
+
+        with (
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=pending_alerts),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+        ):
+            cleaned = fetch_dividend._cleanup_stale_alerts(
+                fetched_ex_dates, {"008115"}
+            )
+
+        assert cleaned == 0
+        mock_update.assert_not_called()
+
+    def test_channel_mismatch_cleaned(self):
+        """提醒渠道在抓取结果中没有（渠道已清仓/变化）→ 按幽灵清理。"""
+        pending_alerts = [
+            {"id": 1, "fund_code": "008115", "ex_date": "2026-11-18",
+             "channel": "理财通"},
+        ]
+        fetched_ex_dates = {("008115", "2026-11-18", "支付宝")}
+
+        with (
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=pending_alerts),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+        ):
+            cleaned = fetch_dividend._cleanup_stale_alerts(
+                fetched_ex_dates, {"008115"}
+            )
+
+        assert cleaned == 1
+        assert mock_update.call_args[0][0] == 1
+
+    def test_legacy_alert_without_channel_cleaned(self):
+        """旧库无渠道的提醒（''）在多渠道抓取结果中 → 清理后按渠道重建。
+
+        单渠道持仓的旧提醒会在迁移时回填渠道，此处模拟无法判定的情况。
+        """
+        pending_alerts = [
+            {"id": 1, "fund_code": "008115", "ex_date": "2026-11-18"},
+        ]
+        fetched_ex_dates = {
+            ("008115", "2026-11-18", "支付宝"),
+            ("008115", "2026-11-18", "理财通"),
+        }
+
+        with (
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=pending_alerts),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+        ):
+            cleaned = fetch_dividend._cleanup_stale_alerts(
+                fetched_ex_dates, {"008115"}
+            )
+
+        assert cleaned == 1
+        assert mock_update.call_args[0][0] == 1
 
 
     def test_empty_fetch_cleanup(self):
@@ -642,6 +772,63 @@ class TestDividendAlertsDB:
         finally:
             self._teardown(original)
 
+    def test_add_alert_with_channel(self, tmp_path):
+        """add_dividend_alert 写入渠道，get_dividend_alerts 能读回。"""
+        db, original = self._setup_db(tmp_path)
+        try:
+            db.add_dividend_alert({
+                "fund_code": "008115", "ex_date": "2026-11-18",
+                "per_share": 0.01, "held_shares": 723.9,
+                "estimated_amount": 7.24, "channel": "支付宝",
+            })
+            alerts = db.get_dividend_alerts()
+            assert len(alerts) == 1
+            assert alerts[0]["channel"] == "支付宝"
+        finally:
+            self._teardown(original)
+
+    def test_alert_exists_per_channel(self, tmp_path):
+        """同一基金同一除息日，不同渠道互不影响。"""
+        db, original = self._setup_db(tmp_path)
+        try:
+            db.add_dividend_alert({
+                "fund_code": "008115", "ex_date": "2026-11-18",
+                "per_share": 0.01, "held_shares": 723.9,
+                "estimated_amount": 7.24, "channel": "支付宝",
+            })
+            assert db.dividend_alert_exists("008115", "2026-11-18", "支付宝")
+            assert not db.dividend_alert_exists("008115", "2026-11-18", "理财通")
+            # 不传渠道 = 只匹配空渠道旧提醒
+            assert not db.dividend_alert_exists("008115", "2026-11-18")
+        finally:
+            self._teardown(original)
+
+    def test_unique_allows_multiple_channels(self, tmp_path):
+        """UNIQUE 含 channel：同基金同除息日不同渠道可各存一条。"""
+        db, original = self._setup_db(tmp_path)
+        try:
+            id1 = db.add_dividend_alert({
+                "fund_code": "008115", "ex_date": "2026-11-18",
+                "per_share": 0.01, "held_shares": 500,
+                "estimated_amount": 5.0, "channel": "支付宝",
+            })
+            id2 = db.add_dividend_alert({
+                "fund_code": "008115", "ex_date": "2026-11-18",
+                "per_share": 0.01, "held_shares": 300,
+                "estimated_amount": 3.0, "channel": "理财通",
+            })
+            assert id1 != id2
+            assert len(db.get_dividend_alerts()) == 2
+            # 同渠道重复插入被 IGNORE
+            db.add_dividend_alert({
+                "fund_code": "008115", "ex_date": "2026-11-18",
+                "per_share": 0.01, "held_shares": 999,
+                "estimated_amount": 9.99, "channel": "支付宝",
+            })
+            assert len(db.get_dividend_alerts()) == 2
+        finally:
+            self._teardown(original)
+
 
 class TestRunDividendCheck:
     """scheduler._run_dividend_check 去重逻辑测试。"""
@@ -727,7 +914,7 @@ class TestCheckDividendsGhostCleanup:
         """
         from zfundpilot import analysis
 
-        pos = MagicMock(fund_code="017641", is_open=True, held_shares=100)
+        pos = MagicMock(fund_code="017641", is_open=True, held_shares=100, channel="")
         pos.fund_name = "摩根标普500指数"
 
         fund = MagicMock(fund_code="017641", fund_name="摩根标普500", dividend_method="cash")
@@ -752,7 +939,7 @@ class TestCheckDividendsGhostCleanup:
         """fetch 异常的基金：不加入 fetched_funds → ghost 不被清理。"""
         from zfundpilot import analysis
 
-        pos = MagicMock(fund_code="000001", is_open=True, held_shares=1000)
+        pos = MagicMock(fund_code="000001", is_open=True, held_shares=1000, channel="")
         fund = MagicMock(fund_code="000001", fund_name="基金A", dividend_method="cash")
 
         with (
@@ -769,3 +956,113 @@ class TestCheckDividendsGhostCleanup:
             fetch_dividend.check_dividends()
 
         mock_update.assert_not_called()
+
+
+class TestDividendAlertsChannelMigration:
+    """dividend_alerts 旧库升级：加 channel 列 + 4 列唯一约束 + 单渠道回填。"""
+
+    OLD_SCHEMA = """
+        CREATE TABLE dividend_alerts (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            fund_code        TEXT NOT NULL,
+            fund_name        TEXT DEFAULT '',
+            record_date      TEXT,
+            ex_date          TEXT,
+            per_share        REAL,
+            pay_date         TEXT,
+            held_shares      REAL,
+            estimated_amount REAL,
+            dividend_method  TEXT DEFAULT 'cash',
+            status           TEXT DEFAULT 'pending',
+            created_at       TEXT DEFAULT (datetime('now','localtime')),
+            resolved_at      TEXT,
+            tx_id            INTEGER,
+            alert_type       TEXT DEFAULT 'dividend',
+            triggered_return REAL,
+            threshold        REAL,
+            UNIQUE(fund_code, ex_date, alert_type)
+        );
+    """
+
+    def _setup_db(self, tmp_path):
+        from zfundpilot import config
+        from zfundpilot import db as db_module
+        original = config.DB_PATH
+        config.DB_PATH = tmp_path / "mig.db"
+        db_module.init_db()
+        return db_module, config, original
+
+    def _downgrade(self, db):
+        """把新库还原成 0.27.0 的旧 schema，模拟升级现场。"""
+        with db.get_connection() as conn:
+            conn.execute("DROP TABLE dividend_alerts")
+            conn.executescript(self.OLD_SCHEMA)
+
+    def _add_buy(self, db, channel):
+        db.add_transaction(Transaction(
+            fund_code="008115", action="buy", date="2026-10-01",
+            amount=1000.0, shares=723.9, nav=1.38, fee=0,
+            channel=channel, note="",
+        ))
+
+    def test_migration_adds_channel_and_backfills_single_channel(self, tmp_path):
+        """旧库单渠道持仓 → 回填 channel，约束改为 4 列 UNIQUE，幂等。"""
+        from zfundpilot import analysis
+
+        db, config, original = self._setup_db(tmp_path)
+        try:
+            self._downgrade(db)
+            with db.get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO dividend_alerts (fund_code, ex_date, status) "
+                    "VALUES ('008115', '2026-11-18', 'pending')"
+                )
+            self._add_buy(db, "支付宝")
+            analysis.clear_analysis_cache()
+
+            db.init_db()
+
+            alerts = db.get_dividend_alerts()
+            assert len(alerts) == 1
+            assert alerts[0]["channel"] == "支付宝"
+            with db.get_connection() as conn:
+                sql = conn.execute(
+                    "SELECT sql FROM sqlite_master "
+                    "WHERE type='table' AND name='dividend_alerts'"
+                ).fetchone()["sql"]
+            assert "UNIQUE(fund_code, ex_date, alert_type, channel)" in sql
+            assert "channel" in sql
+
+            # 幂等：再跑一次不重复迁移、不丢数据
+            db.init_db()
+            alerts = db.get_dividend_alerts()
+            assert len(alerts) == 1
+            assert alerts[0]["channel"] == "支付宝"
+        finally:
+            analysis.clear_analysis_cache()
+            config.DB_PATH = original
+
+    def test_migration_leaves_multichannel_ambiguous(self, tmp_path):
+        """旧库多渠道持仓 → 无法判定归属，保留空渠道待扫描按渠道重建。"""
+        from zfundpilot import analysis
+
+        db, config, original = self._setup_db(tmp_path)
+        try:
+            self._downgrade(db)
+            with db.get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO dividend_alerts (fund_code, ex_date, status) "
+                    "VALUES ('008115', '2026-11-18', 'pending')"
+                )
+            self._add_buy(db, "支付宝")
+            self._add_buy(db, "理财通")
+            analysis.clear_analysis_cache()
+
+            db.init_db()
+
+            alerts = db.get_dividend_alerts()
+            assert len(alerts) == 1
+            assert (alerts[0]["channel"] or "") == ""
+        finally:
+            analysis.clear_analysis_cache()
+            config.DB_PATH = original

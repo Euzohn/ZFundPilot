@@ -105,6 +105,9 @@ uvicorn zfundpilot.api:app --reload --port 8000
 cd frontend && npm install && npm run dev
 ```
 
+> Windows 原生运行同样支持（自动安装 `tzdata`）；注意 SQLite 本地时间取宿主机时区，
+> 建议与应用时区（默认 `Asia/Shanghai`）保持一致，详见 [DEPLOY.md](DEPLOY.md)。
+
 详细部署指南见 [DEPLOY.md](DEPLOY.md)。
 
 ## 功能亮点

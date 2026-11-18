@@ -19,6 +19,12 @@
 > macOS 如遇 `SSL: CERTIFICATE_VERIFY_FAILED`，运行一次
 > `/Applications/Python\ 3.x/Install\ Certificates.command`
 
+> **Windows 原生运行**（非 Docker/WSL）同样支持：`pip install -e .` 会自动安装
+> `tzdata` 为 `ZoneInfo` 提供 IANA 时区数据。注意：应用时区默认 `Asia/Shanghai`
+> （可用 `ZFUNDPILOT_TIMEZONE` 覆盖），但 SQLite `datetime('now','localtime')`
+> 等本地时间取决于**宿主机时区**；两者不一致时按日统计可能跨日错位，
+> 建议宿主机时区与应用时区保持一致（Docker/WSL 部署不受此限制）。
+
 ---
 
 ## 1. 开发模式

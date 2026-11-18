@@ -105,6 +105,10 @@ uvicorn zfundpilot.api:app --reload --port 8000
 cd frontend && npm install && npm run dev
 ```
 
+> Native Windows is also supported (`tzdata` is installed automatically). Note that SQLite
+> local time follows the host timezone — keep it consistent with the app timezone
+> (default `Asia/Shanghai`); see [DEPLOY.md](DEPLOY.md).
+
 See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 
 ## Feature Highlights

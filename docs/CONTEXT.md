@@ -25,7 +25,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.27.2`（git tag `v0.27.2`）
+- **版本**: `0.28.0`（git tag `v0.28.0`）
 - **License**: MIT
 
 ---
@@ -47,7 +47,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.27.2"
+│   ├── __init__.py          # __version__ = "0.28.0"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── ak_compat.py         # akshare 跨版本改名兼容层（优先新名、回退旧名）＋进程级 V8 串行化（py_mini_racer 非线程安全，多数据源并发会 SIGTRAP）
 │   ├── config.py            # 全局配置、环境变量、认证管理
@@ -192,7 +192,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.27.2")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.28.0")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复）。`GET /api/audit` 支持 `limit`(1–1000)/`offset` 分页与 `action`/`username`/`from`/`to` 精确筛选（`from`/`to` 接受纯日期或 ISO 时间串，纯日期按整天包含式处理，`from` 晚于 `to` 返回 422）；默认 `limit=100` 行为不变。设置页「操作日志」提供动作/用户/日期筛选，前端 detail 可展开查看格式化 JSON
 - Agent token 临期提示: 设置页令牌列表在 `expires_at` 未来 7 天内显示「即将过期」徽章（前端本地判断，不影响后端鉴权与过期语义）
@@ -578,7 +578,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ## 十二、当前工作状态
 
-### [Unreleased]
+### [0.28.0] - 2026-11-20
 
 - feat: 统一站内提醒中心（P3 Phase 2，规划见 `tmp/p3-advice-and-alerts-plan.md` §5 与 `tmp/p3-phase2-implementation-plan.md`）——新建 `notifications` 聚合表（只存业务引用+展示态，UNIQUE(dedupe_key) 去重，标题 code+params）+ `notification_service.py` best-effort 编排层（独立 try/except、独立事务、绝不上抛，通知失败不影响主业务）。6 类事件源全接入：分红（scheduler/scan 共用落库点）、止盈止损、定投三类 skip_code+error（holiday 不发）、Agent 刷新/回测 failed + 启动 interrupted（仅 running）、scheduler 净值失败每日聚合、数据健康每日评估（stale/missing/pending_t1 任一 >0，`data:health:{date}`）。状态联动：confirmed→read、ignored/幽灵清理/删除→dismissed、pending→unread（网页/提案审批/幽灵清理三路径，业务提交后独立事务）。API 四端点（白名单 422、limit 1–1000、批量 ≤500、read/dismiss 不写审计 D8），首期不进 Agent scope（契约零变化）。dismissed 30 天清理；备份排除 + 恢复清空（manifest 12 表不变）。前端 Layout Bell 未读徽章（移动端顶栏+桌面侧栏，挂载/60s/`zfund:notifications-changed`+`zfund:proposals-changed` 事件刷新）+ NotificationBell Popover（按源分组/双语标题/跳转来源页/悬空引用「已失效」降级/单条已读/全部已读/单条忽略）；`notificationLabels.ts` 双语映射。小决策 Q1–Q4 用户确认：任一异常即发每日聚合/回测失败也发/轮询设置项首期不做/holiday 不发。新增后端 49 例（test_notifications 28 + test_notifications_api 21，含故障注入：通知写入抛异常/畸形输入时分红扫描/定投执行照常）+ 前端 15 例（notificationLabels 14 + Layout 徽章 1，前端共 52 例），全量 1503 例。文档同步 CHANGELOG/CONTEXT/DATABASE/README（中英）
 

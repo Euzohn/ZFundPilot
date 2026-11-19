@@ -4,7 +4,7 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## [Unreleased]
+## [0.28.0] - 2026-11-20
 
 ### Added
 - 统一站内提醒中心（P3 Phase 2）：新建 `notifications` 聚合表（只存业务引用与展示态 unread/read/dismissed，`UNIQUE(dedupe_key)` 去重，标题全部稳定 code+params）与 `notification_service.py` best-effort 编排层——**独立 try/except、独立事务、绝不上抛**，通知写入失败不影响分红落库/定投执行/净值更新/提案审批（含故障注入测试）。6 类事件源全接入：分红提醒（scheduler 扫描与手动 scan 共用落库点）、止盈止损触发、定投跳过（暂停申购/超出限购/低于起点三类）与执行失败（正常休市跳过不发）、Agent 刷新/回测任务失败与启动中断（仅 running 任务）、scheduler 每日净值更新失败聚合、数据健康每日评估（净值过期/缺失/待确认任一异常每日恰一条聚合）。业务状态联动：提醒确认→通知已读、忽略/幽灵清理/删除→通知忽略、业务回退→未读（网页/提案审批/幽灵清理三路径全覆盖）。新增 4 个网页端点：通知列表（状态/来源白名单校验、分页）、未读计数、批量已读/忽略（≤500 条或全部）；已读/忽略为 UI 展示态不写审计；首期不进 Agent scope（Agent 契约零变化）。dismissed 通知 30 天自动清理；不进入备份 ZIP，恢复备份时清空。前端侧栏/顶栏新增 Bell 未读徽章 + 通知中心 Popover：按来源分组、双语标题、点击跳转来源页、源已删除显示「已失效」并允许忽略、单条已读/全部已读/单条忽略；关键操作后徽章即时刷新。新增后端 49 例（test_notifications 28 + test_notifications_api 21，含故障注入：通知写入抛异常/畸形输入时分红扫描/定投执行照常）+ 前端 15 例（notificationLabels 14 + Layout 徽章 1），全量 1503 例、前端 52 例

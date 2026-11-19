@@ -23,11 +23,19 @@ npm install
 
 ```bash
 # 后端（端口 8000）
-PYTHONPATH=src uvicorn zfundpilot.api:app --reload --port 8000
+# 已执行 pip install -e ".[dev]" 时可直接启动，无需再设置 PYTHONPATH
+uvicorn zfundpilot.api:app --reload --port 8000
 
 # 前端（端口 5173，代理 /api/* 到 :8000）
 cd frontend && npm run dev
 ```
+
+> Windows（cmd / PowerShell）不支持 `PYTHONPATH=src <命令>` 这种前置赋值写法。
+> 若确实需要临时指定源码路径：
+> - cmd：先 `set PYTHONPATH=src`，再执行命令
+> - PowerShell：先 `$env:PYTHONPATH="src"`，再执行命令
+>
+> 若已 `pip install -e .`，两种平台都不需要设置 PYTHONPATH。
 
 ### Docker 部署
 

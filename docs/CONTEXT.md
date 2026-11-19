@@ -25,7 +25,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.27.1`（git tag `v0.27.1`）
+- **版本**: `0.27.2`（git tag `v0.27.2`）
 - **License**: MIT
 
 ---
@@ -47,7 +47,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.27.1"
+│   ├── __init__.py          # __version__ = "0.27.2"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── ak_compat.py         # akshare 跨版本改名兼容层（优先新名、回退旧名）＋进程级 V8 串行化（py_mini_racer 非线程安全，多数据源并发会 SIGTRAP）
 │   ├── config.py            # 全局配置、环境变量、认证管理
@@ -190,7 +190,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.27.1")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.27.2")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复）。`GET /api/audit` 支持 `limit`(1–1000)/`offset` 分页与 `action`/`username`/`from`/`to` 精确筛选（`from`/`to` 接受纯日期或 ISO 时间串，纯日期按整天包含式处理，`from` 晚于 `to` 返回 422）；默认 `limit=100` 行为不变。设置页「操作日志」提供动作/用户/日期筛选，前端 detail 可展开查看格式化 JSON
 - Agent token 临期提示: 设置页令牌列表在 `expires_at` 未来 7 天内显示「即将过期」徽章（前端本地判断，不影响后端鉴权与过期语义）
@@ -574,9 +574,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ## 十二、当前工作状态
 
-### [Unreleased]
+### [0.27.2] - 2026-11-19
 
-- feat: 组合体检可解释行动清单（P3 Phase 1，规划见 `tmp/p3-advice-and-alerts-plan.md`）——`rebalance.Advice` 扩展四段（evidence 依据/positions 涉及持仓/simulation 模拟调整前后/risks 风险限制），全部稳定 code+params。simulation 为 what-if 纯函数演算（总市值不变、降阈值+比例再分配，6 类规则、7 项前后指标含体检配置分；持仓不足/缺目标类别返回 null），`equity_to_bond` 带 side 区分权益/债券侧。不新增端点：`HealthReport.to_dict()` 加性携带，网页 `/api/portfolio/health` 与 Agent `get_portfolio_health` 自动贯通（工具数/scope/旧字段不变）。前端体检页「结构优化建议」升级「行动清单」可展开卡片（四段+模拟表格中性方向箭头+规则文案插值+语言中性分隔符+aria-controls）；backendLabels 新增 metric/rule/risk 映射。审核修订 6 项：规则文案消歧（side）、英文界面去中文括号、方向箭头、前端测试补全、阈值整数百分比、a11y。新增后端 18 例（test_rebalance 26）+ 前端 12 例（共 37），全量 1454 例。文档同步 CHANGELOG/CONTEXT/AGENT_API（中英）/README（中英）
+- feat: 组合体检可解释行动清单（P3 Phase 1，规划见 `tmp/p3-advice-and-alerts-plan.md`，服务器验收通过闭环）——`rebalance.Advice` 扩展四段（evidence 依据/positions 涉及持仓/simulation 模拟调整前后/risks 风险限制），全部稳定 code+params。simulation 为 what-if 纯函数演算（总市值不变、降阈值+比例再分配，6 类规则、7 项前后指标含体检配置分；持仓不足/缺目标类别返回 null），`equity_to_bond` 带 side 区分权益/债券侧。不新增端点：`HealthReport.to_dict()` 加性携带，网页 `/api/portfolio/health` 与 Agent `get_portfolio_health` 自动贯通（工具数/scope/旧字段不变）。前端体检页「结构优化建议」升级「行动清单」可展开卡片（四段+模拟表格中性方向箭头+规则文案插值+语言中性分隔符+aria-controls）；backendLabels 新增 metric/rule/risk 映射。审核修订 6 项：规则文案消歧（side）、英文界面去中文括号、方向箭头、前端测试补全、阈值整数百分比、a11y。新增后端 18 例（test_rebalance 26）+ 前端 12 例（共 37），全量 1454 例。文档同步 CHANGELOG/CONTEXT/AGENT_API（中英）/README（中英）
+- docs: 贡献指南修正本地启动命令（外部 PR #8，Shark-Tail 首次贡献，已审核合并）——去掉多余 `PYTHONPATH`（editable 安装已覆盖），补 Windows PowerShell 写法；另补 main 分支保护与 CI 必需检查说明（方案 A：所有者直推自由，外部 PR 须 CI 3/3 绿）
 
 ### [0.27.1] - 2026-11-19
 

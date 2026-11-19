@@ -168,7 +168,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 
 **Planned (not shipped, not a commitment)**
 
-- **P3 explainable suggestions & unified in-app alerts** — Turn health/rebalancing suggestions into "rationale → affected holdings → before/after → risks and limits"; unify take-profit/stop-loss, dividend, skipped auto-invest, data-refresh failure, and data-health alerts with dedupe, read state, and failure reasons; off-site notifications stay minimal-disclosure and off by default
+- **Unified in-app notification center (P3 Phase 2)** — Unify dividend, take-profit/stop-loss, skipped/failed auto-invest, refresh-failure, and data-health alerts into one notification center with dedupe, read/dismiss state, and visible failure reasons; off-site notifications stay minimal-disclosure and off by default (the explainable action list shipped in v0.27.2)
 
 ### Security & Customization
 

@@ -241,6 +241,7 @@ ZFundPilot/
 │   ├── watchlist_service.py   # Watchlist write service (controlled)
 │   ├── refresh_service.py     # Job service: data refresh + DCA backtest
 │   ├── nav_update_state.py    # Shared NAV update state
+│   ├── notification_service.py # Unified in-app notification center (best-effort writes)
 │   ├── agent_tokens.py        # Agent access tokens (scopes / rate limit / idempotency)
 │   ├── us_calendar.py         # US (NYSE) trading calendar
 │   ├── ak_compat.py      # akshare cross-version compat layer + process-wide V8 serialization
@@ -249,9 +250,9 @@ ZFundPilot/
 │   ├── api.py            # FastAPI REST API (140+ routes + auth middleware)
 │   ├── ai.py             # AI advisor chat (portfolio context + web search)
 │   └── scheduler.py      # APScheduler NAV update + auto-invest + dividend check + TP/SL check
-├── tests/                # Pytest test suite (1436 tests)
+├── tests/                # Pytest test suite (1503 tests)
 │   ├── conftest.py       #   Shared fixtures
-│   └── test_*.py         #   62 test modules
+│   └── test_*.py         #   65 test modules
 ├── data/
 │   ├── fund.db           # SQLite database (auto-generated)
 │   ├── auth.json         # Password hash / token secret (auto-generated)

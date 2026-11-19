@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 from datetime import datetime
 from typing import Any
@@ -25,6 +26,23 @@ from typing import Any
 from . import config, db
 
 logger = logging.getLogger(__name__)
+
+
+def _best_effort(fn):
+    """装饰器：吞掉一切异常仅 warning——通知层任何入口绝不上抛。
+
+    覆盖参数构造阶段（如遍历结果/读取事件字段），不只是 db 写入阶段，
+    确保畸形输入也不会把异常抛进调用方（scheduler/提案审批）的主流程。
+    """
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception:  # noqa: BLE001
+            logger.warning("[notifications] %s 失败（不影响主业务）",
+                           fn.__name__, exc_info=True)
+            return None
+    return wrapper
 
 SOURCE_TYPES = ("dividend", "tpsl", "auto_invest", "job", "nav_update", "data_health")
 
@@ -85,6 +103,7 @@ def invalidate_alert(alert_id: int | None) -> None:
 # ---------------------------------------------------------------------------
 # 各事件源写入助手（调用方在业务写成功/提交后调用）
 # ---------------------------------------------------------------------------
+@_best_effort
 def notify_dividend_alert(ev: Any, alert_id: int) -> None:
     """分红提醒落库成功后（scheduler 与 /api/dividends/scan 共用）。"""
     notify("dividend", alert_id,
@@ -96,6 +115,7 @@ def notify_dividend_alert(ev: Any, alert_id: int) -> None:
             "estimated_amount": ev.estimated_amount})
 
 
+@_best_effort
 def notify_tp_sl_alert(alert_id: int, *, fund_code: str, fund_name: str,
                        alert_type: str, triggered_return: float,
                        threshold: float) -> None:
@@ -106,6 +126,7 @@ def notify_tp_sl_alert(alert_id: int, *, fund_code: str, fund_name: str,
             "threshold": threshold})
 
 
+@_best_effort
 def notify_auto_invest_results(results: list[dict]) -> None:
     """定投执行结果逐计划发通知：仅三类 skip_code 与 error；
     success/holiday/skipped（今日已执行）不发。
@@ -129,6 +150,7 @@ def notify_auto_invest_results(results: list[dict]) -> None:
                     "date": date, "error": str(r.get("error") or "")[:200]})
 
 
+@_best_effort
 def notify_auto_invest_task_error(error: str) -> None:
     """定投整任务异常（run_all_due 之前/之外抛错）发一条。"""
     date = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
@@ -137,6 +159,7 @@ def notify_auto_invest_task_error(error: str) -> None:
            {"date": date, "error": str(error)[:200]})
 
 
+@_best_effort
 def notify_job_failed(job_id: int, job_type: str, error: str) -> None:
     """Agent 刷新/回测任务落 failed 后（两类 job 同模式）。"""
     notify("job", job_id, f"job:failed:{job_id}", "job_failed",
@@ -144,12 +167,14 @@ def notify_job_failed(job_id: int, job_type: str, error: str) -> None:
             "error": str(error)[:200]})
 
 
+@_best_effort
 def notify_job_interrupted(job_id: int) -> None:
     """启动批量标记 interrupted 时仅对 running 任务发（queued 未开始，控噪）。"""
     notify("job", job_id, f"job:interrupted:{job_id}", "job_interrupted",
            {"job_id": job_id})
 
 
+@_best_effort
 def notify_nav_update_failed(results: list) -> None:
     """scheduler 每日净值更新结束后统计失败只数 >0 发一条聚合。
 

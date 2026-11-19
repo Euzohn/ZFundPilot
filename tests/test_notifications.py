@@ -126,6 +126,14 @@ class TestFaultInjection:
         failed = SimpleNamespace(ok=False, fund_code="005827", message="超时")
         ns.notify_nav_update_failed([failed])  # 不抛
 
+    def test_helpers_never_raise_on_malformed_input(self, temp_db):
+        """参数构造阶段也在 best-effort 保护内：畸形输入不上抛、不落通知。"""
+        ns.notify_nav_update_failed([object()])      # 缺 ok 属性
+        ns.notify_dividend_alert(object(), 1)        # 缺事件字段
+        ns.notify_auto_invest_results([None])        # 元素非 dict
+        ns.notify_auto_invest_results("not-a-list")  # 整体非列表
+        assert _rows() == []
+
 
 class TestStatusSync:
     def test_confirmed_read_ignored_dismissed_pending_unread(self, temp_db):

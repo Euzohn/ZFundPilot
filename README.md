@@ -240,6 +240,7 @@ ZFundPilot/
 │   ├── watchlist_service.py   # 自选维护业务服务（受控写入）
 │   ├── refresh_service.py     # 任务化服务：数据刷新 + 定投回测作业
 │   ├── nav_update_state.py    # 净值更新共享状态
+│   ├── notification_service.py # 统一站内提醒中心（best-effort 写入编排）
 │   ├── agent_tokens.py        # Agent 访问 token（scope / 限流 / 幂等）
 │   ├── us_calendar.py         # 美国证券市场（NYSE）交易日历
 │   ├── ak_compat.py      # akshare 跨版本改名兼容层 + 进程级 V8 串行化
@@ -248,9 +249,9 @@ ZFundPilot/
 │   ├── api.py            # FastAPI REST API（140+ 路由 + 认证中间件）
 │   ├── ai.py             # AI 投顾对话（持仓上下文 + 联网搜索 + LLM 流式调用）
 │   └── scheduler.py      # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查
-├── tests/                # Pytest 测试套件（1436 个用例）
+├── tests/                # Pytest 测试套件（1503 个用例）
 │   ├── conftest.py       #   共享 fixtures
-│   └── test_*.py         #   62 个测试模块
+│   └── test_*.py         #   65 个测试模块
 ├── data/
 │   ├── fund.db           # SQLite 数据库（自动生成）
 │   ├── auth.json         # 用户名 / 密码哈希 / token 密钥（自动生成）

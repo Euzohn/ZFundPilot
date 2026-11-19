@@ -90,16 +90,24 @@ export default function NotificationBell({
         (n) => n.source_type === "dividend" || n.source_type === "tpsl")
       if (alertItems.length > 0) {
         const [dividends, tpSl] = await Promise.all([
-          api.getDividendAlerts().catch(() => []),
-          api.getTpSlAlerts().catch(() => []),
+          api.getDividendAlerts().catch(() => null),
+          api.getTpSlAlerts().catch(() => null),
         ])
-        const live = new Set<string>([
-          ...dividends.map((a) => `dividend:${a.id}`),
-          ...tpSl.map((a) => `tpsl:${a.id}`),
-        ])
+        // 只对成功拉取的来源做失效判定，请求失败不误判「已失效」
+        const live = new Set<string>()
+        const checked = new Set<string>()
+        if (dividends) {
+          dividends.forEach((a) => live.add(`dividend:${a.id}`))
+          checked.add("dividend")
+        }
+        if (tpSl) {
+          tpSl.forEach((a) => live.add(`tpsl:${a.id}`))
+          checked.add("tpsl")
+        }
         setInvalidIds(new Set(
           alertItems
-            .filter((n) => !live.has(`${n.source_type}:${n.source_id}`))
+            .filter((n) => checked.has(n.source_type)
+              && !live.has(`${n.source_type}:${n.source_id}`))
             .map((n) => n.id)))
       } else {
         setInvalidIds(new Set())
@@ -116,7 +124,7 @@ export default function NotificationBell({
     if (next) void loadItems()
   }
 
-  const handleItemClick = async (n: NotificationItem) => {
+  const handleItemClick = (n: NotificationItem) => {
     if (invalidIds.has(n.id)) return
     if (n.status === "unread") {
       api.markNotificationsRead([n.id]).catch(() => {})
@@ -128,14 +136,14 @@ export default function NotificationBell({
     navigate(notificationTarget(n))
   }
 
-  const handleDismiss = async (n: NotificationItem) => {
+  const handleDismiss = (n: NotificationItem) => {
     api.dismissNotifications([n.id]).catch(() => {})
     setItems((prev) => prev.filter((x) => x.id !== n.id))
     if (n.status === "unread") setCount((c) => Math.max(0, c - 1))
     dispatchNotificationsChanged()
   }
 
-  const handleMarkAllRead = async () => {
+  const handleMarkAllRead = () => {
     api.markNotificationsRead().catch(() => {})
     setItems((prev) => prev.map((x) => ({ ...x, status: "read" as const })))
     setCount(0)

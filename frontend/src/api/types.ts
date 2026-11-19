@@ -188,11 +188,42 @@ export interface RiskFlag {
   detail: string
 }
 
+export interface AdviceEvidence {
+  metric: string
+  value: number
+  threshold: number | null
+  params: Record<string, unknown>
+}
+
+export interface AdvicePositionRef {
+  fund_code: string
+  name: string
+  channel: string
+  weight: number
+}
+
+export interface AdviceSimulation {
+  rule: string
+  params: Record<string, unknown>
+  before: Record<string, number>
+  after: Record<string, number>
+}
+
+export interface AdviceRisk {
+  code: string
+  params: Record<string, unknown>
+}
+
 export interface Advice {
   code: string
   params: Record<string, unknown>
   category: string
   text: string
+  // P3 Phase 1：四段可解释结构（旧响应可能缺失，按可选处理）
+  evidence?: AdviceEvidence[]
+  positions?: AdvicePositionRef[]
+  simulation?: AdviceSimulation | null
+  risks?: AdviceRisk[]
 }
 
 export interface HealthDimension {

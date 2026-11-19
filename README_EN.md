@@ -52,7 +52,7 @@
   <p><b>Return Analysis</b> — Unrealized/realized P&L, XIRR annualized return, portfolio curve, benchmark comparison, day/week/month/year calendar view</p>
   <br>
   <img src="assets/readme/screenshots_en/risk.webp" alt="Portfolio Health Check" width="90%">
-  <p><b>Portfolio Health Check</b> — 4-dimension diagnosis (allocation/risk/liquidity/return) + risk flags + rebalancing advice</p>
+  <p><b>Portfolio Health Check</b> — 4-dimension diagnosis (allocation/risk/liquidity/return) + risk flags + explainable action list</p>
   <br>
   <img src="assets/readme/screenshots_en/compare.webp" alt="Fund Compare" width="90%">
   <p><b>Fund Compare</b> — Multi-dimensional side-by-side comparison + NAV curve overlay + correlation matrix</p>
@@ -141,7 +141,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 ### Health Check & Optimization
 
 - **Portfolio Health Check** — 4-dimension diagnosis (allocation/risk/liquidity/return, each 0-100) + overall tier (excellent→danger), reuses risk metrics + rebalancing advice, single API returns all
-- **Rebalancing Advice** — Structure-based optimization suggestions (not trading signals)
+- **Rebalancing Advice (Action List)** — Structure-based optimization suggestions (not trading signals); each item expands into four explainable segments: evidence (metric vs threshold), positions involved, what-if before/after simulation (hypothetical, not an instruction), and risks & limits
 - **Take-Profit / Stop-Loss Alerts** — Automatically checks fund returns after NAV update and alerts when thresholds are hit. State machine prevents repeats: after triggering, returns must fall back below the reset ratio before re-arming, avoiding repeated alerts after partial profit-taking. Independent take-profit/stop-loss toggles, globally configurable thresholds. Confirm jumps to transaction page pre-filled with sell
 - **Dividend Auto-Detection** — Scans held funds for unrecorded dividends daily at 09:30, dialog pre-fills for quick recording. Phantom alert auto-cleanup: marks invalid alerts as ignored when source data is corrected
 - **Risk-Level Display** — Fund risk levels (low/low-medium/medium/medium-high/high) persisted and shown site-wide: colored badges + risk-level filter + semantic sort in the positions list, risk-distribution pie on the overview, per-fund dots in returns analysis, and a risk-level distribution bar in the health check

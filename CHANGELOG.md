@@ -4,6 +4,11 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Added
+- 组合体检可解释行动清单（P3 Phase 1）：`rebalance.Advice` 每条结构建议新增四段可解释结构——`evidence` 依据（指标 code + 当前值 + 阈值）、`positions` 涉及持仓（基金/渠道/权重，最多 8 条）、`simulation` 模拟调整前后（what-if 假设演算：纯函数、不落库、不写交易、不联网，总市值不变、降阈值 + 腾出权重按比例再分配；覆盖单基金集中度/股债结构/QDII/板块/科技 6 类规则，前后对比集中度/结构/板块/科技占比 + 体检配置分共 7 项指标；持仓不足或缺目标类别返回 null）、`risks` 风险限制（非投资建议声明/经验规则局限/假设演算声明/数据延迟 caveat，全部稳定 code+params，无后端自由中文）。既有 `/api/portfolio/health` 与 Agent `get_portfolio_health` 响应**加性扩展**（不新增端点，工具数/scope/旧字段不变，MCP 客户端向后兼容）；`equity_to_bond` 规则带 `side` 参数区分权益/债券侧。体检页「结构优化建议」升级为「行动清单」卡片：每条可展开四段，模拟表格带中性方向箭头（不判好坏），规则文案插值基金名/板块/目标值，分隔符语言中性，展开按钮补 `aria-controls`。新增后端 18 例（test_rebalance 共 26 例）+ 前端 12 例（backendLabels.test.ts，前端共 37 例），全量 1454 例
+
 ## [0.27.1] - 2026-11-19
 
 ### Security

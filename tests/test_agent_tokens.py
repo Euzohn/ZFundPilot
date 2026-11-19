@@ -394,6 +394,11 @@ class TestAgentTools:
         assert data["valuation_basis"] == "latest_formal_nav"
         assert data["data_quality"]["as_of_date_semantics"]
         assert data["data_quality"]["caveats"] == []
+        # P3 Phase 1：建议携带四段可解释结构（加性扩展，旧字段不变）
+        assert data["advice"]
+        for a in data["advice"]:
+            assert {"code", "params", "category", "text"} <= set(a)
+            assert {"evidence", "positions", "simulation", "risks"} <= set(a)
 
         denied = client.get("/api/agent/tools/portfolio-health",
                             headers=self._headers("portfolio:read"))

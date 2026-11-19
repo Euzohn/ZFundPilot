@@ -267,6 +267,9 @@ async def get_fund_detail(
 async def get_portfolio_health() -> dict[str, Any]:
     """Read the four-dimension health score, risk flags, and structural advice.
 
+    Each advice item carries an explainable action structure: evidence (metric
+    value vs threshold), positions involved, simulation (what-if before/after
+    metrics, hypothetical only, not an instruction), and risks/caveats codes.
     Check data_quality.caveats before interpreting scores, since missing or stale
     NAV data can lower related dimensions.
     """

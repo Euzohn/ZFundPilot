@@ -426,10 +426,22 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 | `dimensions` | 四维评分：`allocation`（配置）/`risk`（风险）/`liquidity`（流动性）/`return`（收益），各含 `name`、`score`、`status`、`metrics` |
 | `stable_weight` / `volatile_weight` | 稳定型（债券等）/ 波动型资产占比 |
 | `risk_report` | 最大回撤、波动率、最大单只权重、HHI、股/债/QDII 占比与风险提示（`flags`） |
-| `advice` | 结构建议，非交易指令 |
+| `advice` | 结构建议（行动清单），非交易指令；每项含四段可解释结构，见下表 |
 | `summary` | 组合汇总，结构同 5.1 |
 | `valuation_basis` | 固定为 `latest_formal_nav` |
 | `data_quality` | `as_of_date`、`as_of_date_semantics`、缺失/过期净值数、T+1 待确认数，以及 `caveats` 降级说明数组 |
+
+`advice` 每项字段（P3 Phase 1 加性扩展，旧字段不变）：
+
+| 字段 | 说明 |
+|---|---|
+| `code` / `params` / `category` / `text` | 原有稳定 code、插值参数、分类与中文文案（向后兼容） |
+| `evidence` | 依据数组：`metric`（指标 code）、`value`（当前值）、`threshold`（阈值）、`params`（如基金名/板块名） |
+| `positions` | 涉及持仓数组：`fund_code`/`name`/`channel`/`weight`，最多 8 条 |
+| `simulation` | 模拟调整前后（what-if 假设演算，非操作指令）：`rule`（规则 code）、`params`（目标值/基金名/板块/`side`）、`before`/`after`（7 项指标：`max_single_weight`/`equity_weight`/`bond_weight`/`qdii_weight`/`top_sector_weight`/`tech_weight`/`allocation_score`）；持仓不足或缺目标类别为 `null` |
+| `risks` | 风险限制数组：`code`（`not_investment_advice`/`model_limitation`/`simulation_assumption`/`simulation_unavailable`/`data_stale`）+ `params` |
+
+> `simulation` 为纯函数假设演算：总市值不变、降至阈值后腾出权重按比例再分配，不代表实际可执行结果；`equity_to_bond` 规则的 `params.side` 区分权益侧（`equity`，降权益）与债券侧（`bond`，升债券）。所有文本字段为稳定 code，由客户端按语言映射。
 
 > 先读 `data_quality.caveats` 再解读分数：缺净值或净值过期会拉低相关维度，T+1 待确认交易尚未计入市值。空组合的 `danger` 只表示暂无可诊断持仓，不代表真实风险。
 >
@@ -1513,3 +1525,4 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 | 2026-11-07 | F6.3：新增 `execute_plan` operation_type（复用 `transactions:propose`），为一条已存在的定投计划手动生成一笔买入流水并推进 `last_run`/`last_tx_id`；不重算 `next_run`、不触发调度器，网页/调度器既有行为不变。须带计划 `row_digest` 版本前置；金额/渠道/备注/`is_t1`/启停与簿记字段一律硬拒。创建期在写事务外判定可投性并抓取费率（显式 `fee` 跳过；费率未知 `409 fee_unknown`，不静默写 0），`trade_date` 缺省今天、仅允许最近 7 天补记；审批零联网，按快照写 `buy`（`shares/nav` 待回填）。今天靠 `last_run == trade_date` 防重，历史日期另查同一计划+交易日的已成功提案；停用计划仍可手动执行（warning），非交易日仅 warning。审批成功记 `auto_invest_execute`（带 `proposal_id`） |
 | 2026-11-14 | R5：回测任务化——`backtest/dca` 由同步 `200` 改为 **`202` + `job_id`**（破坏性变更，客户端需改为轮询 `get_job_status`），复用 `refresh_jobs`（新增 `job_type="dca_backtest"`）与幂等记录，必带 `Idempotency-Key`；后台按基金逐个执行推进进度（`done` 为已完成数、`current` 为正在执行的基金），并发满返回 `429 backtest_busy`（`Retry-After: 60`，未建任务可用原键重试）；`get_job_status` 以 `data:refresh`/`funds:read` 任一进入并按 `job_type` 精确复核；MCP `run_dca_backtest` 新增必填 `idempotency_key`。网页同步回测端点不变 |
 | 2026-11-15 | `screen_funds` 指标快照新增持有结构 4 字段：`institution_ratio`/`individual_ratio`/`internal_ratio`（百分比，最新报告期）与 `holder_report_date`（`YYYY-MM-DD`）；无数据为 `null` / 空串，不补零（向后兼容，旧客户端可忽略） |
+| 2026-11-19 | P3 Phase 1：`portfolio-health` 的 `advice` 每项加性扩展四段可解释结构（`evidence`/`positions`/`simulation`/`risks`）；`simulation` 为 what-if 假设演算（非操作指令），`equity_to_bond` 带 `side` 区分权益/债券侧；旧字段与工具数/scope 不变，向后兼容 |

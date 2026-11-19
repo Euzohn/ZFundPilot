@@ -168,6 +168,97 @@ export function translateAdvice(
   return { category: label.category[lang], text: t[lang] }
 }
 
+// ── Action item segments (P3 Phase 1: evidence / simulation / risks) ──
+export const ADVICE_METRICS: Record<string, Bilingual> = {
+  max_single_weight: { zh: "最大单基金占比", en: "Largest fund weight" },
+  equity_weight: { zh: "权益类占比", en: "Equity weight" },
+  bond_weight: { zh: "债券类占比", en: "Bond weight" },
+  qdii_weight: { zh: "QDII 占比", en: "QDII weight" },
+  sector_weight: { zh: "最大板块占比", en: "Top sector weight" },
+  tech_weight: { zh: "科技/成长板块占比", en: "Tech/growth sector weight" },
+}
+
+export const SIMULATION_METRICS: Record<string, Bilingual> = {
+  max_single_weight: { zh: "最大单基金占比", en: "Largest fund weight" },
+  equity_weight: { zh: "权益类占比", en: "Equity weight" },
+  bond_weight: { zh: "债券类占比", en: "Bond weight" },
+  qdii_weight: { zh: "QDII 占比", en: "QDII weight" },
+  top_sector_weight: { zh: "最大板块占比", en: "Top sector weight" },
+  tech_weight: { zh: "科技/成长占比", en: "Tech/growth weight" },
+  allocation_score: { zh: "体检配置分", en: "Allocation score" },
+}
+
+export const SIMULATION_RULES: Record<string, (p: Record<string, unknown>) => Bilingual> = {
+  reduce_single_fund: (p) => ({
+    zh: `假设将「${p.name}」降至 ${pct0(p.target)}，腾出市值按比例分配到其他持仓`,
+    en: `Hypothetically reduce "${p.name}" to ${pct0(p.target)}; freed value redistributed pro-rata to other holdings`,
+  }),
+  equity_to_bond: (p) => p.side === "bond" ? ({
+    zh: `假设将债券型提升至 ${pct0(p.target)}，差额从权益类按比例转出`,
+    en: `Hypothetically raise bond funds to ${pct0(p.target)}, funded pro-rata from equity`,
+  }) : ({
+    zh: `假设将权益类降至 ${pct0(p.target)}，差额按比例转入债券型基金`,
+    en: `Hypothetically reduce equity to ${pct0(p.target)}, transferring the difference pro-rata into bond funds`,
+  }),
+  reduce_qdii: (p) => ({
+    zh: `假设将 QDII 合计降至 ${pct0(p.target)}，腾出市值按比例分配到其他持仓`,
+    en: `Hypothetically reduce total QDII to ${pct0(p.target)}; freed value redistributed pro-rata to other holdings`,
+  }),
+  reduce_sector: (p) => ({
+    zh: `假设将「${p.sector}」板块合计降至 ${pct0(p.target)}，腾出市值按比例分配到其他板块`,
+    en: `Hypothetically reduce the "${p.sector}" sector to ${pct0(p.target)}; freed value redistributed pro-rata to other sectors`,
+  }),
+  reduce_tech: (p) => ({
+    zh: `假设将科技/成长板块合计降至 ${pct0(p.target)}，腾出市值按比例分配到其他板块`,
+    en: `Hypothetically reduce tech/growth sectors to ${pct0(p.target)}; freed value redistributed pro-rata to other sectors`,
+  }),
+}
+
+export const ADVICE_RISKS: Record<string, (p: Record<string, unknown>) => Bilingual> = {
+  not_investment_advice: () => ({
+    zh: "仅为结构参考，不构成投资建议或交易指令。",
+    en: "Structural reference only; not investment advice or a trading instruction.",
+  }),
+  model_limitation: () => ({
+    zh: "阈值为经验规则，未考虑个人目标、税费与申赎限制。",
+    en: "Thresholds are empirical rules; personal goals, fees and subscription/redemption limits are not considered.",
+  }),
+  simulation_assumption: () => ({
+    zh: "模拟为假设演算：总市值不变、按比例再分配，不代表实际可执行结果。",
+    en: "Simulation is hypothetical: total value unchanged, pro-rata redistribution; not an executable outcome.",
+  }),
+  simulation_unavailable: () => ({
+    zh: "持仓不足或缺少目标资产类别，无法演算。",
+    en: "Not enough holdings or missing target asset class to simulate.",
+  }),
+  data_stale: (p) => ({
+    zh: `${p.stale ?? 0} 只基金净值可能过期、${p.missing ?? 0} 只缺正式净值，演算基于最新正式净值。`,
+    en: `${p.stale ?? 0} fund(s) may have stale NAV, ${p.missing ?? 0} missing formal NAV; simulation uses latest formal NAV.`,
+  }),
+}
+
+export function translateAdviceMetric(code: string): string {
+  const lang = getCurrentLang()
+  return (ADVICE_METRICS[code] ?? SIMULATION_METRICS[code])?.[lang] ?? code
+}
+
+export function translateSimulationMetric(code: string): string {
+  const lang = getCurrentLang()
+  return SIMULATION_METRICS[code]?.[lang] ?? code
+}
+
+export function translateSimulationRule(code: string, params?: Record<string, unknown>): string {
+  const fn = SIMULATION_RULES[code]
+  const lang = getCurrentLang()
+  return fn ? fn(params ?? {})[lang] : code
+}
+
+export function translateAdviceRisk(r: { code: string; params?: Record<string, unknown> }): string {
+  const fn = ADVICE_RISKS[r.code]
+  const lang = getCurrentLang()
+  return fn ? fn(r.params ?? {})[lang] : r.code
+}
+
 // ── Fee labels ──
 export const FEE_LABELS: Record<string, Bilingual> = {
   fee_unknown: { zh: "费率未知", en: "Fee rate unknown" },

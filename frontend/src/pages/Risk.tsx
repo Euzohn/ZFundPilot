@@ -1,6 +1,6 @@
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
-import type { HealthReport, HealthDimension, DistributionItem } from "@/api/types"
+import type { HealthReport, HealthDimension, DistributionItem, Advice } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import ErrorState from "@/components/ErrorState"
 import { Badge } from "@/components/ui/badge"
@@ -8,11 +8,14 @@ import { pct, pnlColor, money } from "@/lib/format"
 import PageHeader from "@/components/PageHeader"
 import LoadingState from "@/components/LoadingState"
 import EmptyState from "@/components/EmptyState"
-import { ShieldAlert, AlertTriangle, Info, Lightbulb, Activity } from "lucide-react"
-import type { ReactNode } from "react"
+import { ShieldAlert, AlertTriangle, Info, Lightbulb, Activity, ChevronDown, ArrowUp, ArrowDown } from "lucide-react"
+import { useState, type ReactNode } from "react"
 import MetricCard from "@/components/MetricCard"
 import { useLang } from "@/i18n/LanguageContext"
-import { translateRiskFlag, translateAdvice } from "@/lib/backendLabels"
+import {
+  translateRiskFlag, translateAdvice, translateAdviceMetric,
+  translateSimulationMetric, translateSimulationRule, translateAdviceRisk,
+} from "@/lib/backendLabels"
 import { translateRiskLevel, RISK_LEVEL_DOT, RISK_LEVEL_ORDER } from "@/lib/taxonomyLabels"
 import { cn } from "@/lib/utils"
 
@@ -56,6 +59,138 @@ const STATUS_BAR: Record<string, string> = {
   good: "bg-success",
   warning: "bg-warning",
   danger: "bg-destructive",
+}
+
+// 可演算的建议类型（simulation 为空时提示「无法演算」）
+const ADJUSTMENT_CODES = new Set([
+  "concentration_high", "concentration_mid", "equity_heavy",
+  "bond_low", "qdii_high", "sector_concentrated", "tech_heavy",
+])
+
+function fmtSimMetric(key: string, value: number): string {
+  return key === "allocation_score" ? String(Math.round(value)) : pct(value)
+}
+
+/** 行动清单条目：结论 + 可展开四段（依据/涉及持仓/模拟调整前后/风险限制）。 */
+function AdviceItem({ advice: a, index }: { advice: Advice; index: number }) {
+  const { t } = useLang()
+  const [open, setOpen] = useState(false)
+  const { category, text } = translateAdvice(a)
+  const evidence = a.evidence ?? []
+  const positions = a.positions ?? []
+  const risks = a.risks ?? []
+  const sim = a.simulation ?? null
+  const hasDetails = evidence.length > 0 || positions.length > 0 || sim !== null || risks.length > 0
+  const showUnavailable = !sim && ADJUSTMENT_CODES.has(a.code)
+
+  return (
+    <div className="rounded-md border p-3">
+      <div className="flex items-start gap-3">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
+          {index + 1}
+        </span>
+        <div className="min-w-0 flex-1">
+          <Badge variant="outline" className="mr-2">{category}</Badge>
+          <span className="text-sm text-muted-foreground">{text}</span>
+        </div>
+        {hasDetails && (
+          <button
+            type="button"
+            onClick={() => setOpen(v => !v)}
+            aria-expanded={open}
+            aria-controls={`advice-detail-${index}`}
+            className="flex shrink-0 items-center gap-1 rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            {open ? t.risk.collapse : t.risk.expand}
+            <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
+          </button>
+        )}
+      </div>
+      {open && hasDetails && (
+        <div id={`advice-detail-${index}`} className="mt-3 space-y-3 border-t pt-3 text-sm">
+          {evidence.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">{t.risk.evidence}</p>
+              <ul className="space-y-1">
+                {evidence.map((e, i) => (
+                  <li key={i} className="text-muted-foreground">
+                    {translateAdviceMetric(e.metric)}
+                    {e.params?.sector ? ` · ${e.params.sector}` : ""}
+                    ：<span className="font-medium text-foreground">{pct(e.value)}</span>
+                    {e.threshold != null && <>，{t.risk.threshold} {Math.round(e.threshold * 100)}%</>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {positions.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">{t.risk.involvedPositions}</p>
+              <ul className="space-y-1">
+                {positions.map((p, i) => (
+                  <li key={i} className="flex items-center justify-between gap-2 text-muted-foreground">
+                    <span className="truncate">
+                      {p.name}{p.channel ? ` · ${p.channel}` : ""}
+                    </span>
+                    <span className="shrink-0 tabular-nums">{pct(p.weight)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(sim || showUnavailable) && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">{t.risk.simulation}</p>
+              {sim ? (
+                <>
+                  <p className="text-xs text-muted-foreground">{translateSimulationRule(sim.rule, sim.params)}</p>
+                  <table className="mt-1 w-full text-xs">
+                    <thead>
+                      <tr className="text-muted-foreground">
+                        <th className="pb-1 text-left font-normal">{t.risk.simMetric}</th>
+                        <th className="pb-1 text-right font-normal">{t.risk.before}</th>
+                        <th className="pb-1 text-right font-normal">{t.risk.after}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.keys(sim.before).map(k => (
+                        <tr key={k} className="border-t border-border/50">
+                          <td className="py-1 text-muted-foreground">{translateSimulationMetric(k)}</td>
+                          <td className="py-1 text-right tabular-nums">{fmtSimMetric(k, sim.before[k])}</td>
+                          <td className="py-1 text-right font-medium tabular-nums">
+                            {fmtSimMetric(k, sim.after[k])}
+                            {sim.after[k] - sim.before[k] > 1e-9 && (
+                              <ArrowUp className="ml-0.5 inline h-3 w-3 text-muted-foreground" />
+                            )}
+                            {sim.before[k] - sim.after[k] > 1e-9 && (
+                              <ArrowDown className="ml-0.5 inline h-3 w-3 text-muted-foreground" />
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="mt-1 text-xs text-muted-foreground">{t.risk.simulationNote}</p>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">{t.risk.simulationUnavailable}</p>
+              )}
+            </div>
+          )}
+          {risks.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">{t.risk.risks}</p>
+              <ul className="list-disc space-y-1 pl-4">
+                {risks.map((r, i) => (
+                  <li key={i} className="text-xs text-muted-foreground">{translateAdviceRisk(r)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function Risk() {
@@ -235,31 +370,19 @@ export default function Risk() {
         </CardContent>
       </Card>
 
-      {/* 结构优化建议 */}
+      {/* 行动清单（可解释结构建议） */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Lightbulb className="h-5 w-5 text-warning" />
-            {t.risk.structureSuggestions}
+            {t.risk.actionList}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">{t.risk.adviceDisclaimer}</p>
+          <p className="text-xs text-muted-foreground">{t.risk.actionListHint}</p>
           {advice && advice.length > 0 ? (
-            advice.map((a, i) => {
-              const { category, text } = translateAdvice(a)
-              return (
-                <div key={i} className="flex items-start gap-3 rounded-md border p-3">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary">
-                    {i + 1}
-                  </span>
-                  <div>
-                    <Badge variant="outline" className="mr-2">{category}</Badge>
-                    <span className="text-sm text-muted-foreground">{text}</span>
-                  </div>
-                </div>
-              )
-            })
+            advice.map((a, i) => <AdviceItem key={i} advice={a} index={i} />)
           ) : (
             <EmptyState title={t.risk.noSuggestions} size="sm" />
           )}

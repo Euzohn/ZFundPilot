@@ -63,7 +63,9 @@ class HealthReport:
                 ],
             },
             "advice": [
-                {"code": a.code, "params": a.params, "category": a.category, "text": a.text}
+                {"code": a.code, "params": a.params, "category": a.category, "text": a.text,
+                 "evidence": a.evidence, "positions": a.positions,
+                 "simulation": a.simulation, "risks": a.risks}
                 for a in self.advice
             ],
             "summary": self.summary.to_dict(),
@@ -231,7 +233,7 @@ def build_health_report() -> HealthReport:
     positions = analysis.calculate_positions()
     summary = analysis.calculate_summary(positions)
     risk_report = build_risk_report(positions)
-    advice = generate_advice(positions, risk_report)
+    advice = generate_advice(positions, risk_report, data_status=summary.data_status)
     stable_weight, volatile_weight = calculate_liquidity(positions)
 
     # 空组合：无持仓可诊断，直接返回危险评级

@@ -65,7 +65,7 @@ ZFundPilot/
 │   ├── returns.py            # XIRR 年化收益率（二分法 + 现金流构建，供 analysis/backtest 共用）
 │   ├── health.py             # 组合体检四维评分（配置/风险/流动性/收益）+ 综合体检报告，供 api/ai 共用
 │   ├── risk.py              # 风险分析（回撤/波动率/集中度/HHI，部分被 health.py 复用）
-│   ├── rebalance.py         # 再平衡建议
+│   ├── rebalance.py         # 再平衡建议（四段可解释行动清单：evidence/positions/simulation/risks）
 │   ├── backtest.py          # 定投策略回测（DCA + 一次性投入对比 + XIRR）
 │   ├── auto_invest.py       # 定投计划自动执行（4 种频率 + 交易日顺延 + QDII 跳美股休市 + 申购状态/法定节假日可投性校验）
 │   ├── us_calendar.py       # 美股（NYSE）算法日历（纯计算休市日，零联网依赖，供定投跳过 QDII 休市）
@@ -350,6 +350,7 @@ ZFundPilot/
 - `_score_allocation/_score_risk/_score_liquidity/_score_return`: 四维 0-100 评分规则引擎。配置(集中度+结构)、风险(回撤+波动)、流动性(债券占比+分散度)、收益(年化 XIRR vs CPI)。数据不足降级：回撤/波动 None→70 中性，年化 None→50 中性
 - `_tier(score)`: 定级 excellent(≥80)/good(≥60)/fair(≥40)/attention(≥20)/danger(<20)
 - `build_health_report()`: 一站式——复用 `analysis.calculate_summary`+`risk.build_risk_report`+`rebalance.generate_advice`，叠加流动性 + CPI 通胀(网络失败降级)，空组合直接返回 danger 0 分。供 `api.py` `/api/portfolio/health` 和 `ai.py` 上下文共用
+- `HealthReport.to_dict()` 的 `advice` 项携带四段可解释结构（`evidence`/`positions`/`simulation`/`risks`，P3 Phase 1）；`generate_advice(positions, report, data_status=summary.data_status)` 传入数据状态以在 risks 段追加延迟/缺失 caveat。网页与 Agent `get_portfolio_health` 共用同一序列化，加性扩展不改旧字段
 
 ### scheduler.py — 定时任务
 
@@ -572,6 +573,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ---
 
 ## 十二、当前工作状态
+
+### [Unreleased]
+
+- feat: 组合体检可解释行动清单（P3 Phase 1，规划见 `tmp/p3-advice-and-alerts-plan.md`）——`rebalance.Advice` 扩展四段（evidence 依据/positions 涉及持仓/simulation 模拟调整前后/risks 风险限制），全部稳定 code+params。simulation 为 what-if 纯函数演算（总市值不变、降阈值+比例再分配，6 类规则、7 项前后指标含体检配置分；持仓不足/缺目标类别返回 null），`equity_to_bond` 带 side 区分权益/债券侧。不新增端点：`HealthReport.to_dict()` 加性携带，网页 `/api/portfolio/health` 与 Agent `get_portfolio_health` 自动贯通（工具数/scope/旧字段不变）。前端体检页「结构优化建议」升级「行动清单」可展开卡片（四段+模拟表格中性方向箭头+规则文案插值+语言中性分隔符+aria-controls）；backendLabels 新增 metric/rule/risk 映射。审核修订 6 项：规则文案消歧（side）、英文界面去中文括号、方向箭头、前端测试补全、阈值整数百分比、a11y。新增后端 18 例（test_rebalance 26）+ 前端 12 例（共 37），全量 1454 例。文档同步 CHANGELOG/CONTEXT/AGENT_API（中英）/README（中英）
 
 ### [0.27.1] - 2026-11-19
 

@@ -427,10 +427,22 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 | `dimensions` | Four dimensions: `allocation`, `risk`, `liquidity`, `return`; each has `name`, `score`, `status`, `metrics` |
 | `stable_weight` / `volatile_weight` | Stable (bonds etc.) / volatile asset weight |
 | `risk_report` | Max drawdown, volatility, largest single weight, HHI, equity/bond/QDII weights, and risk `flags` |
-| `advice` | Structural suggestions, not trading instructions |
+| `advice` | Structural suggestions (action list), not trading instructions; each item carries four explainable segments, see below |
 | `summary` | Portfolio summary, same shape as 5.1 |
 | `valuation_basis` | Always `latest_formal_nav` |
 | `data_quality` | `as_of_date`, `as_of_date_semantics`, missing/stale NAV counts, pending T+1 count, and a `caveats` array |
+
+Each `advice` item (P3 Phase 1 additive extension; old fields unchanged):
+
+| Field | Description |
+|---|---|
+| `code` / `params` / `category` / `text` | Original stable code, interpolation params, category and Chinese text (backward compatible) |
+| `evidence` | Evidence array: `metric` (metric code), `value` (current), `threshold`, `params` (e.g. fund/sector name) |
+| `positions` | Positions involved: `fund_code`/`name`/`channel`/`weight`, up to 8 |
+| `simulation` | What-if before/after (hypothetical, not an instruction): `rule` (rule code), `params` (target/fund/sector/`side`), `before`/`after` (7 metrics: `max_single_weight`/`equity_weight`/`bond_weight`/`qdii_weight`/`top_sector_weight`/`tech_weight`/`allocation_score`); `null` when holdings are insufficient or the target class is missing |
+| `risks` | Risks array: `code` (`not_investment_advice`/`model_limitation`/`simulation_assumption`/`simulation_unavailable`/`data_stale`) + `params` |
+
+> `simulation` is a pure-function what-if: total value unchanged, reduce to threshold then redistribute the freed weight pro-rata; not an executable outcome. The `equity_to_bond` rule's `params.side` distinguishes the equity side (`equity`, reduce equity) from the bond side (`bond`, raise bonds). All text fields are stable codes mapped by the client per language.
 
 > Read `data_quality.caveats` before interpreting scores: missing or stale NAV can lower related dimensions, and pending T+1 transactions are not yet included in market value. A `danger` tier on an empty portfolio only means there is nothing to diagnose, not real risk.
 >
@@ -1512,3 +1524,4 @@ Retry principles:
 | 2026-11-07 | F6.3: adds the `execute_plan` operation type (reusing `transactions:propose`) to manually execute an existing auto-invest plan: one buy transaction is inserted and the plan's `last_run`/`last_tx_id` advanced; `next_run` is not recomputed and the scheduler is not triggered, leaving web/scheduler behavior unchanged. Requires the plan's `row_digest`; amount/channel/note/`is_t1`/enablement and bookkeeping fields are hard-rejected. Creation checks purchasability outside the write transaction and fetches the fee (skipped when `fee` is explicit; an unknown fee returns `409 fee_unknown` instead of writing 0); `trade_date` defaults to today and allows at most a 7-day backfill. Approval is zero-network and writes `buy` from the snapshot (`shares/nav` pending backfill). Same-day duplicates are blocked by `last_run == trade_date`; backdated dates additionally check for an already-succeeded proposal with the same `plan_id + trade_date`. Disabled plans remain manually executable (warning) and non-trading days are warnings only. On success `auto_invest_execute` is audited with `proposal_id` |
 | 2026-11-14 | R5: task-based backtesting — `backtest/dca` changes from synchronous `200` to **`202` + `job_id`** (breaking change; clients must poll `get_job_status`), reusing `refresh_jobs` (new `job_type="dca_backtest"`) and idempotency records, with a required `Idempotency-Key`; runs fund by fund in the background (`done` = completed count, `current` = fund being processed), returns `429 backtest_busy` when concurrency is full (`Retry-After: 60`; no job is created, so the same key can be retried); `get_job_status` is entered with either `data:refresh`/`funds:read` and re-checked by `job_type`; MCP `run_dca_backtest` gains a required `idempotency_key`. The synchronous web backtest endpoint is unchanged |
 | 2026-11-15 | `screen_funds` metric snapshots add four holder-structure fields: `institution_ratio`/`individual_ratio`/`internal_ratio` (percentages, latest reporting period) and `holder_report_date` (`YYYY-MM-DD`); missing values are `null` / empty string, never zero-filled (backward compatible; old clients may ignore them) |
+| 2026-11-19 | P3 Phase 1: each `advice` item in `portfolio-health` additively gains four explainable segments (`evidence`/`positions`/`simulation`/`risks`); `simulation` is a what-if hypothetical calculation (not an instruction), and `equity_to_bond` carries `side` to distinguish the equity/bond side; old fields, tool count and scopes unchanged, backward compatible |

@@ -32,7 +32,7 @@ def build_portfolio_context() -> str:
         positions = analysis.calculate_positions()
         open_positions = [p for p in positions if p.is_open]
         report = risk.build_risk_report(positions)
-        advice = rebalance.generate_advice(positions, report)
+        advice = rebalance.generate_advice(positions, report, data_status=summary.data_status)
 
         lines = ["## 当前组合概况"]
         lines.append(f"- 持仓成本: {summary.total_cost:,.2f}")

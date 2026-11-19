@@ -91,6 +91,7 @@ docker-compose.yml       # 单服务 + data 卷
 - 前缀：`feat:` / `fix:` / `docs:` / `perf:` / `refactor:` / `test:` / `style:` / `chore:`（偶用 `ci:` / `release:` / `deploy:` / `ui:`），可带作用域如 `fix(api):`
 - 格式：`feat: 简短描述`，空行后可选详细说明
 - PR 请描述清楚改动内容与动机
+- main 分支已开启保护：PR 合并前需通过全部 CI 检查（`frontend` + `backend (3.11)` / `backend (3.12)`），历史不允许 force push
 
 ## 设计原则
 

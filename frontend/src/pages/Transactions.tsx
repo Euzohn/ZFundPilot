@@ -32,6 +32,7 @@ import TransactionDetailDialog from "@/components/TransactionDetailDialog"
 import DividendCheckDialog from "@/components/DividendCheckDialog"
 import ScreenshotImportPanel from "@/components/ScreenshotImportPanel"
 import { useTabParam } from "@/hooks/useTabParam"
+import { dispatchNotificationsChanged } from "@/components/NotificationBell"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 
 function actionBadgeClass(action: string): string {
@@ -104,6 +105,8 @@ export default function Transactions() {
     api.getPendingDividendAlertCount()
       .then((r) => setDividendAlertCount(r.count))
       .catch(() => {})
+    // 通知中心徽章同步刷新（记为分红/忽略/删除都会影响对应通知状态）
+    dispatchNotificationsChanged()
   }, [])
 
   useEffect(() => {

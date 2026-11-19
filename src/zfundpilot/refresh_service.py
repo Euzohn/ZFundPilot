@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from . import analysis, backtest, config, db, fetch_fund, scheduler
+from . import analysis, backtest, config, db, fetch_fund, notification_service, scheduler
 from .models import BacktestResult
 from .nav_update_state import nav_update_lock, nav_update_state
 
@@ -545,6 +545,7 @@ def _run_backtest_job(job_id: int, params: dict[str, Any],
                 updated_at=ts)
             _audit(conn, principal, None, "dca_backtest_failed", {
                 "job_id": job_id, "error": str(exc)[:200]})
+        notification_service.notify_job_failed(job_id, BACKTEST_JOB_TYPE, str(exc))
     finally:
         _backtest_gate.release()
 
@@ -669,6 +670,7 @@ def _run_job(job_id: int, codes: list[str], principal: Any) -> None:
                 updated_at=ts)
             _audit(conn, principal, None, "data_refresh_failed", {
                 "job_id": job_id, "error": str(exc)[:200]})
+        notification_service.notify_job_failed(job_id, JOB_TYPE, str(exc))
     finally:
         global _current_job_id
         with nav_update_lock:
@@ -678,8 +680,16 @@ def _run_job(job_id: int, codes: list[str], principal: Any) -> None:
 
 
 def mark_interrupted_on_startup() -> int:
-    """应用启动时调用：遗留 queued/running 任务标记 interrupted，并清理旧记录。"""
+    """应用启动时调用：遗留 queued/running 任务标记 interrupted，并清理旧记录。
+
+    通知中心仅对 running 任务发 interrupted 通知（queued 未开始，部署重启
+    噪音控制）；写入 best-effort，失败不影响启动。
+    """
     now = _now()
     # 任务本身 7 天有效；记录再多留 30 天便于排障，之后删除。
     db.purge_refresh_jobs((now - timedelta(days=30)).isoformat())
-    return db.mark_interrupted_refresh_jobs(now.isoformat())
+    running_ids = db.list_running_refresh_job_ids()
+    count = db.mark_interrupted_refresh_jobs(now.isoformat())
+    for job_id in running_ids:
+        notification_service.notify_job_interrupted(job_id)
+    return count

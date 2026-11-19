@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
-from . import analysis, config, db
+from . import analysis, config, db, notification_service
 from .models import ACTION_DIVIDEND, ACTION_REINVEST
 
 logger = logging.getLogger(__name__)
@@ -177,6 +177,7 @@ def _cleanup_stale_alerts(
                         status="ignored",
                         resolved_at=now.isoformat(),
                     )
+                    notification_service.sync_alert_status(alert["id"], "ignored")
                     logger.info(
                         "[fetch_dividend] 自动清理过期分红提醒: %s %s "
                         "(pending 超 %d 天)",
@@ -198,6 +199,7 @@ def _cleanup_stale_alerts(
             status="ignored",
             resolved_at=now.isoformat(),
         )
+        notification_service.sync_alert_status(alert["id"], "ignored")
         logger.info(
             "[fetch_dividend] 自动清理幽灵分红提醒: %s %s %s (源数据已无此记录)",
             code, ex_date, channel or "(无渠道)",

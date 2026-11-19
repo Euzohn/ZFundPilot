@@ -129,6 +129,7 @@ EXCLUDED_TABLES = {
     "operation_proposals": "待审批提案，恢复后指向已替换数据",
     "refresh_jobs": "临时刷新任务，恢复后无意义",
     "index_valuation": "指数估值缓存（TTL 24h）可由上游重建，不进入备份",
+    "notifications": "瞬态站内提醒展示态，恢复后指向已替换数据，不进入备份",
 }
 
 EXCLUDED_SECRETS = {
@@ -554,11 +555,12 @@ def restore_backup(data: bytes, *, ip: str | None = None,
                     )
                 inserted[table] = len(rows)
 
-            # 恢复后旧幂等记录/刷新任务/待审批提案已失去意义，清掉避免重放或
-            # 让旧提案指向已被替换的账本数据。
+            # 恢复后旧幂等记录/刷新任务/待审批提案/站内提醒已失去意义，清掉避免
+            # 重放或让旧记录指向已被替换的账本数据。
             conn.execute("DELETE FROM agent_operations")
             conn.execute("DELETE FROM refresh_jobs")
             conn.execute("DELETE FROM operation_proposals")
+            conn.execute("DELETE FROM notifications")
 
             db.log_audit(
                 "restore_backup", ip=ip, username=username,

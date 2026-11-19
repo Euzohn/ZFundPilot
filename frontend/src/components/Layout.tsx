@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils"
 import { getColorTheme, getColorThemeAsync, applyColorTheme } from "@/lib/colorTheme"
 import ThemeToggle from "./ThemeToggle"
 import LanguageToggle from "./LanguageToggle"
+import NotificationBell from "./NotificationBell"
 import { useLang } from "@/i18n/LanguageContext"
 import { useCompare } from "@/contexts/CompareContext"
 
@@ -229,6 +230,7 @@ export default function Layout() {
           </div>
           <span className="text-base font-bold tracking-tight">ZFundPilot</span>
         </div>
+        <NotificationBell className="ml-auto" popoverSide="bottom" popoverAlign="end" />
       </header>
 
       {/* Desktop sidebar */}
@@ -238,13 +240,18 @@ export default function Layout() {
           collapsed ? "w-16" : "w-60",
         )}
       >
-        <div className={cn("flex py-5", collapsed ? "justify-center" : "items-center gap-2.5 px-5")}>
+        <div className={cn("flex py-5", collapsed ? "flex-col items-center gap-2" : "items-center gap-2.5 px-5")}>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
             <Logo className="h-6 w-6" />
           </div>
           {!collapsed && (
             <h1 className="text-base font-bold text-foreground tracking-tight whitespace-nowrap">ZFundPilot</h1>
           )}
+          <NotificationBell
+            className={collapsed ? undefined : "ml-auto"}
+            popoverSide="right"
+            popoverAlign="start"
+          />
         </div>
 
         <NavLinks collapsed={collapsed} dividendCount={dividendCount} tpSlCount={tpSlCount} compareCount={compareCount} proposalCount={proposalCount} />

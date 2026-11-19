@@ -72,7 +72,19 @@ const RELATIVE_TIME_EN = {
 export function formatRelativeTime(iso: string): string {
   const t = new Date(iso.replace(" ", "T") + "Z").getTime()
   if (isNaN(t)) return ""
-  const diff = Date.now() - t
+  return relativeTimeFromDiff(Date.now() - t, iso)
+}
+
+/**
+ * 相对时间格式化（带时区的 ISO 串，如 notifications.created_at "…+08:00"）。
+ */
+export function formatRelativeTimeTz(iso: string): string {
+  const t = new Date(iso).getTime()
+  if (isNaN(t)) return ""
+  return relativeTimeFromDiff(Date.now() - t, iso)
+}
+
+function relativeTimeFromDiff(diff: number, iso: string): string {
   const min = Math.floor(diff / 60000)
   const tr = getCurrentLang() === "zh" ? RELATIVE_TIME_ZH : RELATIVE_TIME_EN
   if (min < 1) return tr.justNow

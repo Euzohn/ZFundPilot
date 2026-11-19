@@ -63,6 +63,7 @@ from . import (
     fetch_macro,
     fund_filter,
     health,
+    notification_service,
     proposal_service,
     rebalance,
     refresh_service,
@@ -4383,6 +4384,7 @@ def update_dividend_alert(alert_id: int, body: DividendAlertUpdate,
     db.log_audit("dividend_alert_update", ip=_get_client_ip(request),
                  detail={"id": alert_id, "status": body.status,
                          "tx_id": body.tx_id})
+    notification_service.sync_alert_status(alert_id, body.status)
     return {"ok": True}
 
 
@@ -4393,6 +4395,7 @@ def delete_dividend_alert_route(alert_id: int, request: Request) -> dict[str, bo
         raise HTTPException(404, "Alert not found")
     db.log_audit("dividend_alert_delete", ip=_get_client_ip(request),
                  detail={"id": alert_id})
+    notification_service.invalidate_alert(alert_id)
     return {"ok": True}
 
 
@@ -4407,7 +4410,7 @@ def scan_dividends(request: Request) -> dict[str, Any]:
     new_count = 0
     for ev in events:
         if not db.dividend_alert_exists(ev.fund_code, ev.ex_date, ev.channel):
-            db.add_dividend_alert({
+            alert_id = db.add_dividend_alert({
                 "fund_code": ev.fund_code,
                 "fund_name": ev.fund_name,
                 "record_date": ev.record_date,
@@ -4419,6 +4422,7 @@ def scan_dividends(request: Request) -> dict[str, Any]:
                 "dividend_method": ev.dividend_method,
                 "channel": ev.channel,
             })
+            notification_service.notify_dividend_alert(ev, alert_id)
             new_count += 1
     db.log_audit("dividend_scan", ip=_get_client_ip(request),
                  detail={"found": len(events), "new": new_count,
@@ -5586,7 +5590,101 @@ def update_alert(alert_id: int, request: Request, body: AlertUpdateBody) -> dict
     db.update_dividend_alert(alert_id, **fields)
     db.log_audit("tp_sl_alert_update", ip=_get_client_ip(request),
                  detail={"id": alert_id, "status": body.status})
+    notification_service.sync_alert_status(alert_id, body.status)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# 统一站内提醒中心（P3 Phase 2）
+# 网页登录鉴权；首期不进 Agent scope。read/dismiss 是 UI 展示态，不写审计（D8）。
+# ---------------------------------------------------------------------------
+_NOTIFICATION_STATUSES = ("unread", "read", "dismissed")
+
+
+def _validate_notification_status(status: str | None) -> None:
+    if status is not None and status not in _NOTIFICATION_STATUSES:
+        raise api_errors.ApiError(
+            status_code=422,
+            detail={"field": "status",
+                    "message": "status 必须是 unread/read/dismissed"},
+            code="validation_error",
+        )
+
+
+def _validate_notification_source_type(source_type: str | None) -> None:
+    if source_type is not None and source_type not in notification_service.SOURCE_TYPES:
+        raise api_errors.ApiError(
+            status_code=422,
+            detail={"field": "source_type",
+                    "message": "source_type 不在白名单内"},
+            code="validation_error",
+        )
+
+
+def _notification_to_dict(row: dict) -> dict:
+    try:
+        params = json.loads(row.get("title_params") or "{}")
+    except ValueError:
+        params = {}
+    return {**row, "title_params": params}
+
+
+@app.get("/api/notifications")
+def list_notifications(
+    status: str | None = None,
+    source_type: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=1000)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """通知列表（白名单校验，非法 422），按 id 倒序 + 偏移分页。"""
+    _validate_notification_status(status)
+    _validate_notification_source_type(source_type)
+    items = [_notification_to_dict(r) for r in db.list_notifications(
+        status=status, source_type=source_type, limit=limit, offset=offset)]
+    total = db.count_notifications(status=status, source_type=source_type)
+    return {
+        "items": items,
+        "pagination": {"limit": limit, "offset": offset, "total": total,
+                       "has_more": offset + len(items) < total},
+    }
+
+
+@app.get("/api/notifications/count")
+def get_notifications_count(status: str = "unread") -> dict[str, int]:
+    """未读徽章计数（默认 unread）。"""
+    _validate_notification_status(status)
+    return {"count": db.count_notifications(status=status)}
+
+
+class NotificationActionBody(BaseModel):
+    ids: Annotated[list[int], Field(min_length=1, max_length=500)] | None = None
+    all: bool = False
+
+
+def _validate_notification_action(body: NotificationActionBody) -> None:
+    if body.all == bool(body.ids):
+        raise api_errors.ApiError(
+            status_code=422,
+            detail={"field": "ids",
+                    "message": "ids（1–500 条）与 all 必须二选一"},
+            code="validation_error",
+        )
+
+
+@app.post("/api/notifications/read")
+def mark_notifications_read(body: NotificationActionBody) -> dict[str, Any]:
+    """单条/批量/全部已读（unread → read）。不写审计（D8）。"""
+    _validate_notification_action(body)
+    updated = db.mark_notifications_read(body.ids, all=body.all)
+    return {"ok": True, "updated": updated}
+
+
+@app.post("/api/notifications/dismiss")
+def dismiss_notifications(body: NotificationActionBody) -> dict[str, Any]:
+    """单条/批量/全部忽略（unread/read → dismissed）。不写审计（D8）。"""
+    _validate_notification_action(body)
+    updated = db.dismiss_notifications(body.ids, all=body.all)
+    return {"ok": True, "updated": updated}
 
 
 if __name__ == "__main__":

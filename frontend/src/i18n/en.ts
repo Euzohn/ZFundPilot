@@ -114,6 +114,16 @@ const en: typeof zh = {
     language: "Language",
     switchLang: "Switch language",
     skipToContent: "Skip to main content",
+    notifications: "Notifications",
+  },
+  notifications: {
+    title: "Notification Center",
+    open: "View notifications",
+    empty: "No notifications",
+    markAllRead: "Mark all read",
+    dismiss: "Dismiss",
+    invalid: "Expired",
+    loadFailed: "Failed to load notifications",
   },
   home: {
     tagline: "Personal Fund Analysis & Risk Management System",

@@ -112,6 +112,16 @@ const zh = {
     language: "语言",
     switchLang: "切换语言",
     skipToContent: "跳到主内容",
+    notifications: "通知",
+  },
+  notifications: {
+    title: "通知中心",
+    open: "查看通知",
+    empty: "暂无通知",
+    markAllRead: "全部已读",
+    dismiss: "忽略",
+    invalid: "已失效",
+    loadFailed: "通知加载失败",
   },
   home: {
     tagline: "个人基金分析与风险管理系统",

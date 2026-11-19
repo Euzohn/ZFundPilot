@@ -78,6 +78,7 @@ ZFundPilot/
 │   ├── transaction_service.py # 可信单笔直记（transactions:create，限额/预检/降级/幂等）+ 行内容哈希与 update/delete 校验 + 转换参数校验/两腿构造 + CSV/截图预检与对账预检（只读）
 │   ├── mcp_server.py        # 可选 MCP stdio 适配层（仅 HTTP 客户端，复用鉴权/scope/限流）
 │   ├── nav_update_state.py  # 净值更新共享状态+锁+阶段(phase)字段（api.py/scheduler.py 共用，避免循环导入）
+│   ├── notification_service.py # 统一站内提醒中心（P3 Phase 2）：best-effort 写入编排（独立事务/不上抛），6 类事件源 + 状态联动 + 数据健康每日评估
 │   ├── scheduler.py         # APScheduler 定时净值更新 + 定投执行 + 分红检测 + 止盈止损检查 + 基准指数/宏观水位持久化
 │   ├── ai.py                # AI 投顾（OpenAI 兼容 API + 联网搜索）+ 视觉模型截图解析（parse_screenshot + resolve_fund_code 名称→代码后处理）
 │   └── data_io.py           # CSV 导入/导出（全量备份由 backup_service.py 提供）
@@ -101,11 +102,11 @@ ZFundPilot/
 │   │   ├── FundDetail.tsx   # 基金详情（净值走势 + 持仓卡片 + 排名 + 档案 + 顶栏：对比/自选/买入/卖出/定投快捷入口）
 │   │   ├── Settings.tsx     # 设置（账户/Agent 接入/AI/偏好/止盈止损提醒）
 │   │   └── Login.tsx        # 登录
-│   ├── components/          # Layout + Logo 系列 + PnLCalendar + TpSlAlertsPanel + ScreenshotImportPanel + 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
+│   ├── components/          # Layout + Logo 系列 + PnLCalendar + TpSlAlertsPanel + ScreenshotImportPanel + NotificationBell（通知中心 Popover+未读徽章）+ 业务组件（MetricCard/SortHeader/PageHeader/ConfirmDialog/TransactionDetailDialog/EmptyState/LoadingState/ThemeToggle/LanguageToggle）+ UI 组件（shadcn dialog/tooltip/popover 等）
 │   ├── i18n/                # LanguageContext（Provider + useLang hook + getCurrentLang）+ zh.ts + en.ts
 │   ├── api/                 # client.ts + types.ts
 │   ├── hooks/               # useCountUp（animejs 数字动画，formatter 用 ref 存储避免 effect 重跑）+ useTabParam（Tab 状态同步 ?tab= URL 参数）
-│   └── lib/                 # auth/channels/channelColors/colorTheme/format（按 lang 切换 ¥/$）/actionLabels/rangeLabels/useApi/backendLabels/taxonomyLabels
+│   └── lib/                 # auth/channels/channelColors/colorTheme/format（按 lang 切换 ¥/$）/actionLabels/rangeLabels/useApi/backendLabels/taxonomyLabels/notificationLabels
 ├── data/                    # SQLite 数据库 + auth.json + ai_config.json（gitignore）
 ├── Dockerfile               # 多阶段构建
 ├── docker-compose.yml       # 单服务 + data 卷
@@ -151,6 +152,7 @@ ZFundPilot/
 | `agent_operations` | Agent 写操作幂等记录（principal + key_hash + 参数摘要 + 结果，90 天） |
 | `refresh_jobs` | 任务化作业（`job_type`：`data_refresh`/`dca_backtest`；queued/running/succeeded/failed/interrupted） |
 | `operation_proposals` | 账本操作提案（待审批/状态机/创建者/参数摘要/审批与执行结果） |
+| `notifications` | 统一站内提醒中心（业务引用+展示态 unread/read/dismissed，UNIQUE(dedupe_key)，不进备份、恢复清空） |
 
 ### 核心模型（models.py）
 
@@ -206,7 +208,8 @@ ZFundPilot/
 - 可信单笔直记: Agent `POST /api/agent/tools/transactions`（scope `transactions:create`，仅 buy/sell）在限额内直接写入账本，预检异常时按 `transactions:propose` 降级为待审提案或稳定报错；逻辑下沉到 `transaction_service`，与提案共用参数校验
 - 预检（只读）: Agent `POST /api/agent/tools/precheck/transactions`（CSV 文本或条目数组，≤200 条，逐条基金识别/字段校验/重复检测，返回 `valid`/`invalid`/`duplicate` 与 `proposal_ready`；`fund_code`/`fund_name` 均只查账本已收录基金，离线可用；命中他人待审提案只判重复、不返回其 ID）与 `POST /api/agent/tools/precheck/reconciliation`（≤100 条持仓，先做基金识别+`shares` 校验，合法条目复用 `analysis.reconcile_holdings` 生成差额与建议交易；`maybe_sold` 仅提示、`proposal_ready=false`）；两者 scope `transactions:propose`、受写总闸约束、限流 10 次/分钟，不写账本、不联网、不创建提案，成功时写计数审计
 - 截图导入: `POST /api/ai/parse-screenshot`（multipart 上传截图 → 视觉模型解析 → 返回结构化数据，不落库）+ `POST /api/ai/reconcile`（持仓对账 → 生成差额调整交易建议）+ `GET/PUT /api/settings/vision`（视觉模型配置）+ `POST /api/ai/vision-test`（测试视觉模型）。批量保存复用 `POST /api/csv/import`
-- 数据备份: `GET /api/export/zip` 导出格式 v2（`manifest.json` + 12 张表 JSONL，含净值历史与 SHA-256）；`POST /api/backup/preflight` 只读预检，`POST /api/backup/restore` 需 `RESTORE` 确认后先备份当前数据再事务化整体恢复，失败回滚。审计日志、AI 密钥、Agent token、Agent 幂等记录、任务（刷新/回测）、提案与指数估值缓存（可重建）不进入普通备份；恢复时清空 `agent_operations`、`refresh_jobs`、`operation_proposals`，避免旧记录指向已替换的数据
+- 数据备份: `GET /api/export/zip` 导出格式 v2（`manifest.json` + 12 张表 JSONL，含净值历史与 SHA-256）；`POST /api/backup/preflight` 只读预检，`POST /api/backup/restore` 需 `RESTORE` 确认后先备份当前数据再事务化整体恢复，失败回滚。审计日志、AI 密钥、Agent token、Agent 幂等记录、任务（刷新/回测）、提案、指数估值缓存（可重建）与站内通知（瞬态 UI 状态）不进入普通备份；恢复时清空 `agent_operations`、`refresh_jobs`、`operation_proposals`、`notifications`，避免旧记录指向已替换的数据
+- 统一站内提醒中心（P3 Phase 2）: `GET /api/notifications`（`status`/`source_type` 白名单校验非法 422，`limit` 1–1000 默认 50 / `offset` ≥0）、`GET /api/notifications/count?status=unread`（未读徽章）、`POST /api/notifications/read` / `POST /api/notifications/dismiss`（ids ≤500 或 all 二选一）。网页登录鉴权，首期不进 Agent scope；read/dismiss 是 UI 展示态**不写审计**（D8）。写入全部经 `notification_service` best-effort 包装（独立事务、不上抛），6 类事件源：分红/止盈止损/定投跳过与失败/任务 failed 与启动 interrupted（仅 running）/scheduler 净值失败聚合/数据健康每日评估（`data:health:{date}`）。业务 confirmed→read、ignored/删除→dismissed、pending→unread 联动；dismissed 30 天清理（daily_maintenance）；前端 Layout Bell 徽章 + NotificationBell Popover（分组/跳转/失效降级），`zfund:notifications-changed` 事件刷新
 - 基准对比: `GET /api/portfolio/benchmark?indices=000300,000001,399006`，返回基准累计收益率（`close / close_at_start - 1`），按组合曲线日期 ffill 对齐。`BENCHMARK_INDICES` 白名单控制可选指数
 
 ### config.py — 全局配置
@@ -365,6 +368,7 @@ ZFundPilot/
 - `_convert_dow()`: 标准 cron day_of_week 数值（0=周日, 1=周一）→ APScheduler 编号（0=周一, 6=周日），`re.sub(r'(?<!/)\d+', lambda m: str((int(m.group(0))-1)%7), dow)`。`(?<!/)` 跳过 `/` 后的步进值（如 `*/2` 中的 `2` 不被转换）。只在 day_of_week 为纯数字（无字母缩写）时执行转换
 - `config.TIMEZONE`: 所有 `datetime.now()` 调用使用此时区，不依赖系统时区
 - **止盈止损检查**：嵌入 `_run_nav_update()` 末尾，净值更新完成后自动执行 `_run_tp_sl_check()`。扫描所有持仓 `return_rate`，≥ 止盈阈值或 ≤ 止损阈值时生成提醒。状态机：触发后 `disarmed`，收益率回落到 `threshold × reset_ratio` 以下后重新 `armed`（避免部分止盈后重复提醒）。配置存 `preferences` 表（`tp_sl_enabled`/`tp_sl_take_profit`/`tp_sl_stop_loss`/`tp_sl_take_profit_enabled`/`tp_sl_stop_loss_enabled`/`tp_sl_reset_ratio`），默认关闭。`tp_sl_alert_states` 表记录每只基金每个方向的 armed 状态。复用 `dividend_alerts` 表（`alert_type` 区分 `dividend`/`take_profit`/`stop_loss`）
+- **通知中心写入点**（P3 Phase 2，全部 best-effort）：分红落库后（`_run_dividend_check`）、止盈止损触发（`_run_tp_sl_check`）、定投结果三类 skip_code/error（`_run_auto_invest`，holiday 不发）、净值更新结束后失败聚合 + 数据健康每日评估（`_run_nav_update` 尾部）；`daily_maintenance`（10:30）追加 dismissed 通知 30 天清理（`purge_notifications_daily`）
 - API: `GET /api/scheduler/status` + `PUT /api/scheduler/toggle` + `PUT /api/scheduler/cron`；`GET/PUT /api/alerts/config`（止盈止损配置）；`GET /api/alerts` + `GET /api/alerts/count`（统一提醒列表/计数，支持 `?type=tp_sl`）；`PUT /api/alerts/{id}`（更新状态：confirmed/ignored/pending，pending 时清空 resolved_at）
 - **净值更新共享锁**：`_run_nav_update()` 与 `api.py` 的手动触发共用 `nav_update_lock`/`nav_update_state`（定义在 `nav_update_state.py`，避免循环导入）。定时与手动两路更新互斥，且共享进度/结果状态供前端显示。`running=True` 在锁内同步设置，`finally` 复位也加锁，进程启动（前）后无 TOCTOU 竞态。`phase` 字段在尾部任务（回填/止盈止损/基准指数/元数据刷新）期间实时上报当前阶段，供前端在净值抓取完成后显示「刷新风险等级…」等标签而非停在 100% 静默等待
 - **基准指数持久化**：`_update_benchmark_indices()` 在净值更新后调用，遍历 `config.BENCHMARK_INDICES`（沪深300/上证指数/创业板指）逐只拉取并持久化到 `index_history` 表，确保离线时基准对比数据可用。DB 已有最新数据时跳过
@@ -573,6 +577,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ---
 
 ## 十二、当前工作状态
+
+### [Unreleased]
+
+- feat: 统一站内提醒中心（P3 Phase 2，规划见 `tmp/p3-advice-and-alerts-plan.md` §5 与 `tmp/p3-phase2-implementation-plan.md`）——新建 `notifications` 聚合表（只存业务引用+展示态，UNIQUE(dedupe_key) 去重，标题 code+params）+ `notification_service.py` best-effort 编排层（独立 try/except、独立事务、绝不上抛，通知失败不影响主业务）。6 类事件源全接入：分红（scheduler/scan 共用落库点）、止盈止损、定投三类 skip_code+error（holiday 不发）、Agent 刷新/回测 failed + 启动 interrupted（仅 running）、scheduler 净值失败每日聚合、数据健康每日评估（stale/missing/pending_t1 任一 >0，`data:health:{date}`）。状态联动：confirmed→read、ignored/幽灵清理/删除→dismissed、pending→unread（网页/提案审批/幽灵清理三路径，业务提交后独立事务）。API 四端点（白名单 422、limit 1–1000、批量 ≤500、read/dismiss 不写审计 D8），首期不进 Agent scope（契约零变化）。dismissed 30 天清理；备份排除 + 恢复清空（manifest 12 表不变）。前端 Layout Bell 未读徽章（移动端顶栏+桌面侧栏，挂载/60s/`zfund:notifications-changed`+`zfund:proposals-changed` 事件刷新）+ NotificationBell Popover（按源分组/双语标题/跳转来源页/悬空引用「已失效」降级/单条已读/全部已读/单条忽略）；`notificationLabels.ts` 双语映射。小决策 Q1–Q4 用户确认：任一异常即发每日聚合/回测失败也发/轮询设置项首期不做/holiday 不发。新增后端 48 例（test_notifications 27 + test_notifications_api 21，含故障注入：通知写入抛异常时分红扫描/定投执行照常）+ 前端 15 例（notificationLabels 14 + Layout 徽章 1，前端共 52 例），全量 1502 例。文档同步 CHANGELOG/CONTEXT/DATABASE/README（中英）
 
 ### [0.27.2] - 2026-11-19
 

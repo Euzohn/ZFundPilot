@@ -14,6 +14,7 @@ import { useLang } from "@/i18n/LanguageContext"
 import { pct } from "@/lib/format"
 import { Bell, CheckCircle2, XCircle, RotateCcw, ChevronDown, ChevronRight } from "lucide-react"
 import { toast } from "sonner"
+import { dispatchNotificationsChanged } from "@/components/NotificationBell"
 
 export default function TpSlAlertsPanel() {
   const { t } = useLang()
@@ -33,6 +34,7 @@ export default function TpSlAlertsPanel() {
     try {
       await api.updateAlert(id, "ignored")
       toast.success(t.common.saved)
+      dispatchNotificationsChanged()
     } catch (e) {
       setData(snapshot)
       toast.error(`${t.common.operationFailed}: ${e}`)
@@ -48,6 +50,7 @@ export default function TpSlAlertsPanel() {
     try {
       await api.updateAlert(id, "pending")
       toast.success(t.common.saved)
+      dispatchNotificationsChanged()
     } catch (e) {
       setData(snapshot)
       toast.error(`${t.common.operationFailed}: ${e}`)

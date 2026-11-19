@@ -29,6 +29,7 @@
 | `agent_operations` | Agent 写操作幂等记录（同主体同键只执行一次） | `id` (自增)，`UNIQUE(principal_type, principal_id, key_hash)` |
 | `refresh_jobs` | 任务化数据刷新（进度、结果、归属与有效期） | `id` (自增) |
 | `operation_proposals` | 账本操作提案（状态机、创建者、参数/摘要、审批与执行结果） | `id` (自增) |
+| `notifications` | 统一站内提醒中心（业务引用 + 展示态，去重/已读/忽略） | `id` (自增)，`UNIQUE(dedupe_key)` |
 
 ---
 
@@ -485,6 +486,42 @@ Agent 访问令牌元数据。服务端只存 SHA-256 摘要，明文仅在签�
 
 ---
 
+## 16. notifications — 统一站内提醒中心
+
+P3 Phase 2 新增。只存**业务引用与展示态**，业务状态仍在原表（`dividend_alerts`/`refresh_jobs` 等）；标题全部稳定 `title_code` + `title_params`（i18n 纪律，禁后端自由中文）。
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | 通知 id |
+| `source_type` | TEXT | NOT NULL | 事件源：`dividend`/`tpsl`/`auto_invest`/`job`/`nav_update`/`data_health` |
+| `source_id` | TEXT | NOT NULL DEFAULT '' | 业务引用（alert_id/plan_id/job_id/日期键） |
+| `dedupe_key` | TEXT | NOT NULL UNIQUE | 去重键（同事件不重发），如 `dividend:{fund}:{ex_date}:{channel}`、`data:health:{date}` |
+| `title_code` | TEXT | NOT NULL | 标题稳定 code（前端 `notificationLabels.ts` 双语映射） |
+| `title_params` | TEXT | NOT NULL DEFAULT '{}' | 标题插值参数（JSON） |
+| `status` | TEXT | NOT NULL DEFAULT 'unread' | 展示态：`unread`/`read`/`dismissed` |
+| `created_at` | TEXT | NOT NULL | 创建时间（ISO 8601，带时区） |
+| `read_at` | TEXT | DEFAULT NULL | 首次已读时间 |
+
+**写入安全约束（硬性）**：所有写入经 `notification_service.notify` 的 best-effort 包装——独立 try/except + warning、独立连接/事务（绝不与业务写同事务）、绝不上抛；通知失败不影响分红落库/定投执行/净值更新/提案审批。
+
+**事件源与去重键**：
+- 分红：scheduler 扫描与 `/api/dividends/scan` 落库成功后，`dividend:{fund}:{ex_date}:{channel}`
+- 止盈止损：`_run_tp_sl_check` 产生 pending alert 时，`tpsl:{alert_id}`
+- 定投：三类 `skip_code`（suspended/limit_exceeded/below_minimum）与 error 逐计划发，`auto_invest:{plan_id}:{date}:{skip_code|error}`；整任务异常 `auto_invest:task:{date}:error`；holiday 正常休市不发
+- 任务：Agent 刷新/回测落 failed `job:failed:{job_id}`；启动 interrupted **仅 running** `job:interrupted:{job_id}`
+- 净值更新：scheduler 每日失败聚合 `nav_update:failed:{date}`（网页手动刷新失败不发，即时可见）
+- 数据健康：净值更新后评估，stale/missing/pending_t1 任一 >0 每日一条聚合 `data:health:{date}`
+
+**状态联动**（best-effort）：业务 confirmed → read；ignored/源删除 → dismissed；业务回退 pending → unread（dismissed 不回退）。幽灵清理标 ignored 同路径联动。
+
+**生命周期**：dismissed 且创建超 30 天由 `daily_maintenance` 清理（`purge_dismissed_notifications`）；read 永久保留。
+
+**备份**：不进入备份 ZIP（瞬态 UI 状态，`backup_service.EXCLUDED_TABLES`）；恢复备份时清空本表（随 `agent_operations`/`refresh_jobs`/`operation_proposals`），避免旧通知指向已替换数据。
+
+**API**（网页登录鉴权，不进 Agent scope；read/dismiss 不写审计）：`GET /api/notifications`（status/source_type 白名单 422，limit 1–1000 默认 50，offset）、`GET /api/notifications/count?status=unread`、`POST /api/notifications/read`、`POST /api/notifications/dismiss`（ids ≤500 或 all 二选一）。
+
+---
+
 ## Python 数据模型（models.py）
 
 数据库表通过 Python dataclass 映射，不使用 ORM。
@@ -571,7 +608,7 @@ Agent 访问令牌元数据。服务端只存 SHA-256 摘要，明文仅在签�
 14. **`_migrate_add_transaction_source()`**: 为 `transactions` 补 `source`（可信直记写 `agent`，其余空串）
 15. **`_migrate_watchlist_revision()`**: 为 `watchlist` 补 `revision` 并回填版本 1
 
-> `index_history` 表通过 `init_db()` 中的 `CREATE TABLE IF NOT EXISTS` 创建，无需单独迁移函数（新表，无历史数据兼容问题）。
+> `index_history` 表通过 `init_db()` 中的 `CREATE TABLE IF NOT EXISTS` 创建，无需单独迁移函数（新表，无历史数据兼容问题）。`notifications` 表同理（P3 Phase 2 新表）。
 
 ---
 

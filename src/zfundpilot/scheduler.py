@@ -16,7 +16,16 @@ from typing import Any
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from . import analysis, auto_invest, config, db, fetch_estimate, fetch_fund, fetch_macro
+from . import (
+    analysis,
+    auto_invest,
+    config,
+    db,
+    fetch_estimate,
+    fetch_fund,
+    fetch_macro,
+    notification_service,
+)
 from .nav_update_state import nav_update_lock as _nav_update_lock
 from .nav_update_state import nav_update_state as _nav_update_state
 
@@ -141,6 +150,9 @@ def _run_nav_update() -> None:
         refresh_fund_metadata(on_phase=_set_phase)
         # 元数据写入后失效持仓缓存，确保接口立即返回新值
         analysis.clear_analysis_cache()
+        # 通知中心（best-effort，失败不影响主任务）：净值失败聚合 + 数据健康每日评估
+        notification_service.notify_nav_update_failed(results)
+        notification_service.evaluate_data_health()
     except Exception as exc:  # noqa: BLE001
         logger.exception("[scheduler] 定时净值更新任务异常")
         _last_run = datetime.now(config.TIMEZONE)
@@ -265,6 +277,8 @@ def _run_auto_invest() -> None:
             _refresh_trade_calendar()
             results = auto_invest.run_all_due()
             _last_auto_invest_run = datetime.now(config.TIMEZONE)
+            # 通知中心（best-effort）：三类 skip_code / error 逐计划发，holiday 不发
+            notification_service.notify_auto_invest_results(results)
             if results:
                 ok = sum(1 for r in results if r.get("status") == "success")
                 fail = sum(1 for r in results if r.get("status") == "error")
@@ -274,9 +288,10 @@ def _run_auto_invest() -> None:
                 logger.info("[scheduler] 定投执行: %d 成功, %d 失败", ok, fail)
             else:
                 logger.info("[scheduler] 无到期定投计划")
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
             logger.exception("[scheduler] 定投计划检查异常")
             _last_auto_invest_run = datetime.now(config.TIMEZONE)
+            notification_service.notify_auto_invest_task_error(str(exc))
 
 
 def _run_dividend_check() -> None:
@@ -308,7 +323,7 @@ def _run_dividend_check() -> None:
         new_count = 0
         for ev in events:
             if not db.dividend_alert_exists(ev.fund_code, ev.ex_date, ev.channel):
-                db.add_dividend_alert({
+                alert_id = db.add_dividend_alert({
                     "fund_code": ev.fund_code,
                     "fund_name": ev.fund_name,
                     "record_date": ev.record_date,
@@ -320,6 +335,7 @@ def _run_dividend_check() -> None:
                     "dividend_method": ev.dividend_method,
                     "channel": ev.channel,
                 })
+                notification_service.notify_dividend_alert(ev, alert_id)
                 new_count += 1
         cleaned = fetch_dividend._last_cleanup_count
         if new_count or cleaned:
@@ -398,6 +414,10 @@ def _run_tp_sl_check() -> None:
                         "last_triggered_return": rr,
                     }
                     new_count += 1
+                    notification_service.notify_tp_sl_alert(
+                        alert_id, fund_code=pos.fund_code,
+                        fund_name=pos.fund_name, alert_type="take_profit",
+                        triggered_return=rr, threshold=tp_threshold)
 
             if sl_enabled and rr <= sl_threshold:
                 armed = sl_state is None or sl_state.get("armed", 1) == 1
@@ -420,6 +440,10 @@ def _run_tp_sl_check() -> None:
                         "last_triggered_return": rr,
                     }
                     new_count += 1
+                    notification_service.notify_tp_sl_alert(
+                        alert_id, fund_code=pos.fund_code,
+                        fund_name=pos.fund_name, alert_type="stop_loss",
+                        triggered_return=rr, threshold=sl_threshold)
 
             # 复位检查：收益率回落到复位线以下后重新 armed
             tp_reset = tp_threshold * reset_ratio
@@ -515,6 +539,9 @@ def init_scheduler() -> None:
 # 幂等操作记录保留期：TTL 90 天 + 30 天排障宽限，之后清理。
 AGENT_OPERATIONS_PURGE_GRACE_DAYS = 30
 
+# dismissed 通知保留期：30 天（按创建时间起算），read 永久保留。
+NOTIFICATIONS_PURGE_DAYS = 30
+
 
 def purge_agent_operations_daily() -> int:
     """清理过期较久的幂等操作记录（agent_operations），启动与每日任务共用。
@@ -527,14 +554,27 @@ def purge_agent_operations_daily() -> int:
     return db.purge_agent_operations(cutoff)
 
 
+def purge_notifications_daily() -> int:
+    """清理 dismissed 且创建超过 30 天的通知（read 永久保留）。"""
+    now = datetime.now(config.TIMEZONE)
+    cutoff = (now - timedelta(days=NOTIFICATIONS_PURGE_DAYS)).isoformat()
+    return db.purge_dismissed_notifications(cutoff)
+
+
 def _run_daily_maintenance() -> None:
-    """每日维护：清理过期较久的幂等操作记录，避免表无限增长。"""
+    """每日维护：清理过期较久的幂等操作记录与 dismissed 通知，避免表无限增长。"""
     try:
         removed = purge_agent_operations_daily()
         if removed:
             logger.info("[scheduler] 清理 %d 条过期幂等操作记录", removed)
     except Exception:
         logger.exception("[scheduler] 清理幂等操作记录异常")
+    try:
+        removed = purge_notifications_daily()
+        if removed:
+            logger.info("[scheduler] 清理 %d 条过期 dismissed 通知", removed)
+    except Exception:
+        logger.exception("[scheduler] 清理 dismissed 通知异常")
 
 
 def _bootstrap_auto_invest() -> None:

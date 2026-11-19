@@ -272,6 +272,25 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_alert_code_ex ON dividend_alerts(fund_code, ex_date);
             CREATE INDEX IF NOT EXISTS idx_alert_type_status ON dividend_alerts(alert_type, status);
 
+            -- 统一站内提醒中心：只存业务引用与展示态（unread/read/dismissed），
+            -- 业务状态仍在原表；标题 code+params（i18n 纪律）；dedupe_key 去重。
+            -- 瞬态 UI 状态：不进入备份，恢复时清空（见 backup_service）。
+            CREATE TABLE IF NOT EXISTS notifications (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_type  TEXT NOT NULL,
+                source_id    TEXT NOT NULL DEFAULT '',
+                dedupe_key   TEXT NOT NULL UNIQUE,
+                title_code   TEXT NOT NULL,
+                title_params TEXT NOT NULL DEFAULT '{}',
+                status       TEXT NOT NULL DEFAULT 'unread',
+                created_at   TEXT NOT NULL,
+                read_at      TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_notifications_status
+                ON notifications(status, created_at);
+            CREATE INDEX IF NOT EXISTS idx_notifications_source
+                ON notifications(source_type, source_id);
+
             CREATE TABLE IF NOT EXISTS index_history (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 code       TEXT NOT NULL,
@@ -2394,6 +2413,149 @@ def delete_dividend_alert(alert_id: int) -> bool:
             (alert_id,),
         )
         return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# 统一站内提醒中心 (notifications) CRUD
+# ---------------------------------------------------------------------------
+def add_notification(*, source_type: str, source_id: str, dedupe_key: str,
+                     title_code: str, title_params: dict | None = None,
+                     created_at: str | None = None) -> bool:
+    """插入一条通知（INSERT OR IGNORE 按 dedupe_key 去重）。
+
+    返回是否新插入（False = 同键已存在，不重发）。调用方应经
+    ``notification_service.notify`` 的 best-effort 包装，不得与业务写同事务。
+    """
+    if created_at is None:
+        created_at = datetime.now(config.TIMEZONE).isoformat(timespec="seconds")
+    with get_connection() as conn:
+        cur = conn.execute(
+            """INSERT OR IGNORE INTO notifications
+               (source_type, source_id, dedupe_key, title_code, title_params,
+                created_at)
+               VALUES(?,?,?,?,?,?)""",
+            (source_type, str(source_id), dedupe_key, title_code,
+             json.dumps(title_params or {}, ensure_ascii=False), created_at),
+        )
+        return cur.rowcount > 0
+
+
+def list_notifications(*, status: str | None = None,
+                       source_type: str | None = None,
+                       limit: int = 50, offset: int = 0) -> list[dict]:
+    sql = "SELECT * FROM notifications"
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status:
+        clauses.append("status=?")
+        params.append(status)
+    if source_type:
+        clauses.append("source_type=?")
+        params.append(source_type)
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    with get_connection() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_notifications(*, status: str | None = None,
+                        source_type: str | None = None) -> int:
+    sql = "SELECT COUNT(*) c FROM notifications"
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status:
+        clauses.append("status=?")
+        params.append(status)
+    if source_type:
+        clauses.append("source_type=?")
+        params.append(source_type)
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    with get_connection() as conn:
+        row = conn.execute(sql, params).fetchone()
+    return int(row["c"]) if row else 0
+
+
+def mark_notifications_read(ids: list[int] | None = None, *, all: bool = False,
+                            now: str | None = None) -> int:
+    """unread → read（dismissed 不回退）。ids 与 all 二选一，返回更新行数。"""
+    if not all and not ids:
+        return 0
+    if now is None:
+        now = datetime.now(config.TIMEZONE).isoformat(timespec="seconds")
+    sql = "UPDATE notifications SET status='read', read_at=? WHERE status='unread'"
+    params: list[Any] = [now]
+    if not all:
+        sql += f" AND id IN ({','.join('?' for _ in ids)})"
+        params.extend(ids)
+    with get_connection() as conn:
+        cur = conn.execute(sql, params)
+        return int(cur.rowcount)
+
+
+def dismiss_notifications(ids: list[int] | None = None, *, all: bool = False) -> int:
+    """unread/read → dismissed。ids 与 all 二选一，返回更新行数。"""
+    if not all and not ids:
+        return 0
+    sql = "UPDATE notifications SET status='dismissed' WHERE status!='dismissed'"
+    params: list[Any] = []
+    if not all:
+        sql += f" AND id IN ({','.join('?' for _ in ids)})"
+        params.extend(ids)
+    with get_connection() as conn:
+        cur = conn.execute(sql, params)
+        return int(cur.rowcount)
+
+
+def sync_notification_by_source(source_type: str, source_id: str, *,
+                                status: str, now: str | None = None) -> int:
+    """业务状态联动：按来源把对应通知置为 read（confirmed）、dismissed
+    （ignored/源删除）或 unread（业务回退 pending）。返回更新行数。"""
+    if status not in ("read", "dismissed", "unread"):
+        return 0
+    if now is None:
+        now = datetime.now(config.TIMEZONE).isoformat(timespec="seconds")
+    if status == "read":
+        sql = ("UPDATE notifications SET status='read', read_at=? "
+               "WHERE source_type=? AND source_id=? AND status='unread'")
+        params: list[Any] = [now, source_type, str(source_id)]
+    elif status == "unread":
+        sql = ("UPDATE notifications SET status='unread', read_at=NULL "
+               "WHERE source_type=? AND source_id=? AND status='read'")
+        params = [source_type, str(source_id)]
+    else:
+        sql = ("UPDATE notifications SET status='dismissed' "
+               "WHERE source_type=? AND source_id=? AND status!='dismissed'")
+        params = [source_type, str(source_id)]
+    with get_connection() as conn:
+        cur = conn.execute(sql, params)
+        return int(cur.rowcount)
+
+
+def purge_dismissed_notifications(cutoff: str) -> int:
+    """清理创建时间早于 cutoff 的 dismissed 通知（read 永久保留）。
+
+    30 天按创建时间起算（表不存 dismissed_at，保持规格列集）；
+    由 daily_maintenance 调用，对齐 purge_agent_operations 模式。
+    """
+    with get_connection(write=True) as conn:
+        cur = conn.execute(
+            "DELETE FROM notifications WHERE status='dismissed' AND created_at < ?",
+            (cutoff,),
+        )
+        return int(cur.rowcount)
+
+
+def list_running_refresh_job_ids() -> list[int]:
+    """启动标记 interrupted 前取 running 任务 id（queued 未开始不发通知）。"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id FROM refresh_jobs WHERE status='running'"
+        ).fetchall()
+    return [int(r["id"]) for r in rows]
 
 
 # ---------------------------------------------------------------------------

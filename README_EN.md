@@ -144,6 +144,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 - **Rebalancing Advice (Action List)** — Structure-based optimization suggestions (not trading signals); each item expands into four explainable segments: evidence (metric vs threshold), positions involved, what-if before/after simulation (hypothetical, not an instruction), and risks & limits
 - **Take-Profit / Stop-Loss Alerts** — Automatically checks fund returns after NAV update and alerts when thresholds are hit. State machine prevents repeats: after triggering, returns must fall back below the reset ratio before re-arming, avoiding repeated alerts after partial profit-taking. Independent take-profit/stop-loss toggles, globally configurable thresholds. Confirm jumps to transaction page pre-filled with sell
 - **Dividend Auto-Detection** — Scans held funds for unrecorded dividends daily at 09:30, dialog pre-fills for quick recording. Phantom alert auto-cleanup: marks invalid alerts as ignored when source data is corrected
+- **Unified Notification Center** — Bell with unread badge in the sidebar/top bar + notification popover: dividends, take-profit/stop-loss, skipped/failed auto-invest, failed refresh jobs, NAV-update failures, and data-health anomalies aggregated in one place, grouped by source and deduplicated; mark read / mark all read / dismiss, click through to the source page, deleted sources shown as "Expired"; alert confirm/ignore automatically syncs notification state. Notification write failures never affect core business flows
 - **Risk-Level Display** — Fund risk levels (low/low-medium/medium/medium-high/high) persisted and shown site-wide: colored badges + risk-level filter + semantic sort in the positions list, risk-distribution pie on the overview, per-fund dots in returns analysis, and a risk-level distribution bar in the health check
 
 ### AI Assistant
@@ -168,7 +169,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 
 **Planned (not shipped, not a commitment)**
 
-- **Unified in-app notification center (P3 Phase 2)** — Unify dividend, take-profit/stop-loss, skipped/failed auto-invest, refresh-failure, and data-health alerts into one notification center with dedupe, read/dismiss state, and visible failure reasons; off-site notifications stay minimal-disclosure and off by default (the explainable action list shipped in v0.27.2)
+- **P3 Phase 3** — Turn action-list items into pending proposals (human web approval, no trading instructions); valuation-timing linkage (temperature-band change alerts + historical backtest reference for "buy more when undervalued / less when overvalued", no predictions, no auto-adjustment); off-site notifications (webhook/email) evaluated last, minimal-disclosure and off by default (the explainable action list and unified notification center have shipped)
 
 ### Security & Customization
 

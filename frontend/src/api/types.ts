@@ -1150,3 +1150,24 @@ export interface TrackedFundsResponse {
   ok: boolean
   funds: TrackedFund[]
 }
+
+// 统一站内提醒中心（P3 Phase 2）
+export type NotificationSourceType =
+  | "dividend" | "tpsl" | "auto_invest" | "job" | "nav_update" | "data_health"
+
+export interface NotificationItem {
+  id: number
+  source_type: NotificationSourceType
+  source_id: string
+  dedupe_key: string
+  title_code: string
+  title_params: Record<string, unknown>
+  status: "unread" | "read" | "dismissed"
+  created_at: string
+  read_at: string | null
+}
+
+export interface NotificationListResponse {
+  items: NotificationItem[]
+  pagination: { limit: number; offset: number; total: number; has_more: boolean }
+}

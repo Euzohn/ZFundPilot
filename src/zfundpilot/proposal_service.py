@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from . import agent_tokens, analysis, auto_invest, config, db, fetch_fund
+from . import agent_tokens, analysis, auto_invest, config, db, fetch_fund, notification_service
 from .models import Transaction
 from .transaction_service import (
     _DIGEST_RE,
@@ -3744,6 +3744,14 @@ def approve_proposal(proposal_id: object, *, reviewer: str,
             execution_result_json=json.dumps(execution, ensure_ascii=False),
             audit_id=audit_id, completed_at=now.isoformat())
         updated = db.get_proposal(conn, pid)
+
+    # 通知中心状态联动（best-effort、独立事务，业务提交后）：resolve_alert
+    # 按目标状态推进展示态；分红/再投资分录关联提醒视为 confirmed。
+    if operation_type == OPERATION_RESOLVE_ALERT:
+        notification_service.sync_alert_status(
+            clean.get("alert_id"), clean.get("status"))
+    elif operation_type == OPERATION_ADD_TRANSACTION and clean.get("dividend_alert_id"):
+        notification_service.sync_alert_status(clean["dividend_alert_id"], "confirmed")
 
     analysis.clear_analysis_cache()
     message = ("提案已批准，提醒状态已更新"

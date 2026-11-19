@@ -16,6 +16,7 @@ import type {
   FilterResponse,
   LatestNav,
   NavUpdateStatus,
+  NotificationListResponse,
   PortfolioSummary,
   Position,
   RiskReport,
@@ -668,5 +669,27 @@ export const api = {
     request<{ ok: boolean }>(`/alerts/${id}`, {
       method: "PUT",
       body: JSON.stringify({ status }),
+    }),
+
+  // 统一站内提醒中心（P3 Phase 2）
+  getNotifications: (params?: { status?: string; sourceType?: string; limit?: number; offset?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.status) q.set("status", params.status)
+    if (params?.sourceType) q.set("source_type", params.sourceType)
+    q.set("limit", String(params?.limit ?? 50))
+    q.set("offset", String(params?.offset ?? 0))
+    return request<NotificationListResponse>(`/notifications?${q.toString()}`)
+  },
+  getNotificationCount: (status = "unread") =>
+    request<{ count: number }>(`/notifications/count?status=${encodeURIComponent(status)}`),
+  markNotificationsRead: (ids?: number[]) =>
+    request<{ ok: boolean; updated: number }>("/notifications/read", {
+      method: "POST",
+      body: JSON.stringify(ids ? { ids } : { all: true }),
+    }),
+  dismissNotifications: (ids?: number[]) =>
+    request<{ ok: boolean; updated: number }>("/notifications/dismiss", {
+      method: "POST",
+      body: JSON.stringify(ids ? { ids } : { all: true }),
     }),
 }

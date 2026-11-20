@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from contextlib import contextmanager
 from typing import Any
 
 # 进程级 V8 锁（RLock：MiniRacer 的构造/eval/call 共用；多个线程各用各的
@@ -56,6 +57,24 @@ def _ensure_v8_serialized() -> None:
     py_mini_racer.MiniRacer.eval = locked_eval  # type: ignore[method-assign]
     py_mini_racer.MiniRacer.call = locked_call  # type: ignore[method-assign]
     _MINIRACER_PATCHED = True
+
+
+@contextmanager
+def serialized():
+    """持进程级 mini_racer 锁完成一次「构造 → 执行 → 销毁」完整生命周期。
+
+    类级 patch（init/eval/call）只串行化执行阶段；MiniRacer 用完即被引用计数
+    回收（close/__del__），销毁不在类级锁内。多线程并发「创建 + 销毁」仍会竞态
+    段错误（libmini_racer.so；选基指标增强 6 线程曾触发整站崩溃循环）。把整段
+    akshare 调用包进本上下文：CPython 在函数返回时即销毁其内部 MiniRacer（仍在
+    锁内），从而把销毁也纳入串行。RLock 可重入，与类级 patch 嵌套不冲突。
+
+    注意：不 patch close/__del__ 本身——GC 可能在 mini_racer 事件循环线程触发，
+    若 __del__ 抢锁而持锁线程正阻塞等待该事件循环，会死锁。故用「整段调用持锁」
+    而非「销毁方法持锁」。
+    """
+    with _MINIRACER_LOCK:
+        yield
 
 
 def resolve(*names: str) -> Callable[..., Any]:

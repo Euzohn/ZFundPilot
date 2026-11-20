@@ -4,6 +4,11 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Fixed
+- 修复选基页触发后端进程段错误、整站崩溃循环（`libmini_racer.so` SIGSEGV，服务器 dmesg 实锤：多次崩溃同一指令偏移、近空指针解引用）：选基「指标增强」为 6 线程并发，对每只未缓存净值的基金调 `akshare.fund_open_fund_info_em`——该接口每次调用都创建/销毁一个 mini_racer(V8) 上下文；`ak_compat` 的类级进程锁只串行 `init/eval/call`，**未覆盖销毁（close/__del__）**，并发「创建+销毁」竞态即段错误，容器 `restart: always` 反复拉起、进程内净值缓存清空后再进选基页再崩。双管齐下修复：**① 净值抓取改纯 Python 优先**——`fetch_nav_history` 由「AkShare 优先」改为「天天基金 `_fetch_via_eastmoney` 优先」（requests+正则+json 解析同一份 pingzhongdata 的 `Data_netWorthTrend`，与 AkShare 同源同数据、不经 V8、线程安全），AkShare 降为兜底；选基指标增强/每日净值任务/基金对比/详情更新四条路径从此不再触 V8。**② 全生命周期锁加固**——新增 `ak_compat.serialized()` 上下文管理器，持进程级 RLock 包裹整段 akshare 调用（CPython 引用计数在函数返回时即销毁其内部 MiniRacer，仍在锁内），把 V8 上下文销毁也纳入串行；包裹仍用 `fund_open_fund_info_em` 的净值兜底/同类排名/分红检测三处。不 patch `close/__del__` 本身（GC 可能在 mini_racer 事件循环线程触发，`__del__` 抢锁会与持锁等待该事件循环的线程死锁）。新增 `tests/test_nav_native_safety.py`（8 例：eastmoney 优先不触 AkShare、失败回退、6 线程并发净值抓取零 V8、三调用点调用期间持锁、并发整段串行 max_entries==1、锁可重入），全量 1511 例。**部署**：纯代码改动，重建镜像即可（无依赖变更）
+
 ## [0.28.0] - 2026-11-20
 
 ### Added

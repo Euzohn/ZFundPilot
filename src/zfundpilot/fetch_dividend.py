@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 
-from . import analysis, config, db, notification_service
+from . import ak_compat, analysis, config, db, notification_service
 from .models import ACTION_DIVIDEND, ACTION_REINVEST
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,9 @@ def _fetch_fund_dividends(fund_code: str) -> list[dict]:
 
     try:
         import akshare as ak
-        df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="分红送配详情")
+        # 整段调用持进程序列化锁（含 V8 上下文销毁），见 ak_compat.serialized。
+        with ak_compat.serialized():
+            df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="分红送配详情")
         if df is None or df.empty:
             return []
         records = df.to_dict("records")

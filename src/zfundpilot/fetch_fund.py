@@ -1,8 +1,11 @@
 """基金净值获取模块。
 
-数据源优先级：
-1. AkShare（ak.fund_open_fund_info_em）
-2. 天天基金 pingzhongdata 接口（兜底，仅取近段历史）
+净值历史数据源优先级：
+1. 天天基金 pingzhongdata（requests+正则+json 纯 Python 解析，不经 V8，线程安全）
+2. AkShare（ak.fund_open_fund_info_em，兜底；整段调用持 ak_compat.serialized 锁）
+
+两者读同一份 pingzhongdata JS 的 Data_netWorthTrend。优先纯 Python 路径，避免
+选基指标增强等并发场景创建/销毁 mini_racer(V8) 上下文导致 libmini_racer.so 段错误。
 
 对外主要函数：
 - fetch_fund_meta(fund_code)        仅获取基金名称/类型（录入时自动补全用）
@@ -611,10 +614,13 @@ def fetch_fund_meta(fund_code: str) -> FundMeta:
 # 数据源 1：AkShare
 # ---------------------------------------------------------------------------
 def _fetch_via_akshare(fund_code: str) -> list[NavPoint]:
-    """使用 AkShare 获取单位净值走势。失败抛异常。"""
+    """使用 AkShare 获取单位净值走势（兜底路径）。失败抛异常。"""
     import akshare as ak  # 延迟导入，未安装时不影响其它功能
 
-    df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="单位净值走势")
+    # 整段调用持进程序列化锁：fund_open_fund_info_em 内部创建/销毁 mini_racer(V8)
+    # 上下文，须连同销毁一起串行（见 ak_compat.serialized）。
+    with ak_compat.serialized():
+        df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="单位净值走势")
     if df is None or df.empty:
         raise ValueError("AkShare 返回空数据")
 
@@ -675,10 +681,25 @@ def _fetch_via_eastmoney(fund_code: str) -> list[NavPoint]:
 # 对外接口
 # ---------------------------------------------------------------------------
 def fetch_nav_history(fund_code: str) -> list[NavPoint]:
-    """获取历史净值，AkShare 优先，失败自动切换天天基金。"""
+    """获取历史净值，天天基金（纯 Python）优先，失败回退 AkShare。
+
+    优先 ``_fetch_via_eastmoney``：与 AkShare 读同一份 pingzhongdata JS 的
+    ``Data_netWorthTrend``，但用 requests+正则+json 解析，不经 mini_racer(V8)。
+    选基指标增强为 6 线程并发，若走 AkShare 会并发创建/销毁 V8 上下文导致
+    libmini_racer.so 段错误（曾致整站崩溃循环）；纯 Python 路径线程安全。
+    AkShare 仅作兜底，且整段调用持 ``ak_compat.serialized`` 锁。
+    """
     fund_code = fund_code.strip()
     errors: list[str] = []
 
+    try:
+        points = _fetch_via_eastmoney(fund_code)
+        if points:
+            return points
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"eastmoney: {exc}")
+
+    # 兜底：AkShare（V8 路径，整段调用持进程序列化锁）
     for attempt in range(config.FETCH_MAX_RETRIES):
         try:
             points = _fetch_via_akshare(fund_code)
@@ -687,14 +708,6 @@ def fetch_nav_history(fund_code: str) -> list[NavPoint]:
         except Exception as exc:  # noqa: BLE001
             errors.append(f"akshare#{attempt + 1}: {exc}")
             time.sleep(0.5)
-
-    # 兜底
-    try:
-        points = _fetch_via_eastmoney(fund_code)
-        if points:
-            return points
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"eastmoney: {exc}")
 
     raise RuntimeError("；".join(errors) or "未知错误")
 
@@ -1539,7 +1552,9 @@ def fetch_fund_ranking(fund_code: str) -> FundRankingResult:
     try:
         import akshare as ak
 
-        df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="同类排名百分比")
+        # 整段调用持进程序列化锁（含 V8 上下文销毁），见 ak_compat.serialized。
+        with ak_compat.serialized():
+            df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="同类排名百分比")
 
         if df is None or df.empty:
             result = FundRankingResult(

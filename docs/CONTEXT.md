@@ -13,7 +13,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 主要能力：
 
 - **持仓与交易管理** — 买卖/分红/再投资流水录入，CSV 批量导入，截图 AI 解析自动识别基金与金额
-- **净值自动更新** — 定时任务拉取净值（AkShare 优先、天天基金 fallback），实时估值（东财估值 + 指数/ETF 兜底）
+- **净值自动更新** — 定时任务拉取净值（天天基金纯 Python 优先、AkShare fallback），实时估值（东财估值 + 指数/ETF 兜底）
 - **收益分析** — 累计收益曲线 + 基准对比（沪深300/上证/创业板/CPI/M2）、日/周/月盈亏日历、**XIRR 年化收益率**（组合与单基金，现金流含买卖/分红/再投资，终端值取当前市值作假设变现）、浮动收益率排序（可切换累计/年化）
 - **组合体检** — 四维诊断评分（配置/风险/流动性/收益，每维 0-100）+ 综合定级（优秀→危险）+ 风险提示 + 结构优化建议，一个 API 返回全量
 - **定投** — 计划自动执行（日/周/双周/月，A 股交易日历顺延含法定节假日/调休，QDII 跳美股休市，申购状态可投性校验暂停/限购/低于起点自动跳过）+ 策略回测（DCA vs 一次性投入，XIRR 对比）
@@ -49,11 +49,11 @@ ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
 │   ├── __init__.py          # __version__ = "0.28.1"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
-│   ├── ak_compat.py         # akshare 跨版本改名兼容层（优先新名、回退旧名）＋进程级 V8 串行化（py_mini_racer 非线程安全，多数据源并发会 SIGTRAP）
+│   ├── ak_compat.py         # akshare 跨版本改名兼容层（优先新名、回退旧名）＋进程级 V8 串行化（类级锁 init/eval/call＋serialized() 整段调用全生命周期锁含销毁；mini_racer 非线程安全，并发会段错误）
 │   ├── config.py            # 全局配置、环境变量、认证管理
 │   ├── db.py                # SQLite 操作层（连接管理 + CRUD + 迁移）
 │   ├── models.py            # 数据结构（Fund/Transaction/Position/PortfolioSummary）
-│   ├── fetch_fund.py        # 基金净值获取（AkShare 优先，天天基金 fallback）+ 重仓股/排名/档案/行业配置/申购状态/交易日历
+│   ├── fetch_fund.py        # 基金净值获取（天天基金纯 Python 优先，AkShare fallback）+ 重仓股/排名/档案/行业配置/申购状态/交易日历
 │   ├── fetch_estimate.py   # 基金实时估值（东财估值 + 指数/ETF 兜底）+ 指数历史收盘价持久化
 │   ├── fetch_macro.py     # 宏观财富水位数据（CPI 链乘价格水平 + M2 存量，三级缓存，复用 index_history 表）
 │   ├── fetch_dividend.py  # 基金分红检测（AkShare 分红送配 + 90 天窗口 + 交易去重 + 幽灵提醒自动清理）
@@ -257,7 +257,7 @@ ZFundPilot/
 
 ### fetch_fund.py — 净值获取
 
-- `fetch_nav_history(fund_code)`: AkShare 优先（`ak.fund_open_fund_info_em`），天天基金 `pingzhongdata` fallback
+- `fetch_nav_history(fund_code)`: 天天基金 `pingzhongdata` 优先（requests+正则+json 纯 Python，不经 V8、线程安全），AkShare（`ak.fund_open_fund_info_em`）fallback（整段调用持 `ak_compat.serialized()` 全生命周期锁）
 - `update_fund_nav(fund_code)`: 获取 + 写入 DB
 - `update_all_holdings_nav(codes, progress)`: 批量更新，0.3s 间隔限流
 - `fetch_fund_meta(fund_code)`: 获取基金名称/类型/板块

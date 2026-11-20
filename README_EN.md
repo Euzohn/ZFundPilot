@@ -46,7 +46,7 @@
   <p><b>Transactions</b> — Trade entry, transaction log, CSV import/export, screenshot import (AI vision recognition of trades/holdings), auto-invest plans</p>
   <br>
   <img src="assets/readme/screenshots_en/update.webp" alt="NAV Updates" width="90%">
-  <p><b>NAV Updates</b> — AkShare primary, Tiantian Fund fallback, bulk NAV history fetch</p>
+  <p><b>NAV Updates</b> — Tiantian Fund primary, AkShare fallback, bulk NAV history fetch</p>
   <br>
   <img src="assets/readme/screenshots_en/returns.webp" alt="Return Analysis" width="90%">
   <p><b>Return Analysis</b> — Unrealized/realized P&L, XIRR annualized return, portfolio curve, benchmark comparison, day/week/month/year calendar view</p>
@@ -125,7 +125,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 
 ### Analysis & Estimates
 
-- **NAV Updates** — AkShare primary, Tiantian Fund fallback. Auto-fetch fund name/type/sector on code entry
+- **NAV Updates** — Tiantian Fund primary, AkShare fallback. Auto-fetch fund name/type/sector on code entry
 - **Return Analysis** — Unrealized/realized P&L, XIRR annualized return (portfolio + per-fund, cash-flow bisection), portfolio return curve, benchmark comparison (CSI 300 / SSE Composite / ChiNext + CPI purchasing power / M2 wealth ranking waterlines, data persisted for offline use), return rate ranking (cumulative/annualized toggle), day/week/month/year calendar view, stacked bar by channel
 - **Wealth Waterlines (CPI/M2)** — Portfolio return curve overlaid with inflation purchasing power line (CPI MoM-chained price level) and social wealth ranking line (M2 stock expansion), answering "am I actually richer after inflation". Waterline uses last month-end before portfolio start as baseline, exactly 0 at start date. AI advisor context includes real return (inflation-adjusted) and wealth ranking direction
 - **Live Estimates** — Real-time fund change estimates during trading hours. Auto-invalidates when actual NAV is published. Auto-falls back to fundgz API (6 threads) when primary source is unavailable, with index/ETF fallback tier

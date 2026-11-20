@@ -931,7 +931,7 @@ const zh = {
     isLatest: "✅ 已是最新",
     notLatest: "⚠️ 非最新",
     batchUpdate: "批量更新",
-    dataSourceHint: "数据源：AkShare 优先，失败自动切换天天基金。首次抓取较慢。",
+    dataSourceHint: "数据源：天天基金优先，失败自动切换 AkShare。首次抓取较慢。",
     updateAllNav: "更新全部基金净值",
     startFailed: "启动失败",
     fetchingNav: "正在拉取净值数据…",

@@ -933,7 +933,7 @@ const en: typeof zh = {
     isLatest: "✅ Up to date",
     notLatest: "⚠️ Outdated",
     batchUpdate: "Batch Update",
-    dataSourceHint: "Data source: AkShare first, auto-fallback to TianTian Fund. First fetch may be slower.",
+    dataSourceHint: "Data source: TianTian Fund first, auto-fallback to AkShare. First fetch may be slower.",
     updateAllNav: "Update All Fund NAV",
     startFailed: "Start failed",
     fetchingNav: "Fetching NAV data...",

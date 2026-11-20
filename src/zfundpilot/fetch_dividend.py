@@ -20,8 +20,9 @@ _LOOKBACK_DAYS = 90
 
 # 分红抓取线程数：必须为 1（串行）。
 # akshare fund_open_fund_info_em('分红送配详情') 每次调用都会：
-#   1) 无条件下载整份 pingzhongdata/{code}.js 并在 py_mini_racer(V8) 里 eval
-#      ——本模块不经 ak_compat 导入时 V8 进程锁未安装，并发 eval 会 SIGSEGV；
+#   1) 无条件下载整份 pingzhongdata/{code}.js 并在 mini_racer(V8) 里 eval
+#      ——本模块已导入 ak_compat（V8 类级进程锁生效），且整段调用另持
+#      ak_compat.serialized() 全生命周期锁（含上下文销毁，防并发创建+销毁竞态）；
 #   2) 用 pd.read_html(StringIO(...)) 解析分红页表格（lxml/libxml2），
 #      lxml 解析并发线程不安全，实测服务器（V8 锁已生效）3 线程并发仍
 #      SIGSEGV（退出码 139），单次调用 exit=0。

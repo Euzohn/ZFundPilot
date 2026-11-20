@@ -4,6 +4,11 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [Unreleased]
+
+### Fixed
+- 残留 V8 路径全生命周期串行统一（v0.28.1 跟进加固，消除最后的跨锁域理论竞态窗口）：经对 akshare 1.20.61 逐函数体验证，进程内其余 V8 使用方仅剩乐咕估值兜底（`valuation._lg_call`，stock_index_pe_lg/pb_lg）与新浪交易日历（`fetch_trade_calendar`，calendar_trade_date_hist_sina）两处——fetch_estimate/宏观/重仓/行业/申购状态等接口均为纯 Python JSON 不触 V8。两处原有各自的域锁（`_V8_LOCK`/`_trade_cal_lock`）已把本域内整段调用串行，但跨锁域并发「创建+销毁」V8 上下文仍可能竞态（类级锁只盖 init/eval/call，不盖 close/__del__）。现两处的实际 akshare 调用外嵌套 `ak_compat.serialized()`，全进程 V8 生命周期统一到同一把进程级锁；限频等待/退避 sleep 保持在锁外不持锁空等。新增 `tests/test_v8_serialized_coverage.py`（3 例：两处调用期间持锁、乐咕+日历跨域并发 max_entries==1），全量 1514 例。无依赖变更
+
 ## [0.28.1] - 2026-11-20
 
 ### Fixed

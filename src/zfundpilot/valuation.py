@@ -46,7 +46,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from . import db
+from . import ak_compat, db
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,9 @@ _REQUEST_INTERVAL = 1.5  # 两次上游请求的最小间隔（秒）
 _MAX_ATTEMPTS = 3
 _RETRY_BACKOFF = (4.0, 8.0)  # 第 1/2 次失败后的等待（秒）
 
+# _V8_LOCK 串行乐咕域内的「请求间隔 + 调用」；实际 akshare 调用另嵌套
+# ak_compat.serialized()（进程级全生命周期锁），把 V8 上下文的创建/销毁与
+# 其余 V8 使用方（交易日历等）统一到同一把锁，防跨锁域销毁竞态。
 _V8_LOCK = threading.Lock()
 _last_request_ts = 0.0
 
@@ -524,7 +527,12 @@ def merge_series(pe_df: Any, pb_df: Any) -> list[dict[str, Any]]:
 
 
 def _lg_call(fn: Callable[..., Any], symbol: str) -> Any:
-    """串行调用乐咕接口：V8 锁 + 最小请求间隔 + 指数退避重试。"""
+    """串行调用乐咕接口：V8 锁 + 最小请求间隔 + 指数退避重试。
+
+    实际调用嵌套 ``ak_compat.serialized()``：V8 上下文「构造→执行→销毁」
+    整段持进程级锁，与其余 V8 使用方（交易日历等）串行；间隔等待/退避 sleep
+    保持在 serialized() 之外，不持锁空等。
+    """
     global _last_request_ts
     _ensure_requests_timeout()
     last_exc: Exception | None = None
@@ -534,7 +542,8 @@ def _lg_call(fn: Callable[..., Any], symbol: str) -> Any:
             if delay > 0:
                 time.sleep(delay)
             try:
-                result = fn(symbol=symbol)
+                with ak_compat.serialized():
+                    result = fn(symbol=symbol)
             except Exception as exc:  # noqa: BLE001 - 429/网络错误统一重试
                 last_exc = exc
             else:

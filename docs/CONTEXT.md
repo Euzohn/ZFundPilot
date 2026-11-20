@@ -60,7 +60,7 @@ ZFundPilot/
 │   ├── compare.py           # 基金对比（收益率/风险/相关性多维度计算）
 │   ├── fund_filter.py       # 基金筛选器（全市场池加载 + 多条件筛选 + 指标增强 Top 30 + index_tag 宽基/行业/主题分类）+ resolve_fund_code 名称→代码解析 + verify_fund_code 校验
 │   ├── sparkline.py         # 选基列表迷你走势（近 250 交易日归一化净值，只读 DB，单只失败降级空序列）
-│   ├── valuation.py         # 指数估值（12 个宽基 PE/PB 月度长历史 + 日期窗口百分位 + 温度；乐咕源，TTL 24h/stale-if-error/单只降级）
+│   ├── valuation.py         # 指数估值（12 个宽基 PE/PB 长历史 + 日期窗口百分位 + 温度；韭圈儿为主+乐咕兜底，TTL 24h/stale-if-error/单只降级）
 │   ├── analysis.py          # 收益计算（持仓汇总 + 收益曲线 + 缓存）+ reconcile_holdings 截图持仓对账 + 行业穿透聚合 + 单基金 XIRR
 │   ├── returns.py            # XIRR 年化收益率（二分法 + 现金流构建，供 analysis/backtest 共用）
 │   ├── health.py             # 组合体检四维评分（配置/风险/流动性/收益）+ 综合体检报告，供 api/ai 共用
@@ -295,7 +295,7 @@ ZFundPilot/
 - `percentile(values, current)`：当前值在样本中的百分位；`rolling_percentiles(points, field, years)` 按**日期窗口**逐点滚动（非固定点数），保证历史曲线末点与列表当前百分位一致；`select_window` 默认近 10 年，历史不足 10 年回退 `all` 并在 UI 标注
 - `classify_temperature(pe_pct)`：PE(TTM) 百分位 `<30` → `low`、`30–70` → `fair`、`>70` → `high`，`None` → `unknown`；PB 百分位并列展示
 - `IndexValuation`：`code`/`name`/`pe`/`pe_percentile`/`pb`/`pb_percentile`/`window`/`window_months`/`temperature`/`history_months`/`data_date`/`source`/`stale`/`ok`/`message`
-- `list_valuations(refresh=False)`：批量估值；`TTL_HOURS=24` 内读 `index_valuation` 缓存，`refresh=true` 强制拉取。乐咕经 akshare 用 PyMiniRacer(V8) 解 JS token，**V8 非线程安全**（并发会 SIGTRAP），进程级由 `ak_compat._ensure_v8_serialized()` 统一串行化全部 V8 使用方（akshare 1.20.x 起交易日历/新浪指数线也走 V8，仅串行估值不够）；乐咕抓取另走**单 worker 串行队列** + 请求最小间隔 1.5s + 3 次退避重试（4s/8s）；旧版 akshare（≤1.18.x）乐咕请求不带超时，`_ensure_requests_timeout()` 给未显式传 timeout 的 requests 调用注入默认 (10s, 30s)，防止上游挂起时队列永远卡死；列表接口有界等待 10s（`LIST_REFRESH_TIMEOUT`）先返回已完成项，超时项转后台继续抓取并逐只落库（响应 `refreshing=true`，前端每 3s 轮询补全；连续 3 次轮询失败即暂停并显示错误+重试；响应另带 `progress` 进度快照：total/remaining/current/failed，前端横幅显示「进度 x/12 · 当前：xxx」与失败只数）；失败时保留旧值标 `stale`（`stale-if-error`），无旧值则单只 `ok=false` 降级（`message` 带失败原因，`_last_errors` 记录），不抛 500；单只失败后 5 分钟冷却期内不自动重提（`_FAILURE_COOLDOWN`/`_last_failed_at`，手动刷新与展开历史除外），防止上游不可达时轮询反复重提导致页面永远「刷新中」；另有全站熔断：连续失败 ≥6 次（跨指数累计，如上游封禁服务器 IP 整站 504）全局静默 1 小时不再自动抓取（`_BREAKER_THRESHOLD`/`_BREAKER_COOLDOWN`），避免每 5 分钟一轮的重提让频控封禁续期，手动刷新/展开历史可穿透、任一成功立即合闸
+- `list_valuations(refresh=False)`：批量估值；`TTL_HOURS=24` 内读 `index_valuation` 缓存，`refresh=true` 强制拉取。乐咕经 akshare 用 PyMiniRacer(V8) 解 JS token，**V8 非线程安全**（并发会 SIGTRAP），进程级由 `ak_compat._ensure_v8_serialized()` 类级锁串行 init/eval/call，且全部 V8 调用点（乐咕/交易日历/净值兜底/排名/分红）另嵌套 `serialized()` 整段调用持锁含上下文销毁（akshare 1.20.x 起交易日历等也走 V8，仅串行估值不够）；乐咕抓取另走**单 worker 串行队列** + 请求最小间隔 1.5s + 3 次退避重试（4s/8s）；旧版 akshare（≤1.18.x）乐咕请求不带超时，`_ensure_requests_timeout()` 给未显式传 timeout 的 requests 调用注入默认 (10s, 30s)，防止上游挂起时队列永远卡死；列表接口有界等待 10s（`LIST_REFRESH_TIMEOUT`）先返回已完成项，超时项转后台继续抓取并逐只落库（响应 `refreshing=true`，前端每 3s 轮询补全；连续 3 次轮询失败即暂停并显示错误+重试；响应另带 `progress` 进度快照：total/remaining/current/failed，前端横幅显示「进度 x/12 · 当前：xxx」与失败只数）；失败时保留旧值标 `stale`（`stale-if-error`），无旧值则单只 `ok=false` 降级（`message` 带失败原因，`_last_errors` 记录），不抛 500；单只失败后 5 分钟冷却期内不自动重提（`_FAILURE_COOLDOWN`/`_last_failed_at`，手动刷新与展开历史除外），防止上游不可达时轮询反复重提导致页面永远「刷新中」；另有全站熔断：连续失败 ≥6 次（跨指数累计，如上游封禁服务器 IP 整站 504）全局静默 1 小时不再自动抓取（`_BREAKER_THRESHOLD`/`_BREAKER_COOLDOWN`），避免每 5 分钟一轮的重提让频控封禁续期，手动刷新/展开历史可穿透、任一成功立即合闸
 - `get_history(code, window=None)`：返回 `index` + `points[]`（`date`/`pe`/`pb`/`pe_percentile`/`pb_percentile`）；未知代码返回 `None` → API 404
 - `tracking_funds(meta, limit=20)`：从全市场基金池按名称关键词匹配跟踪基金（`IndexMeta.exclude` 防子串误判，如「中证100」排除「中证1000」）
 - API：`GET /api/valuation/indices`、`GET /api/valuation/indices/{code}/history`、`GET /api/valuation/indices/{code}/funds`
@@ -577,6 +577,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ---
 
 ## 十二、当前工作状态
+
+### [Unreleased]
+
+- fix: 残留 V8 路径包锁统一（v0.28.1 跟进）——逐函数体 inspect 验证后确认其余 V8 使用方仅乐咕估值兜底（`_lg_call`）与新浪交易日历（`fetch_trade_calendar`）两处（fetch_estimate/宏观/重仓/行业/申购均纯 Python）；两处原各持域锁（_V8_LOCK/_trade_cal_lock）本域内已整段串行，但跨锁域「创建+销毁」仍有理论竞态。实际 akshare 调用外嵌套 `ak_compat.serialized()`，全进程 V8 生命周期统一一把锁；限频/退避 sleep 留锁外。新增 test_v8_serialized_coverage 3 例（含跨域并发 max_entries==1），全量 1514。无依赖变更。另顺手修正 CONTEXT 估值树注释过时「乐咕源/月频」→韭圈儿为主+乐咕兜底
 
 ### [0.28.1] - 2026-11-20
 

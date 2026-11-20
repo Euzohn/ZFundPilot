@@ -1920,9 +1920,12 @@ def fetch_trade_calendar() -> set[str]:
         if _trade_cal_cache and now - _trade_cal_cache_ts < _TRADE_CAL_CACHE_TTL:
             return _trade_cal_cache
         try:
-            df = ak_compat.call(
-                "calendar_trade_date_hist_sina", "tool_trade_date_hist_sina"
-            )
+            # 整段调用持进程级全生命周期锁（含 V8 上下文销毁），与乐咕估值等
+            # 其余 V8 使用方统一串行；见 ak_compat.serialized。
+            with ak_compat.serialized():
+                df = ak_compat.call(
+                    "calendar_trade_date_hist_sina", "tool_trade_date_hist_sina"
+                )
             dates = {str(v)[:10] for v in df["trade_date"] if str(v)[:1].isdigit()}
             if dates:
                 _trade_cal_cache.clear()

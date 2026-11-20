@@ -25,7 +25,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 > ⚠️ Agent 在本地开发时不要正式运行或测试，仅做代码编写和类型检查。服务器端部署通过 Docker 完成。
 
 - **仓库**: `git@github.com:Euzohn/ZFundPilot.git`，分支 `main`
-- **版本**: `0.28.0`（git tag `v0.28.0`）
+- **版本**: `0.28.1`（git tag `v0.28.1`）
 - **License**: MIT
 
 ---
@@ -47,7 +47,7 @@ Web 应用，支持本地开发和服务器部署（Docker）。核心流程：�
 ```
 ZFundPilot/
 ├── src/zfundpilot/          # Python 后端
-│   ├── __init__.py          # __version__ = "0.28.0"
+│   ├── __init__.py          # __version__ = "0.28.1"
 │   ├── api.py               # FastAPI 路由（所有 /api/* 端点）
 │   ├── ak_compat.py         # akshare 跨版本改名兼容层（优先新名、回退旧名）＋进程级 V8 串行化（py_mini_racer 非线程安全，多数据源并发会 SIGTRAP）
 │   ├── config.py            # 全局配置、环境变量、认证管理
@@ -192,7 +192,7 @@ ZFundPilot/
 
 ### api.py — FastAPI 路由
 
-- 版本: `FastAPI(title="ZFundPilot API", version="0.28.0")`
+- 版本: `FastAPI(title="ZFundPilot API", version="0.28.1")`
 - 认证: HMAC 签名 token 认证，`auth_middleware` 拦截 `/api/*`（`/api/auth/login` 和 `/api/auth/status` 除外）。登录速率限制（5 次失败/5 分钟 → 锁定 15 分钟），密码使用 bcrypt 哈希（兼容旧 SHA-256，登录后自动升级）
 - 审计日志: `audit_log` 表记录敏感操作（登录/改密/增删改交易/CSV 导入/AI 配置/定时任务/T+1 修复）。`GET /api/audit` 支持 `limit`(1–1000)/`offset` 分页与 `action`/`username`/`from`/`to` 精确筛选（`from`/`to` 接受纯日期或 ISO 时间串，纯日期按整天包含式处理，`from` 晚于 `to` 返回 422）；默认 `limit=100` 行为不变。设置页「操作日志」提供动作/用户/日期筛选，前端 detail 可展开查看格式化 JSON
 - Agent token 临期提示: 设置页令牌列表在 `expires_at` 未来 7 天内显示「即将过期」徽章（前端本地判断，不影响后端鉴权与过期语义）
@@ -578,7 +578,7 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ## 十二、当前工作状态
 
-### [Unreleased]
+### [0.28.1] - 2026-11-20
 
 - fix: 选基页 mini_racer 并发段错误致整站崩溃循环（libmini_racer.so SIGSEGV，服务器 dmesg 实锤同一指令偏移/近空指针）——指标增强 6 线程并发 `fund_open_fund_info_em`，每次创建/销毁 V8 上下文；ak_compat 类级锁只盖 init/eval/call 未盖销毁，并发创建+销毁竞态。修复①净值抓取改纯 Python `_fetch_via_eastmoney` 优先（同源同数据不经 V8、线程安全），AkShare 兜底→选基/定时净值/对比/详情更新四路径不再触 V8；②新增 `ak_compat.serialized()` 全生命周期锁，整段调用持锁包裹净值兜底/同类排名/分红检测（含销毁；不 patch close/__del__ 防事件循环线程 GC 死锁）。新增 test_nav_native_safety 8 例，全量 1511。纯代码改动，重建镜像即可（无依赖变更）
 

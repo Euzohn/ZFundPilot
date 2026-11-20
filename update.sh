@@ -43,8 +43,12 @@ else
   echo ""
   echo "🔨 检测到更新，构建并启动容器..."
   docker compose up -d --build
-  # 清理悬空镜像（不清理 builder 缓存，保留层缓存加速增量构建）
+  # 清理悬空镜像
   docker image prune -f
+  # 构建缓存限容 2GB：每次发版 bump 前端版本号，npm ci 层必然失效，
+  # 旧缓存不会再命中、只会堆积（服务器实测曾达 16GB+）；保留最近 2GB
+  # 仍可让 pip 层命中。彻底回收可手动：docker builder prune -af
+  docker builder prune -f --keep-storage 2gb
 fi
 echo ""
 
@@ -92,4 +96,6 @@ echo "  --- 运维 ---"
 echo "  docker compose exec zfundpilot bash           # 进入容器终端"
 echo "  docker stats zfundpilot --no-stream           # 查看资源占用"
 echo "  docker system df                              # 查看磁盘占用"
+echo "  docker builder du                             # 查看构建缓存占用"
+echo "  docker builder prune -af                      # 彻底回收构建缓存（下次构建变慢）"
 echo "  cp -r data data.bak.\$(date +%Y%m%d)           # 备份数据目录"

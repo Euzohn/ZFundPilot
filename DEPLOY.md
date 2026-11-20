@@ -205,6 +205,10 @@ sudo firewall-cmd --permanent --add-port=8080/tcp && sudo firewall-cmd --reload
 | 停止 | `docker compose down` |
 | 更新代码 | `git pull && docker compose up -d --build` |
 | 备份数据 | `cp data/fund.db data/fund.db.bak` |
+| 查看磁盘占用 | `docker system df` / `docker builder du` |
+| 清理构建缓存 | `docker builder prune -f --keep-storage 2gb`（`update.sh` 每次更新自动执行） |
+
+> 💡 **磁盘维护**：每次 `--build` 会把失效旧层留在 BuildKit 缓存里；尤其每次发版 bump `frontend/package.json` 版本号，`npm ci` 层（约 1GB）必然失效、旧缓存永不再命中，长期累积可达 10GB+。`update.sh` 每次更新后自动 `docker builder prune -f --keep-storage 2gb`（保留最近 2GB，pip 层仍可命中）；手动构建的话需自行定期执行。彻底回收用 `docker builder prune -af`——对运行中的容器/镜像/数据零影响，只是下次构建变慢。另 `data/backups/pre_restore_*.zip` 安全备份无自动清理，定期手动删旧留新。
 
 ### 3.7 环境变量
 
@@ -377,6 +381,6 @@ cp data/fund.db data/fund.db.bak
 cp -r data data.bak.$(date +%Y%m%d)
 ```
 
-也可在网页「设置 → 数据备份」导出格式 v2 ZIP：包含 `manifest.json` 与 12 张表 JSONL（含净值历史、自选墓碑、提醒、指数历史与偏好），逐表记录行数、列顺序和 SHA-256。导入前先预检；恢复需输入 `RESTORE` 确认，系统会先把当前数据写入 `data/backups/pre_restore_*.zip`，再在单个 SQLite 事务中整体替换，失败自动回滚。审计日志、AI 用量、Agent token、AI 密钥与指数估值缓存（可重建）不进入普通备份。
+也可在网页「设置 → 数据备份」导出格式 v2 ZIP：包含 `manifest.json` 与 12 张表 JSONL（含净值历史、自选墓碑、提醒、指数历史与偏好），逐表记录行数、列顺序和 SHA-256。导入前先预检；恢复需输入 `RESTORE` 确认，系统会先把当前数据写入 `data/backups/pre_restore_*.zip`，再在单个 SQLite 事务中整体替换，失败自动回滚。这些安全备份**无自动清理**，会随恢复次数累积，定期手动删除旧的（留最近一两个即可）。审计日志、AI 用量、Agent token、AI 密钥与指数估值缓存（可重建）不进入普通备份。
 
 恢复是管理操作：建议先停止写入（或短暂停服），不要在服务运行时直接覆盖 `data/fund.db`；恢复完成后再刷新页面核对持仓、交易与净值历史。

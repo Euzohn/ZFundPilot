@@ -582,6 +582,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 - fix: 残留 V8 路径包锁统一（v0.28.1 跟进）——逐函数体 inspect 验证后确认其余 V8 使用方仅乐咕估值兜底（`_lg_call`）与新浪交易日历（`fetch_trade_calendar`）两处（fetch_estimate/宏观/重仓/行业/申购均纯 Python）；两处原各持域锁（_V8_LOCK/_trade_cal_lock）本域内已整段串行，但跨锁域「创建+销毁」仍有理论竞态。实际 akshare 调用外嵌套 `ak_compat.serialized()`，全进程 V8 生命周期统一一把锁；限频/退避 sleep 留锁外。新增 test_v8_serialized_coverage 3 例（含跨域并发 max_entries==1），全量 1514。无依赖变更。另顺手修正 CONTEXT 估值树注释过时「乐咕源/月频」→韭圈儿为主+乐咕兜底
 
+- change: 部署磁盘治理——`.dockerignore` 改排整个 `data/`（原仅 *.db/*.sqlite，备份 ZIP/密钥仍进构建上下文）+ `.env`/override/前端产物等；`update.sh` 更新后自动 `docker builder prune -f --keep-storage 2gb`（发版 bump 版本号致 npm 层必失效、旧缓存永不命中，服务器实测积 16.55GB；原脚本注释刻意不清 builder 缓存是积累根源）；DEPLOY.md 补磁盘维护说明 + pre_restore 安全备份无自动清理提示。无代码行为变化
+
 ### [0.28.1] - 2026-11-20
 
 - fix: 选基页 mini_racer 并发段错误致整站崩溃循环（libmini_racer.so SIGSEGV，服务器 dmesg 实锤同一指令偏移/近空指针）——指标增强 6 线程并发 `fund_open_fund_info_em`，每次创建/销毁 V8 上下文；ak_compat 类级锁只盖 init/eval/call 未盖销毁，并发创建+销毁竞态。修复①净值抓取改纯 Python `_fetch_via_eastmoney` 优先（同源同数据不经 V8、线程安全），AkShare 兜底→选基/定时净值/对比/详情更新四路径不再触 V8；②新增 `ak_compat.serialized()` 全生命周期锁，整段调用持锁包裹净值兜底/同类排名/分红检测（含销毁；不 patch close/__del__ 防事件循环线程 GC 死锁）。新增 test_nav_native_safety 8 例，全量 1511。纯代码改动，重建镜像即可（无依赖变更）

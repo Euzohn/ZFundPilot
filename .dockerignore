@@ -1,6 +1,7 @@
 # Git
 .git
 .gitignore
+.github/
 
 # Python
 __pycache__/
@@ -16,13 +17,20 @@ venv/
 # 前端（构建产物由 Dockerfile 内生成）
 frontend/node_modules/
 frontend/dist/
+frontend/.env.local
+frontend/*.tsbuildinfo
+frontend/vite.config.d.ts
+frontend/vite.config.js
 
-# 数据
-data/*.db
-data/*.sqlite
+# 数据（运行时 bind mount，绝不进镜像；含备份 ZIP / 密钥 / auth.json）
+data/
 fund.md
 context.md
 tmp/
+
+# 密钥 / 服务器本地配置（不进构建上下文）
+.env
+docker-compose.override.yml
 
 # 文档
 DEPLOY.md
@@ -36,8 +44,10 @@ assets/
 # 测试
 tests/
 
-# 系统
+# 系统 / 本地工具
 .DS_Store
 .idea/
 .vscode/
 .opencode/
+.aionrs/
+session-*.md

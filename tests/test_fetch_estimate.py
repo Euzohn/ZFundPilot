@@ -361,8 +361,8 @@ class TestIndexHistoryDB:
         return db_module, original
 
     def _teardown(self, original):
-        from zfundpilot import config
         import zfundpilot.db as db_module
+        from zfundpilot import config
         config.DB_PATH = original
         db_module._trade_cal_cache = None
         db_module._trade_cal_max = None

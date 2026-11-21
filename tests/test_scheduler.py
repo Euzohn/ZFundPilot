@@ -14,7 +14,6 @@ from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
-
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from zfundpilot import config, db, scheduler

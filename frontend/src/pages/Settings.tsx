@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from "react"
 import { LineChart, Line, ResponsiveContainer } from "recharts"
-import { getChannels, getChannelsAsync, saveChannels, getDefaultChannels } from "@/lib/channels"
-import { getChannelColors, getChannelColorsAsync, saveChannelColors, getDefaultChannelColors, getPalette } from "@/lib/channelColors"
+import { getChannels, getChannelsAsync, saveChannels, getDefaultChannels, invalidateChannelsCache } from "@/lib/channels"
+import { getChannelColors, getChannelColorsAsync, saveChannelColors, getDefaultChannelColors, getPalette, invalidateChannelColorsCache } from "@/lib/channelColors"
 import { getColorTheme, getColorThemeAsync, saveColorTheme, applyColorTheme, type ColorTheme } from "@/lib/colorTheme"
 import { formatRelativeTime, formatTokens } from "@/lib/format"
 import { isTokenExpiringSoon } from "@/lib/tokenExpiry"
@@ -1288,33 +1288,13 @@ export default function Settings() {
   }
 
   // 备份恢复后重读偏好类配置。channels/channelColors 的异步 getter 首次加载后会缓存，
-  // 无法反映恢复后的服务端值，这里直接重读 preferences，并经 save* 回写刷新
-  // 内存/localStorage/服务端各级缓存，保证本页及后续挂载读到的都是恢复后的数据。
+  // 先显式失效缓存再异步重读（纯读刷新，不回写服务端），保证本页及后续挂载读到的
+  // 都是恢复后的数据。
   const reloadChannelPreferences = async () => {
-    let prefs: Record<string, string>
-    try {
-      prefs = await api.getPreferences()
-    } catch {
-      return
-    }
-    if (prefs.channels) {
-      try {
-        const parsed = JSON.parse(prefs.channels)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setChannels(parsed)
-          await saveChannels(parsed)
-        }
-      } catch { /* 非法 JSON：保留现值 */ }
-    }
-    if (prefs.channel_colors) {
-      try {
-        const parsed = JSON.parse(prefs.channel_colors)
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          setChannelColors(parsed)
-          await saveChannelColors(parsed)
-        }
-      } catch { /* 非法 JSON：保留现值 */ }
-    }
+    invalidateChannelsCache()
+    invalidateChannelColorsCache()
+    getChannelsAsync().then(setChannels).catch(() => {})
+    getChannelColorsAsync().then(setChannelColors).catch(() => {})
     const theme = await getColorThemeAsync()
     setColorTheme(theme)
     applyColorTheme(theme)

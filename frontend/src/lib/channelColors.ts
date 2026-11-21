@@ -71,6 +71,14 @@ export function getPalette(): string[] {
   return [...PALETTE]
 }
 
+// 清空内存/localStorage 缓存，使下次 getChannelColorsAsync 重新从服务端读取。
+// 用于备份恢复等整体替换 preferences 的场景（纯读刷新，无需回写服务端）。
+export function invalidateChannelColorsCache(): void {
+  loaded = false
+  serverColors = null
+  try { localStorage.removeItem(STORAGE_KEY) } catch {}
+}
+
 export function getColorForChannel(channel: string, colors?: Record<string, string>, index?: number): string {
   const map = colors ?? getChannelColors()
   if (map[channel]) return map[channel]

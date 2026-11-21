@@ -60,3 +60,11 @@ export async function saveChannels(channels: string[]): Promise<void> {
 export function getDefaultChannels(): string[] {
   return [...DEFAULT_CHANNELS]
 }
+
+// 清空内存/localStorage 缓存，使下次 getChannelsAsync 重新从服务端读取。
+// 用于备份恢复等整体替换 preferences 的场景（纯读刷新，无需回写服务端）。
+export function invalidateChannelsCache(): void {
+  loaded = false
+  serverChannels = null
+  try { localStorage.removeItem(STORAGE_KEY) } catch {}
+}

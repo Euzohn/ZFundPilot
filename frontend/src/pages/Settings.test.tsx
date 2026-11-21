@@ -280,6 +280,7 @@ describe("Settings 备份恢复后刷新已加载配置", () => {
     const file = new File(["backup"], "backup.zip", { type: "application/zip" })
     fireEvent.change(fileInput, { target: { files: [file] } })
 
+    const prefsCallsBeforeRestore = mocks.getPreferences.mock.calls.length
     fireEvent.click(await screen.findByRole("button", { name: "恢复此备份" }))
     fireEvent.click(await screen.findByRole("button", { name: "确认恢复" }))
 
@@ -292,9 +293,9 @@ describe("Settings 备份恢复后刷新已加载配置", () => {
     await waitFor(() => expect(mocks.getAIConfig).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(mocks.getVisionConfig).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(mocks.getKeywordMaps).toHaveBeenCalledTimes(2))
-    // 偏好（渠道/颜色）经 save* 回写刷新缓存
-    await waitFor(() => expect(mocks.savePreferences).toHaveBeenCalled())
-    expect(mocks.savePreferences.mock.calls.some((c) => JSON.stringify(c[0]).includes("银行"))).toBe(true)
+    // 偏好（渠道/颜色）经缓存失效后纯读重读：getPreferences 再次被调用，且不回写服务端
+    await waitFor(() => expect(mocks.getPreferences.mock.calls.length).toBeGreaterThan(prefsCallsBeforeRestore))
+    expect(mocks.savePreferences).not.toHaveBeenCalled()
   })
 
   it("恢复失败：toast.error 且不触发配置重载", async () => {

@@ -155,16 +155,28 @@ class TestReconcileItem:
 
 class TestTpSlConfigUpdate:
     def test_valid(self):
-        t = TpSlConfigUpdate(take_profit=0.15, stop_loss=0.05)
+        # 止损阈值语义为负收益率（与 db 默认 -0.15、前端负值提交一致）
+        t = TpSlConfigUpdate(take_profit=0.15, stop_loss=-0.15)
         assert t.take_profit == 0.15
+        assert t.stop_loss == -0.15
 
     def test_take_profit_negative(self):
         with pytest.raises(ValidationError, match="不能为负数"):
             TpSlConfigUpdate(take_profit=-0.1)
 
     def test_stop_loss_negative(self):
-        with pytest.raises(ValidationError, match="不能为负数"):
-            TpSlConfigUpdate(stop_loss=-0.05)
+        # 契约修正：负值止损合法（本测试曾错误地钉住「拒负」契约）
+        t = TpSlConfigUpdate(stop_loss=-0.05)
+        assert t.stop_loss == -0.05
+
+    def test_stop_loss_positive_rejected(self):
+        # 正值止损会导致 scheduler 对盈利仓位误触发，必须拒绝
+        with pytest.raises(ValidationError, match="不能为正数"):
+            TpSlConfigUpdate(stop_loss=0.05)
+
+    def test_stop_loss_zero_allowed(self):
+        t = TpSlConfigUpdate(stop_loss=0)
+        assert t.stop_loss == 0
 
     def test_reset_ratio_negative(self):
         with pytest.raises(ValidationError, match="不能为负数"):

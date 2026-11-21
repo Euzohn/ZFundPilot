@@ -24,6 +24,7 @@ def temp_db(monkeypatch):
 
 @pytest.fixture
 def client(temp_db, monkeypatch):
+    monkeypatch.setattr(config, "AUTH_ENABLED", False)
     monkeypatch.setattr(api, "_REQ_LOGS", {})
     monkeypatch.setattr(api, "_AGENT_REQ_LOGS", {})
     return TestClient(api.app)
@@ -144,3 +145,42 @@ class TestAuditEndpoint:
 
     def test_empty_string_filter_rejected(self, client):
         assert client.get("/api/audit?action=").status_code == 422
+
+
+class TestAuditTimeNormalization:
+    """from/to 混用纯日期与 ISO 时间串时按真实时间比较，而非字典序。"""
+
+    def test_from_time_to_same_day_date_ok(self, client):
+        # to 为纯日期按整天包含式处理：from=当天 08:00 应合法（旧字典序误判 422）
+        resp = client.get("/api/audit",
+                          params={"from": "2026-11-02T08:00:00", "to": "2026-11-02"})
+        assert resp.status_code == 200, resp.text
+
+    def test_tz_aware_real_order_ok(self, client):
+        # 09:00+08:00 = 01:00Z 早于 02:00Z，但字典序前者更大（旧实现误判 422）
+        resp = client.get("/api/audit", params={
+            "from": "2026-11-02T09:00:00+08:00",
+            "to": "2026-11-02T02:00:00+00:00",
+        })
+        assert resp.status_code == 200, resp.text
+
+    def test_tz_aware_reversed_still_422(self, client):
+        # 10:00+08:00 = 02:00Z 晚于 01:00Z
+        resp = client.get("/api/audit", params={
+            "from": "2026-11-02T10:00:00+08:00",
+            "to": "2026-11-02T01:00:00+00:00",
+        })
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["field"] == "from"
+
+    def test_z_suffix_supported(self, client):
+        resp = client.get("/api/audit", params={
+            "from": "2026-11-02T01:00:00Z", "to": "2026-11-02T02:00:00Z",
+        })
+        assert resp.status_code == 200, resp.text
+
+    def test_invalid_calendar_date_422(self, client):
+        resp = client.get("/api/audit",
+                          params={"from": "2026-02-30", "to": "2026-03-01"})
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["field"] == "from"

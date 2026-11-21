@@ -15,6 +15,7 @@ import hmac
 import ipaddress
 import json
 import logging
+import math
 import os
 import re
 import sqlite3
@@ -22,9 +23,11 @@ import threading
 import time
 import urllib.parse
 from dataclasses import asdict, replace
-from datetime import datetime
+from datetime import UTC, datetime
+from functools import partial
 from typing import Annotated, Any, Literal
 
+import anyio
 from fastapi import (
     Depends,
     FastAPI,
@@ -105,18 +108,33 @@ async def _lifespan(app: FastAPI):
         try:
             fixed = analysis.recalculate_t1_transactions()
         except Exception:
-            logger.exception("T+1 净值回填修复异常，跳过")
-            fixed = None
-        if fixed:
-            print(f"[T+1 NAV FIX] 修复 {len(fixed)} 笔交易:")
-            for f in fixed:
-                print(f"  tx#{f['tx_id']} {f['fund_code']} {f['date']}  "
-                      f"nav {f['old_nav']:.4f}→{f['new_nav']:.4f}  "
-                      f"shares {f['old_shares']:.2f}→{f['new_shares']:.2f}")
-            db.log_audit("t1_nav_fix", detail={"fixed": fixed, "count": len(fixed)})
-            logger.info("修复了 %d 笔 T+1 交易的净值回填", len(fixed))
-        db.upsert_preference("t1_nav_fix_done", "1")
-    scheduler.init_scheduler()
+            # 异常时不标记完成，保留标志为空以便下次启动重试（修复本身幂等）
+            logger.exception("T+1 净值回填修复异常，下次启动重试")
+        else:
+            if fixed:
+                print(f"[T+1 NAV FIX] 修复 {len(fixed)} 笔交易:")
+                for f in fixed:
+                    print(f"  tx#{f['tx_id']} {f['fund_code']} {f['date']}  "
+                          f"nav {f['old_nav']:.4f}→{f['new_nav']:.4f}  "
+                          f"shares {f['old_shares']:.2f}→{f['new_shares']:.2f}")
+                db.log_audit("t1_nav_fix", detail={"fixed": fixed, "count": len(fixed)})
+                logger.info("修复了 %d 笔 T+1 交易的净值回填", len(fixed))
+            # 仅成功完成（含无需修复的空结果）时标记，避免错误数据永久得不到修复
+            db.upsert_preference("t1_nav_fix_done", "1")
+    try:
+        scheduler.init_scheduler()
+    except ValueError:
+        # cron 表达式非法（preferences 或环境变量）：降级默认 cron 重试，不阻塞启动
+        logger.exception("调度器 cron 解析失败，回退默认 cron: %s", config.NAV_CRON)
+        try:
+            # 清理可能半初始化的调度器引用（未 start 时 shutdown 会抛错），确保可重建
+            scheduler.reset_scheduler()
+            scheduler.set_cron(config.NAV_CRON)
+            scheduler.init_scheduler()
+        except Exception:
+            logger.exception("调度器降级启动仍失败，定时任务暂不可用")
+    except Exception:
+        logger.exception("调度器初始化失败，定时任务暂不可用")
     # 启动时把遗留 queued/running 刷新任务标记 interrupted，避免永久 running。
     interrupted = refresh_service.mark_interrupted_on_startup()
     if interrupted:
@@ -304,12 +322,17 @@ def _get_client_ip(request: Request) -> str:
 
     仅在 request.client.host 命中 TRUSTED_PROXIES 时读取 X-Forwarded-For 头，
     否则直接用 request.client.host（防止客户端伪造 IP 绕过限流）。
+    支持 IPv6 与 IPv4-mapped IPv6（双栈监听下 IPv4 客户端呈现为 ::ffff:x.x.x.x）。
     """
     client_host = request.client.host if request.client else "unknown"
     try:
-        addr = ipaddress.IPv4Address(client_host)
-    except ipaddress.AddressValueError:
+        addr = ipaddress.ip_address(client_host)
+    except ValueError:
         return client_host
+    # IPv4-mapped IPv6 归一化为 IPv4，才能命中 IPv4 信任网段
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        addr = addr.ipv4_mapped
+    # 版本不同的网段 `in` 判断恒为 False，IPv6 地址不会误命中 IPv4 网段
     if any(addr in net for net in config.TRUSTED_PROXIES):
         xff = request.headers.get("x-forwarded-for", "")
         if xff:
@@ -368,6 +391,36 @@ def _sweep_login_attempts() -> None:
         ]
         if not _LOGIN_ATTEMPTS[ip]:
             _LOGIN_ATTEMPTS.pop(ip, None)
+
+
+def _check_stepup_rate_limit(request: Request, source: str) -> str:
+    """升级认证（改密码/改用户名/开启 Agent 写）前置限流检查。
+
+    与登录共享按 IP 的失败锁定桶，防止持有效网页 token 的攻击者
+    绕过登录限流在线猜测当前密码。超限抛 429；返回客户端 IP。
+    """
+    ip = _get_client_ip(request)
+    allowed, retry_after = _check_rate_limit(ip)
+    if not allowed:
+        db.log_audit("login_failed", ip=ip, username=config.AUTH_USERNAME,
+                      detail={"reason": "rate_limited", "source": source,
+                              "retry_after": retry_after})
+        raise api_errors.ApiError(
+            status_code=429,
+            detail=f"尝试次数过多，请 {retry_after} 秒后再试",
+            code="login_rate_limited",
+            retryable=True,
+            retry_after=retry_after,
+            headers={"Retry-After": str(retry_after)},
+        )
+    return ip
+
+
+def _record_stepup_failure(ip: str, source: str) -> None:
+    """升级认证密码错误：计入登录失败锁定桶并写失败审计。"""
+    _record_failed_login(ip)
+    db.log_audit("login_failed", ip=ip, username=config.AUTH_USERNAME,
+                  detail={"reason": "wrong_password", "source": source})
 
 # ---------------------------------------------------------------------------
 # 端点速率限制（in-memory，单 uvicorn worker）
@@ -510,6 +563,11 @@ class LoginRequest(BaseModel):
     password: str
 
 
+# 固定哑 bcrypt 哈希（cost=12）：用户名错误时也执行一次等价耗时的校验，
+# 均衡两条失败路径的响应时间，防止通过计时枚举有效用户名。
+_DUMMY_PASSWORD_HASH = "$2b$12$pz0gPLq3dIQm24AOvtOmzeypVdbNDNMLXli59QHbTT7BxcyB7LqIC"
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
@@ -527,6 +585,8 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     path = request.url.path
+    if request.method == "OPTIONS":  # 预检交由 CORS 中间件处理（与 agent_auth 一致）
+        return await call_next(request)
     # Agent 工具端点使用独立 Agent token，由 require_agent_scope 依赖校验；
     # 不经过网页登录 token 中间件（仍默认拒绝：每个工具路由都挂 Agent 鉴权依赖）。
     if path == "/api/agent/tools" or path.startswith("/api/agent/tools/"):
@@ -599,6 +659,8 @@ def auth_login(request: Request, body: LoginRequest) -> dict[str, Any]:
         )
 
     if body.username != config.AUTH_USERNAME:
+        # 哑校验均衡耗时（结果忽略），避免「错用户名立即返回」泄漏用户名是否存在
+        config.verify_password(body.password, _DUMMY_PASSWORD_HASH)
         _record_failed_login(ip)
         db.log_audit("login_failed", ip=ip, username=body.username,
                       detail={"reason": "wrong_username"})
@@ -626,31 +688,43 @@ def auth_login(request: Request, body: LoginRequest) -> dict[str, Any]:
 
 @app.post("/api/auth/change-password")
 def change_password(request: Request, body: ChangePasswordRequest) -> dict[str, Any]:
-    """修改密码（需已登录 + 当前密码验证）。"""
+    """修改密码（需已登录 + 当前密码验证）。
+
+    当前密码校验与登录共享失败锁定桶：失败计数 + 失败审计，超限 429。
+    """
     if not config.AUTH_ENABLED:
         raise HTTPException(400, "未启用密码认证")
+    ip = _check_stepup_rate_limit(request, "change_password")
     if not config.verify_password(body.current_password, config.AUTH_PASSWORD_HASH):
+        _record_stepup_failure(ip, "change_password")
         raise HTTPException(401, "当前密码错误")
     if len(body.new_password) < 6:
         raise HTTPException(400, "新密码至少 6 位")
+    _clear_login_attempts(ip)
     config.update_password(body.new_password)
-    db.log_audit("change_password", ip=_get_client_ip(request), username=config.AUTH_USERNAME)
+    db.log_audit("change_password", ip=ip, username=config.AUTH_USERNAME)
     return {"ok": True, "message": "密码已修改，所有设备需要重新登录"}
 
 
 @app.post("/api/auth/change-username")
 def change_username(request: Request, body: ChangeUsernameRequest) -> dict[str, Any]:
-    """修改用户名（需已登录 + 当前密码验证）。"""
+    """修改用户名（需已登录 + 当前密码验证）。
+
+    当前密码校验与登录共享失败锁定桶：失败计数 + 失败审计，超限 429。
+    """
     if not config.AUTH_ENABLED:
         raise HTTPException(400, "未启用密码认证")
+    ip = _check_stepup_rate_limit(request, "change_username")
     if not config.verify_password(body.current_password, config.AUTH_PASSWORD_HASH):
+        _record_stepup_failure(ip, "change_username")
         raise HTTPException(401, "当前密码错误")
     new_username = body.new_username.strip()
     if len(new_username) < 2:
         raise HTTPException(400, "用户名至少 2 位")
+    _clear_login_attempts(ip)
     old_username = config.AUTH_USERNAME
     config.update_username(new_username)
-    db.log_audit("change_username", ip=_get_client_ip(request),
+    db.log_audit("change_username", ip=ip,
                   username=old_username,
                   detail={"old_username": old_username, "new_username": new_username})
     return {"ok": True, "message": "用户名已修改，所有设备需要重新登录"}
@@ -876,7 +950,10 @@ def update_agent_write_settings(
                 detail={"code": "auth_required",
                         "message": "开启 Agent 写能力需先设置登录密码（无密码模式禁止开启）"},
             )
+        # 开启写能力的密码确认同样属升级认证：共享登录失败锁定桶，防在线猜密码
+        _check_stepup_rate_limit(request, "agent_write_enable")
         if not config.verify_password(body.password, config.AUTH_PASSWORD_HASH):
+            _record_stepup_failure(ip, "agent_write_enable")
             db.log_audit("agent_write_toggle_denied", ip=ip, username=username,
                          detail={"reason": "wrong_password", "to": True})
             raise HTTPException(
@@ -884,6 +961,7 @@ def update_agent_write_settings(
                 detail={"code": "wrong_password",
                         "message": "当前密码错误"},
             )
+        _clear_login_attempts(ip)
     value = "true" if body.enabled else "false"
     db.upsert_preference(config.AGENT_WRITE_PREF_KEY, value)
     config.apply_agent_write_preference(value)
@@ -967,6 +1045,47 @@ def _extract_agent_bearer(request: Request) -> str:
     """从 Authorization: Bearer 中取明文 token；缺失时返回空串。"""
     header = request.headers.get("Authorization", "")
     return header[7:].strip() if header.startswith("Bearer ") else ""
+
+
+# --- Agent 鉴权失败按 IP 限流（防未认证 DoS：无限 401 + 审计表膨胀）---------
+_AGENT_AUTH_FAILS: dict[str, list[float]] = {}
+_AGENT_AUTH_FAIL_SWEEP_COUNTER = 0
+_AGENT_AUTH_FAIL_WINDOW = 60
+_AGENT_AUTH_FAIL_MAX = 30  # 每 IP 每分钟最多鉴权失败次数，超限 429 且不再写审计
+
+
+def _check_agent_auth_fail_limit(ip: str) -> tuple[bool, int]:
+    """检查 IP 的 Agent 鉴权失败是否超限；返回 (允许, 剩余秒数)。"""
+    now = time.time()
+    timestamps = _AGENT_AUTH_FAILS.get(ip)
+    if not timestamps:
+        return True, 0
+    timestamps[:] = [t for t in timestamps if now - t < _AGENT_AUTH_FAIL_WINDOW]
+    if not timestamps:
+        _AGENT_AUTH_FAILS.pop(ip, None)
+        return True, 0
+    if len(timestamps) >= _AGENT_AUTH_FAIL_MAX:
+        return False, int(timestamps[0] + _AGENT_AUTH_FAIL_WINDOW - now) + 1
+    return True, 0
+
+
+def _record_agent_auth_fail(ip: str) -> None:
+    """记录一次 Agent 鉴权失败。
+
+    策略：滑动窗口计数，成功认证不清计数（窗口自然过期）——合法客户端
+    偶发失败远低于阈值，而攻击者无法靠穿插成功请求重置计数。
+    """
+    global _AGENT_AUTH_FAIL_SWEEP_COUNTER
+    now = time.time()
+    timestamps = _AGENT_AUTH_FAILS.setdefault(ip, [])
+    timestamps.append(now)
+    timestamps[:] = [t for t in timestamps if now - t < _AGENT_AUTH_FAIL_WINDOW]
+    _AGENT_AUTH_FAIL_SWEEP_COUNTER += 1
+    if _AGENT_AUTH_FAIL_SWEEP_COUNTER >= 200 or len(_AGENT_AUTH_FAILS) > 10000:
+        _AGENT_AUTH_FAIL_SWEEP_COUNTER = 0
+        for key in [k for k, ts in _AGENT_AUTH_FAILS.items()
+                    if not ts or now - ts[-1] > 2 * _AGENT_AUTH_FAIL_WINDOW]:
+            _AGENT_AUTH_FAILS.pop(key, None)
 
 
 def _authenticate_agent_token(request: Request) -> agent_tokens.AgentTokenContext:
@@ -1077,9 +1196,29 @@ async def agent_auth_middleware(request: Request, call_next):
         return await call_next(request)
     if request.method == "OPTIONS":  # 交由 CORS 中间件处理预检
         return await call_next(request)
+    # 鉴权前按 IP 失败计数限流：超限直接 429，不再触发哈希查询与审计写入
+    ip = _get_client_ip(request)
+    allowed, retry_after = _check_agent_auth_fail_limit(ip)
+    if not allowed:
+        request_id = (getattr(request.state, "request_id", "")
+                      or api_errors.get_request_id())
+        payload = api_errors.build_error_payload(
+            request_id=request_id,
+            status_code=429,
+            detail=f"鉴权失败次数过多，请 {retry_after} 秒后再试",
+            code="rate_limited",
+            retryable=True,
+            retry_after=retry_after,
+        )
+        return JSONResponse(
+            status_code=429, content=payload,
+            headers={"Retry-After": str(retry_after),
+                     "X-Request-ID": request_id},
+        )
     try:
         request.state.agent_ctx = _authenticate_agent_token(request)
     except HTTPException as exc:
+        _record_agent_auth_fail(ip)
         request_id = (getattr(request.state, "request_id", "")
                       or api_errors.get_request_id())
         payload = api_errors.build_error_payload(
@@ -3564,10 +3703,23 @@ async def parse_screenshot(file: UploadFile = File(...), mode: str = "transactio
         raise HTTPException(413, "图片大小不能超过 10MB")
     if not image:
         return {"ok": False, "items": [], "error": "图片为空"}
-    result = ai.parse_screenshot(image, mode, channel_hint, file.content_type or "", user_hint)
+    # 视觉解析含 PIL 压缩 + 最长 60s 同步 HTTP，放入线程避免阻塞事件循环
+    result = await anyio.to_thread.run_sync(
+        ai.parse_screenshot, image, mode, channel_hint,
+        file.content_type or "", user_hint)
     if result["ok"] and mode == "transactions":
-        _mark_duplicates(result["items"])
+        # 重复标记含同步 DB 查询，同样不占用事件循环
+        await anyio.to_thread.run_sync(_mark_duplicates, result["items"])
     return result
+
+
+def _coerce_finite_float(value: Any) -> float | None:
+    """把不可信的模型输出安全转为有限 float；非数值/NaN/inf 返回 None。"""
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    return num if math.isfinite(num) else None
 
 
 def _mark_duplicates(items: list[dict]) -> None:
@@ -3578,16 +3730,19 @@ def _mark_duplicates(items: list[dict]) -> None:
     - action 相同
     - date 相同（parsed tx 的 date 非空）
     - amount 相近（abs < 0.01）或 shares 相近
+
+    items 来自视觉模型原始 JSON：amount/shares 可能是字符串数字，
+    date/action 可能非字符串，比较前先做防御性类型规整。
     """
     # 收集 items 中需要查询的 (fund_code, action, date) 三元组
     query_triples: set[tuple[str, str, str]] = set()
     for item in items:
         code = str(item.get("fund_code") or "").strip()
         date = item.get("date")
-        if not code or not date:
+        if not code or date is None or date == "":
             continue
-        action = item.get("action", "")
-        query_triples.add((code, action, date))
+        action = str(item.get("action") or "")
+        query_triples.add((code, action, str(date)))
 
     if not query_triples:
         for item in items:
@@ -3609,12 +3764,12 @@ def _mark_duplicates(items: list[dict]) -> None:
         item["is_duplicate"] = False
         code = str(item.get("fund_code") or "").strip()
         date = item.get("date")
-        if not code or not date:
+        if not code or date is None or date == "":
             continue
-        action = item.get("action", "")
-        amount = item.get("amount")
-        shares = item.get("shares")
-        for tx in lookup.get((code, action, date), []):
+        action = str(item.get("action") or "")
+        amount = _coerce_finite_float(item.get("amount"))
+        shares = _coerce_finite_float(item.get("shares"))
+        for tx in lookup.get((code, action, str(date)), []):
             if amount is not None and tx.amount is not None and abs(tx.amount - amount) < 0.01:
                 item["is_duplicate"] = True
                 break
@@ -3640,7 +3795,10 @@ def get_ai_usage_daily(days: Annotated[int, Query(ge=1, le=365)] = 7) -> list[di
 async def ai_chat(body: ChatRequest):
     """AI 投顾对话（SSE 流式）。前端已携带 system 消息时跳过重建持仓上下文。"""
     has_system = any(m.role == "system" for m in body.messages)
-    context = ai.build_portfolio_context() if not has_system else ""
+    # 上下文构建含 DB 查询与 akshare 行情抓取（同步阻塞），
+    # 必须在流式响应开始前放入线程完成，否则冻结事件循环
+    context = (await anyio.to_thread.run_sync(ai.build_portfolio_context)
+               if not has_system else "")
     messages_dicts = [{"role": m.role, "content": m.content} for m in body.messages]
 
     async def generate():
@@ -3772,11 +3930,20 @@ class TpSlConfigUpdate(BaseModel):
     stop_loss: float | None = None
     reset_ratio: float | None = None
 
-    @field_validator("take_profit", "stop_loss", "reset_ratio")
+    @field_validator("take_profit", "reset_ratio")
     @classmethod
     def validate_non_negative(cls, v: float | None) -> float | None:
         if v is not None and v < 0:
             raise ValueError("不能为负数")
+        return v
+
+    @field_validator("stop_loss")
+    @classmethod
+    def validate_stop_loss(cls, v: float | None) -> float | None:
+        # 止损阈值语义为负收益率（db 默认 -0.15，scheduler 按 rr <= 阈值触发）；
+        # 拒正值防误触发，允许负值与 0（0 表示任何亏损都触发）。
+        if v is not None and v > 0:
+            raise ValueError("止损阈值应为负收益率，不能为正数")
         return v
 
 
@@ -3867,6 +4034,8 @@ def add_transaction(request: Request, body: TransactionCreate) -> dict[str, Any]
 
 @app.put("/api/transactions/{tx_id}")
 def update_transaction(request: Request, tx_id: int, body: TransactionCreate) -> dict[str, Any]:
+    if db.get_transaction(tx_id) is None:
+        raise HTTPException(404, "交易不存在")
     _ensure_fund_exists(body.fund_code)
     tx = Transaction(
         id=tx_id,
@@ -3899,6 +4068,8 @@ def update_transaction(request: Request, tx_id: int, body: TransactionCreate) ->
 
 @app.delete("/api/transactions/{tx_id}")
 def delete_transaction(request: Request, tx_id: int) -> dict[str, bool]:
+    if db.get_transaction(tx_id) is None:
+        raise HTTPException(404, "交易不存在")
     db.delete_transaction(tx_id)
     analysis.clear_analysis_cache()
     db.log_audit("delete_transaction", ip=_get_client_ip(request),
@@ -4801,43 +4972,50 @@ def update_nav(request: Request) -> dict[str, Any]:
         _nav_update_state["results"] = []
         _nav_update_state["error"] = ""
 
-    positions = analysis.calculate_positions()
-    codes = [p.fund_code for p in positions if p.is_open]
-    client_ip = _get_client_ip(request)
+    # running=True 之后到线程启动前的任何失败都必须复位 running，
+    # 否则状态永久卡在「进行中」，后续更新全部被 409 拒绝。
+    try:
+        positions = analysis.calculate_positions()
+        codes = [p.fund_code for p in positions if p.is_open]
+        client_ip = _get_client_ip(request)
 
-    def _run() -> None:
-        _nav_update_state["total"] = len(codes)
-        try:
-            def _progress(i: int, total: int, code: str) -> None:
-                _nav_update_state["done"] = i
-                _nav_update_state["total"] = total
-                _nav_update_state["current"] = code
+        def _run() -> None:
+            _nav_update_state["total"] = len(codes)
+            try:
+                def _progress(i: int, total: int, code: str) -> None:
+                    _nav_update_state["done"] = i
+                    _nav_update_state["total"] = total
+                    _nav_update_state["current"] = code
 
-            results = fetch_fund.update_all_holdings_nav(codes=codes, progress=_progress)
-            _nav_update_state["phase"] = "backfill"
-            updated = analysis.backfill_transaction_navs()
-            analysis.clear_analysis_cache()
-            if updated:
-                db.log_audit("nav_backfill", ip=client_ip,
-                              detail={"count": len(updated), "items": updated})
-            # 同步刷新基金元数据（申购状态/交易日历/风险等级），与定时任务行为一致
-            _nav_update_state["results"] = [r.__dict__ for r in results]
+                results = fetch_fund.update_all_holdings_nav(codes=codes, progress=_progress)
+                _nav_update_state["phase"] = "backfill"
+                updated = analysis.backfill_transaction_navs()
+                analysis.clear_analysis_cache()
+                if updated:
+                    db.log_audit("nav_backfill", ip=client_ip,
+                                  detail={"count": len(updated), "items": updated})
+                # 同步刷新基金元数据（申购状态/交易日历/风险等级），与定时任务行为一致
+                _nav_update_state["results"] = [r.__dict__ for r in results]
 
-            def _set_phase(phase: str) -> None:
-                _nav_update_state["phase"] = phase
+                def _set_phase(phase: str) -> None:
+                    _nav_update_state["phase"] = phase
 
-            scheduler.refresh_fund_metadata(on_phase=_set_phase)
-            # 元数据写入后失效持仓缓存，确保接口立即返回新值
-            analysis.clear_analysis_cache()
-        except Exception as exc:  # noqa: BLE001
-            _nav_update_state["error"] = str(exc)
-        finally:
-            with _nav_update_lock:
-                _nav_update_state["running"] = False
-                _nav_update_state["current"] = ""
-                _nav_update_state["phase"] = ""
+                scheduler.refresh_fund_metadata(on_phase=_set_phase)
+                # 元数据写入后失效持仓缓存，确保接口立即返回新值
+                analysis.clear_analysis_cache()
+            except Exception as exc:  # noqa: BLE001
+                _nav_update_state["error"] = str(exc)
+            finally:
+                with _nav_update_lock:
+                    _nav_update_state["running"] = False
+                    _nav_update_state["current"] = ""
+                    _nav_update_state["phase"] = ""
 
-    threading.Thread(target=_run, daemon=True).start()
+        threading.Thread(target=_run, daemon=True).start()
+    except Exception:
+        with _nav_update_lock:
+            _nav_update_state["running"] = False
+        raise
     return {"ok": True, "message": "净值更新已启动", "total": len(codes)}
 
 
@@ -5143,7 +5321,9 @@ async def backup_preflight(
     """备份导入预检：只读校验结构、版本、校验和与行数，不修改数据。"""
     data = await _read_backup_upload(file)
     try:
-        preview = backup_service.preview_backup(data)
+        # zip 解压校验为同步重 IO，放入线程避免阻塞事件循环
+        preview = await anyio.to_thread.run_sync(
+            backup_service.preview_backup, data)
     except backup_service.BackupValidationError as exc:
         db.log_audit("backup_preflight_rejected", ip=_get_client_ip(request),
                      detail={"code": exc.code})
@@ -5167,11 +5347,13 @@ async def backup_restore(
                          "message": "请输入 RESTORE 确认整体恢复"})
     data = await _read_backup_upload(file)
     try:
-        result = backup_service.restore_backup(
-            data,
-            ip=_get_client_ip(request),
-            username=config.AUTH_USERNAME if config.AUTH_ENABLED else "local",
-        )
+        # 整体恢复含 zip 校验 + 全表 DELETE/INSERT（可达数十万行），
+        # 放入线程执行，避免长时间冻结事件循环
+        result = await anyio.to_thread.run_sync(
+            partial(backup_service.restore_backup, data,
+                    ip=_get_client_ip(request),
+                    username=(config.AUTH_USERNAME
+                              if config.AUTH_ENABLED else "local")))
     except backup_service.BackupBusyError as exc:
         raise HTTPException(
             409, detail={"code": "restore_busy", "message": str(exc)}) from exc
@@ -5202,7 +5384,9 @@ async def parse_csv(file: UploadFile = File(...)) -> dict[str, Any]:
     content = await file.read()
     if len(content) > _MAX_CSV_SIZE:
         raise HTTPException(413, "CSV 文件大小不能超过 5MB")
-    txs, errors = data_io.parse_transactions_csv(content)
+    # pandas 解析最大 5MB CSV 为同步 CPU/IO 密集操作，放入线程执行
+    txs, errors = await anyio.to_thread.run_sync(
+        data_io.parse_transactions_csv, content)
     return {
         "transactions": [t.to_dict() for t in txs],
         "errors": errors,
@@ -5211,15 +5395,28 @@ async def parse_csv(file: UploadFile = File(...)) -> dict[str, Any]:
 
 @app.post("/api/csv/import")
 def confirm_import(request: Request, body: CSVImportConfirm) -> dict[str, Any]:
-    if body.clear_existing:
-        db.delete_all_transactions()
-        db.log_audit("clear_then_import", ip=_get_client_ip(request),
-                      username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
-                      detail={"import_count": len(body.transactions)})
-    else:
-        db.log_audit("csv_import", ip=_get_client_ip(request),
-                      username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
-                      detail={"import_count": len(body.transactions)})
+    # 整批预校验（normalize + is_valid）：任何无效行都在写入前拒绝，
+    # 避免 clear_existing 清空旧账本后才发现新数据不完整。
+    txs: list[Transaction] = []
+    invalid_rows: list[dict[str, Any]] = []
+    for i, t in enumerate(body.transactions):
+        tx = Transaction(
+            fund_code=t.fund_code, action=t.action, date=t.date,
+            amount=t.amount, shares=t.shares, nav=t.nav,
+            fee=t.fee, channel=t.channel, note=t.note,
+            is_t1=t.is_t1, conversion_id=t.conversion_id,
+        )
+        tx.normalize()
+        if not tx.is_valid():
+            invalid_rows.append({"index": i, "fund_code": t.fund_code,
+                                 "action": t.action, "date": t.date})
+        txs.append(tx)
+    if invalid_rows:
+        raise HTTPException(
+            422, detail={"code": "invalid_transactions",
+                         "message": "存在不完整的交易行，未写入任何数据",
+                         "rows": invalid_rows})
+
     codes = {t.fund_code for t in body.transactions}
     if body.fetch_meta:
         for code in codes:
@@ -5228,21 +5425,24 @@ def confirm_import(request: Request, body: CSVImportConfirm) -> dict[str, Any]:
         for code in codes:
             if not db.get_fund(code):
                 db.upsert_fund(Fund(code, code))
-    count = 0
-    for t in body.transactions:
-        tx = Transaction(
-            fund_code=t.fund_code, action=t.action, date=t.date,
-            amount=t.amount, shares=t.shares, nav=t.nav,
-            fee=t.fee, channel=t.channel, note=t.note,
-        )
-        db.add_transaction(tx)
-        count += 1
-    new_codes = {t.fund_code for t in body.transactions}
-    for code in new_codes:
+
+    # 清空 + 导入放同一写事务：中途失败整体回滚，旧账本不丢。
+    # 基金注册含联网抓取，保持在事务外，避免长时间持写锁。
+    with db.get_connection(write=True) as conn:
+        if body.clear_existing:
+            conn.execute("DELETE FROM transactions")
+        for tx in txs:
+            db.insert_transaction(conn, tx)
+
+    db.log_audit("clear_then_import" if body.clear_existing else "csv_import",
+                  ip=_get_client_ip(request),
+                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                  detail={"import_count": len(txs)})
+    for code in codes:
         if not db.get_latest_nav(code):
             fetch_fund.update_fund_nav(code)
     analysis.clear_analysis_cache()
-    return {"imported": count}
+    return {"imported": len(txs)}
 
 
 # ---------------------------------------------------------------------------
@@ -5465,6 +5665,25 @@ _AUDIT_TS_QUERY_PATTERN = (
 )
 
 
+def _normalize_audit_ts(value: str, *, end_of_day: bool = False) -> datetime:
+    """把审计筛选时间规范化为可比较的 UTC datetime。
+
+    纯日期按本地时区整天处理（from 取 00:00，to 取 23:59:59.999999）；
+    无时区的 ISO 串按本地时区解释，带时区的换算为 UTC。
+    避免混合格式（纯日期/时间串/不同时区）按字典序比较产生误判。
+    """
+    try:
+        day = datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=config.TIMEZONE)
+        return dt.astimezone(UTC)
+    if end_of_day:
+        day = day.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return day.replace(tzinfo=config.TIMEZONE).astimezone(UTC)
+
+
 @app.get("/api/audit")
 def get_audit_logs(
     limit: Annotated[int, Query(ge=1, le=1000)] = 100,
@@ -5481,12 +5700,30 @@ def get_audit_logs(
     ``action``/``username`` 精确匹配；``from``/``to`` 为纯日期时按整天包含式
     处理；默认仅 ``limit=100`` 时行为与旧版一致。
     """
-    if ts_from and ts_to and ts_from > ts_to:
-        raise api_errors.ApiError(
-            status_code=422,
-            detail={"field": "from", "message": "起始时间不能晚于结束时间"},
-            code="validation_error",
-        )
+    if ts_from and ts_to:
+        # 规范化为可比较时间再判断先后，消除纯日期/ISO/时区混用的字典序误判
+        try:
+            start = _normalize_audit_ts(ts_from)
+        except ValueError:
+            raise api_errors.ApiError(
+                status_code=422,
+                detail={"field": "from", "message": "起始时间无效"},
+                code="validation_error",
+            ) from None
+        try:
+            end = _normalize_audit_ts(ts_to, end_of_day=True)
+        except ValueError:
+            raise api_errors.ApiError(
+                status_code=422,
+                detail={"field": "to", "message": "结束时间无效"},
+                code="validation_error",
+            ) from None
+        if start > end:
+            raise api_errors.ApiError(
+                status_code=422,
+                detail={"field": "from", "message": "起始时间不能晚于结束时间"},
+                code="validation_error",
+            )
     return db.fetch_audit_logs(
         limit,
         action=action,

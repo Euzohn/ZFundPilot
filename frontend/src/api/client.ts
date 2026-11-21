@@ -1,6 +1,7 @@
 import type {
   Advice,
   AuditLog,
+  AuditRetentionConfig,
   AutoInvestPlan,
   BacktestResult,
   ChannelPnLPoint,
@@ -508,6 +509,13 @@ export const api = {
     if (params.to) query.set("to", params.to)
     return request<AuditLog[]>(`/audit?${query.toString()}`)
   },
+  getAuditRetention: () =>
+    request<AuditRetentionConfig>("/settings/audit-retention"),
+  updateAuditRetention: (retention_days: number) =>
+    request<AuditRetentionConfig>("/settings/audit-retention", {
+      method: "PUT",
+      body: JSON.stringify({ retention_days }),
+    }),
 
   // Fund filter
   filterFunds: (params: { types?: string[]; sectors?: string[]; keyword?: string; limit?: number; offset?: number; with_metrics?: boolean }) =>

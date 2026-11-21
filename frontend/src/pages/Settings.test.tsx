@@ -30,6 +30,8 @@ const mocks = vi.hoisted(() => ({
   createAgentToken: vi.fn(),
   revokeAgentToken: vi.fn(),
   getAuditLogs: vi.fn(),
+  getAuditRetention: vi.fn(),
+  updateAuditRetention: vi.fn(),
   preflightBackup: vi.fn(),
   restoreBackup: vi.fn(),
   updateTpSlConfig: vi.fn(),
@@ -153,6 +155,8 @@ beforeEach(() => {
   mocks.createAgentToken.mockResolvedValue({ token: "zf_secret_plaintext", token_info: tokenInfo(), message: "ok" })
   mocks.revokeAgentToken.mockResolvedValue({ ok: true })
   mocks.getAuditLogs.mockResolvedValue([])
+  mocks.getAuditRetention.mockResolvedValue({ retention_days: 90, min_days: 30, max_days: 3650, default_days: 90 })
+  mocks.updateAuditRetention.mockResolvedValue({ retention_days: 45, min_days: 30, max_days: 3650, default_days: 90 })
   mocks.preflightBackup.mockResolvedValue(backupPreview())
   mocks.restoreBackup.mockResolvedValue({ ok: true, restored: {}, total_rows: 10, safety_backup: "safety.zip", replace_all: true })
   mocks.updateTpSlConfig.mockResolvedValue({ ok: true })
@@ -387,5 +391,46 @@ describe("Settings 止盈止损保存路径（B6 后端契约：负 stop_loss �
     fireEvent.click(within(card).getByRole("button", { name: "保存" }))
 
     await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalledWith(expect.stringContaining("保存失败")))
+  })
+})
+
+describe("Settings 审计日志保留期", () => {
+  function retentionRow(): HTMLElement {
+    return screen.getByLabelText("日志保留期").closest(".rounded-lg") as HTMLElement
+  }
+
+  it("加载并显示当前保留期与范围提示", async () => {
+    renderPage("/?tab=account")
+    const input = await screen.findByLabelText("日志保留期")
+    expect(input).toHaveValue(90)
+    expect(retentionRow()).toHaveTextContent("范围 30–3650 天")
+  })
+
+  it("合法值保存：调用 API、成功提示并重读配置", async () => {
+    renderPage("/?tab=account")
+    const input = await screen.findByLabelText("日志保留期")
+    fireEvent.change(input, { target: { value: "45" } })
+    fireEvent.click(within(retentionRow()).getByRole("button", { name: "保存" }))
+    await waitFor(() => expect(mocks.updateAuditRetention).toHaveBeenCalledWith(45))
+    await waitFor(() => expect(vi.mocked(toast.success)).toHaveBeenCalledWith("审计日志保留期已更新"))
+    await waitFor(() => expect(mocks.getAuditRetention).toHaveBeenCalledTimes(2))
+  })
+
+  it.each(["10", "0", "3651", "45.5", ""])("非法值 %s：前端拦截，不调用 API", async (value) => {
+    renderPage("/?tab=account")
+    const input = await screen.findByLabelText("日志保留期")
+    fireEvent.change(input, { target: { value } })
+    fireEvent.click(within(retentionRow()).getByRole("button", { name: "保存" }))
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalledWith(expect.stringContaining("30")))
+    expect(mocks.updateAuditRetention).not.toHaveBeenCalled()
+  })
+
+  it("服务端保存失败：toast.error 显示错误信息", async () => {
+    mocks.updateAuditRetention.mockRejectedValueOnce(new Error("网络错误"))
+    renderPage("/?tab=account")
+    const input = await screen.findByLabelText("日志保留期")
+    fireEvent.change(input, { target: { value: "60" } })
+    fireEvent.click(within(retentionRow()).getByRole("button", { name: "保存" }))
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalledWith("网络错误"))
   })
 })

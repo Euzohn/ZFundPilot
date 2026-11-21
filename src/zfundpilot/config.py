@@ -365,6 +365,36 @@ def apply_agent_write_preference(stored: str | None) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# 审计日志保留期（设置页可配）
+# ---------------------------------------------------------------------------
+# preferences 表 key=audit_retention_days；未设置时用默认 90 天。
+# 下限 30 天：历史补记防重（proposal_service._executed_plan_trade_exists）
+# 依赖审计中的 auto_invest_execute 覆盖 7 天补记窗口，30 天为审批/操作留足余量；
+# 低于下限会破坏防重契约，故 API 与解析器双重把关。
+AUDIT_RETENTION_PREF_KEY = "audit_retention_days"
+AUDIT_RETENTION_DEFAULT_DAYS = 90
+AUDIT_RETENTION_MIN_DAYS = 30
+AUDIT_RETENTION_MAX_DAYS = 3650
+
+
+def resolve_audit_retention_days(stored: str | None) -> int:
+    """解析审计保留期有效值：缺失/非法/越界的存量值一律退回默认。
+
+    正常写入经 API 校验必在 [MIN, MAX] 内；此处兜底防手工改库或旧版本
+    残留值导致清理窗口过小（破坏补记防重）或过大。
+    """
+    if stored is None:
+        return AUDIT_RETENTION_DEFAULT_DAYS
+    try:
+        value = int(stored.strip())
+    except (ValueError, AttributeError):
+        return AUDIT_RETENTION_DEFAULT_DAYS
+    if not (AUDIT_RETENTION_MIN_DAYS <= value <= AUDIT_RETENTION_MAX_DAYS):
+        return AUDIT_RETENTION_DEFAULT_DAYS
+    return value
+
+
+# ---------------------------------------------------------------------------
 # Agent 可信单笔直记额度（F0）
 # ---------------------------------------------------------------------------
 def _env_positive_int(name: str, default: int) -> int:

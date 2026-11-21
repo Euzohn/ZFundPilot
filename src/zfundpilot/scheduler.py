@@ -586,25 +586,29 @@ AGENT_OPERATIONS_PURGE_GRACE_DAYS = 30
 # dismissed 通知保留期：30 天（按创建时间起算），read 永久保留。
 NOTIFICATIONS_PURGE_DAYS = 30
 
-# 审计日志保留期：90 天（与分红提醒兜底窗口一致）。
-AUDIT_LOG_RETENTION_DAYS = 90
+# 审计日志保留期默认值：90 天（设置页可配，见 config.AUDIT_RETENTION_*）。
+AUDIT_LOG_RETENTION_DAYS = config.AUDIT_RETENTION_DEFAULT_DAYS
 
 
 def purge_agent_operations_daily() -> int:
     """清理过期较久的幂等操作记录（agent_operations）与审计日志，启动与每日任务共用。
 
     幂等操作只删除 expires_at 已过期且早于「now − 30 天宽限」的记录；TTL 内的
-    重放/拒绝语义不受影响。审计日志保留 90 天（db.purge_audit_logs，B4 契约），
-    其失败不影响幂等记录清理。失败由调用方决定是否吞掉（每日任务吞掉并记日志）。
+    重放/拒绝语义不受影响。审计日志保留期取设置页配置（preferences
+    audit_retention_days，默认 90 天，下限 30 天，db.purge_audit_logs，B4 契约），
+    每次清理实时解析，修改后下次清理即生效；其失败不影响幂等记录清理。
+    失败由调用方决定是否吞掉（每日任务吞掉并记日志）。
     """
     now = datetime.now(config.TIMEZONE)
     cutoff = (now - timedelta(days=AGENT_OPERATIONS_PURGE_GRACE_DAYS)).isoformat()
     removed = db.purge_agent_operations(cutoff)
+    retention_days = config.resolve_audit_retention_days(
+        db.get_preference(config.AUDIT_RETENTION_PREF_KEY))
     try:
-        purged = db.purge_audit_logs(AUDIT_LOG_RETENTION_DAYS)
+        purged = db.purge_audit_logs(retention_days)
         if purged:
             logger.info("[scheduler] 清理 %d 条超过 %d 天的审计日志",
-                        purged, AUDIT_LOG_RETENTION_DAYS)
+                        purged, retention_days)
     except Exception:
         logger.exception("[scheduler] 清理审计日志异常")
     return removed

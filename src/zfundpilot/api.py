@@ -3951,6 +3951,20 @@ class AlertUpdateBody(BaseModel):
     status: str  # 'confirmed' or 'ignored'
 
 
+class AuditRetentionUpdate(BaseModel):
+    retention_days: int
+
+    @field_validator("retention_days")
+    @classmethod
+    def validate_range(cls, v: int) -> int:
+        # 下限保护补记防重契约（审计须覆盖 7 天补记窗口，见 config 注释）
+        if not (config.AUDIT_RETENTION_MIN_DAYS <= v <= config.AUDIT_RETENTION_MAX_DAYS):
+            raise ValueError(
+                f"保留天数须在 {config.AUDIT_RETENTION_MIN_DAYS}–"
+                f"{config.AUDIT_RETENTION_MAX_DAYS} 之间")
+        return v
+
+
 class CSVImportConfirm(BaseModel):
     transactions: list[TransactionCreate]
     clear_existing: bool = False
@@ -5507,6 +5521,38 @@ def save_preferences(body: PreferencesBody) -> dict[str, bool]:
         db.upsert_preference("color_theme", body.color_theme)
     analysis.clear_analysis_cache()
     return {"ok": True}
+
+
+def _audit_retention_view() -> dict[str, Any]:
+    """审计保留期当前值与边界（前端据此渲染输入约束，无需硬编码）。"""
+    return {
+        "retention_days": config.resolve_audit_retention_days(
+            db.get_preference(config.AUDIT_RETENTION_PREF_KEY)),
+        "min_days": config.AUDIT_RETENTION_MIN_DAYS,
+        "max_days": config.AUDIT_RETENTION_MAX_DAYS,
+        "default_days": config.AUDIT_RETENTION_DEFAULT_DAYS,
+    }
+
+
+@app.get("/api/settings/audit-retention")
+def get_audit_retention() -> dict[str, Any]:
+    """获取审计日志保留期设置（当前值 + 上下限 + 默认值）。"""
+    return _audit_retention_view()
+
+
+@app.put("/api/settings/audit-retention")
+def update_audit_retention(
+    request: Request, body: AuditRetentionUpdate
+) -> dict[str, Any]:
+    """更新审计日志保留天数（下限 30 天，越界 422）。
+
+    修改在下次清理（启动或每日任务）生效，不立即删除日志。
+    """
+    previous = _audit_retention_view()["retention_days"]
+    db.upsert_preference(config.AUDIT_RETENTION_PREF_KEY, str(body.retention_days))
+    db.log_audit("audit_retention_update", ip=_get_client_ip(request),
+                 detail={"from": previous, "to": body.retention_days})
+    return _audit_retention_view()
 
 
 # ---------------------------------------------------------------------------

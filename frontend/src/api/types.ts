@@ -54,6 +54,13 @@ export interface TpSlConfig {
   reset_ratio: string
 }
 
+export interface AuditRetentionConfig {
+  retention_days: number
+  min_days: number
+  max_days: number
+  default_days: number
+}
+
 export interface Transaction {
   id?: number
   fund_code: string

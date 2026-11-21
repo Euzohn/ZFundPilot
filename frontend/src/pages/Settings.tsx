@@ -37,7 +37,7 @@ import { useLang, type Lang } from "@/i18n/LanguageContext"
 import { cn } from "@/lib/utils"
 import { copyText } from "@/lib/clipboard"
 import { useTabParam } from "@/hooks/useTabParam"
-import type { AIUsageStats, AIUsageDaily, AgentTokenInfo, AgentTokenListResponse, AgentWriteSettings, AuditLog, BackupPreview, KeywordMaps, SchedulerStatus, TpSlConfig, VisionConfig } from "@/api/types"
+import type { AIUsageStats, AIUsageDaily, AgentTokenInfo, AgentTokenListResponse, AgentWriteSettings, AuditLog, AuditRetentionConfig, BackupPreview, KeywordMaps, SchedulerStatus, TpSlConfig, VisionConfig } from "@/api/types"
 import {
   ChevronUp, ChevronDown, Plus, Trash2, RotateCcw,
   KeyRound, Bot, ShoppingCart, ShieldCheck, Save, RefreshCw,
@@ -599,6 +599,36 @@ function AuditLogPanel() {
     [filters],
   )
 
+  // 审计保留期：服务端强校验下限（保护补记防重契约），前端同范围预校验
+  const { data: retention, error: retentionError, reload: reloadRetention } =
+    useApi<AuditRetentionConfig>(() => api.getAuditRetention(), [])
+  const [retentionDraft, setRetentionDraft] = useState("")
+  const [savingRetention, setSavingRetention] = useState(false)
+  useEffect(() => {
+    if (retention) setRetentionDraft(String(retention.retention_days))
+  }, [retention])
+
+  const handleSaveRetention = async () => {
+    if (!retention) return
+    const days = Number(retentionDraft)
+    if (!Number.isInteger(days) || days < retention.min_days || days > retention.max_days) {
+      toast.error(t.settings.auditRetentionInvalid
+        .replace("{min}", String(retention.min_days))
+        .replace("{max}", String(retention.max_days)))
+      return
+    }
+    setSavingRetention(true)
+    try {
+      await api.updateAuditRetention(days)
+      toast.success(t.settings.auditRetentionSaved)
+      await reloadRetention()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t.settings.auditRetentionSaveFailed)
+    } finally {
+      setSavingRetention(false)
+    }
+  }
+
   const applyFilters = () => {
     if (draft.from && draft.to && draft.from > draft.to) {
       toast.error(t.settings.auditFilterRangeInvalid)
@@ -687,6 +717,7 @@ function AuditLogPanel() {
     agent_rate_limited: t.settings.auditLabels.agent_rate_limited,
     agent_write_toggle: t.settings.auditLabels.agent_write_toggle,
     agent_write_toggle_denied: t.settings.auditLabels.agent_write_toggle_denied,
+    audit_retention_update: t.settings.auditLabels.audit_retention_update,
   }
 
   return (
@@ -705,6 +736,39 @@ function AuditLogPanel() {
         </div>
       </CardHeader>
       <CardContent>
+        {/* 保留期设置：下限保护补记防重契约，修改后下次清理生效 */}
+        {retention ? (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+            <Label htmlFor="audit-retention-days" className="text-xs text-muted-foreground">
+              {t.settings.auditRetention}
+            </Label>
+            <Input
+              id="audit-retention-days"
+              type="number"
+              min={retention.min_days}
+              max={retention.max_days}
+              value={retentionDraft}
+              onChange={(e) => setRetentionDraft(e.target.value)}
+              className="h-8 w-24 text-xs"
+              aria-label={t.settings.auditRetention}
+            />
+            <span className="text-xs text-muted-foreground">{t.settings.auditRetentionUnit}</span>
+            <Button size="sm" variant="outline" className="h-7 text-xs"
+              onClick={handleSaveRetention} disabled={savingRetention}>
+              {savingRetention ? t.common.processing : t.common.save}
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {t.settings.auditRetentionHint
+                .replace("{min}", String(retention.min_days))
+                .replace("{max}", String(retention.max_days))}
+            </span>
+          </div>
+        ) : retentionError ? (
+          <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+            {t.settings.auditRetentionLoadFailed}
+            <button onClick={reloadRetention} className="text-primary hover:underline">{t.common.retry}</button>
+          </div>
+        ) : null}
         <div className="mb-3 flex flex-wrap items-end gap-2">
           <div className="min-w-[9rem] flex-1 sm:flex-none">
             <Label className="mb-1 block text-xs text-muted-foreground">

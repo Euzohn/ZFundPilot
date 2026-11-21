@@ -8,7 +8,13 @@ import pandas as pd
 import pytest
 
 from zfundpilot import fetch_fund
-from zfundpilot.models import FundProfile, FundRankingResult, IndustryAllocationResult
+from zfundpilot.models import (
+    FundProfile,
+    FundRankingResult,
+    IndustryAllocationResult,
+    NavPoint,
+    Transaction,
+)
 
 
 def _fake_akshare(df):
@@ -579,3 +585,224 @@ class TestFetchTradeCalendar:
             n = fetch_fund.refresh_trade_calendar()
         assert n == 3
         assert saved == [["2026-09-30", "2026-10-08", "2026-10-09"]]
+
+
+# ---------------------------------------------------------------------------
+# 赎回费 FIFO（回放历史 sell/reinvest）+ update_fund_nav 容错
+# ---------------------------------------------------------------------------
+import sqlite3  # noqa: E402
+
+from zfundpilot import config, db  # noqa: E402
+
+
+@pytest.fixture
+def fee_db(tmp_path, monkeypatch):
+    """临时数据库 + 固定赎回费率档（不联网）。"""
+    monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "test.db"))
+    db.init_db()
+    rates = fetch_fund.FeeRates(
+        fund_code="001", ok=True, message="成功", code="ok",
+        redemption=[
+            fetch_fund.RedemptionTier(min_days=0, max_days=6, rate=0.015),
+            fetch_fund.RedemptionTier(min_days=7, max_days=29, rate=0.0075),
+            fetch_fund.RedemptionTier(min_days=30, max_days=364, rate=0.005),
+            fetch_fund.RedemptionTier(min_days=365, max_days=None, rate=0.0),
+        ],
+    )
+    monkeypatch.setattr(fetch_fund, "fetch_fund_fee_rates", lambda code: rates)
+
+
+def _add_tx(action: str, date: str, shares: float) -> int:
+    """写入一笔 001 基金流水（nav=1.0，normalize 自动补金额）。"""
+    return db.add_transaction(Transaction(
+        fund_code="001", action=action, date=date, shares=shares, nav=1.0))
+
+
+def _add_nav(date: str, nav: float = 2.0) -> None:
+    db.upsert_nav_batch([NavPoint(fund_code="001", date=date, nav=nav)])
+
+
+def test_redemption_fee_fifo_consumes_prior_sells(fee_db):
+    """买A→买B→卖(耗A)→再卖：第二次卖出应从 B 批起算持有期。"""
+    _add_tx("buy", "2026-01-05", 100)   # A 批
+    _add_tx("buy", "2026-06-01", 100)   # B 批
+    _add_tx("sell", "2026-06-15", 100)  # 消耗 A 批（已入库，回填场景）
+    _add_nav("2026-06-15")
+    _add_nav("2026-06-20")
+
+    # 6/15 卖出本身（已在库中）不能被重复消耗：仍从 A 批起算 161 天 → 0.5%
+    first = fetch_fund.calc_redemption_fee("001", "2026-06-15", 100)
+    assert first.code == "redemption_rate"
+    assert first.lots[0]["buy_date"] == "2026-01-05"
+    assert first.fee == pytest.approx(1.0)  # 100 × 2.0 × 0.005
+
+    # 6/20 再卖应从 B 批起算 19 天 → 0.75%（旧实现误从 A 批 166 天 → 0.5%）
+    second = fetch_fund.calc_redemption_fee("001", "2026-06-20", 100)
+    assert second.code == "redemption_rate"
+    assert len(second.lots) == 1
+    assert second.lots[0]["buy_date"] == "2026-06-01"
+    assert second.lots[0]["days_held"] == 19
+    assert second.lots[0]["rate"] == pytest.approx(0.0075)
+    assert second.fee == pytest.approx(1.5)  # 100 × 2.0 × 0.0075
+
+
+def test_redemption_fee_fifo_partial_lot_consumption(fee_db):
+    """此前卖出跨批次消耗后，再卖只匹配剩余份额。"""
+    _add_tx("buy", "2026-01-05", 100)
+    _add_tx("buy", "2026-06-01", 100)
+    _add_tx("sell", "2026-06-15", 150)  # 耗尽 A + B 的 50 份
+    _add_nav("2026-06-20")
+
+    res = fetch_fund.calc_redemption_fee("001", "2026-06-20", 50)
+    assert res.code == "redemption_rate"
+    assert len(res.lots) == 1
+    assert res.lots[0]["buy_date"] == "2026-06-01"
+    assert res.lots[0]["buy_shares"] == pytest.approx(50)  # B 批剩余份额
+    assert res.lots[0]["used_shares"] == pytest.approx(50)
+    assert res.fee == pytest.approx(0.75)  # 50 × 2.0 × 0.0075
+
+
+def test_redemption_fee_reinvest_lot(fee_db):
+    """reinvest 份额作为新批次，持有期自再投资日起算。"""
+    _add_tx("buy", "2026-01-05", 100)
+    _add_tx("sell", "2026-02-01", 100)     # 耗尽买入批次
+    _add_tx("reinvest", "2026-06-01", 50)  # 红利再投资
+    _add_nav("2026-06-10")
+
+    res = fetch_fund.calc_redemption_fee("001", "2026-06-10", 50)
+    assert res.code == "redemption_rate"
+    assert len(res.lots) == 1
+    assert res.lots[0]["buy_date"] == "2026-06-01"
+    assert res.lots[0]["days_held"] == 9
+    # 旧实现忽略 reinvest 份额、误按 A 批 156 天计 0.5%（0.5 元）
+    assert res.fee == pytest.approx(0.75)  # 50 × 2.0 × 0.0075
+
+
+def test_redemption_fee_fifo_buy_then_reinvest(fee_db):
+    """卖出跨 buy+reinvest 批次时按各自持有期分档计费。"""
+    _add_tx("buy", "2026-01-05", 100)
+    _add_tx("reinvest", "2026-06-01", 50)
+    _add_nav("2026-06-10")
+
+    res = fetch_fund.calc_redemption_fee("001", "2026-06-10", 120)
+    assert res.code == "redemption_rate"
+    assert len(res.lots) == 2
+    assert res.lots[0]["buy_date"] == "2026-01-05"
+    assert res.lots[0]["used_shares"] == pytest.approx(100)
+    assert res.lots[0]["rate"] == pytest.approx(0.005)   # 156 天
+    assert res.lots[1]["buy_date"] == "2026-06-01"
+    assert res.lots[1]["used_shares"] == pytest.approx(20)
+    assert res.lots[1]["rate"] == pytest.approx(0.0075)  # 9 天
+    assert res.fee == pytest.approx(1.3)  # 100×2×0.005 + 20×2×0.0075
+
+
+def test_redemption_fee_oversell_uses_lowest_tier(fee_db):
+    """超出剩余买入总量的份额按最后一档计费（保留旧兜底口径）。"""
+    _add_tx("buy", "2026-01-05", 100)
+    _add_nav("2026-06-20")
+
+    res = fetch_fund.calc_redemption_fee("001", "2026-06-20", 150)
+    assert res.code == "redemption_rate"
+    assert len(res.lots) == 2
+    assert res.lots[0]["used_shares"] == pytest.approx(100)
+    assert res.lots[1]["buy_date"] == ""
+    assert res.lots[1]["used_shares"] == pytest.approx(50)
+    assert res.lots[1]["rate"] == 0.0  # 最后一档（>=365 天）0 费率
+    assert res.fee == pytest.approx(1.0)
+
+
+def test_redemption_fee_no_buy_record(fee_db):
+    """无买入/再投资记录（含只有卖出）→ no_buy_record。"""
+    _add_nav("2026-06-20")
+    res = fetch_fund.calc_redemption_fee("001", "2026-06-20", 100)
+    assert res.code == "no_buy_record"
+
+    _add_tx("sell", "2026-01-05", 100)
+    res = fetch_fund.calc_redemption_fee("001", "2026-06-20", 100)
+    assert res.code == "no_buy_record"
+
+
+def test_redemption_fee_ignores_future_flows(fee_db):
+    """晚于卖出日的买入/卖出不影响本次批次匹配与持有期。"""
+    _add_tx("buy", "2026-01-05", 100)
+    _add_tx("buy", "2026-07-01", 100)    # 未来买入
+    _add_tx("sell", "2026-09-01", 100)   # 未来卖出
+    _add_nav("2026-06-20")
+
+    res = fetch_fund.calc_redemption_fee("001", "2026-06-20", 100)
+    assert res.code == "redemption_rate"
+    assert len(res.lots) == 1
+    assert res.lots[0]["buy_date"] == "2026-01-05"
+    assert res.lots[0]["days_held"] == 166
+    assert res.fee == pytest.approx(1.0)
+
+
+def test_redemption_fee_short_held_tier(fee_db):
+    """持有 <7 天适用惩罚性费率档。"""
+    _add_tx("buy", "2026-06-01", 100)
+    _add_nav("2026-06-05")
+
+    res = fetch_fund.calc_redemption_fee("001", "2026-06-05", 100)
+    assert res.lots[0]["days_held"] == 4
+    assert res.fee == pytest.approx(3.0)  # 100 × 2.0 × 0.015
+
+
+def test_redemption_fee_pending_nav(fee_db):
+    """卖出日及之后无净值 → pending_nav（T+1 待确认）。"""
+    _add_tx("buy", "2026-06-01", 100)
+    res = fetch_fund.calc_redemption_fee("001", "2026-06-05", 100)
+    assert res.code == "pending_nav"
+
+
+def test_update_fund_nav_success(monkeypatch):
+    points = [NavPoint(fund_code="001", date="2026-06-19", nav=1.9),
+              NavPoint(fund_code="001", date="2026-06-20", nav=2.0)]
+    monkeypatch.setattr(fetch_fund, "fetch_nav_history", lambda code: points)
+    monkeypatch.setattr(fetch_fund.db, "upsert_nav_batch", lambda pts: len(pts))
+
+    res = fetch_fund.update_fund_nav("001")
+    assert res.ok and res.code == "ok"
+    assert res.written == 2
+    assert res.latest_date == "2026-06-20"
+    assert res.latest_nav == 2.0
+
+
+def test_update_fund_nav_fetch_error_no_throw(monkeypatch):
+    monkeypatch.setattr(fetch_fund, "fetch_nav_history",
+                        MagicMock(side_effect=RuntimeError("网络错误")))
+    res = fetch_fund.update_fund_nav("001")
+    assert not res.ok
+    assert res.code == "fetch_error"
+
+
+def test_update_fund_nav_db_error_no_throw(monkeypatch):
+    """DB 写失败返回 ok=False/db_error，不抛异常（契约：不抛异常）。"""
+    points = [NavPoint(fund_code="001", date="2026-06-20", nav=2.0)]
+    monkeypatch.setattr(fetch_fund, "fetch_nav_history", lambda code: points)
+    monkeypatch.setattr(fetch_fund.db, "upsert_nav_batch",
+                        MagicMock(side_effect=sqlite3.OperationalError("database is locked")))
+
+    res = fetch_fund.update_fund_nav("001")
+    assert not res.ok
+    assert res.code == "db_error"
+    assert "database is locked" in res.message
+
+
+def test_update_all_holdings_nav_continues_after_db_error(monkeypatch):
+    """单只基金 DB 失败不中断批量循环，逐只返回 FetchResult。"""
+    monkeypatch.setattr(
+        fetch_fund, "fetch_nav_history",
+        lambda code: [NavPoint(fund_code=code, date="2026-06-20", nav=2.0)])
+
+    def _upsert(pts):
+        if pts[0].fund_code == "001":
+            raise sqlite3.OperationalError("disk full")
+        return len(pts)
+
+    monkeypatch.setattr(fetch_fund.db, "upsert_nav_batch", _upsert)
+    monkeypatch.setattr(fetch_fund.time, "sleep", lambda s: None)
+
+    results = fetch_fund.update_all_holdings_nav(codes=["001", "002"])
+    assert len(results) == 2
+    assert not results[0].ok and results[0].code == "db_error"
+    assert results[1].ok and results[1].written == 1

@@ -10,15 +10,21 @@
 7. 错过期不追补（锚定 today）
 """
 from datetime import datetime
+import sqlite3
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
+import pytest
+
+from zfundpilot import auto_invest, config, db, fetch_fund
 from zfundpilot.auto_invest import (
     _next_trading_day,
     calculate_next_run,
+    calculate_next_run_conn,
     execute_plan,
     run_all_due,
 )
+from zfundpilot.fetch_fund import CalcFeeResult
 from zfundpilot.models import Fund
 
 _TZ = ZoneInfo("Asia/Shanghai")
@@ -60,8 +66,8 @@ class _PatchEnv:
 
         db_patch = patch("zfundpilot.auto_invest.db")
         self.mock_db = db_patch.start()
-        self.mock_db.add_transaction.return_value = 42
-        self.mock_db.update_auto_invest_plan = MagicMock()
+        self.mock_db.insert_transaction.return_value = 42
+        self.mock_db.update_auto_invest_plan_conn = MagicMock()
         self.mock_db.get_auto_invest_plan.return_value = None  # will be set per test
         self._patches.append(db_patch)
 
@@ -94,7 +100,7 @@ class TestExecutePlanT1Logic:
             result = execute_plan(plan, manual=True)
             assert result["after_three"] is False
             assert result["ok"] is True
-            tx = env.mock_db.add_transaction.call_args[0][0]
+            tx = env.mock_db.insert_transaction.call_args[0][1]
             assert tx.note == "定投"
             assert tx.is_t1 is False
             assert tx.nav is None
@@ -108,7 +114,7 @@ class TestExecutePlanT1Logic:
             env.mock_db.get_auto_invest_plan.return_value = plan
             result = execute_plan(plan, manual=True)
             assert result["after_three"] is True
-            tx = env.mock_db.add_transaction.call_args[0][0]
+            tx = env.mock_db.insert_transaction.call_args[0][1]
             assert tx.is_t1 is True
             assert tx.nav is None
 
@@ -120,7 +126,7 @@ class TestExecutePlanT1Logic:
             env.mock_db.get_auto_invest_plan.return_value = plan
             result = execute_plan(plan, manual=True)
             assert result["after_three"] is True
-            tx = env.mock_db.add_transaction.call_args[0][0]
+            tx = env.mock_db.insert_transaction.call_args[0][1]
             assert tx.is_t1 is True
 
     def test_boundary_14_59_no_t1(self):
@@ -131,7 +137,7 @@ class TestExecutePlanT1Logic:
             env.mock_db.get_auto_invest_plan.return_value = plan
             result = execute_plan(plan, manual=True)
             assert result["after_three"] is False
-            tx = env.mock_db.add_transaction.call_args[0][0]
+            tx = env.mock_db.insert_transaction.call_args[0][1]
             assert tx.is_t1 is False
 
     def test_note_preserved_with_t1(self):
@@ -142,7 +148,7 @@ class TestExecutePlanT1Logic:
             env.mock_db.get_auto_invest_plan.return_value = plan
             result = execute_plan(plan, manual=True)
             assert result["after_three"] is True
-            tx = env.mock_db.add_transaction.call_args[0][0]
+            tx = env.mock_db.insert_transaction.call_args[0][1]
             assert tx.note == "加仓"
             assert tx.is_t1 is True
 
@@ -151,28 +157,53 @@ class TestExecutePlanManual:
     """验证手动/自动执行的 next_run 更新逻辑。"""
 
     def test_manual_no_next_run_update(self):
-        """手动执行不调用 update_auto_invest_plan 更新 next_run。"""
+        """手动执行不更新 next_run（仅 last_run/last_tx_id）。"""
         mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
         plan = _make_plan()
         with _PatchEnv(mock_dt) as env:
             env.mock_db.get_auto_invest_plan.return_value = plan
             execute_plan(plan, manual=True)
-            assert env.mock_db.update_auto_invest_plan.call_count == 1
-            call = env.mock_db.update_auto_invest_plan.call_args
+            assert env.mock_db.update_auto_invest_plan_conn.call_count == 1
+            call = env.mock_db.update_auto_invest_plan_conn.call_args
             assert "next_run" not in call.kwargs
 
     def test_auto_updates_next_run(self):
-        """自动执行调用 update_auto_invest_plan 一次（last_run + next_run 原子写入）。"""
+        """自动执行在写事务内更新计划一次（last_run + next_run 原子写入）。"""
         mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
         plan = _make_plan()
         with _PatchEnv(mock_dt) as env:
             env.mock_db.get_auto_invest_plan.return_value = plan
             env.mock_db.get_nav_on_or_after.return_value = {"date": "2026-01-12"}
             execute_plan(plan, manual=False)
-            assert env.mock_db.update_auto_invest_plan.call_count == 1
-            call = env.mock_db.update_auto_invest_plan.call_args
+            assert env.mock_db.update_auto_invest_plan_conn.call_count == 1
+            call = env.mock_db.update_auto_invest_plan_conn.call_args
             assert "next_run" in call.kwargs
             assert "last_run" in call.kwargs
+
+    def test_auto_biweek_next_run_plus_14(self):
+        """biweek 自动执行后 next_run = 执行日+14（回归：旧实现误成 +21）。"""
+        mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)  # 周一
+        plan = _make_plan(cadence="biweek", day_of_week=0,
+                          last_run=None, next_run="2026-01-05")
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.get_nav_on_or_after.return_value = None
+            execute_plan(plan, manual=False)
+            call = env.mock_db.update_auto_invest_plan_conn.call_args
+            assert call.kwargs["next_run"] == "2026-01-19"
+
+    def test_tx_and_bookkeeping_share_one_write_transaction(self):
+        """流水插入与计划更新复用同一 write=True 连接（原子提交）。"""
+        mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan()
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            env.mock_db.get_nav_on_or_after.return_value = None
+            execute_plan(plan, manual=False)
+            env.mock_db.get_connection.assert_called_once_with(write=True)
+            conn = env.mock_db.get_connection.return_value.__enter__.return_value
+            assert env.mock_db.insert_transaction.call_args[0][0] is conn
+            assert env.mock_db.update_auto_invest_plan_conn.call_args[0][0] is conn
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +285,75 @@ class TestCalculateNextRun:
         """未知 cadence → 返回 None。"""
         plan = _make_plan(cadence="hourly")
         assert calculate_next_run(plan, from_date="2026-01-05") is None
+
+
+# ---------------------------------------------------------------------------
+# biweek 双周调度测试（回归：重锚误成 +21 天）
+# ---------------------------------------------------------------------------
+class TestBiweekCadence:
+    """验证 biweek 重锚口径：不早于 last_run+14 的第一个 dow。"""
+
+    def test_reanchor_returns_plus_14_not_21(self):
+        """last_run 落在 dow 当天 → 下次 = last_run+14（旧实现误成 +21）。"""
+        with _PatchEnv(datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)) as env:
+            env.mock_db.get_nav_on_or_after.return_value = None
+            plan = _make_plan(cadence="biweek", day_of_week=0,
+                              last_run="2026-01-05", next_run="2026-01-05")
+            result = calculate_next_run(plan, from_date="2026-01-05")
+            assert result == "2026-01-19"
+
+    def test_first_run_without_last_run(self):
+        """last_run 为空（尚未执行过）→ 按 week 口径取下一个 dow。"""
+        with _PatchEnv(datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)) as env:
+            env.mock_db.get_nav_on_or_after.return_value = None
+            plan = _make_plan(cadence="biweek", day_of_week=0, last_run=None)
+            result = calculate_next_run(plan, from_date="2026-01-05")
+            assert result == "2026-01-12"
+
+    def test_deferred_last_run_anchors_to_next_dow(self):
+        """last_run 因节假日顺延不在 dow（周二）→ 取不早于 +14 的首个周一。"""
+        with _PatchEnv(datetime(2026, 1, 6, 9, 0, tzinfo=_TZ)) as env:
+            env.mock_db.get_nav_on_or_after.return_value = None
+            plan = _make_plan(cadence="biweek", day_of_week=0,
+                              last_run="2026-01-06", next_run="2026-01-06")
+            # last_run+14=1/20 周二 → 顺延到 1/26 周一
+            result = calculate_next_run(plan, from_date="2026-01-06")
+            assert result == "2026-01-26"
+
+    def test_missed_periods_not_caught_up(self):
+        """last_run 远在过去（错过期）→ 锚定 from_date，不追补。"""
+        with _PatchEnv(datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)) as env:
+            env.mock_db.get_nav_on_or_after.return_value = None
+            plan = _make_plan(cadence="biweek", day_of_week=0,
+                              last_run="2025-12-01", next_run="2025-12-15")
+            result = calculate_next_run(plan, from_date="2026-01-05")
+            assert result == "2026-01-12"
+
+    def test_holiday_defers_plus_14_candidate(self):
+        """+14 候选日遇法定节假日 → 顺延到下一个交易日。"""
+        with _PatchEnv(datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)) as env:
+            env.mock_db.is_trading_day.side_effect = (
+                lambda ds: ds != "2026-01-19")
+            env.mock_db.get_nav_on_or_after.return_value = None
+            plan = _make_plan(cadence="biweek", day_of_week=0,
+                              last_run="2026-01-05", next_run="2026-01-05")
+            result = calculate_next_run(plan, from_date="2026-01-05")
+            assert result == "2026-01-20"
+
+    def test_conn_variant_matches_web(self):
+        """连接感知版（提案审批路径）与 web 版口径一致。"""
+        conn = MagicMock()
+        with patch("zfundpilot.auto_invest.db") as mock_db:
+            mock_db.get_fund_conn.return_value = None
+            mock_db.is_trading_day_conn.return_value = True
+            mock_db.get_nav_on_or_after_conn.return_value = None
+            plan = _make_plan(cadence="biweek", day_of_week=0,
+                              last_run="2026-01-05", next_run="2026-01-05")
+            assert calculate_next_run_conn(
+                conn, plan, from_date="2026-01-05") == "2026-01-19"
+            plan["last_run"] = "2026-01-06"
+            assert calculate_next_run_conn(
+                conn, plan, from_date="2026-01-06") == "2026-01-26"
 
 
 # ---------------------------------------------------------------------------
@@ -347,7 +447,7 @@ class TestRunAllDueHolidayGate:
         assert len(results) == 1
         assert results[0]["status"] == "holiday"
         assert results[0]["reason"] == "美股休市"
-        env.mock_db.add_transaction.assert_not_called()
+        env.mock_db.insert_transaction.assert_not_called()
 
     def test_qdii_executes_on_normal_day(self):
         """QDII 计划在普通交易日(7/6 周一) → 正常执行。"""
@@ -360,7 +460,7 @@ class TestRunAllDueHolidayGate:
             env.mock_db.get_nav_on_or_after.return_value = None
             results = run_all_due()
         assert results[0]["status"] == "success"
-        env.mock_db.add_transaction.assert_called_once()
+        env.mock_db.insert_transaction.assert_called_once()
 
     def test_non_qdii_executes_on_us_holiday(self):
         """非 QDII 计划在美股休市日(7/3) → 照常执行（国内基金不受影响）。"""
@@ -373,7 +473,7 @@ class TestRunAllDueHolidayGate:
             env.mock_db.get_nav_on_or_after.return_value = None
             results = run_all_due()
         assert results[0]["status"] == "success"
-        env.mock_db.add_transaction.assert_called_once()
+        env.mock_db.insert_transaction.assert_called_once()
 
     def test_weekend_skipped(self):
         """所有基金遇周末(7/4 周六) → 跳过。"""
@@ -384,7 +484,7 @@ class TestRunAllDueHolidayGate:
             results = run_all_due()
         assert results[0]["status"] == "holiday"
         assert results[0]["reason"] == "周末"
-        env.mock_db.add_transaction.assert_not_called()
+        env.mock_db.insert_transaction.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +506,7 @@ class TestPurchasableGate:
         assert result["ok"] is False
         assert result["skipped"] is True
         assert result["skip_code"] == "suspended"
-        env.mock_db.add_transaction.assert_not_called()
+        env.mock_db.insert_transaction.assert_not_called()
 
     def test_closed_period_skipped(self):
         """封闭期 → 跳过。"""
@@ -432,7 +532,7 @@ class TestPurchasableGate:
             result = execute_plan(plan, manual=False)
         assert result["skip_code"] == "limit_exceeded"
         assert result["detail"]["daily_limit"] == 100
-        env.mock_db.add_transaction.assert_not_called()
+        env.mock_db.insert_transaction.assert_not_called()
 
     def test_limit_not_exceeded_executes(self):
         """限大额但金额未超限 → 正常执行。"""
@@ -446,7 +546,7 @@ class TestPurchasableGate:
             env.mock_db.get_nav_on_or_after.return_value = None
             result = execute_plan(plan, manual=False)
         assert result["ok"] is True
-        env.mock_db.add_transaction.assert_called_once()
+        env.mock_db.insert_transaction.assert_called_once()
 
     def test_below_minimum_skipped(self):
         """金额低于购买起点 → 跳过。"""
@@ -459,7 +559,7 @@ class TestPurchasableGate:
             )
             result = execute_plan(plan, manual=False)
         assert result["skip_code"] == "below_minimum"
-        env.mock_db.add_transaction.assert_not_called()
+        env.mock_db.insert_transaction.assert_not_called()
 
     def test_open_purchase_executes(self):
         """开放申购且无限额 → 正常执行。"""
@@ -498,7 +598,7 @@ class TestPurchasableGate:
             result = execute_plan(plan, manual=True)
         assert result["ok"] is True
         assert result["warnings"] == ["suspended"]
-        env.mock_db.add_transaction.assert_called_once()
+        env.mock_db.insert_transaction.assert_called_once()
 
     def test_run_all_due_suspended_status(self):
         """run_all_due 对暂停申购计划标记 status=suspended 不建仓。"""
@@ -512,7 +612,7 @@ class TestPurchasableGate:
             )
             results = run_all_due()
         assert results[0]["status"] == "suspended"
-        env.mock_db.add_transaction.assert_not_called()
+        env.mock_db.insert_transaction.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -533,7 +633,7 @@ class TestTradingCalendarGate:
         assert len(results) == 1
         assert results[0]["status"] == "holiday"
         assert results[0]["reason"] == "非交易日"
-        env.mock_db.add_transaction.assert_not_called()
+        env.mock_db.insert_transaction.assert_not_called()
 
     def test_cn_trading_day_executes(self):
         """假期后首个交易日（10-8 周四）→ 正常执行。"""
@@ -546,7 +646,7 @@ class TestTradingCalendarGate:
             env.mock_db.get_nav_on_or_after.return_value = None
             results = run_all_due()
         assert results[0]["status"] == "success"
-        env.mock_db.add_transaction.assert_called_once()
+        env.mock_db.insert_transaction.assert_called_once()
 
 
 class TestNextTradingDayCNCalendar:
@@ -569,3 +669,114 @@ class TestNextTradingDayCNCalendar:
             mock_db.get_nav_on_or_after.return_value = None
             result = _next_trading_day("001", "2026-10-08")
         assert result == "2026-10-08"
+
+
+# ---------------------------------------------------------------------------
+# execute_plan 原子性测试（真实 SQLite：流水与簿记同事务提交/回滚）
+# ---------------------------------------------------------------------------
+class TestExecutePlanAtomicity:
+    """回归：买入流水已落库但计划簿记未推进 → 调度器/重试重复买入。"""
+
+    @pytest.fixture
+    def real_db(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "auto.db"))
+        db._trade_cal_cache = None
+        db._trade_cal_max = None
+        db.init_db()
+        db.upsert_fund(Fund(fund_code="001", fund_name="测试基金"))
+        monkeypatch.setattr(
+            fetch_fund, "calc_purchase_fee",
+            lambda code, amount: CalcFeeResult(fee=0.0, code="purchase_rate"))
+        yield
+        db._trade_cal_cache = None
+        db._trade_cal_max = None
+
+    def _fix_now(self, monkeypatch, dt: datetime) -> None:
+        mock_dt = MagicMock()
+        mock_dt.now.return_value = dt
+        mock_dt.strptime = datetime.strptime
+        monkeypatch.setattr(auto_invest, "datetime", mock_dt)
+
+    def _make_plan(self, **kw) -> int:
+        defaults = dict(fund_code="001", amount=1000.0, cadence="week",
+                        day_of_week=0, next_run="2026-01-05")
+        defaults.update(kw)
+        return db.add_auto_invest_plan(**defaults)
+
+    @staticmethod
+    def _all_tx() -> list[dict]:
+        with db.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM transactions ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
+
+    def test_success_commits_tx_and_bookkeeping(self, real_db, monkeypatch):
+        """成功执行：一笔买入 + last_run/last_tx_id/next_run 全部推进。"""
+        self._fix_now(monkeypatch, datetime(2026, 1, 5, 9, 0, tzinfo=_TZ))
+        plan_id = self._make_plan()
+        result = execute_plan(db.get_auto_invest_plan(plan_id), manual=False)
+        assert result["ok"] is True
+        rows = self._all_tx()
+        assert len(rows) == 1
+        assert rows[0]["date"] == "2026-01-05"
+        assert rows[0]["action"] == "buy"
+        plan = db.get_auto_invest_plan(plan_id)
+        assert plan["last_run"] == "2026-01-05"
+        assert plan["last_tx_id"] == rows[0]["id"]
+        assert plan["next_run"] == "2026-01-12"
+
+    def test_biweek_execution_next_run_plus_14(self, real_db, monkeypatch):
+        """biweek 真实执行后 next_run = 执行日+14（不是 +21）。"""
+        self._fix_now(monkeypatch, datetime(2026, 1, 5, 9, 0, tzinfo=_TZ))
+        plan_id = self._make_plan(cadence="biweek")
+        result = execute_plan(db.get_auto_invest_plan(plan_id), manual=False)
+        assert result["ok"] is True
+        assert db.get_auto_invest_plan(plan_id)["next_run"] == "2026-01-19"
+
+    def test_plan_update_failure_rolls_back_buy(self, real_db, monkeypatch):
+        """计划更新失败 → 买入流水整体回滚，计划簿记不变。"""
+        self._fix_now(monkeypatch, datetime(2026, 1, 5, 9, 0, tzinfo=_TZ))
+        plan_id = self._make_plan()
+
+        def _boom(conn, pid, **kwargs):
+            raise sqlite3.OperationalError("disk I/O error")
+
+        monkeypatch.setattr(db, "update_auto_invest_plan_conn", _boom)
+        with pytest.raises(sqlite3.OperationalError):
+            execute_plan(db.get_auto_invest_plan(plan_id), manual=False)
+        assert self._all_tx() == []
+        plan = db.get_auto_invest_plan(plan_id)
+        assert plan["last_run"] is None
+        assert plan["last_tx_id"] is None
+        assert plan["next_run"] == "2026-01-05"
+
+    def test_retry_after_failure_no_duplicate(self, real_db, monkeypatch):
+        """中途失败后重试成功 → 账本仅一笔买入（不重复建仓）。"""
+        self._fix_now(monkeypatch, datetime(2026, 1, 5, 9, 0, tzinfo=_TZ))
+        plan_id = self._make_plan()
+
+        def _boom(conn, pid, **kwargs):
+            raise sqlite3.OperationalError("database is locked")
+
+        with monkeypatch.context() as m:
+            m.setattr(db, "update_auto_invest_plan_conn", _boom)
+            with pytest.raises(sqlite3.OperationalError):
+                execute_plan(db.get_auto_invest_plan(plan_id), manual=False)
+        # 故障恢复后重试（last_run 未推进，当日防重不生效，靠原子性兜底）
+        result = execute_plan(db.get_auto_invest_plan(plan_id), manual=False)
+        assert result["ok"] is True
+        assert len(self._all_tx()) == 1
+
+    def test_next_run_failure_writes_nothing(self, real_db, monkeypatch):
+        """next_run 计算失败 → 不产生任何流水（先算后写）。"""
+        self._fix_now(monkeypatch, datetime(2026, 1, 5, 9, 0, tzinfo=_TZ))
+        plan_id = self._make_plan()
+
+        def _boom(plan, from_date=None):
+            raise RuntimeError("calendar broken")
+
+        monkeypatch.setattr(auto_invest, "calculate_next_run", _boom)
+        with pytest.raises(RuntimeError):
+            execute_plan(db.get_auto_invest_plan(plan_id), manual=False)
+        assert self._all_tx() == []
+        assert db.get_auto_invest_plan(plan_id)["last_run"] is None

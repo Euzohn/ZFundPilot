@@ -183,13 +183,19 @@ def _calculate_sharpe(nav: pd.Series, rf: float = 0.02) -> float | None:
 
 
 def _calculate_calmar(nav: pd.Series) -> float | None:
+    """Calmar 比率 = 年化收益率 / |最大回撤|。
+
+    分子按交易日数年化：(1+累计收益)^(252/n)-1，
+    避免成立时间长的基金因累计收益高而被机械性高估。
+    """
     mdd = _calculate_max_drawdown(nav)
     if mdd is None or mdd == 0:
         return None
-    if len(nav) < 2:
+    if len(nav) < 2 or nav.iloc[0] <= 0:
         return None
     total_return = (nav.iloc[-1] - nav.iloc[0]) / nav.iloc[0]
-    return total_return / abs(mdd) if mdd != 0 else None
+    annual_return = (1 + total_return) ** (252 / len(nav)) - 1
+    return annual_return / abs(mdd)
 
 
 def _calculate_win_rate(nav: pd.Series) -> float | None:
@@ -206,13 +212,21 @@ def _calculate_win_rate(nav: pd.Series) -> float | None:
 
 
 def _calculate_correlation(nav1: pd.Series, nav2: pd.Series) -> float | None:
-    """计算两只基金的 Pearson 相关系数（对齐日期）。"""
+    """计算两只基金日收益率的 Pearson 相关系数（对齐日期）。
+
+    净值水平带共同趋势，直接相关会系统性虚高；
+    须先 pct_change 转为日收益率再求相关，样本阈值作用于收益率序列。
+    """
     if nav1.empty or nav2.empty:
         return None
     combined = pd.concat([nav1, nav2], axis=1, join="inner").dropna()
-    if len(combined) < 10:
+    returns = combined.pct_change().dropna()
+    if len(returns) < 10:
         return None
-    return float(combined.iloc[:, 0].corr(combined.iloc[:, 1]))
+    r1, r2 = returns.iloc[:, 0], returns.iloc[:, 1]
+    if r1.std() == 0 or r2.std() == 0:
+        return None  # 收益率零方差（如货基净值恒定）→ 相关无定义
+    return float(r1.corr(r2))
 
 
 def _normalize_nav(nav: pd.Series, base: int = 100) -> list[dict[str, float | str]]:

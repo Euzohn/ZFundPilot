@@ -719,8 +719,13 @@ def update_fund_nav(fund_code: str) -> FetchResult:
     except Exception as exc:  # noqa: BLE001
         return FetchResult(fund_code, ok=False, message=str(exc), code="fetch_error")
 
-    written = db.upsert_nav_batch(points)
-    latest = max(points, key=lambda p: p.date)
+    try:
+        written = db.upsert_nav_batch(points)
+        latest = max(points, key=lambda p: p.date)
+    except Exception as exc:  # noqa: BLE001
+        # DB 写失败（锁超时/磁盘满等）同样按单只失败返回，
+        # 不中断 update_all_holdings_nav 的批量循环
+        return FetchResult(fund_code, ok=False, message=str(exc), code="db_error")
     return FetchResult(
         fund_code=fund_code,
         ok=True,
@@ -793,7 +798,10 @@ class FeeRates:
 
 @dataclass
 class FeeLot:
-    """FIFO 赎回批次明细。"""
+    """FIFO 赎回批次明细。
+
+    buy_shares 为卖出时点该批次的剩余份额（已扣除更早卖出的消耗）。
+    """
     buy_date: str
     buy_shares: float
     used_shares: float
@@ -1188,6 +1196,10 @@ def calc_redemption_fee(
 
     赎回手续费 = 卖出份额 × 卖出确认净值 × 赎回费率
     卖出净值从 nav_history 中按卖出日期查找（T+1 则可能尚未确认）。
+
+    先按日期回放该基金历史流水得到各买入批次剩余份额：更早的卖出按 FIFO
+    消耗批次，reinvest（红利再投资）作为新批次（起算日=其日期）；再对本次
+    卖出按剩余批次的持有天数匹配费率档。
     """
     rates = fetch_fund_fee_rates(fund_code)
     if not rates.ok or not rates.redemption:
@@ -1200,26 +1212,47 @@ def calc_redemption_fee(
         return CalcFeeResult(fee=0, rate=0, label="待确认净值后计算手续费", code="pending_nav")
     sell_nav = float(sell_nav_row["nav"])
 
-    # 获取该基金所有买入记录（按日期升序）
-    buy_txs = db.get_transactions(fund_code)
-    buy_lots = [t for t in buy_txs if t.action == "buy" and t.date and t.shares]
+    # 按日期回放该基金流水，计算各买入批次的剩余份额：
+    # buy/reinvest 构成批次（reinvest=红利再投资，起算日=其日期）；
+    # 卖出日之前的 sell 按 FIFO 消耗批次。本次卖出可能已在库中（回填场景），
+    # 同日流水无法与本次卖出区分，故只回放严格早于卖出日的流水；
+    # 晚于卖出日的流水不影响本次持有期。
+    txs = db.get_transactions(fund_code)  # 日期升序、同日 id 升序
+    lots: list[dict] = []  # {"date": 起算日, "shares": 原始份额, "remaining": 剩余份额}
+    for t in txs:
+        if not t.date or not t.shares or t.date > sell_date:
+            continue
+        if t.action in ("buy", "reinvest"):
+            lots.append({"date": t.date, "shares": float(t.shares),
+                         "remaining": float(t.shares)})
+        elif t.action == "sell" and t.date < sell_date:
+            consumed = float(t.shares)
+            for lot in lots:
+                if consumed <= 0:
+                    break
+                used = min(lot["remaining"], consumed)
+                lot["remaining"] -= used
+                consumed -= used
 
-    if not buy_lots:
+    if not lots:
         return CalcFeeResult(fee=0, rate=0, label="无买入记录，无法计算持有期",
                              code="no_buy_record",
                              amount=round(sell_shares * sell_nav, 2), nav=sell_nav)
+
+    # 过滤已被此前卖出耗尽的批次（忽略浮点残差）
+    remaining_lots = [lot for lot in lots if lot["remaining"] > 1e-9]
 
     sell_dt = _parse_date(sell_date)
     remaining = sell_shares
     total_fee = 0.0
     lots_detail: list[FeeLot] = []
 
-    for lot in buy_lots:
+    for lot in remaining_lots:
         if remaining <= 0:
             break
-        lot_shares = lot.shares or 0
+        lot_shares = lot["remaining"]
         used = min(lot_shares, remaining)
-        days = (sell_dt - _parse_date(lot.date)).days
+        days = (sell_dt - _parse_date(lot["date"])).days
         if days < 0:
             days = 0
 
@@ -1237,7 +1270,7 @@ def calc_redemption_fee(
         remaining -= used
 
         lots_detail.append(FeeLot(
-            buy_date=lot.date,
+            buy_date=lot["date"],
             buy_shares=lot_shares,
             used_shares=used,
             days_held=days,
@@ -1246,8 +1279,8 @@ def calc_redemption_fee(
             nav=sell_nav,
         ))
 
-    # 如果还有剩余份额无法匹配（超出买入总量），按最低费率
-    if remaining > 0 and buy_lots:
+    # 如果还有剩余份额无法匹配（超出剩余买入总量），按最低费率
+    if remaining > 1e-9 and lots:
         lowest_rate = rates.redemption[-1].rate if rates.redemption else 0
         extra_fee = round(remaining * sell_nav * lowest_rate, 2)
         total_fee += extra_fee

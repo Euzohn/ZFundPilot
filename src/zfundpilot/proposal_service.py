@@ -2063,12 +2063,24 @@ def _execute_plan_purchasable_message(reason: str) -> str:
 
 def _executed_plan_trade_exists(
         conn: sqlite3.Connection, plan_id: int, trade_date: str) -> bool:
-    """检查是否已有同一计划、同一交易日的**成功**执行提案。
+    """检查同一计划、同一交易日是否已有**任何来源**的成功执行。
 
     ``last_run == trade_date`` 只能拦截「今天」的重复执行；补记历史日期时
     ``last_run`` 取 ``max(现有, trade_date)``，不会回退成历史日期，因此需要
-    额外查已成功提案。审批在同一 ``BEGIN IMMEDIATE`` 事务内串行执行，能可靠
-    看到前一笔已提交的成功提案。提案保留 30 天，而补记窗口仅 7 天，覆盖足够。
+    额外查执行事实。覆盖三类来源：
+
+    1. 成功的 execute_plan 提案（提案保留 30 天，覆盖 7 天补记窗口）；
+    2. 调度器批量执行审计：``auto_invest_execute`` 的 ``detail.items`` 逐计划
+       记录，仅 ``status="success"`` 且 plan_id/date 匹配才算（skip/error/
+       holiday 不产生流水）；
+    3. 网页手动执行审计：``detail.plan_id`` 匹配，detail 无 trade_date，
+       执行日取审计 ts 的日期（网页执行恒在当天）；提案审批审计另带
+       ``trade_date``，优先用它。
+
+    选审计而非按 transactions 金额/备注匹配：审计按计划精确归因，不会误伤
+    用户同日同基金的手动买入；调度器/网页/提案三条路径都写该审计，且审计
+    保留 90 天，远大于 7 天补记窗口。审批在同一 ``BEGIN IMMEDIATE`` 事务内
+    串行执行，能可靠看到前一笔已提交的执行记录。
     """
     rows = conn.execute(
         "SELECT params_json FROM operation_proposals "
@@ -2082,6 +2094,30 @@ def _executed_plan_trade_exists(
         if (other_params.get("plan_id") == plan_id
                 and other_params.get("trade_date") == trade_date):
             return True
+    audit_rows = conn.execute(
+        "SELECT ts, detail FROM audit_log WHERE action=?",
+        ("auto_invest_execute",)).fetchall()
+    for audit in audit_rows:
+        try:
+            detail = json.loads(audit["detail"] or "{}")
+        except ValueError:
+            continue
+        if not isinstance(detail, dict):
+            continue
+        # 网页手动 / 提案审批：detail 直接带 plan_id。
+        if detail.get("plan_id") == plan_id:
+            executed_date = detail.get("trade_date") or (audit["ts"] or "")[:10]
+            if executed_date == trade_date:
+                return True
+        # 调度器批量：detail.items 逐计划记录，只认成功项。
+        items = detail.get("items")
+        if isinstance(items, list):
+            for item in items:
+                if (isinstance(item, dict)
+                        and item.get("status") == "success"
+                        and item.get("plan_id") == plan_id
+                        and item.get("date") == trade_date):
+                    return True
     return False
 
 
@@ -2117,7 +2153,7 @@ def _check_execute_plan_target(
             conn, plan_id, trade_date):
         return None, ProposalResult(
             409, "already_executed",
-            "该计划在目标交易日已有成功执行的提案，请勿重复补记",
+            "该计划在目标交易日已有成功执行记录，请勿重复补记",
             {"plan_id": plan_id, "trade_date": trade_date})
     purchasable, reason, detail = auto_invest._check_purchasable_conn(
         conn, row["fund_code"], float(row["amount"] or 0))
@@ -2222,20 +2258,12 @@ def _verify_execute_plan_target(
 MAX_PRECHECK_BACKFILL_ITEMS = MAX_BATCH_ITEMS
 
 
-def _candidate_backfill_rows(conn: sqlite3.Connection,
-                             tx_ids: list[int] | None) -> list[sqlite3.Row]:
-    """取回填候选行：显式 tx_ids（按给定顺序）或全部 nav IS NULL（排除分红）。
+def _candidate_backfill_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """取全部回填候选行：nav IS NULL 且非分红的前 ``MAX_PRECHECK_BACKFILL_ITEMS`` 行。
 
-    显式 ``tx_ids`` 时逐条取（可能不存在/已回填/分红，交由上层报告）；
-    省略时返回 nav IS NULL 且非分红的前 ``MAX_PRECHECK_BACKFILL_ITEMS`` 行。
+    显式 ``tx_ids`` 的逐行取数由 ``precheck_backfill`` 自行完成，
+    不存在的 id 也要输出 ``target_not_found`` 盘点项。
     """
-    if tx_ids is not None:
-        rows: list[sqlite3.Row] = []
-        for tx_id in tx_ids:
-            row = db.get_transaction_conn(conn, tx_id)
-            if row is not None:
-                rows.append(row)
-        return rows
     return conn.execute(
         "SELECT * FROM transactions WHERE nav IS NULL AND action<>'dividend' "
         "ORDER BY date ASC, id ASC LIMIT ?",
@@ -2295,7 +2323,8 @@ def precheck_backfill(input_data: object) -> dict[str, Any]:
     因此预检本身绝不触发费率抓取。接受 ``{"tx_ids"?: [int, ...]}``：省略
     ``tx_ids`` 时返回全部 nav IS NULL 的非分红行（上限
     ``MAX_PRECHECK_BACKFILL_ITEMS``）；给定 ``tx_ids`` 时按给定顺序逐行报告
-    （含不可回填原因）。每行返回 ``row_digest``、净值可用性与回填后的
+    （含不可回填原因；不存在的 id 输出 ``reason="target_not_found"``）。
+    每行返回 ``row_digest``、净值可用性与回填后的
     ``after`` 快照，供 Agent 直接构造提案。
     """
     if not isinstance(input_data, dict):
@@ -2323,10 +2352,23 @@ def precheck_backfill(input_data: object) -> dict[str, Any]:
         tx_ids = cleaned
 
     with db.get_connection() as conn:
-        rows = _candidate_backfill_rows(conn, tx_ids)
+        if tx_ids is not None:
+            candidates: list[tuple[int, sqlite3.Row | None]] = [
+                (tx_id, db.get_transaction_conn(conn, tx_id))
+                for tx_id in tx_ids]
+        else:
+            candidates = [(row["id"], row)
+                          for row in _candidate_backfill_rows(conn)]
         items: list[dict[str, Any]] = []
         ready = 0
-        for row in rows:
+        for tx_id, row in candidates:
+            if row is None:
+                # 显式请求但不存在的 id 也要逐行报告，不能被静默丢弃。
+                items.append({
+                    "tx_id": tx_id, "backfillable": False,
+                    "reason": "target_not_found",
+                    "message": f"未找到交易 {tx_id}"})
+                continue
             item, reason, _ = _backfill_item_view(conn, row, None)
             if reason is None:
                 ready += 1
@@ -3294,7 +3336,8 @@ def _exec_execute_plan(conn: sqlite3.Connection, row: sqlite3.Row,
 
     零联网：金额/渠道/备注取计划当前值（digest 已保证与创建期一致），
     ``fee``/``is_t1`` 取 ``summary_json`` 快照。不重算 ``next_run``，也不触发
-    调度器；今天依赖 ``last_run == trade_date`` 防重，历史日期另查已成功提案。
+    调度器；今天依赖 ``last_run == trade_date`` 防重，历史日期另查执行事实
+    （成功提案 + 调度器/网页执行审计）。
     """
     plan_id = int(clean["plan_id"])
     target = db.get_auto_invest_plan_conn(conn, plan_id)

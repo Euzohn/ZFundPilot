@@ -497,6 +497,45 @@ class TestHttpGating:
         assert item["backfillable"] is False
         assert item["reason"] == "dividend_not_backfillable"
 
+    def test_precheck_backfill_reports_not_found(self, client, temp_db):
+        """显式请求但不存在的 tx_id 须输出 target_not_found 项（不被吞掉）。"""
+        _add_nav(date="2026-01-05", nav=1.5)
+        buy_id = _make_buy_tx()
+        _plain, _info = agent_tokens.issue_token(
+            "agent", [agent_tokens.SCOPE_TRANSACTIONS_PROPOSE])
+        headers = {"Authorization": f"Bearer {_plain}"}
+        resp = client.post(PRECHECK_BACKFILL_PATH, headers=headers,
+                           json={"tx_ids": [buy_id, 999]})
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["total"] == 2
+        assert data["ready"] == 1
+        assert data["unavailable"] == 1
+        items = data["items"]
+        # 按给定顺序逐行报告
+        assert [it["tx_id"] for it in items] == [buy_id, 999]
+        assert items[0]["backfillable"] is True
+        missing = items[1]
+        assert missing["backfillable"] is False
+        assert missing["reason"] == "target_not_found"
+        assert "999" in missing["message"]
+
+    def test_precheck_backfill_all_missing(self, client, temp_db):
+        """全部 tx_id 不存在 → 逐行 not_found，ready=0。"""
+        _plain, _info = agent_tokens.issue_token(
+            "agent", [agent_tokens.SCOPE_TRANSACTIONS_PROPOSE])
+        headers = {"Authorization": f"Bearer {_plain}"}
+        resp = client.post(PRECHECK_BACKFILL_PATH, headers=headers,
+                           json={"tx_ids": [998, 999]})
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["total"] == 2
+        assert data["ready"] == 0
+        assert data["unavailable"] == 2
+        assert [it["tx_id"] for it in data["items"]] == [998, 999]
+        assert all(it["reason"] == "target_not_found"
+                   for it in data["items"])
+
     def test_precheck_backfill_write_gate(self, client, temp_db,
                                            monkeypatch):
         monkeypatch.setattr(config, "AGENT_WRITE_ENABLED", False)

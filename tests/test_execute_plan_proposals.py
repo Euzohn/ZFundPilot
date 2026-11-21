@@ -3,10 +3,12 @@
 覆盖：计划引用与 digest、交易日窗口、当日/历史幂等、可投性严格阻断、
 费率未知需显式 fee、写事务外抓费、审批写一笔买入流水并推进
 last_run/last_tx_id（不重算 next_run）、目标被改/被删/已执行/不可投冲突、
-补记历史日期不倒退 last_run、成功提案级重复保护、scope 门控。
+补记历史日期不倒退 last_run、成功提案级重复保护、调度器/网页执行审计防重
+（含手动同日买入不误伤）、scope 门控。
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -19,7 +21,7 @@ from zfundpilot import agent_tokens, api, auto_invest, config, db, fetch_fund
 from zfundpilot import proposal_service as svc
 from zfundpilot.analysis import clear_analysis_cache
 from zfundpilot.fetch_fund import CalcFeeResult
-from zfundpilot.models import Fund
+from zfundpilot.models import Fund, Transaction
 
 PROPOSALS_PATH = "/api/agent/tools/proposals"
 CAPABILITIES_PATH = "/api/agent/tools/capabilities"
@@ -473,6 +475,129 @@ class TestApproveExecutePlan:
         assert again.http_status == 409
         assert again.code == "not_pending"
         assert len(_transactions()) == 1
+
+
+# ---------------------------------------------------------------------------
+# 调度器/网页执行审计防重（历史补记不得与已执行事实冲突）
+# ---------------------------------------------------------------------------
+
+def _log_execute_audit(detail: dict, *, ts: str) -> None:
+    """按真实审计形状写入 auto_invest_execute（ts 可控，模拟历史执行日）。"""
+    with db.get_connection(write=True) as conn:
+        conn.execute(
+            "INSERT INTO audit_log(ts, ip, username, action, detail) "
+            "VALUES(?,?,?,?,?)",
+            (ts, None, None, "auto_invest_execute",
+             json.dumps(detail, ensure_ascii=False)))
+
+
+def _simulate_scheduler_execute(plan_id: int, trade_date: str,
+                                *, status: str = "success") -> None:
+    """模拟调度器执行：成功项写买入流水 + 批量审计（detail.items 形状）。
+
+    不推进 last_run——场景设定为后续某日已再执行一期（last_run > trade_date），
+    由调用方通过 _make_plan(last_run=...) 给定。
+    """
+    plan = _plan(plan_id)
+    item: dict = {"plan_id": plan_id, "fund_code": FUND_CODE,
+                  "amount": plan["amount"], "date": trade_date,
+                  "status": status}
+    ok = 0
+    if status == "success":
+        tx_id = db.add_transaction(Transaction(
+            fund_code=FUND_CODE, action="buy", date=trade_date,
+            amount=plan["amount"], channel=plan["channel"],
+            note=plan["note"]))
+        item["tx_id"] = tx_id
+        ok = 1
+    _log_execute_audit(
+        {"count": 1, "ok": ok, "fail": 0, "items": [item]},
+        ts=f"{trade_date}T09:00:00+08:00")
+
+
+class TestExecutionAuditDedup:
+    """last_run 已前进过目标日时，调度器/网页执行事实仍须拦截历史补记。"""
+
+    def test_scheduler_executed_date_blocks_creation(self, temp_db,
+                                                      monkeypatch):
+        _fixed_now(monkeypatch, day=10)
+        monkeypatch.setattr(fetch_fund, "calc_purchase_fee", _fee(0.0))
+        plan_id = _make_plan(last_run="2026-01-09")
+        _simulate_scheduler_execute(plan_id, "2026-01-08")
+        result = _create(
+            _tx_principal(), _params(plan_id, trade_date="2026-01-08"))
+        assert result.http_status == 409
+        assert result.code == "already_executed"
+        assert len(_transactions()) == 1  # 仅调度器那笔，无新增
+
+    def test_scheduler_executed_date_blocks_approval(self, temp_db,
+                                                      monkeypatch):
+        _fixed_now(monkeypatch, day=10)
+        monkeypatch.setattr(fetch_fund, "calc_purchase_fee", _fee(0.0))
+        plan_id = _make_plan(last_run="2026-01-09")
+        created = _create(
+            _tx_principal(), _params(plan_id, trade_date="2026-01-08"))
+        assert created.ok
+        # 提案待审期间调度器执行了目标日 → 审批期必须拦截
+        _simulate_scheduler_execute(plan_id, "2026-01-08")
+        result = _approve(created.data["proposal_id"])
+        assert result.http_status == 409
+        assert result.code == "already_executed"
+        assert len(_transactions()) == 1
+
+    def test_web_executed_date_blocks_creation(self, temp_db, monkeypatch):
+        """网页手动执行审计无 trade_date → 用审计 ts 日期匹配。"""
+        _fixed_now(monkeypatch, day=10)
+        monkeypatch.setattr(fetch_fund, "calc_purchase_fee", _fee(0.0))
+        plan_id = _make_plan(last_run="2026-01-09")
+        tx_id = db.add_transaction(Transaction(
+            fund_code=FUND_CODE, action="buy", date="2026-01-08",
+            amount=500.0, channel="支付宝", note="工资定投"))
+        _log_execute_audit(
+            {"plan_id": plan_id, "fund_code": FUND_CODE,
+             "amount": 500.0, "tx_id": tx_id},
+            ts="2026-01-08T10:00:00+08:00")
+        result = _create(
+            _tx_principal(), _params(plan_id, trade_date="2026-01-08"))
+        assert result.http_status == 409
+        assert result.code == "already_executed"
+
+    def test_manual_same_day_buy_not_blocked(self, temp_db, monkeypatch):
+        """用户手动同日同额买入（无执行审计）→ 不得误拦计划补记。"""
+        _fixed_now(monkeypatch, day=10)
+        monkeypatch.setattr(fetch_fund, "calc_purchase_fee", _fee(0.0))
+        plan_id = _make_plan(last_run="2026-01-09")
+        db.add_transaction(Transaction(
+            fund_code=FUND_CODE, action="buy", date="2026-01-08",
+            amount=500.0, channel="支付宝", note="工资定投"))
+        result = _create(
+            _tx_principal(), _params(plan_id, trade_date="2026-01-08"))
+        assert result.http_status == 201
+        assert result.ok
+
+    @pytest.mark.parametrize("status", ["skipped", "error", "holiday"])
+    def test_scheduler_non_success_items_not_blocked(self, temp_db,
+                                                      monkeypatch, status):
+        """调度器 skip/error/holiday 项不产生流水 → 不构成已执行事实。"""
+        _fixed_now(monkeypatch, day=10)
+        monkeypatch.setattr(fetch_fund, "calc_purchase_fee", _fee(0.0))
+        plan_id = _make_plan(last_run="2026-01-09")
+        _simulate_scheduler_execute(plan_id, "2026-01-08", status=status)
+        result = _create(
+            _tx_principal(), _params(plan_id, trade_date="2026-01-08"))
+        assert result.http_status == 201
+        assert _transactions() == []
+
+    def test_other_plan_audit_not_blocked(self, temp_db, monkeypatch):
+        """其他计划的执行审计不影响本计划补记。"""
+        _fixed_now(monkeypatch, day=10)
+        monkeypatch.setattr(fetch_fund, "calc_purchase_fee", _fee(0.0))
+        plan_id = _make_plan(last_run="2026-01-09")
+        other_id = _make_plan(last_run="2026-01-09")
+        _simulate_scheduler_execute(other_id, "2026-01-08")
+        result = _create(
+            _tx_principal(), _params(plan_id, trade_date="2026-01-08"))
+        assert result.http_status == 201
 
 
 # ---------------------------------------------------------------------------

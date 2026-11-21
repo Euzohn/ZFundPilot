@@ -1,6 +1,7 @@
 """compare 模块纯函数测试：收益率、风险指标、相关性、归一化。"""
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 
 from zfundpilot import fetch_fund
@@ -162,6 +163,35 @@ class TestCalmar:
         calmar = _calculate_calmar(nav)
         assert calmar is None  # mdd = 0 → division by zero guard
 
+    def test_annualized_over_two_years(self):
+        """两年（504 交易日）累计 100%、回撤 -20% → Calmar=(sqrt(2)-1)/0.2。
+
+        回归：旧口径未年化，分子直接用累计收益 1.0 → 错误结果 5.0。
+        """
+        nav = pd.Series(np.concatenate([
+            np.linspace(1.0, 1.5, 101),       # 上涨段
+            np.linspace(1.5, 1.2, 101)[1:],   # 回撤段：mdd = (1.2-1.5)/1.5 = -0.2
+            np.linspace(1.2, 2.0, 304)[1:],   # 回升段
+        ]))
+        assert len(nav) == 504
+        calmar = _calculate_calmar(nav)
+        expected = ((1 + 1.0) ** (252 / 504) - 1) / 0.2
+        assert calmar is not None
+        assert abs(calmar - expected) < 1e-6
+        assert calmar < 5.0  # 旧未年化口径为 5.0
+
+    def test_one_year_window_annual_equals_total(self):
+        """252 交易日窗口：年化=累计，Calmar = 累计收益/|mdd| = 1.0/0.2 = 5.0。"""
+        nav = pd.Series(np.concatenate([
+            np.linspace(1.0, 1.5, 51),
+            np.linspace(1.5, 1.2, 51)[1:],
+            np.linspace(1.2, 2.0, 152)[1:],
+        ]))
+        assert len(nav) == 252
+        calmar = _calculate_calmar(nav)
+        assert calmar is not None
+        assert abs(calmar - 5.0) < 1e-6
+
 
 # ---------------------------------------------------------------------------
 # _calculate_win_rate
@@ -199,6 +229,44 @@ class TestCorrelation:
     def test_too_few_overlapping(self):
         nav1 = pd.Series([1.0, 1.1])
         nav2 = pd.Series([1.0, 1.1])
+        assert _calculate_correlation(nav1, nav2) is None
+
+    def test_daily_returns_not_nav_levels(self):
+        """共同上涨趋势 + 相反日度波动：水平相关近 1（旧口径伪相关），收益率相关应为负。"""
+        n = 40
+        idx = pd.date_range("2025-01-01", periods=n)
+        trend = 100.0 + np.arange(n) * 2.0
+        osc = np.where(np.arange(n) % 2 == 0, 0.5, -0.5)
+        nav1 = pd.Series(trend + osc, index=idx)
+        nav2 = pd.Series(trend - osc, index=idx)
+        assert nav1.corr(nav2) > 0.9  # 净值水平口径虚高
+        corr = _calculate_correlation(nav1, nav2)
+        assert corr is not None
+        assert corr < -0.5
+
+    def test_proportional_navs_perfect(self):
+        """净值成比例 → 日收益率完全相同 → 相关系数 1。"""
+        idx = pd.date_range("2025-01-01", periods=20)
+        nav1 = pd.Series(1.0 + np.arange(20) * 0.1, index=idx)
+        nav2 = nav1 * 2.0
+        corr = _calculate_correlation(nav1, nav2)
+        assert corr is not None
+        assert abs(corr - 1.0) < 1e-9
+
+    def test_threshold_applies_to_returns(self):
+        """样本阈值作用于收益率序列：10 个对齐点仅 9 个日收益 → None；11 点可算。"""
+        idx10 = pd.date_range("2025-01-01", periods=10)
+        nav1 = pd.Series(np.linspace(1.0, 2.0, 10), index=idx10)
+        assert _calculate_correlation(nav1, nav1 * 1.5) is None
+        idx11 = pd.date_range("2025-01-01", periods=11)
+        nav1 = pd.Series(np.linspace(1.0, 2.0, 11), index=idx11)
+        assert _calculate_correlation(nav1, nav1 * 1.5) is not None
+
+    def test_constant_series_returns_none(self):
+        """一只基金净值恒定（收益率零方差）→ 相关无定义 → None 而非 NaN。"""
+        idx = pd.date_range("2025-01-01", periods=20)
+        nav1 = pd.Series([1.0] * 20, index=idx)
+        nav2 = pd.Series(1.0 + np.arange(20) * 0.01, index=idx)
         assert _calculate_correlation(nav1, nav2) is None
 
 

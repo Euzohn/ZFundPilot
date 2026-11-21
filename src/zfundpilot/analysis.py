@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import OrderedDict
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -579,6 +580,11 @@ def build_portfolio_curve() -> pd.DataFrame:
     再乘以当日净值得市值，最后跨持仓求和。
     返回列：date, total_value, invested_cost, total_return
     起点取最早一笔交易日期。
+
+    分红口径（与持仓账本 realized_pnl 方向一致）：
+    - 现金分红：与卖出同口径冲减投入成本（分红实现为收益），份额不变，
+      避免除息日净值下跌被记为虚假亏损；
+    - 红利再投资：只增加份额，不计入外部新增投入（分红是组合内部收益）。
     """
     cached = _cache_get("portfolio_curve")
     if cached is not None:
@@ -629,28 +635,32 @@ def build_portfolio_curve() -> pd.DataFrame:
         for t in tx_sorted:
             if t.fund_code != code:
                 continue
-            if not t.shares:
-                # 待确认买入：占位金额，避免 P&L 出现虚假亏损
-                if t.action == ACTION_BUY and t.amount:
-                    d = t.date if t.date >= start_date else start_date
-                    idx = _first_ge(timeline, d)
-                    if idx is not None:
-                        cost_delta.iloc[idx] += t.amount
-                        pending_value_delta.iloc[idx] += t.amount
-                continue
-            if t.action == ACTION_DIVIDEND:
-                continue  # 现金分红不改变份额
             d = t.date if t.date >= start_date else start_date
             # 找到时间轴上 >= d 的第一个点
             idx = _first_ge(timeline, d)
             if idx is None:
+                continue
+            if t.action == ACTION_DIVIDEND:
+                # 现金分红：与卖出同口径冲减投入成本（分红实现为收益），份额不变
+                if t.amount:
+                    cost_delta.iloc[idx] -= t.amount
+                continue
+            if not t.shares:
+                # 待确认买入：占位金额，避免 P&L 出现虚假亏损
+                if t.action == ACTION_BUY and t.amount:
+                    cost_delta.iloc[idx] += t.amount
+                    pending_value_delta.iloc[idx] += t.amount
                 continue
             # 待确认卖出：份额已知、金额未知，用净值估算占位
             if t.action == ACTION_SELL and not t.amount:
                 nav_at_idx = navs.iloc[idx] if idx < len(navs) else 0.0
                 if nav_at_idx and pd.notna(nav_at_idx):
                     pending_value_delta.iloc[idx] += t.shares * nav_at_idx
-            # 买入/再投资 = +份额, 卖出 = -份额
+            if t.action == ACTION_REINVEST:
+                # 红利再投资：只加份额，不计入外部新增投入成本
+                share_delta.iloc[idx] += t.shares
+                continue
+            # 买入 = +份额/+成本, 卖出 = -份额/-成本
             sign = -1.0 if t.action == ACTION_SELL else 1.0
             share_delta.iloc[idx] += sign * t.shares
             cost_delta.iloc[idx] += sign * (t.amount or 0.0)
@@ -679,6 +689,7 @@ def build_channel_daily_pnl() -> list[dict[str, Any]]:
 
     对每个 (基金, 渠道) 持仓独立累积份额和成本，
     每日 P&L = Δ市值 - Δ成本，按渠道分别计算。
+    分红口径与 build_portfolio_curve 一致（现金分红冲减成本、再投资只加份额）。
     返回 [{date, "支付宝": 120.5, "理财通": -30.2, ...}, ...]
     """
     cached = _cache_get("channel_daily_pnl")
@@ -727,24 +738,28 @@ def build_channel_daily_pnl() -> list[dict[str, Any]]:
         for t in tx_sorted:
             if t.fund_code != code or (t.channel or "") != channel:
                 continue
-            if not t.shares:
-                if t.action == ACTION_BUY and t.amount:
-                    d = t.date if t.date >= start_date else start_date
-                    idx = _first_ge(timeline, d)
-                    if idx is not None:
-                        cost_delta.iloc[idx] += t.amount
-                        pending_value_delta.iloc[idx] += t.amount
-                continue
-            if t.action == ACTION_DIVIDEND:
-                continue
             d = t.date if t.date >= start_date else start_date
             idx = _first_ge(timeline, d)
             if idx is None:
+                continue
+            if t.action == ACTION_DIVIDEND:
+                # 现金分红：与卖出同口径冲减投入成本，份额不变（与组合曲线一致）
+                if t.amount:
+                    cost_delta.iloc[idx] -= t.amount
+                continue
+            if not t.shares:
+                if t.action == ACTION_BUY and t.amount:
+                    cost_delta.iloc[idx] += t.amount
+                    pending_value_delta.iloc[idx] += t.amount
                 continue
             if t.action == ACTION_SELL and not t.amount:
                 nav_at_idx = navs.iloc[idx] if idx < len(navs) else 0.0
                 if nav_at_idx and pd.notna(nav_at_idx):
                     pending_value_delta.iloc[idx] += t.shares * nav_at_idx
+            if t.action == ACTION_REINVEST:
+                # 红利再投资：只加份额，不计入外部新增投入成本
+                share_delta.iloc[idx] += t.shares
+                continue
             sign = -1.0 if t.action == ACTION_SELL else 1.0
             share_delta.iloc[idx] += sign * t.shares
             cost_delta.iloc[idx] += sign * (t.amount or 0.0)
@@ -951,7 +966,8 @@ def reconcile_holdings(screenshot_items: list[dict], channel: str = "") -> dict:
     """截图持仓与已记录持仓按渠道对账，生成差额调整交易建议。
 
     screenshot_items: [{fund_code, shares(, market_value)}]（来自视觉解析）
-    channel: 指定渠道过滤持仓（同一基金不同渠道分开计算）
+    channel: 指定渠道过滤持仓（同一基金不同渠道分开计算）；
+             为空时按 fund_code 跨渠道汇总份额后对账（latest_nav 为基金级，取任一即可）。
     返回 {"channel": str, "items": [diff_item]}。
     diff_item:
       - status: "buy"(截图多) | "sell"(截图少) | "ok"(一致) | "new"(截图新增) | "maybe_sold"(系统有截图无)
@@ -964,7 +980,19 @@ def reconcile_holdings(screenshot_items: list[dict], channel: str = "") -> dict:
         positions = [p for p in positions if (p.channel or "") == channel]
 
     # 已记录持仓：fund_code → position
-    recorded: dict[str, Position] = {p.fund_code: p for p in positions}
+    # 指定渠道时每基金仅一条；channel 为空时跨渠道汇总份额，
+    # 避免单值 dict 覆盖多渠道持仓导致差额误判。replace 复制，不改缓存对象。
+    recorded: dict[str, Position] = {}
+    for p in positions:
+        agg = recorded.get(p.fund_code)
+        if agg is None:
+            recorded[p.fund_code] = replace(p)
+        else:
+            recorded[p.fund_code] = replace(
+                agg,
+                held_shares=agg.held_shares + p.held_shares,
+                latest_nav=agg.latest_nav if agg.latest_nav is not None else p.latest_nav,
+            )
 
     # 截图基金集合
     shot_codes = set()
@@ -990,7 +1018,7 @@ def reconcile_holdings(screenshot_items: list[dict], channel: str = "") -> dict:
         if pos is None and market_value and shot_shares:
             try:
                 latest_nav = round(float(market_value) / shot_shares, 4)
-            except (TypeError, ZeroDivisionError):
+            except (TypeError, ValueError, ZeroDivisionError):
                 latest_nav = None
 
         delta = round(shot_shares - rec_shares, 4)

@@ -174,6 +174,26 @@ def _next_weekday(from_date: str, target_dow: int) -> str:
     return (d + timedelta(days=diff)).isoformat()
 
 
+def _biweek_reanchor(next_date: str, dow: int, last_run: str | None) -> str:
+    """biweek 重锚：next_date 距 last_run 不足 14 天时，推迟到不早于
+    last_run+14 的第一个 dow。
+
+    last_run+14 恰好落在 dow 当天时直接取该日——``_next_weekday`` 语义是
+    「严格晚于」（diff==0 强制 +7），若仍走它会把双周静默拉长成 21 天。
+    last_run 为空（首次执行前）或间隔已 >=14 天时不重锚。
+    """
+    if not last_run:
+        return next_date
+    gap = (datetime.strptime(next_date, "%Y-%m-%d") -
+           datetime.strptime(last_run, "%Y-%m-%d")).days
+    if gap >= 14:
+        return next_date
+    d = (datetime.strptime(last_run, "%Y-%m-%d") + timedelta(days=14)).date()
+    if d.weekday() == dow:
+        return d.isoformat()
+    return _next_weekday(d.isoformat(), dow)
+
+
 def _next_month_day(from_date: str, target_day: int) -> str:
     """target_day 的下一个日期。当月未到用当月，已过用下月，超限取月末。"""
     d = datetime.strptime(from_date, "%Y-%m-%d").date()
@@ -215,13 +235,7 @@ def calculate_next_run_conn(
             return None
         next_date = _next_weekday(from_date, dow)
         if cadence == "biweek":
-            last_run = plan.get("last_run")
-            if last_run:
-                gap = (datetime.strptime(next_date, "%Y-%m-%d") -
-                       datetime.strptime(last_run, "%Y-%m-%d")).days
-                if gap < 14:
-                    d = datetime.strptime(last_run, "%Y-%m-%d") + timedelta(days=14)
-                    next_date = _next_weekday(d.isoformat(), dow)
+            next_date = _biweek_reanchor(next_date, dow, plan.get("last_run"))
         return _next_trading_day_conn(conn, fund_code, next_date)
 
     if cadence == "month":
@@ -260,13 +274,7 @@ def calculate_next_run(plan: dict, from_date: str | None = None) -> str | None:
             return None
         next_date = _next_weekday(from_date, dow)
         if cadence == "biweek":
-            last_run = plan.get("last_run")
-            if last_run:
-                gap = (datetime.strptime(next_date, "%Y-%m-%d") -
-                       datetime.strptime(last_run, "%Y-%m-%d")).days
-                if gap < 14:
-                    d = datetime.strptime(last_run, "%Y-%m-%d") + timedelta(days=14)
-                    next_date = _next_weekday(d.isoformat(), dow)
+            next_date = _biweek_reanchor(next_date, dow, plan.get("last_run"))
         return _next_trading_day(fund_code, next_date)
 
     if cadence == "month":
@@ -309,7 +317,8 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
     """执行一次定投计划。
 
     创建一笔买入交易（nav=NULL，等 T+1 回填），
-    更新计划的 last_run / last_tx_id。
+    更新计划的 last_run / last_tx_id。流水与簿记在同一写事务内原子提交，
+    任一步失败整体回滚，不会留下「已买入但未推进」的中间态。
     手动执行（manual=True）时不更新 next_run。
 
     幂等保护：加锁后重新拉取 plan，检查 last_run == today 则跳过，
@@ -375,19 +384,21 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
             note=note,
             is_t1=is_after_three,
         )
-        tx_id = db.add_transaction(tx)
-        analysis.clear_analysis_cache()
-
-        update_fields: dict[str, Any] = {
-            "last_run": today,
-            "last_tx_id": tx_id,
-        }
-
+        update_fields: dict[str, Any] = {"last_run": today}
         if not manual:
             fresh["last_run"] = today
+            # 先算 next_run（自开只读连接，不占写锁），再进写事务。
             update_fields["next_run"] = calculate_next_run(fresh)
 
-        db.update_auto_invest_plan(plan["id"], **update_fields)
+        # 买入流水 + 计划簿记单事务原子提交：若先落流水再更新计划，中途失败
+        # （写锁超时/磁盘错误/崩溃）会留下 next_run<=today 且 last_run!=today
+        # 的中间态，调度器下次会再次选中该计划重复买入；手动 500 后重试同理。
+        tx.normalize()
+        with db.get_connection(write=True) as conn:
+            tx_id = db.insert_transaction(conn, tx)
+            update_fields["last_tx_id"] = tx_id
+            db.update_auto_invest_plan_conn(conn, plan["id"], **update_fields)
+        analysis.clear_analysis_cache()
 
         return {
             "ok": True,

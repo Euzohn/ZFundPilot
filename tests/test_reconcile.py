@@ -125,3 +125,82 @@ class TestReconcile:
                 {"fund_code": "001", "shares": "abc"},
             ])
         assert len(result["items"]) == 0
+
+    def test_new_fund_non_numeric_market_value(self):
+        """market_value 非数值 → 不抛 ValueError，nav/amount 留空让用户填。"""
+        with _mock_positions([]):
+            result = reconcile_holdings(
+                [{"fund_code": "009", "shares": 200, "market_value": "非数值"}])
+        item = result["items"][0]
+        assert item["status"] == "new"
+        tx = item["suggested_tx"]
+        assert tx["nav"] is None
+        assert tx["amount"] is None
+        assert tx["shares"] == 200
+
+
+class TestReconcileEmptyChannel:
+    """channel 为空时按 fund_code 跨渠道汇总后对账。
+
+    回归：旧实现用单值 dict 索引多渠道持仓，同基金只保留一条，
+    导致差额误判并生成错误的补买/补卖建议。
+    """
+
+    @staticmethod
+    def _multi_channel():
+        return [
+            _pos("001", "测试A", 100, "支付宝", 2.0),
+            _pos("001", "测试A", 50, "理财通", 2.0),
+        ]
+
+    def test_aggregates_shares_across_channels(self):
+        """截图份额 = 两渠道之和 → ok，不产生调整建议。"""
+        with _mock_positions(self._multi_channel()):
+            result = reconcile_holdings([{"fund_code": "001", "shares": 150}])
+        assert result["channel"] == ""
+        assert len(result["items"]) == 1
+        item = result["items"][0]
+        assert item["status"] == "ok"
+        assert item["recorded_shares"] == 150.0
+        assert item["suggested_tx"] is None
+
+    def test_delta_against_total_shares(self):
+        """差额按跨渠道总份额计算：200 - 150 = 50 → 建议买入 50 份。"""
+        with _mock_positions(self._multi_channel()):
+            result = reconcile_holdings([{"fund_code": "001", "shares": 200}])
+        item = result["items"][0]
+        assert item["status"] == "buy"
+        assert item["delta"] == 50.0
+        tx = item["suggested_tx"]
+        assert tx["shares"] == 50.0
+        assert tx["nav"] == 2.0
+        assert tx["amount"] == 100.0
+
+    def test_maybe_sold_uses_total_shares(self):
+        """截图无该基金 → 疑似清仓份额为跨渠道总和。"""
+        with _mock_positions(self._multi_channel()):
+            result = reconcile_holdings([])
+        assert len(result["items"]) == 1
+        item = result["items"][0]
+        assert item["status"] == "maybe_sold"
+        assert item["recorded_shares"] == 150.0
+        assert item["suggested_tx"]["shares"] == 150.0
+
+    def test_does_not_mutate_cached_positions(self):
+        """汇总不得修改 calculate_positions 返回的缓存持仓对象。"""
+        positions = self._multi_channel()
+        with _mock_positions(positions):
+            reconcile_holdings([{"fund_code": "001", "shares": 150}])
+        assert positions[0].held_shares == 100
+        assert positions[1].held_shares == 50
+
+    def test_latest_nav_fallback_when_first_missing(self):
+        """latest_nav 为基金级：首条渠道无净值时取另一渠道的。"""
+        with _mock_positions([
+            _pos("001", "测试A", 100, "支付宝", None),
+            _pos("001", "测试A", 50, "理财通", 2.0),
+        ]):
+            result = reconcile_holdings([{"fund_code": "001", "shares": 200}])
+        tx = result["items"][0]["suggested_tx"]
+        assert tx["nav"] == 2.0
+        assert tx["amount"] == 100.0

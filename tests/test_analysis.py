@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo
 from zfundpilot.analysis import (
     _build_data_status,
     _build_positions_from_transactions,
+    build_channel_daily_pnl,
+    build_portfolio_curve,
     calculate_summary,
     clear_analysis_cache,
 )
@@ -354,5 +356,180 @@ class TestBuildDataStatus:
             clear_analysis_cache()
             s3 = calculate_summary()
             assert s3.data_status.stale_nav_fund_count == 0
+        finally:
+            clear_analysis_cache()
+
+
+# ---------------------------------------------------------------------------
+# 组合曲线分红口径：现金分红冲减成本、再投资只加份额
+# ---------------------------------------------------------------------------
+def _nav_rows(dates_navs: list[tuple[str, float]]) -> list[dict]:
+    return [{"date": d, "nav": n} for d, n in dates_navs]
+
+
+def _patch_curve_db(monkeypatch, txs, navs_by_code):
+    """隔离 db：交易流水 + 各基金净值历史，并清空分析缓存。"""
+    monkeypatch.setattr("zfundpilot.analysis.db.get_transactions", lambda: txs)
+    monkeypatch.setattr("zfundpilot.analysis.db.get_nav_history",
+                        lambda code: navs_by_code.get(code, []))
+    clear_analysis_cache()
+
+
+class TestPortfolioCurveDividends:
+    def test_cash_dividend_reduces_cost_no_fake_loss(self, monkeypatch):
+        """现金分红：除息日净值下跌与成本冲减同额 → 曲线无虚假亏损，与账本口径一致。"""
+        txs = [
+            Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-01",
+                        amount=1000, shares=1000, nav=1.0),
+            Transaction(fund_code="001", action=ACTION_DIVIDEND, date="2025-01-03",
+                        amount=50.0),
+        ]
+        navs = _nav_rows([("2025-01-01", 1.0), ("2025-01-02", 1.0),
+                          ("2025-01-03", 0.95), ("2025-01-04", 0.95)])
+        _patch_curve_db(monkeypatch, txs, {"001": navs})
+        try:
+            curve = build_portfolio_curve()
+            assert len(curve) == 4
+            row = curve[curve["date"] == "2025-01-03"].iloc[0]
+            assert abs(row["total_value"] - 950.0) < 1e-6
+            assert abs(row["invested_cost"] - 950.0) < 1e-6
+            assert abs(row["total_return"]) < 1e-9  # 旧口径此处为 -5% 虚假亏损
+            # 与账本 realized_pnl 方向一致：曲线盈亏 = 浮动(950-1000) + 已实现(50) = 0
+            pos = list(_build_positions_from_transactions(txs, {}).values())[0]
+            assert pos.realized_pnl == 50.0
+            ledger_pnl = (950.0 - pos.total_cost) + pos.realized_pnl
+            assert abs((row["total_value"] - row["invested_cost"]) - ledger_pnl) < 1e-6
+        finally:
+            clear_analysis_cache()
+
+    def test_cash_dividend_with_shares_not_added(self, monkeypatch):
+        """分红带净值（normalize 补出份额）时不得把分红份额计入持有份额。"""
+        txs = [
+            Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-01",
+                        amount=1000, shares=1000, nav=1.0),
+            Transaction(fund_code="001", action=ACTION_DIVIDEND, date="2025-01-03",
+                        amount=50.0, nav=0.05),  # normalize → shares=1000
+        ]
+        navs = _nav_rows([("2025-01-01", 1.0), ("2025-01-02", 1.0),
+                          ("2025-01-03", 0.95), ("2025-01-04", 0.95)])
+        _patch_curve_db(monkeypatch, txs, {"001": navs})
+        try:
+            curve = build_portfolio_curve()
+            row = curve[curve["date"] == "2025-01-03"].iloc[0]
+            # 份额仍为 1000（不是 2000）：市值 950，成本 950
+            assert abs(row["total_value"] - 950.0) < 1e-6
+            assert abs(row["invested_cost"] - 950.0) < 1e-6
+            assert abs(row["total_return"]) < 1e-9
+        finally:
+            clear_analysis_cache()
+
+    def test_reinvest_adds_shares_only(self, monkeypatch):
+        """红利再投资：只加份额不加投入成本 → 除息日无虚假亏损、分母不被抬高。"""
+        txs = [
+            Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-01",
+                        amount=1000, shares=1000, nav=1.0),
+            Transaction(fund_code="001", action=ACTION_REINVEST, date="2025-01-03",
+                        amount=50.0, shares=50.0 / 0.95, nav=0.95),
+        ]
+        navs = _nav_rows([("2025-01-01", 1.0), ("2025-01-02", 1.0),
+                          ("2025-01-03", 0.95), ("2025-01-04", 1.0)])
+        _patch_curve_db(monkeypatch, txs, {"001": navs})
+        try:
+            curve = build_portfolio_curve()
+            # 投入成本始终为 1000（旧口径再投资后变 1050）
+            assert (curve["invested_cost"] - 1000.0).abs().max() < 1e-6
+            row = curve[curve["date"] == "2025-01-03"].iloc[0]
+            # (1000 + 50/0.95) × 0.95 = 1000 → 除息日市值不变
+            assert abs(row["total_value"] - 1000.0) < 1e-6
+            assert abs(row["total_return"]) < 1e-9
+            # 次日净值回升：收益来自份额增长而非成本变化
+            row4 = curve[curve["date"] == "2025-01-04"].iloc[0]
+            assert abs(row4["total_value"] - (1000 + 50.0 / 0.95)) < 1e-6
+            assert row4["total_return"] > 0
+        finally:
+            clear_analysis_cache()
+
+    def test_sell_still_reduces_cost(self, monkeypatch):
+        """卖出仍按原口径冲减份额与成本（重构不改变卖出语义）。"""
+        txs = [
+            Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-01",
+                        amount=1000, shares=1000, nav=1.0),
+            Transaction(fund_code="001", action=ACTION_SELL, date="2025-01-03",
+                        amount=500.0, shares=500, nav=1.0),
+        ]
+        navs = _nav_rows([("2025-01-01", 1.0), ("2025-01-02", 1.0),
+                          ("2025-01-03", 1.0), ("2025-01-04", 1.0)])
+        _patch_curve_db(monkeypatch, txs, {"001": navs})
+        try:
+            curve = build_portfolio_curve()
+            row = curve[curve["date"] == "2025-01-03"].iloc[0]
+            assert abs(row["total_value"] - 500.0) < 1e-6
+            assert abs(row["invested_cost"] - 500.0) < 1e-6
+            assert abs(row["total_return"]) < 1e-9
+        finally:
+            clear_analysis_cache()
+
+
+class TestChannelDailyPnlDividends:
+    def test_cash_dividend_day_pnl_zero(self, monkeypatch):
+        """渠道每日盈亏继承分红口径：除息日 Δ市值-Δ成本 = 0（旧口径 -50）。"""
+        txs = [
+            Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-01",
+                        amount=1000, shares=1000, nav=1.0, channel="支付宝"),
+            Transaction(fund_code="001", action=ACTION_DIVIDEND, date="2025-01-03",
+                        amount=50.0, channel="支付宝"),
+        ]
+        navs = _nav_rows([("2025-01-01", 1.0), ("2025-01-02", 1.0),
+                          ("2025-01-03", 0.95), ("2025-01-04", 0.95)])
+        _patch_curve_db(monkeypatch, txs, {"001": navs})
+        try:
+            rows = build_channel_daily_pnl()
+            by_date = {r["date"]: r for r in rows}
+            assert by_date["2025-01-03"]["支付宝"] == 0.0
+            assert by_date["2025-01-04"]["支付宝"] == 0.0
+        finally:
+            clear_analysis_cache()
+
+    def test_reinvest_day_pnl_zero(self, monkeypatch):
+        """再投资日渠道盈亏 ≈ 0（份额增加抵消净值下跌，成本不变）。"""
+        txs = [
+            Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-01",
+                        amount=1000, shares=1000, nav=1.0, channel="支付宝"),
+            Transaction(fund_code="001", action=ACTION_REINVEST, date="2025-01-03",
+                        amount=50.0, shares=50.0 / 0.95, nav=0.95, channel="支付宝"),
+        ]
+        navs = _nav_rows([("2025-01-01", 1.0), ("2025-01-02", 1.0),
+                          ("2025-01-03", 0.95), ("2025-01-04", 0.95)])
+        _patch_curve_db(monkeypatch, txs, {"001": navs})
+        try:
+            rows = build_channel_daily_pnl()
+            by_date = {r["date"]: r for r in rows}
+            assert abs(by_date["2025-01-03"]["支付宝"]) < 0.01
+        finally:
+            clear_analysis_cache()
+
+
+class TestSummaryDividendInheritance:
+    def test_daily_pnl_not_hit_by_dividend(self, monkeypatch):
+        """calculate_summary 的每日盈亏继承曲线修复：除息日 daily_pnl = 0（旧口径 -50）。"""
+        txs = [
+            Transaction(fund_code="001", action=ACTION_BUY, date="2025-01-01",
+                        amount=1000, shares=1000, nav=1.0),
+            Transaction(fund_code="001", action=ACTION_DIVIDEND, date="2025-01-03",
+                        amount=50.0),
+        ]
+        # 曲线终点落在除息日，使 daily_pnl 正好取到分红当日
+        navs = _nav_rows([("2025-01-01", 1.0), ("2025-01-02", 1.0),
+                          ("2025-01-03", 0.95)])
+        _patch_curve_db(monkeypatch, txs, {"001": navs})
+        monkeypatch.setattr("zfundpilot.analysis.db.get_funds", lambda: [])
+        monkeypatch.setattr("zfundpilot.analysis.db.get_latest_navs_batch",
+                            lambda codes: {"001": {"nav": 0.95, "date": "2025-01-03"}})
+        monkeypatch.setattr("zfundpilot.analysis.db.is_trading_day", lambda s: False)
+        monkeypatch.setattr("zfundpilot.analysis.db.get_transactions_without_nav", lambda: [])
+        try:
+            summary = calculate_summary()
+            assert summary.daily_pnl == 0.0
+            assert summary.daily_return == 0.0
         finally:
             clear_analysis_cache()

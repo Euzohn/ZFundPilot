@@ -114,11 +114,27 @@ def structure_weights(positions: list[Position]) -> tuple[float, float, float]:
 # 组合回撤/波动（基于组合收益曲线）
 # ---------------------------------------------------------------------------
 def portfolio_drawdown_and_vol() -> tuple[float | None, float | None]:
+    """组合最大回撤/波动率：基于剔除申赎现金流后的调整收益序列。
+
+    申购/赎回/现金分红引起的市值跳变不属于投资盈亏：
+    r_t = (V_t - V_{t-1} - ΔInvested_t) / V_{t-1}（V_{t-1} > 0 时），
+    累积成调整曲线后再算指标，避免把部分赎回记为回撤、把大额申赎记为波动。
+    """
     curve = analysis.build_portfolio_curve()
     if curve.empty:
         return None, None
     values = curve.set_index("date")["total_value"]
-    return calculate_max_drawdown(values), calculate_volatility(values)
+    invested = curve.set_index("date")["invested_cost"]
+    prev = values.shift(1)
+    delta_invested = invested.diff()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        returns = (values - prev - delta_invested) / prev
+    returns = returns[prev > 0].dropna()
+    if returns.empty:
+        return None, None
+    # clip 下限 -1：极端亏损日至多归零，避免调整曲线变号
+    adjusted = (1.0 + returns.clip(lower=-1.0)).cumprod()
+    return calculate_max_drawdown(adjusted), calculate_volatility(adjusted)
 
 
 # ---------------------------------------------------------------------------

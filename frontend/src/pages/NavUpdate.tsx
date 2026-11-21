@@ -142,7 +142,7 @@ export default function NavUpdate() {
 
   // 排序：待更新在前（无净值 > 净值过时），已更新在后
   const sortedRows = useMemo(() => {
-    return [...displayRows].sort((a, b) => {
+    return displayRows.toSorted((a, b) => {
       const aNeeds = !a.date || a.date < todayStr ? 0 : 1
       const bNeeds = !b.date || b.date < todayStr ? 0 : 1
       if (aNeeds !== bNeeds) return aNeeds - bNeeds

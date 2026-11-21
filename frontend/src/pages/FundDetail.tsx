@@ -71,7 +71,7 @@ export default function FundDetail() {
   // 净值图表数据：时间区间过滤 + 每日收益计算（必须在 early return 之前）
   const chartData = useMemo(() => {
     if (!navHistory?.length) return []
-    const sorted = [...navHistory].sort((a, b) => a.date.localeCompare(b.date))
+    const sorted = navHistory.toSorted((a, b) => a.date.localeCompare(b.date))
 
     // 时间区间过滤
     let cutoff: string | null = null
@@ -123,7 +123,7 @@ export default function FundDetail() {
     })
 
     // 从全部交易计算每日累计份额（不受时间区间限制）
-    const sortedTxs = txs ? [...txs].sort((a, b) => a.date.localeCompare(b.date)) : []
+    const sortedTxs = txs ? txs.toSorted((a, b) => a.date.localeCompare(b.date)) : []
     let cumShares = 0
     const cumByDate: { date: string; shares: number }[] = []
     for (const t of sortedTxs) {

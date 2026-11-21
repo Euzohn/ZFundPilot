@@ -116,7 +116,7 @@ export default function Returns() {
   }
 
   const sortedPositions = useMemo(() => {
-    return [...allPositions].sort((a, b) => {
+    return allPositions.toSorted((a, b) => {
       const getVal = (p: Position): number | string => {
         switch (sortField) {
           case "fund_code": return p.fund_code

@@ -715,7 +715,7 @@ function AuditLogPanel() {
             <Input
               value={draft.username}
               onChange={(e) => setDraft((prev) => ({ ...prev, username: e.target.value }))}
-              onKeyDown={(e) => { if (e.key === "Enter") applyFilters() }}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) applyFilters() }}
               className="h-8 text-xs"
               placeholder={t.settings.auditFilterUserPlaceholder}
               maxLength={64}

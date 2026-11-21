@@ -145,20 +145,34 @@
   }
 }
 
-/* 滚动条美化 */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+/* 滚动条美化：标准属性优先，WebKit 私有伪元素仅作旧浏览器回退 */
+:root {
+  --scrollbar-thumb: hsl(var(--muted-foreground) / 0.25);
+  --scrollbar-track: transparent;
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
 }
-::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.25);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.45);
+@supports not (scrollbar-color: auto) {
+  * {
+    /* 重置 thin，避免支持 scrollbar-width 但不支持 scrollbar-color 的浏览器禁用 WebKit 样式 */
+    scrollbar-width: auto;
+  }
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.45);
+  }
 }
 
 /* 数字渐入动画 */

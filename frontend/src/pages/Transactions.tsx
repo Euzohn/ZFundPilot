@@ -1123,7 +1123,7 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
 
   const sortedTxs = useMemo(() => {
     if (!filteredTxs) return filteredTxs
-    return [...filteredTxs].sort((a, b) => {
+    return filteredTxs.toSorted((a, b) => {
       const getVal = (t: Transaction): string | number => {
         if (sortField === "date") return t.date
         if (sortField === "fund_code") return t.fund_code

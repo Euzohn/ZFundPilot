@@ -205,7 +205,7 @@ export default function Positions() {
           m.type.toLowerCase().includes(q)
         )
       : mergedRows
-    return [...filtered].sort(([, a], [, b]) => {
+    return filtered.toSorted(([, a], [, b]) => {
       const getVal = (m: typeof a): number | string => {
         switch (sortField) {
           case "name": return m.name
@@ -764,7 +764,7 @@ export default function Positions() {
                 if (closedSortField === field) setClosedSortDir((d) => (d === "asc" ? "desc" : "asc"))
                 else { setClosedSortField(field); setClosedSortDir("desc") }
               }
-              const closedSorted = [...closedEntries].sort(([, a], [, b]) => {
+              const closedSorted = closedEntries.toSorted(([, a], [, b]) => {
                 const va = closedSortField === "name" ? a.name : closedSortField === "channels" ? a.channels : a.realized
                 const vb = closedSortField === "name" ? b.name : closedSortField === "channels" ? b.channels : b.realized
                 const cmp = typeof va === "string" && typeof vb === "string" ? va.localeCompare(vb) : (va as number) - (vb as number)

@@ -269,8 +269,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       toast.error(t.aiChat.fundCodeDateRequired)
       return
     }
-    const baseNote = tx.note.trim()
-    const note = (baseNote ? baseNote + (tx.after_three ? " | " : "") : "") + (tx.after_three ? t.transactions.t1Confirm : "")
     const payload: Transaction = {
       fund_code: tx.fund_code,
       action: tx.action,
@@ -280,7 +278,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       nav: tx.nav,
       fee: tx.fee,
       channel: tx.channel,
-      note,
+      // 与手工表单一致：T+1 走 is_t1 字段（缺净值时后端标记 pending_t1），不再往备注拼文本
+      note: tx.note.trim(),
+      is_t1: tx.after_three,
     }
     try {
       const res = await api.addTransaction(payload)

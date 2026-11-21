@@ -142,7 +142,8 @@ export default function NavUpdate() {
 
   // 排序：待更新在前（无净值 > 净值过时），已更新在后
   const sortedRows = useMemo(() => {
-    return displayRows.toSorted((a, b) => {
+    // slice().sort 而非 toSorted：构建目标无 polyfill，保持 ES2020 运行时兼容
+    return displayRows.slice().sort((a, b) => {
       const aNeeds = !a.date || a.date < todayStr ? 0 : 1
       const bNeeds = !b.date || b.date < todayStr ? 0 : 1
       if (aNeeds !== bNeeds) return aNeeds - bNeeds

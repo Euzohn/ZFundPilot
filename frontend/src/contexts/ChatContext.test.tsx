@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getSystemPrompt: vi.fn(),
   getAIUsage: vi.fn(),
   streamChat: vi.fn(),
+  addTransaction: vi.fn(),
 }))
 
 vi.mock("@/api/client", () => ({ api: mocks }))
@@ -65,6 +66,7 @@ let failStream: ((e: Error) => void) | null = null
 beforeEach(() => {
   mocks.getSystemPrompt.mockReset().mockResolvedValue({ system_prompt: "sys" })
   mocks.getAIUsage.mockReset().mockResolvedValue({ today: 0, total: 0, recent: [] })
+  mocks.addTransaction.mockReset().mockResolvedValue({ id: 9 })
   mocks.streamChat.mockReset().mockImplementation((_msgs: unknown, cb: (c: Chunk) => void) => {
     onChunk = cb
     return new Promise<void>((resolve, reject) => {
@@ -149,5 +151,30 @@ describe("ChatContext 流式期间会话守卫", () => {
     expect(ctx.streaming).toBe(false)
     expect(ctx.messages[1].role).toBe("assistant")
     expect(ctx.messages[1].content).toContain("请求失败")
+  })
+})
+
+describe("ChatContext 确认交易 payload", () => {
+  const baseTx = {
+    fund_code: "000001", action: "sell", date: "2026-01-05",
+    amount: null, shares: 500, nav: null, fee: 0, channel: "支付宝", note: "测试备注",
+  }
+
+  it("盘后(T+1)提交携带 is_t1，备注不再拼接 T+1 文案", async () => {
+    renderChat()
+    await act(async () => { ctx.handleConfirmTx(0, { ...baseTx, after_three: true }) })
+    const payload = mocks.addTransaction.mock.calls[0][0]
+    expect(payload).toEqual(expect.objectContaining({
+      fund_code: "000001", action: "sell", date: "2026-01-05",
+      is_t1: true, note: "测试备注",
+    }))
+    expect(payload.note).not.toMatch(/T\+1/)
+  })
+
+  it("盘中提交 is_t1 为 false", async () => {
+    renderChat()
+    await act(async () => { ctx.handleConfirmTx(0, { ...baseTx, after_three: false }) })
+    expect(mocks.addTransaction.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ is_t1: false }))
   })
 })

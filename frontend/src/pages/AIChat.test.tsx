@@ -210,3 +210,30 @@ describe("TxConfirmCard 费用估算", () => {
     expect(screen.queryByText(/费率A/)).not.toBeInTheDocument()
   })
 })
+
+describe("TxConfirmCard T+1 口径", () => {
+  it("盘后卖出按次日日期估算净值/费率，与手工表单 effectiveNavDate 一致", async () => {
+    mocks.calcFundFee.mockResolvedValue(feeRes({ fee: 2.5, amount: 750, nav: 1.5 }))
+    const tx: ExtractedTx = {
+      fund_code: "000001", action: "sell", date: "2026-01-05", after_three: true,
+      amount: null, shares: 500, nav: null, fee: 0, channel: "", note: "",
+    }
+    renderCard(tx)
+    await waitFor(() => expect(mocks.calcFundFee).toHaveBeenCalledWith(
+      "000001", { action: "sell", shares: 500, date: "2026-01-06" }))
+  })
+
+  it("确认提交携带 after_three，供上层换算 is_t1", async () => {
+    mocks.calcFundFee.mockResolvedValue(feeRes({ fee: 2.5, amount: 750, nav: 1.5 }))
+    const tx: ExtractedTx = {
+      fund_code: "000001", action: "sell", date: "2026-01-05", after_three: true,
+      amount: null, shares: 500, nav: null, fee: 0, channel: "", note: "",
+    }
+    const { onConfirm } = renderCard(tx)
+    await waitFor(() => expect(screen.getByRole("spinbutton")).toHaveValue(2.5))
+    fireEvent.click(screen.getByRole("button", { name: /确认添加/ }))
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({
+      date: "2026-01-05", after_three: true,
+    }))
+  })
+})

@@ -296,6 +296,35 @@ class TestClientIp:
         req = _fake_request("198.51.100.7", "203.0.113.9")
         assert api._get_client_ip(req) == "198.51.100.7"
 
+    def test_xff_appended_spoof_leftmost_ignored(self, monkeypatch):
+        # 追加式代理（nginx $proxy_add_x_forwarded_for）下最左项由客户端伪造：
+        # 必须从右向左取第一个不可信地址，否则可轮换伪造 IP 绕过按 IP 的限流/锁定
+        monkeypatch.setattr(config, "TRUSTED_PROXIES",
+                            [ipaddress.ip_network("127.0.0.0/8")])
+        req = _fake_request("127.0.0.1", "9.9.9.9, 203.0.113.7")
+        assert api._get_client_ip(req) == "203.0.113.7"
+
+    def test_xff_spoofed_trusted_leftmost_skipped(self, monkeypatch):
+        # 伪造项本身落在信任网段也不可信：继续向左直到不可信项
+        monkeypatch.setattr(config, "TRUSTED_PROXIES",
+                            [ipaddress.ip_network("127.0.0.0/8"),
+                             ipaddress.ip_network("10.0.0.0/8")])
+        req = _fake_request("10.1.1.1", "198.51.100.2, 127.0.0.1, 10.9.9.9")
+        assert api._get_client_ip(req) == "198.51.100.2"
+
+    def test_xff_all_trusted_returns_leftmost(self, monkeypatch):
+        monkeypatch.setattr(config, "TRUSTED_PROXIES",
+                            [ipaddress.ip_network("127.0.0.0/8"),
+                             ipaddress.ip_network("10.0.0.0/8")])
+        req = _fake_request("127.0.0.1", "10.1.2.3, 127.0.0.1")
+        assert api._get_client_ip(req) == "10.1.2.3"
+
+    def test_xff_unparseable_entries_skipped(self, monkeypatch):
+        monkeypatch.setattr(config, "TRUSTED_PROXIES",
+                            [ipaddress.ip_network("127.0.0.0/8")])
+        req = _fake_request("127.0.0.1", "203.0.113.7, not-an-ip")
+        assert api._get_client_ip(req) == "203.0.113.7"
+
     def test_invalid_host_returned_as_is(self, monkeypatch):
         monkeypatch.setattr(config, "TRUSTED_PROXIES", [])
         assert api._get_client_ip(_fake_request("testclient")) == "testclient"

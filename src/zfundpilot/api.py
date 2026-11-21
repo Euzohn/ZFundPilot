@@ -322,6 +322,7 @@ def _get_client_ip(request: Request) -> str:
 
     仅在 request.client.host 命中 TRUSTED_PROXIES 时读取 X-Forwarded-For 头，
     否则直接用 request.client.host（防止客户端伪造 IP 绕过限流）。
+    XFF 链按从右向左解析（追加式代理下最左项不可信，可被客户端伪造）。
     支持 IPv6 与 IPv4-mapped IPv6（双栈监听下 IPv4 客户端呈现为 ::ffff:x.x.x.x）。
     """
     client_host = request.client.host if request.client else "unknown"
@@ -336,7 +337,21 @@ def _get_client_ip(request: Request) -> str:
     if any(addr in net for net in config.TRUSTED_PROXIES):
         xff = request.headers.get("x-forwarded-for", "")
         if xff:
-            return xff.split(",")[0].strip()
+            # 追加式代理（nginx $proxy_add_x_forwarded_for）下最左项由客户端任意伪造，
+            # 必须从右向左跳过仍命中信任网段的条目，取第一个不可信地址才是真实来源；
+            # 只取最左项会让攻击者轮换伪造 IP 绕过按 IP 计的失败锁定与限流
+            chain = [p.strip() for p in xff.split(",") if p.strip()]
+            for candidate in reversed(chain):
+                try:
+                    caddr = ipaddress.ip_address(candidate)
+                except ValueError:
+                    continue
+                if isinstance(caddr, ipaddress.IPv6Address) and caddr.ipv4_mapped is not None:
+                    caddr = caddr.ipv4_mapped
+                if not any(caddr in net for net in config.TRUSTED_PROXIES):
+                    return candidate
+            # 整链均为信任网段：取最左（最早进入链的地址）；无可解析项则退回直连地址
+            return chain[0] if chain else client_host
     return client_host
 
 
@@ -5743,11 +5758,15 @@ def get_audit_logs(
 ) -> list[dict]:
     """返回审计日志（需认证），支持动作/用户/时间范围过滤与偏移分页。
 
-    ``action``/``username`` 精确匹配；``from``/``to`` 为纯日期时按整天包含式
-    处理；默认仅 ``limit=100`` 时行为与旧版一致。
+    ``action``/``username`` 精确匹配；``from``/``to`` 接受纯日期或 ISO 时间串
+    （可带时区，纯日期按整天包含式处理），先规范化为与入库 ``ts`` 同格式的
+    本地时区串再交给 db 比较，使字典序比较等价于时间序比较；
+    默认仅 ``limit=100`` 时行为与旧版一致。
     """
-    if ts_from and ts_to:
-        # 规范化为可比较时间再判断先后，消除纯日期/ISO/时区混用的字典序误判
+    # 规范化为可比较 UTC 时间：消除纯日期/ISO/时区混用的字典序误判，
+    # 非法日期单独 422（此前仅 from、to 同传时才校验）
+    start = end = None
+    if ts_from:
         try:
             start = _normalize_audit_ts(ts_from)
         except ValueError:
@@ -5756,6 +5775,7 @@ def get_audit_logs(
                 detail={"field": "from", "message": "起始时间无效"},
                 code="validation_error",
             ) from None
+    if ts_to:
         try:
             end = _normalize_audit_ts(ts_to, end_of_day=True)
         except ValueError:
@@ -5764,18 +5784,22 @@ def get_audit_logs(
                 detail={"field": "to", "message": "结束时间无效"},
                 code="validation_error",
             ) from None
-        if start > end:
-            raise api_errors.ApiError(
-                status_code=422,
-                detail={"field": "from", "message": "起始时间不能晚于结束时间"},
-                code="validation_error",
-            )
+    if start and end and start > end:
+        raise api_errors.ApiError(
+            status_code=422,
+            detail={"field": "from", "message": "起始时间不能晚于结束时间"},
+            code="validation_error",
+        )
+    # 换算回入库格式（config.TIMEZONE 偏移的 ISO 串）：同一偏移下字典序即时间序。
+    # 存量行若为旧时区偏移（改过 ZFUNDPILOT_TIMEZONE），比较仍不保证精确。
+    ts_from_cmp = start.astimezone(config.TIMEZONE).isoformat() if start else None
+    ts_to_cmp = end.astimezone(config.TIMEZONE).isoformat() if end else None
     return db.fetch_audit_logs(
         limit,
         action=action,
         username=username,
-        ts_from=ts_from,
-        ts_to=ts_to,
+        ts_from=ts_from_cmp,
+        ts_to=ts_to_cmp,
         offset=offset,
     )
 

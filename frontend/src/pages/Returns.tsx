@@ -121,7 +121,8 @@ export default function Returns() {
   }
 
   const sortedPositions = useMemo(() => {
-    return allPositions.toSorted((a, b) => {
+    // slice().sort 而非 toSorted：构建目标无 polyfill，保持 ES2020 运行时兼容
+    return allPositions.slice().sort((a, b) => {
       const getVal = (p: Position): number | string => {
         switch (sortField) {
           case "fund_code": return p.fund_code

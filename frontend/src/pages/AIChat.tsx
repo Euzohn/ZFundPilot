@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { CalcFeeResponse } from "@/api/types"
@@ -10,7 +10,7 @@ import { ChevronDown, ChevronRight, Eye, EyeOff, ShieldAlert, Lightbulb, PlusCir
 import { Bot, Send, Search, Plus, Check, X, Loader2, Clock, Pencil } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { formatRelativeTime, formatTokens, money } from "@/lib/format"
+import { formatRelativeTime, formatTokens, localDateStr, money } from "@/lib/format"
 import LogoTyping from "@/components/LogoTyping"
 import EmptyState from "@/components/EmptyState"
 import LoadingState from "@/components/LoadingState"
@@ -484,12 +484,22 @@ export function TxConfirmCard({
 
   // 卖出估算日期：tx 自带日期优先；LLM 缺日期时用用户补填的 editDate（补填即触发估算）
   const calcDate = tx.date || editDate
+  // 盘后（T+1）订单按次日确认：净值与赎回费持有天数都用次日口径，
+  // 与 Transactions 手工表单的 effectiveNavDate 一致，避免估算净值/费率档错一天
+  const navCalcDate = useMemo(() => {
+    if (!calcDate) return ""
+    if (!afterThree) return calcDate
+    const [y, m, d] = calcDate.split("-").map(Number)
+    if (!y || !m || !d) return calcDate
+    // 按本地日期解析再 +1 天：new Date("YYYY-MM-DD") 是 UTC 午夜，西时区下会落到前一天
+    return localDateStr(new Date(y, m - 1, d + 1))
+  }, [calcDate, afterThree])
 
   useEffect(() => {
     if (!tx.fund_code) return
     const amt = tx.amount ?? 0
     const sh = tx.shares ?? 0
-    const dt = calcDate
+    const dt = navCalcDate
     // stale 守卫：tx/日期变化或卸载后，过期响应不再覆盖当前估算
     let stale = false
     if (tx.action === "buy" && amt > 0) {
@@ -522,7 +532,7 @@ export function TxConfirmCard({
       setFeeCalcLoading(false)
     }
     return () => { stale = true }
-  }, [tx.fund_code, tx.action, tx.amount, tx.shares, calcDate])
+  }, [tx.fund_code, tx.action, tx.amount, tx.shares, navCalcDate])
 
   if (status?.state === "added") {
     return (

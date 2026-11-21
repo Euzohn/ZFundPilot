@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Fixed
+- 复审修复 5 项 P1（源自 OCR 审计后复查，前后端各半）：**① 现金分红假亏损**——分红提醒「记为分红」预填日期由发放日改锚除息日（`DividendCheckDialog`，缺除息日退回发放日）：后端在流水日冲减投入成本，记在发放日（常晚 1~3 个交易日）会让除息日净值下跌留成虚假亏损、发放日出现虚假收益，曲线假回撤/假波动在默认录入路径下依然存在；**② AI 聊天确认交易 T+1 缺口**——盘后卖出估算改按次日日期查净值/费率（与手工表单 effectiveNavDate 同口径，消除 7 天惩罚费档错一天），确认 payload 补 `is_t1` 字段（不再往备注拼 T+1 文本），此前盘后提案按当日净值「已确认」入账；**③ 审计时间范围过滤修复不完整**——from/to 边界规范化后换算为与入库 ts 同格式的本地时区串再交给 db 比较（此前仅用于 422 顺序判定、过滤仍按原始串字典序，带时区/混合格式查询静默丢行），单传非法边界也改 422；**④ X-Forwarded-For 最左项可伪造**——配置 TRUSTED_PROXIES 后经追加式代理伪造最左 IP 即可绕过按 IP 计的登录锁定/升级认证锁定/Agent 限流，改从右向左跳过信任网段取第一个不可信地址；**⑤ `toSorted` 无 polyfill 静默抬高浏览器基线**——7 处调用改 `slice().sort()`，恢复 Chrome<110/Safari<16/Firefox<115 核心页面可用（esbuild 只转语法不 polyfill 实例方法）。新增/扩展测试：`tests/test_audit_filters.py`（+6 例边界行正确性）、`tests/test_api_b6_security.py`（+4 例 XFF 伪造链）、`AIChat.test.tsx`（+2 例 T+1 口径）、`ChatContext.test.tsx`（+2 例 is_t1 payload）、`DividendCheckDialog.test.tsx`（+2 例除息日锚定），后端全量 1778 例、前端全量 251 例。无依赖变更
 - 残留 V8 路径全生命周期串行统一（v0.28.1 跟进加固，消除最后的跨锁域理论竞态窗口）：经对 akshare 1.20.61 逐函数体验证，进程内其余 V8 使用方仅剩乐咕估值兜底（`valuation._lg_call`，stock_index_pe_lg/pb_lg）与新浪交易日历（`fetch_trade_calendar`，calendar_trade_date_hist_sina）两处——fetch_estimate/宏观/重仓/行业/申购状态等接口均为纯 Python JSON 不触 V8。两处原有各自的域锁（`_V8_LOCK`/`_trade_cal_lock`）已把本域内整段调用串行，但跨锁域并发「创建+销毁」V8 上下文仍可能竞态（类级锁只盖 init/eval/call，不盖 close/__del__）。现两处的实际 akshare 调用外嵌套 `ak_compat.serialized()`，全进程 V8 生命周期统一到同一把进程级锁；限频等待/退避 sleep 保持在锁外不持锁空等。新增 `tests/test_v8_serialized_coverage.py`（3 例：两处调用期间持锁、乐咕+日历跨域并发 max_entries==1），全量 1514 例。无依赖变更
 
 ### Changed

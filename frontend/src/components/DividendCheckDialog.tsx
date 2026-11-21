@@ -75,7 +75,10 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
   const handleConfirm = (alert: DividendAlert, overrideMethod?: string) => {
     const method = overrideMethod ?? alert.dividend_method
     const action = method === "reinvest" ? "reinvest" : "dividend"
-    const date = method === "reinvest" ? (alert.ex_date ?? "") : (alert.pay_date ?? "")
+    // 现金分红同样锚定除息日：净值下跌发生在除息日，后端按流水日冲减投入成本，
+    // 记在发放日（通常晚 1~3 个交易日）会让除息日留下虚假亏损、发放日出现虚假收益。
+    // 与再投资口径一致取 ex_date，仅当提醒未携带除息日时退回发放日。
+    const date = alert.ex_date ?? alert.pay_date ?? ""
     const perShare = alert.per_share ?? 0
     const note = method === "reinvest"
       ? t.transactions.dividendReinvestNote.replace("{perShare}", perShare.toFixed(4))

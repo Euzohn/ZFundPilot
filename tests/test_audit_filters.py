@@ -184,3 +184,60 @@ class TestAuditTimeNormalization:
                           params={"from": "2026-02-30", "to": "2026-03-01"})
         assert resp.status_code == 422
         assert resp.json()["detail"]["field"] == "from"
+
+
+class TestAuditBoundRowCorrectness:
+    """边界规范化后按真实时间命中行：混用时区/格式不得静默丢行或错圈行。"""
+
+    def test_utc_iso_bounds_return_matching_rows(self, client):
+        _seed()
+        # 01:00Z–02:00Z = 本地(+08) 09:00–10:00，应命中 10:00+08:00 那条，
+        # 而非按字典序把全部 +08:00 行都排除
+        resp = client.get("/api/audit", params={
+            "from": "2026-11-02T01:00:00Z",
+            "to": "2026-11-02T02:00:00Z",
+        })
+        assert resp.status_code == 200, resp.text
+        assert [r["action"] for r in resp.json()] == ["proposal_created"]
+
+    def test_naive_iso_bounds_treated_as_local(self, client):
+        _seed()
+        # 无时区串按本地时区解释：09:30–10:30 本地 → 只命中 10:00+08:00
+        resp = client.get("/api/audit", params={
+            "from": "2026-11-02T09:30:00",
+            "to": "2026-11-02T10:30:00",
+        })
+        assert resp.status_code == 200, resp.text
+        assert [r["action"] for r in resp.json()] == ["proposal_created"]
+
+    def test_date_only_to_includes_whole_day(self, client):
+        _seed()
+        # to 为纯日期仍按整天包含：11-02 当天两条（10:00 created 与 23:59:59 approved）
+        resp = client.get("/api/audit", params={"from": "2026-11-02", "to": "2026-11-02"})
+        assert resp.status_code == 200, resp.text
+        assert [r["action"] for r in resp.json()] == [
+            "proposal_approved", "proposal_created",
+        ]
+
+    def test_mixed_formats_end_to_end(self, client):
+        _seed()
+        # from 纯日期 + to 带时区 ISO：跨格式过滤结果与真实时间一致
+        resp = client.get("/api/audit", params={
+            "from": "2026-11-02",
+            "to": "2026-11-02T15:59:59Z",  # = 本地 +08 当日 23:59:59，含当天两条
+        })
+        assert resp.status_code == 200, resp.text
+        assert [r["action"] for r in resp.json()] == [
+            "proposal_approved", "proposal_created",
+        ]
+
+    def test_single_invalid_from_422(self, client):
+        # 仅 from 非法（日历上不存在）也应 422，而非透传给 db 静默处理
+        resp = client.get("/api/audit", params={"from": "2026-02-30"})
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["field"] == "from"
+
+    def test_single_invalid_to_422(self, client):
+        resp = client.get("/api/audit", params={"to": "2026-02-30"})
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["field"] == "to"

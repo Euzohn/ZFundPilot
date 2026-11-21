@@ -1139,7 +1139,8 @@ function TransactionList({ onEdit, onViewFund }: { onEdit: (tx: Transaction) => 
 
   const sortedTxs = useMemo(() => {
     if (!filteredTxs) return filteredTxs
-    return filteredTxs.toSorted((a, b) => {
+    // slice().sort 而非 toSorted：构建目标无 polyfill，保持 ES2020 运行时兼容
+    return filteredTxs.slice().sort((a, b) => {
       const getVal = (t: Transaction): string | number => {
         if (sortField === "date") return t.date
         if (sortField === "fund_code") return t.fund_code

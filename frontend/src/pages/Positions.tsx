@@ -205,7 +205,8 @@ export default function Positions() {
           m.type.toLowerCase().includes(q)
         )
       : mergedRows
-    return filtered.toSorted(([, a], [, b]) => {
+    // slice().sort 而非 toSorted：构建目标无 polyfill，保持 ES2020 运行时兼容
+    return filtered.slice().sort(([, a], [, b]) => {
       const getVal = (m: typeof a): number | string => {
         switch (sortField) {
           case "name": return m.name
@@ -764,7 +765,7 @@ export default function Positions() {
                 if (closedSortField === field) setClosedSortDir((d) => (d === "asc" ? "desc" : "asc"))
                 else { setClosedSortField(field); setClosedSortDir("desc") }
               }
-              const closedSorted = closedEntries.toSorted(([, a], [, b]) => {
+              const closedSorted = closedEntries.slice().sort(([, a], [, b]) => {
                 const va = closedSortField === "name" ? a.name : closedSortField === "channels" ? a.channels : a.realized
                 const vb = closedSortField === "name" ? b.name : closedSortField === "channels" ? b.channels : b.realized
                 const cmp = typeof va === "string" && typeof vb === "string" ? va.localeCompare(vb) : (va as number) - (vb as number)

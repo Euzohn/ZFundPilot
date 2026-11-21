@@ -33,10 +33,14 @@ _key_lock = threading.Lock()
 def _get_fernet() -> Fernet:
     """获取（必要时生成）Fernet 实例。主密钥存于 data/secret.key。
 
-    生成路径双重防护：
+    生成路径多重防护：
     - threading.Lock 串行化进程内并发（双重检查，避免重复生成）；
-    - os.open(O_CREAT|O_EXCL, 0o600) 原子创建，跨进程竞态失败方读已有密钥；
-      创建即 0600，消除先 0644 再 chmod 的全局可读窗口。
+    - 先写同目录临时文件并 fsync，再 ``os.link`` 原子落位：崩溃/掉电不会
+      留下 0 字节或半截密钥（旧实现 O_EXCL 创建后再写，创建与写入之间崩溃
+      会留下空密钥文件，此后每次启动都失败且密文永久不可解）；
+    - ``os.link`` 目标已存在则失败（跨进程竞态失败方读已有密钥），等价 O_EXCL；
+    - 临时文件创建即 0600 并显式 fchmod，消除全局可读窗口；
+    - 读取/落位后校验密钥非空且合法，损坏时给出可操作的 RuntimeError。
     """
     global _fernet
     if _fernet is not None:
@@ -48,25 +52,54 @@ def _get_fernet() -> Fernet:
         from . import config
         key_path = Path(config.DATA_DIR) / "secret.key"
         key_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            fd = os.open(key_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError:
-            # 竞态失败方（或已有密钥）：直接读已有密钥
+        if key_path.exists():
             key = key_path.read_bytes()
         else:
             key = Fernet.generate_key()
+            tmp_path = key_path.with_name(
+                f".secret.key.tmp.{os.getpid()}.{threading.get_ident()}")
             try:
-                # umask 可能削减权限位，显式补足 0600（失败至少告警）
-                if os.name == "posix":
-                    try:
-                        os.fchmod(fd, 0o600)
-                    except OSError:
-                        logger.warning("主密钥文件权限设置 0600 失败: %s", key_path)
-                os.write(fd, key)
+                fd = os.open(tmp_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                try:
+                    # umask 可能削减权限位，显式补足 0600（失败至少告警）
+                    if os.name == "posix":
+                        try:
+                            os.fchmod(fd, 0o600)
+                        except OSError:
+                            logger.warning("主密钥文件权限设置 0600 失败: %s", tmp_path)
+                    os.write(fd, key)
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+                try:
+                    # 原子落位：目标已存在（跨进程竞态）则失败，改读已有密钥
+                    os.link(tmp_path, key_path)
+                except FileExistsError:
+                    key = key_path.read_bytes()
+                else:
+                    logger.info("已生成新的加密主密钥 %s", key_path)
+                    # fsync 目录确保 link 目录项持久化（best-effort）
+                    if os.name == "posix":
+                        try:
+                            dir_fd = os.open(key_path.parent, os.O_RDONLY)
+                            try:
+                                os.fsync(dir_fd)
+                            finally:
+                                os.close(dir_fd)
+                        except OSError:
+                            logger.warning("主密钥目录 fsync 失败: %s", key_path.parent)
             finally:
-                os.close(fd)
-            logger.info("已生成新的加密主密钥 %s", key_path)
-        _fernet = Fernet(key)
+                tmp_path.unlink(missing_ok=True)
+        if not key:
+            raise RuntimeError(
+                f"主密钥文件为空：{key_path}。请从备份恢复 data/secret.key；"
+                "若确认无任何加密数据，可删除该文件后重启重新生成。")
+        try:
+            _fernet = Fernet(key)
+        except (ValueError, TypeError) as exc:
+            raise RuntimeError(
+                f"主密钥文件损坏：{key_path}（{exc}）。请从备份恢复 data/secret.key；"
+                "若确认无任何加密数据，可删除该文件后重启重新生成。") from exc
         return _fernet
 
 

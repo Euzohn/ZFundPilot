@@ -154,12 +154,16 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
       toast.error(t.transactions.screenshotNoItems)
       return
     }
+    // 代际守卫：对账期间换图/移除/重置（parseGenRef 自增）则丢弃过期结果，
+    // 避免旧截图的对账差异污染新截图的状态
+    const gen = parseGenRef.current
     setReconciling(true)
     try {
       const result = await api.reconcileHoldings(
         valid.map(it => ({ fund_code: it.fund_code!, shares: it.shares, market_value: it.market_value })),
         channel,
       )
+      if (gen !== parseGenRef.current) return
       setReconcileResult(result)
       const defaultSel = new Set<number>()
       result.items.forEach((it, i) => {
@@ -167,9 +171,10 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
       })
       setSelectedDiff(defaultSel)
     } catch (e) {
+      if (gen !== parseGenRef.current) return
       toast.error(translateBackendError(String(e)))
     } finally {
-      setReconciling(false)
+      if (gen === parseGenRef.current) setReconciling(false)
     }
   }
 

@@ -3,6 +3,7 @@ import json
 import os
 import threading
 
+import pytest
 from cryptography.fernet import Fernet
 
 from zfundpilot import config, crypto
@@ -169,3 +170,34 @@ class TestCrypto:
         self._setup_key(dir_b, monkeypatch)
         # B 的密钥解不开 A 的密文
         assert crypto.decrypt(cipher_a) == ""
+
+    def test_empty_key_file_raises_actionable(self, tmp_path, monkeypatch):
+        """0 字节密钥文件（旧实现创建后崩溃残留）应给出可操作的 RuntimeError。"""
+        self._setup_key(tmp_path, monkeypatch)
+        (tmp_path / "secret.key").write_bytes(b"")
+        with pytest.raises(RuntimeError, match="secret.key"):
+            crypto.encrypt("trigger")
+
+    def test_corrupt_key_file_raises_actionable(self, tmp_path, monkeypatch):
+        self._setup_key(tmp_path, monkeypatch)
+        (tmp_path / "secret.key").write_bytes(b"not-a-valid-fernet-key")
+        with pytest.raises(RuntimeError, match="secret.key"):
+            crypto.encrypt("trigger")
+
+    def test_atomic_create_leaves_no_temp_file(self, tmp_path, monkeypatch):
+        """生成密钥后不残留临时文件（temp+link 原子落位）。"""
+        self._setup_key(tmp_path, monkeypatch)
+        crypto.encrypt("trigger-key-generation")
+        assert (tmp_path / "secret.key").exists()
+        leftovers = [p.name for p in tmp_path.iterdir()
+                     if p.name.startswith(".secret.key.tmp")]
+        assert leftovers == []
+
+    def test_existing_key_used_without_regeneration(self, tmp_path, monkeypatch):
+        """已有合法密钥直接读取使用，不被覆盖（link 竞态失败方路径）。"""
+        self._setup_key(tmp_path, monkeypatch)
+        key = Fernet.generate_key()
+        (tmp_path / "secret.key").write_bytes(key)
+        cipher = crypto.encrypt("keep-key")
+        assert (tmp_path / "secret.key").read_bytes() == key
+        assert crypto.decrypt(cipher) == "keep-key"

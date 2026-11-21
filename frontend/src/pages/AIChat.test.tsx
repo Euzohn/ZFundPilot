@@ -237,3 +237,55 @@ describe("TxConfirmCard T+1 口径", () => {
     }))
   })
 })
+
+describe("TxConfirmCard 手续费手动值保护", () => {
+  it("用户手动改过手续费后，盘后切换触发重算不覆盖手动值", async () => {
+    mocks.calcFundFee
+      .mockResolvedValueOnce(feeRes({ fee: 2.5, amount: 750, nav: 1.5 }))
+      .mockResolvedValueOnce(feeRes({ fee: 3.5, amount: 700, nav: 1.4 }))
+    renderCard(sellTx("000001", 500, "2026-01-05"))
+    await waitFor(() => expect(screen.getByRole("spinbutton")).toHaveValue(2.5))
+    fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "9.99" } })
+
+    // 切换盘后 → navCalcDate 变化触发重算（第二次返回 3.5），手动值不被覆盖
+    fireEvent.click(screen.getByRole("button", { name: /15:00 前下单/ }))
+    await waitFor(() => expect(mocks.calcFundFee).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole("spinbutton")).toHaveValue(9.99)
+  })
+
+  it("未手动改过时重算正常更新自动估算值", async () => {
+    mocks.calcFundFee
+      .mockResolvedValueOnce(feeRes({ fee: 2.5, amount: 750, nav: 1.5 }))
+      .mockResolvedValueOnce(feeRes({ fee: 3.5, amount: 700, nav: 1.4 }))
+    renderCard(sellTx("000001", 500, "2026-01-05"))
+    await waitFor(() => expect(screen.getByRole("spinbutton")).toHaveValue(2.5))
+    fireEvent.click(screen.getByRole("button", { name: /15:00 前下单/ }))
+    await waitFor(() => expect(screen.getByRole("spinbutton")).toHaveValue(3.5))
+  })
+})
+
+describe("AIChat 确认并发守卫与归档行键盘可达", () => {
+  it("快速双击确认只提交一次（addingRef 同步拦截）", async () => {
+    let resolveAdd!: (v: { id: number }) => void
+    mocks.addTransaction.mockImplementation(() => new Promise(res => { resolveAdd = res }))
+    seedTwoChats()
+    renderPage()
+    const btn = await screen.findByRole("button", { name: /确认添加/ })
+    fireEvent.click(btn)
+    fireEvent.click(btn)
+    expect(mocks.addTransaction).toHaveBeenCalledTimes(1)
+    await act(async () => { resolveAdd({ id: 1 }) })
+  })
+
+  it("归档会话行可聚焦且 Enter 触发切换", async () => {
+    seedTwoChats()
+    renderPage()
+    fireEvent.click(screen.getByRole("button", { name: /会话A/ }))
+    const title = await screen.findByText("会话B")
+    const row = title.closest('[role="button"]') as HTMLElement
+    expect(row).toHaveAttribute("tabindex", "0")
+    fireEvent.keyDown(row, { key: "Enter" })
+    await waitFor(() => expect(screen.getByText("000002")).toBeInTheDocument())
+    expect(screen.queryByText("000001")).not.toBeInTheDocument()
+  })
+})

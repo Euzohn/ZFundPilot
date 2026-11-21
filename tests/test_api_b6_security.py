@@ -48,6 +48,7 @@ def client(temp_db, monkeypatch):
     monkeypatch.setattr(api, "_AGENT_AUTH_FAILS", {})
     monkeypatch.setattr(api, "_REQ_LOGS", {})
     monkeypatch.setattr(api, "_AGENT_REQ_LOGS", {})
+    monkeypatch.setattr(api, "_AGENT_RATE_AUDIT_TS", {})
     return TestClient(api.app)
 
 
@@ -112,6 +113,26 @@ class TestOptionsPreflight:
             "Access-Control-Request-Method": "GET",
         })
         assert resp.status_code != 401
+
+
+class TestCorsOutermost:
+    """CORS 须最外层：auth/agent 中间件直接返回的 401/403/429 也要带 CORS 头。"""
+
+    def test_cors_registered_last(self):
+        # Starlette add_middleware 用 insert(0)：最后注册的 CORS 在列表首位（最外层）
+        assert api.app.user_middleware[0].cls is CORSMiddleware
+
+    def test_auth_401_carries_cors_headers(self, client, monkeypatch):
+        for m in api.app.user_middleware:
+            if m.cls is CORSMiddleware:
+                monkeypatch.setitem(m.kwargs, "allow_origins",
+                                    ["http://allowed.example"])
+        monkeypatch.setattr(api.app, "middleware_stack", None)
+        # 无 token → auth 中间件直接 401；CORS 在外层才能给该响应加 CORS 头
+        resp = client.get("/api/transactions",
+                          headers={"Origin": "http://allowed.example"})
+        assert resp.status_code == 401
+        assert resp.headers["access-control-allow-origin"] == "http://allowed.example"
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +279,76 @@ class TestLoginTimingEqualization:
         resp = client.post("/api/auth/login",
                            json={"username": "admin", "password": "wrong"})
         assert resp.status_code == 401
-        assert calls == [config.AUTH_PASSWORD_HASH]
+        # fixture 存量为 SHA-256：先真实校验，再补一次哑 bcrypt 均衡耗时，
+        # 避免「对用户名 + 旧哈希」比「错用户名（恒哑 bcrypt）」快得多而泄漏
+        assert calls == [config.AUTH_PASSWORD_HASH, api._DUMMY_PASSWORD_HASH]
+
+    def test_wrong_password_bcrypt_storage_no_extra_dummy(self, client, monkeypatch):
+        # 存量已是 bcrypt：真实校验本身即 bcrypt 耗时，无需再补哑校验
+        bcrypt_hash = config._hash_password(PASSWORD)
+        monkeypatch.setattr(config, "AUTH_PASSWORD_HASH", bcrypt_hash)
+        calls = []
+        real = config.verify_password
+
+        def spy(password, password_hash):
+            calls.append(password_hash)
+            return real(password, password_hash)
+
+        monkeypatch.setattr(config, "verify_password", spy)
+        resp = client.post("/api/auth/login",
+                           json={"username": "admin", "password": "wrong"})
+        assert resp.status_code == 401
+        assert calls == [bcrypt_hash]
+
+    def test_wrong_username_bcrypt_storage_uses_dummy(self, client, monkeypatch):
+        bcrypt_hash = config._hash_password(PASSWORD)
+        monkeypatch.setattr(config, "AUTH_PASSWORD_HASH", bcrypt_hash)
+        calls = []
+        real = config.verify_password
+
+        def spy(password, password_hash):
+            calls.append(password_hash)
+            return real(password, password_hash)
+
+        monkeypatch.setattr(config, "verify_password", spy)
+        resp = client.post("/api/auth/login",
+                           json={"username": "nobody", "password": "whatever"})
+        assert resp.status_code == 401
+        assert calls == [api._DUMMY_PASSWORD_HASH]
+
+
+# ---------------------------------------------------------------------------
+# 新密码 bcrypt 72 字节上限（超长前置 422，而非 hashpw 抛异常 → 500）
+# ---------------------------------------------------------------------------
+
+class TestPasswordByteLimit:
+    def test_new_password_over_72_bytes_422(self, client):
+        resp = client.post("/api/auth/change-password", headers=_web_headers(),
+                           json={"current_password": PASSWORD,
+                                 "new_password": "x" * 73})
+        assert resp.status_code == 422
+
+    def test_new_password_multibyte_over_72_bytes_422(self, client):
+        # 中文一字 3 字节：25 字 = 75 字节 > 72（按字符数仅 25 会误判通过）
+        resp = client.post("/api/auth/change-password", headers=_web_headers(),
+                           json={"current_password": PASSWORD,
+                                 "new_password": "密" * 25})
+        assert resp.status_code == 422
+
+    def test_new_password_exactly_72_bytes_ok(self, client):
+        resp = client.post("/api/auth/change-password", headers=_web_headers(),
+                           json={"current_password": PASSWORD,
+                                 "new_password": "x" * 72})
+        assert resp.status_code == 200, resp.text
+
+    def test_migrate_skips_over_72_bytes(self, temp_db, monkeypatch):
+        # 旧 SHA-256 账户密码超 72 字节：登录校验能过，但无感升级须跳过而非 500
+        long_pw = "y" * 80
+        monkeypatch.setattr(config, "AUTH_PASSWORD_HASH",
+                            config._hash_password_sha256(long_pw))
+        before = config.AUTH_PASSWORD_HASH
+        config.migrate_password_hash(long_pw)
+        assert config.AUTH_PASSWORD_HASH == before  # 保持原哈希，未升级
 
 
 # ---------------------------------------------------------------------------

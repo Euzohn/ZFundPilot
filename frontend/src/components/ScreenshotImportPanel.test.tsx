@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { LanguageProvider } from "@/i18n/LanguageContext"
-import type { ParsedTxItem, ParseScreenshotResult } from "@/api/types"
+import type { ParsedTxItem, ParsedHoldingItem, ParseScreenshotResult, ReconcileResponse } from "@/api/types"
 import ScreenshotImportPanel from "./ScreenshotImportPanel"
 
 const mocks = vi.hoisted(() => ({
@@ -207,5 +207,58 @@ describe("ScreenshotImportPanel 解析代际守卫", () => {
     })
     expect(screen.queryByText("过期结果")).toBeNull()
     expect(screen.getByText("最新结果")).toBeInTheDocument()
+  })
+})
+
+describe("ScreenshotImportPanel 对账代际守卫", () => {
+  function holdingItem(overrides: Partial<ParsedHoldingItem> = {}): ParsedHoldingItem {
+    return {
+      fund_name: "持仓基金", fund_code: "000001", shares: 100,
+      market_value: 150, code_status: "exact", candidates: [], ...overrides,
+    }
+  }
+  function reconcileRes(code: string): ReconcileResponse {
+    return {
+      channel: "支付宝",
+      items: [{
+        fund_code: code, fund_name: "对账基金", recorded_shares: 0,
+        screenshot_shares: 100, delta: 100, status: "new", suggested_tx: null,
+      }],
+    }
+  }
+
+  it("对账中途切换模式，过期对账结果不写入", async () => {
+    mocks.parseScreenshot.mockResolvedValue({ ok: true, items: [holdingItem()], error: "" })
+    let resolveReconcile!: (v: ReconcileResponse) => void
+    mocks.reconcileHoldings.mockImplementation(() => new Promise(res => { resolveReconcile = res }))
+
+    const { container } = renderPanel()
+    fireEvent.click(screen.getByRole("button", { name: "持仓对账" }))
+    selectImage(container)
+    fireEvent.click(screen.getByRole("button", { name: "开始解析" }))
+    await screen.findByText("持仓基金")
+
+    fireEvent.click(screen.getByRole("button", { name: "对账结果" }))
+    expect(mocks.reconcileHoldings).toHaveBeenCalledTimes(1)
+
+    // 对账在途时切换模式（代际自增），过期结果应被丢弃
+    fireEvent.click(screen.getByRole("button", { name: "交易流水" }))
+    await act(async () => { resolveReconcile(reconcileRes("999999")) })
+    expect(screen.queryByText("999999")).toBeNull()
+  })
+
+  it("无中断时对账结果正常展示", async () => {
+    mocks.parseScreenshot.mockResolvedValue({ ok: true, items: [holdingItem()], error: "" })
+    mocks.reconcileHoldings.mockResolvedValue(reconcileRes("000001"))
+
+    const { container } = renderPanel()
+    fireEvent.click(screen.getByRole("button", { name: "持仓对账" }))
+    selectImage(container)
+    fireEvent.click(screen.getByRole("button", { name: "开始解析" }))
+    await screen.findByText("持仓基金")
+
+    fireEvent.click(screen.getByRole("button", { name: "对账结果" }))
+    await screen.findByText("000001")
+    expect(mocks.reconcileHoldings).toHaveBeenCalledTimes(1)
   })
 })

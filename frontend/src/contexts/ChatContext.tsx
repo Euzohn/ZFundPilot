@@ -114,15 +114,22 @@ export function extractToolCall(content: string): ExtractedTx | null {
   try {
     const p = JSON.parse(match[1])
     if (p && p.tool === "add_transaction") {
+      // 数值字段须为有限数：LLM 可能返回 "abc"/{} 等，Number() 得 NaN，
+      // 直接入账会污染金额/份额计算（NaN 传播），非法值归一为 null
+      const num = (v: unknown): number | null => {
+        if (v == null) return null
+        const n = Number(v)
+        return Number.isFinite(n) ? n : null
+      }
       return {
         fund_code: String(p.fund_code ?? ""),
         action: String(p.action ?? "buy"),
         date: String(p.date ?? ""),
         after_three: Boolean(p.after_three),
-        amount: p.amount != null ? Number(p.amount) : null,
-        shares: p.shares != null ? Number(p.shares) : null,
-        nav: p.nav != null ? Number(p.nav) : null,
-        fee: p.fee != null ? Number(p.fee) : 0,
+        amount: num(p.amount),
+        shares: num(p.shares),
+        nav: num(p.nav),
+        fee: num(p.fee) ?? 0,
         channel: String(p.channel ?? ""),
         note: String(p.note ?? ""),
       }

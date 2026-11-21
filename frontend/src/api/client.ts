@@ -88,6 +88,13 @@ async function apiErrorFromResponse(res: Response): Promise<Error & { code?: str
       if (typeof apiError.code === "string") code = apiError.code
     } else if (detail) {
       if (typeof detail === "string") msg = detail
+      else if (Array.isArray(detail)) {
+        // FastAPI 422 校验错误 detail 为数组：拼接各条 msg，避免把原始 JSON 甩给用户
+        const msgs = detail
+          .map((d) => (d && typeof d.msg === "string" ? d.msg : ""))
+          .filter(Boolean)
+        msg = msgs.length ? msgs.join("; ") : JSON.stringify(detail)
+      }
       else if (typeof detail.message === "string") msg = detail.message
       else msg = JSON.stringify(detail)
       if (typeof detail?.code === "string") code = detail.code
@@ -150,21 +157,9 @@ async function uploadWithAuth<T>(url: string, form: FormData): Promise<T> {
     window.location.reload()
     throw new Error(ERR_401[getCurrentLang()])
   }
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText)
-    let msg = text || `${res.status}`
-    try {
-      const j = JSON.parse(text)
-      const apiError = j?.error
-      const detail = j?.detail
-      if (apiError && typeof apiError === "object") {
-        if (typeof apiError.message === "string") msg = apiError.message
-      } else if (typeof detail === "string") msg = detail
-      else if (typeof detail?.message === "string") msg = detail.message
-      else if (detail) msg = JSON.stringify(detail)
-    } catch { /* not json */ }
-    throw new Error(msg)
-  }
+  // 统一复用 apiErrorFromResponse：与 request/download 一致地解析 error/detail/code，
+  // 并附带 status/body（此前内联解析丢失 code/status，422 数组 detail 处理也不一致）
+  if (!res.ok) throw await apiErrorFromResponse(res)
   return res.json()
 }
 

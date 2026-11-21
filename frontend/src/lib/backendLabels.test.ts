@@ -8,6 +8,7 @@ vi.mock("@/i18n/LanguageContext", () => ({
 import {
   translateAdviceMetric,
   translateAdviceRisk,
+  translateBackendError,
   translateSimulationMetric,
   translateSimulationRule,
 } from "./backendLabels"
@@ -89,5 +90,27 @@ describe("advice risk labels", () => {
 
   it("falls back to raw code when unknown", () => {
     expect(translateAdviceRisk({ code: "unknown_risk" })).toBe("unknown_risk")
+  })
+})
+
+describe("translateBackendError 登录限流 429 i18n", () => {
+  it("含可变秒数的限流消息前缀匹配，英文不再泄漏中文", () => {
+    mocks.lang = "en"
+    expect(translateBackendError("尝试次数过多，请 30 秒后再试"))
+      .toBe("Too many attempts, please try again later")
+  })
+
+  it("中文保持通用措辞（与后端一致）", () => {
+    mocks.lang = "zh"
+    expect(translateBackendError("尝试次数过多，请 30 秒后再试"))
+      .toBe("尝试次数过多，请稍后再试")
+    expect(translateBackendError("尝试次数过多，请稍后再试"))
+      .toBe("尝试次数过多，请稍后再试")
+  })
+
+  it("去掉 Error: 前缀后仍可匹配", () => {
+    mocks.lang = "en"
+    expect(translateBackendError("Error: 尝试次数过多，请 5 秒后再试"))
+      .toBe("Too many attempts, please try again later")
   })
 })

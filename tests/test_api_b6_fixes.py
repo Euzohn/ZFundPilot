@@ -162,6 +162,34 @@ class TestConfirmImport:
         assert resp.status_code == 500
         assert [t.id for t in db.get_transactions()] == [old_id]
 
+    def test_import_audit_failure_rolls_back(self, client, monkeypatch):
+        """审计与导入同事务：审计写入失败则整批回滚，不留「已导入无审计」。"""
+        old_id = _seed_tx(date="2025-01-01")
+
+        def bad_audit(*args, **kwargs):
+            if kwargs.get("conn") is not None:
+                raise sqlite3.OperationalError("audit write failed")
+            return None
+
+        monkeypatch.setattr(db, "log_audit", bad_audit)
+        resp = client.post("/api/csv/import", json={
+            "transactions": [BUY], "clear_existing": True, "fetch_meta": False,
+        })
+        assert resp.status_code == 500
+        assert [t.id for t in db.get_transactions()] == [old_id]
+
+    def test_import_nav_fetch_failure_tolerated(self, client, monkeypatch):
+        """导入已提交后净值补抓失败不应把成功导入变成 500（best-effort）。"""
+        monkeypatch.setattr(api.fetch_fund, "update_fund_nav",
+                            MagicMock(side_effect=RuntimeError("net down")))
+        resp = client.post("/api/csv/import", json={
+            "transactions": [BUY], "fetch_meta": False,
+        })
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["imported"] == 1
+        assert len(db.get_transactions()) == 1
+        assert "csv_import" in _audit_actions()
+
 
 # ---------------------------------------------------------------------------
 # 更新/删除不存在的交易 → 404
@@ -189,6 +217,36 @@ class TestTransactionNotFound:
         resp = client.delete(f"/api/transactions/{tx_id}")
         assert resp.status_code == 200
         assert db.get_transaction(tx_id) is None
+
+
+class TestTransactionToctou:
+    """预检与写入之间行被并发删除：事务内复查须拦截，不得静默更新/空删返回成功。"""
+
+    def test_update_rechecks_existence_in_transaction(self, client, monkeypatch):
+        tx_id = _seed_tx()
+        real_tx = db.get_transaction(tx_id)
+        # 预检通过（行存在），事务内复查时行已被并发删除
+        monkeypatch.setattr(db, "get_transaction", lambda tid: real_tx)
+        monkeypatch.setattr(db, "get_transaction_conn", lambda conn, tid: None)
+        resp = client.put(f"/api/transactions/{tx_id}",
+                          json={**BUY, "amount": 2000.0})
+        assert resp.status_code == 404
+        with db.get_connection() as conn:
+            row = conn.execute(
+                "SELECT amount FROM transactions WHERE id=?", (tx_id,)).fetchone()
+        assert row["amount"] == 1000.0  # 未被更新
+
+    def test_delete_rechecks_existence_in_transaction(self, client, monkeypatch):
+        tx_id = _seed_tx()
+        real_tx = db.get_transaction(tx_id)
+        monkeypatch.setattr(db, "get_transaction", lambda tid: real_tx)
+        monkeypatch.setattr(db, "get_transaction_conn", lambda conn, tid: None)
+        resp = client.delete(f"/api/transactions/{tx_id}")
+        assert resp.status_code == 404
+        with db.get_connection() as conn:
+            row = conn.execute(
+                "SELECT id FROM transactions WHERE id=?", (tx_id,)).fetchone()
+        assert row is not None  # 未被删除
 
 
 # ---------------------------------------------------------------------------

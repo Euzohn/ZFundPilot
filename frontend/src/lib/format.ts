@@ -71,7 +71,11 @@ const RELATIVE_TIME_EN = {
  * 后端存的是 UTC（datetime('now')），格式 "YYYY-MM-DD HH:MM:SS"
  */
 export function formatRelativeTime(iso: string): string {
-  const d = new Date(iso.replace(" ", "T") + "Z")
+  // 后端 UTC 串 "YYYY-MM-DD HH:MM:SS"（无时区）补 Z；已带 Z 或 ±HH:MM 偏移的
+  // 不再追加，否则 "...ZZ" / "...+08:00Z" 解析为 Invalid Date 而返回空串
+  let s = iso.trim().replace(" ", "T")
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/.test(s)) s += "Z"
+  const d = new Date(s)
   const t = d.getTime()
   if (isNaN(t)) return ""
   return relativeTimeFromDiff(Date.now() - t, d)

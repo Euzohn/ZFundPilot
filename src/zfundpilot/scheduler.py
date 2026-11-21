@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -216,6 +217,51 @@ def _convert_dow(dow: str) -> str:
     return ",".join(segments)
 
 
+# 标准 cron 英文缩写 → 数字（0/7=周日, 1=周一 … 6=周六）
+_DOW_NAMES = {"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}
+
+
+def _normalize_dow_names(dow: str) -> str:
+    """把 day_of_week 中的英文缩写归一化为标准 cron 数字，供 _convert_dow 统一转换。
+
+    APScheduler 里名称无歧义（fri 恒指周五），数字却有歧义（标准 cron 0=周日，
+    APScheduler 0=周一）。混合表达式（如 ``1-5,fri``）此前因含字母被整体跳过
+    转换，数字部分按 APScheduler 编号误读（1-5 变成周二至周六）。这里先把名称
+    替换为标准 cron 数字，再整体交给 _convert_dow。
+
+    跨周日的回绕区间（如 ``fri-mon`` → 5-1）展开为显式星期列表，避免
+    _convert_dow 拒绝 start>end（纯数字回绕区间仍按既有约定视为非法）。
+    """
+    def _sub_name(m: re.Match) -> str:
+        name = m.group(0).lower()
+        if name not in _DOW_NAMES:
+            raise ValueError(f"无效的 day_of_week 名称: {m.group(0)!r}")
+        return str(_DOW_NAMES[name])
+
+    numeric = re.sub(r"[A-Za-z]{3}", _sub_name, dow)
+    if any(c.isalpha() for c in numeric):
+        raise ValueError(f"无效的 day_of_week: {dow!r}")
+
+    parts: list[str] = []
+    for part in numeric.split(","):
+        part = part.strip()
+        body, step = part, 1
+        if "/" in part:
+            body, step_str = part.split("/", 1)
+            step = int(step_str)
+        if "-" in body:
+            a, b = body.split("-", 1)
+            start, end = int(a), int(b)
+            if start > end:
+                days = list(range(start, 8)) + list(range(0, end + 1))
+                if step > 1:
+                    days = days[::step]
+                parts.append(",".join(str(d) for d in days))
+                continue
+        parts.append(part)
+    return ",".join(parts)
+
+
 def _parse_cron(expr: str) -> CronTrigger:
     """将 cron 表达式解析为 CronTrigger。"""
     parts = expr.split()
@@ -223,7 +269,11 @@ def _parse_cron(expr: str) -> CronTrigger:
         raise ValueError(f"无效的 cron 表达式: {expr}")
 
     dow = parts[4]
-    if dow != "*" and not any(c.isalpha() for c in dow):
+    if dow != "*":
+        # 含字母（纯名称或混合）先归一化为数字，再统一做标准 cron→APScheduler
+        # 编号转换；纯数字直接转换。避免混合表达式数字部分被误读。
+        if any(c.isalpha() for c in dow):
+            dow = _normalize_dow_names(dow)
         dow = _convert_dow(dow)
 
     return CronTrigger(

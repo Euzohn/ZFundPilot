@@ -2079,8 +2079,8 @@ def _executed_plan_trade_exists(
 
     选审计而非按 transactions 金额/备注匹配：审计按计划精确归因，不会误伤
     用户同日同基金的手动买入；调度器/网页/提案三条路径都写该审计，且审计
-    保留 90 天，远大于 7 天补记窗口。审批在同一 ``BEGIN IMMEDIATE`` 事务内
-    串行执行，能可靠看到前一笔已提交的执行记录。
+    保留期可配（30–3650 天，下限 30 天仍远大于 7 天补记窗口）。审批在同一
+    ``BEGIN IMMEDIATE`` 事务内串行执行，能可靠看到前一笔已提交的执行记录。
     """
     rows = conn.execute(
         "SELECT params_json FROM operation_proposals "

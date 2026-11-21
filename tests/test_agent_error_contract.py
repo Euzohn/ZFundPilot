@@ -32,6 +32,9 @@ def client(temp_db, monkeypatch):
     monkeypatch.setattr(config, "AUTH_SECRET", "test-secret")
     monkeypatch.setattr(config, "AUTH_USERNAME", "admin")
     monkeypatch.setattr(config, "AGENT_WRITE_ENABLED", True)
+    monkeypatch.setattr(api, "_AGENT_REQ_LOGS", {})
+    monkeypatch.setattr(api, "_AGENT_AUTH_FAILS", {})
+    monkeypatch.setattr(api, "_AGENT_RATE_AUDIT_TS", {})
     return TestClient(api.app)
 
 

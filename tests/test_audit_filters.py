@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -241,3 +242,44 @@ class TestAuditBoundRowCorrectness:
         resp = client.get("/api/audit", params={"to": "2026-02-30"})
         assert resp.status_code == 422
         assert resp.json()["detail"]["field"] == "to"
+
+
+class TestAuditMixedTimezoneOffsets:
+    """存量行带不同偏移（改过 ZFUNDPILOT_TIMEZONE）时，清理/过滤须按真实时间。
+
+    旧实现按原始串字典序比较：+09:00 行墙钟偏大可能「真旧却字典序新」逃过清理，
+    +00:00 行墙钟偏小可能「真新却字典序旧」被误删。SQLite strftime 统一换算 UTC。
+    """
+
+    def test_purge_deletes_by_real_time_not_lexicographic(self, temp_db, monkeypatch):
+        # 固定 now=2026-11-21T12:00+08:00，retention=30 → cutoff=2026-10-22T12:00+08:00
+        fixed = datetime(2026, 11, 21, 12, 0, 0, tzinfo=config.TIMEZONE)
+
+        class _FixedDT:
+            @classmethod
+            def now(cls, tz=None):
+                return fixed
+
+        monkeypatch.setattr(db, "datetime", _FixedDT)
+        # 真旧（=10-22T11:30+08:00 < cutoff）但字典序 "12:30" > "12:00" → 旧实现会漏删
+        _insert("2026-10-22T12:30:00+09:00", "old_lex_new")
+        # 真新（=10-22T17:00+08:00 > cutoff）但字典序 "09:00" < "12:00" → 旧实现会误删
+        _insert("2026-10-22T09:00:00+00:00", "new_lex_old")
+        _insert("2026-10-01T00:00:00+08:00", "old_normal")
+        _insert("2026-11-20T00:00:00+08:00", "new_normal")
+
+        deleted = db.purge_audit_logs(30)
+        assert deleted == 2
+        remaining = {r["action"] for r in db.fetch_audit_logs(500)}
+        assert remaining == {"new_lex_old", "new_normal"}
+
+    def test_fetch_filter_hits_mixed_offset_rows(self, temp_db):
+        # 三条同一真实时刻（=11-02T10:00+08:00）不同偏移 + 一条窗外
+        _insert("2026-11-02T10:00:00+08:00", "local")
+        _insert("2026-11-02T02:00:00+00:00", "utc")
+        _insert("2026-11-02T11:00:00+09:00", "plus9")
+        _insert("2026-11-02T00:00:00+08:00", "outside")
+        rows = db.fetch_audit_logs(
+            500, ts_from="2026-11-02T09:00:00+08:00",
+            ts_to="2026-11-02T11:00:00+08:00")
+        assert {r["action"] for r in rows} == {"local", "utc", "plus9"}

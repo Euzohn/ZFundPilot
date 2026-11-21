@@ -36,6 +36,8 @@ export default function AIChat() {
   const [input, setInput] = useState("")
   const [showSysPrompt, setShowSysPrompt] = useState(false)
   const [adding, setAdding] = useState<number | null>(null)
+  // 同步并发守卫：state 更新异步，快速双击会在重渲染前绕过 disabled，ref 即时拦截
+  const addingRef = useRef(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [showUsage, setShowUsage] = useState(false)
   const [editingTitle, setEditingTitle] = useState(false)
@@ -78,9 +80,15 @@ export default function AIChat() {
   }
 
   const onConfirmTx = async (msgIndex: number, tx: ExtractedTx) => {
+    if (addingRef.current) return
+    addingRef.current = true
     setAdding(msgIndex)
-    await handleConfirmTx(msgIndex, tx)
-    setAdding(null)
+    try {
+      await handleConfirmTx(msgIndex, tx)
+    } finally {
+      addingRef.current = false
+      setAdding(null)
+    }
   }
 
   const startEditTitle = () => {
@@ -146,9 +154,21 @@ export default function AIChat() {
                     {archive.map((s) => (
                       <div
                         key={s.id}
+                        role="button"
+                        aria-label={s.title}
                         aria-disabled={streaming}
-                        className={`group flex items-center gap-2 px-3 py-2 ${streaming ? "cursor-not-allowed opacity-50" : "hover:bg-muted/50 cursor-pointer"}`}
+                        tabIndex={streaming ? -1 : 0}
+                        className={`group flex items-center gap-2 px-3 py-2 ${streaming ? "cursor-not-allowed opacity-50" : "hover:bg-muted/50 cursor-pointer"} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset`}
                         onClick={() => { if (streaming) return; handleSwitchChat(s.id); setDropdownOpen(false); setEditingTitle(false) }}
+                        onKeyDown={(e) => {
+                          if (streaming) return
+                          // 仅当焦点在行本身时触发，避免嵌套按钮/输入框的 Enter 冒泡误切换
+                          if (e.target !== e.currentTarget) return
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault()
+                            handleSwitchChat(s.id); setDropdownOpen(false); setEditingTitle(false)
+                          }
+                        }}
                       >
                         <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         <div className="flex-1 min-w-0">
@@ -465,6 +485,8 @@ export function TxConfirmCard({
   const [editDate, setEditDate] = useState(tx.date)
   const [afterThree, setAfterThree] = useState(tx.after_three)
   const [editFee, setEditFee] = useState(() => tx.fee ? String(tx.fee) : "")
+  // 用户是否手动改过手续费：改过后自动估算不再覆盖（日期变化触发重算时尤其重要）
+  const feeTouchedRef = useRef(false)
   const [feeCalcResult, setFeeCalcResult] = useState<CalcFeeResponse | null>(null)
   const [feeCalcLoading, setFeeCalcLoading] = useState(false)
   const [estimatedAmount, setEstimatedAmount] = useState<number | null>(null)
@@ -476,6 +498,7 @@ export function TxConfirmCard({
     setEditDate(tx.date)
     setAfterThree(tx.after_three)
     setEditFee(tx.fee ? String(tx.fee) : "")
+    feeTouchedRef.current = false
     setFeeCalcResult(null)
     setFeeCalcLoading(false)
     setEstimatedAmount(null)
@@ -508,7 +531,7 @@ export function TxConfirmCard({
         .then((res) => {
           if (stale) return
           setFeeCalcResult(res)
-          if (!tx.fee && res.fee > 0) {
+          if (!tx.fee && !feeTouchedRef.current && res.fee > 0) {
             setEditFee(res.fee.toFixed(2))
           }
         })
@@ -520,7 +543,7 @@ export function TxConfirmCard({
         .then((res) => {
           if (stale) return
           setFeeCalcResult(res)
-          if (!tx.fee && res.fee > 0) {
+          if (!tx.fee && !feeTouchedRef.current && res.fee > 0) {
             setEditFee(res.fee.toFixed(2))
           }
           if (res.nav) setEstimatedNav(res.nav)
@@ -627,7 +650,7 @@ export function TxConfirmCard({
             step="0.01"
             min="0"
             value={editFee}
-            onChange={(e) => setEditFee(e.target.value)}
+            onChange={(e) => { feeTouchedRef.current = true; setEditFee(e.target.value) }}
             className="h-7 w-24 text-xs tabular-nums"
             placeholder="0"
           />

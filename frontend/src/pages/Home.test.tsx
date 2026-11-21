@@ -110,4 +110,22 @@ describe("Home 今天/昨天日期随 now 滚动", () => {
     expect(screen.getByText("昨日收益")).toBeInTheDocument()
     expect(screen.queryByText("今日收益")).not.toBeInTheDocument()
   })
+
+  it("DST 切换日「昨天」按日历日计算（回归：减 24h 毫秒跨夏令时错一天）", async () => {
+    const origTZ = process.env.TZ
+    process.env.TZ = "America/New_York"
+    try {
+      reducedMotionMock(false)
+      // 2026-03-08 美东春令时切换（当日仅 23 小时）：03-09 00:30 EDT 减 24h
+      // 毫秒落到 03-07 23:30 EST（错一天），按日历日减一天才是 03-08
+      mocks.getSummary.mockResolvedValue(summary("2026-03-08"))
+      vi.setSystemTime(new Date("2026-03-09T00:30:00"))
+      renderHome()
+      await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+      expect(screen.getByText("昨日收益")).toBeInTheDocument()
+    } finally {
+      if (origTZ === undefined) delete process.env.TZ
+      else process.env.TZ = origTZ
+    }
+  })
 })

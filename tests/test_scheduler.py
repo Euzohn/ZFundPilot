@@ -45,8 +45,8 @@ class TestParseCron:
         # 验证 trigger 能正常构建
         assert trigger is not None
 
-    def test_dow_alpha_not_converted(self):
-        """字母缩写 day_of_week 不应被转换。"""
+    def test_dow_alpha_accepted(self):
+        """字母缩写 day_of_week 归一化为数字后转换，触发星期仍正确（见 fire 测试）。"""
         trigger = _parse_cron("0 21 * * mon-fri")
         assert trigger is not None
 
@@ -227,6 +227,34 @@ class TestConvertDowCronTrigger:
     def test_cross_sunday_range(self):
         # 5-7 = 周五/六/日 → weekday {4,5,6}
         assert self._fire_weekdays("0 21 * * 5-7") == {4, 5, 6}
+
+    def test_mixed_numeric_and_name(self):
+        # 混合 1-5,fri：标准 cron = 周一至周五；旧实现因含字母整体跳过转换，
+        # 数字 1-5 被 APScheduler 误读为周二至周六
+        assert self._fire_weekdays("0 21 * * 1-5,fri") == {0, 1, 2, 3, 4}
+
+    def test_mixed_name_and_numeric_single(self):
+        # mon,3 = 周一 + 周三 → weekday {0,2}
+        assert self._fire_weekdays("0 21 * * mon,3") == {0, 2}
+
+    def test_pure_name_weekdays(self):
+        assert self._fire_weekdays("0 21 * * mon-fri") == {0, 1, 2, 3, 4}
+
+    def test_pure_name_with_sunday(self):
+        # sun = 周日 → weekday {6}
+        assert self._fire_weekdays("0 21 * * sun") == {6}
+
+    def test_name_wrap_range(self):
+        # fri-mon = 周五/六/日/一 → weekday {4,5,6,0}（回绕区间展开，不回归）
+        assert self._fire_weekdays("0 21 * * fri-mon") == {0, 4, 5, 6}
+
+    def test_unknown_name_raises(self):
+        with pytest.raises(ValueError):
+            _parse_cron("0 21 * * foo")
+
+    def test_mixed_invalid_name_raises(self):
+        with pytest.raises(ValueError):
+            _parse_cron("0 21 * * 1-5,xyz")
 
 
 class TestTimezoneConfig:

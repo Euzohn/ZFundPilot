@@ -112,7 +112,10 @@ export default function Home() {
   const mkt = useMemo(() => isMarketOpen(now), [now])
   // 随每分钟更新的 now 派生：页面长时间挂起跨天后「今天/昨天」标签自动滚动，无需整页刷新
   const todayStr = useMemo(() => localDateStr(now), [now])
-  const yesterdayStr = useMemo(() => localDateStr(new Date(now.getTime() - 86400000)), [now])
+  // 按日历日减一天而非减 24h 毫秒：夏令时切换日时长非 24h，减毫秒会落到错误日期
+  const yesterdayStr = useMemo(
+    () => localDateStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)),
+    [now])
   const navStatus = summary?.as_of_date
     ? summary.as_of_date === todayStr
       ? tr.navLatest

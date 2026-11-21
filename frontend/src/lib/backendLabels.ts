@@ -304,6 +304,9 @@ export function translateMessage(code: string, fallback: string): string {
 // 后端错误消息为裸中文（如 "用户名或密码错误"），前端展示前翻译。
 export const BACKEND_ERRORS: Record<string, Bilingual> = {
   "用户名或密码错误": { zh: "用户名或密码错误", en: "Invalid username or password" },
+  // 登录限流 429 裸消息含可变秒数（"尝试次数过多，请 N 秒后再试"），前缀匹配归一为
+  // 通用文案；zh 与后端通用措辞一致，en 不再泄漏中文
+  "尝试次数过多": { zh: "尝试次数过多，请稍后再试", en: "Too many attempts, please try again later" },
   "未启用密码认证": { zh: "未启用密码认证", en: "Password authentication not enabled" },
   "当前密码错误": { zh: "当前密码错误", en: "Current password is incorrect" },
   "新密码至少 6 位": { zh: "新密码至少 6 位", en: "New password must be at least 6 characters" },

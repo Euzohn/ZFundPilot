@@ -527,16 +527,6 @@ async def endpoint_rate_limit_middleware(request: Request, call_next):
         )
     return await call_next(request)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=config.CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    # 浏览器跨域时，只有显式暴露的响应头才能被前端 JS 读取。
-    expose_headers=["X-Request-ID", "Retry-After"],
-)
-
 
 # ---------------------------------------------------------------------------
 # 认证
@@ -586,6 +576,15 @@ _DUMMY_PASSWORD_HASH = "$2b$12$pz0gPLq3dIQm24AOvtOmzeypVdbNDNMLXli59QHbTT7BxcyB7
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password_bytes(cls, v: str) -> str:
+        # bcrypt 只处理前 72 字节，超长密码在 hashpw 直接抛 ValueError → 500。
+        # 按 UTF-8 字节计（中文一字 3 字节），前置拦截为 422 而非服务端错误。
+        if len(v.encode("utf-8")) > 72:
+            raise ValueError("新密码过长（UTF-8 编码不能超过 72 字节）")
+        return v
 
 
 class ChangeUsernameRequest(BaseModel):
@@ -682,6 +681,10 @@ def auth_login(request: Request, body: LoginRequest) -> dict[str, Any]:
         raise HTTPException(401, "用户名或密码错误")
 
     if not config.verify_password(body.password, config.AUTH_PASSWORD_HASH):
+        # 旧 SHA-256 校验仅微秒级，而错用户名路径恒执行哑 bcrypt：不补齐耗时
+        # 会让「对用户名 + 旧哈希」成为可区分的时间侧信道（反向泄漏用户名存在）
+        if not config.AUTH_PASSWORD_HASH.startswith("$2b$"):
+            config.verify_password(body.password, _DUMMY_PASSWORD_HASH)
         _record_failed_login(ip)
         db.log_audit("login_failed", ip=ip, username=body.username,
                       detail={"reason": "wrong_password"})
@@ -991,6 +994,9 @@ def update_agent_write_settings(
 _AGENT_REQ_LOGS: dict[str, list[float]] = {}
 _AGENT_SWEEP_COUNTER = 0
 _AGENT_RATE_WINDOW = 60
+# 429 审计节流：同 token+端点在一个窗口内只记首条，防拒绝风暴刷爆审计表
+# （限流计数本身仍逐请求执行，节流只作用于审计写入）
+_AGENT_RATE_AUDIT_TS: dict[str, float] = {}
 _AGENT_RATE_MAX = 120  # 每 token 每端点每分钟（默认）
 # 较重端点使用更低限额；键为路由模板，与 _agent_endpoint_key 一致。
 _AGENT_ROUTE_RATE_MAX: dict[str, int] = {
@@ -1143,7 +1149,12 @@ def require_any_agent_scope(required_scopes: tuple[str, ...]):
 
 
 def _require_agent_scopes(required_scopes: tuple[str, ...] | None):
-    """``require_agent_scope``/``require_any_agent_scope`` 的共享实现。"""
+    """``require_agent_scope``/``require_any_agent_scope`` 的共享实现。
+
+    校验顺序：token 有效性 → 按 token+端点限流 → scope。限流先于 scope，
+    缺 scope 的 403 同样消耗配额并计入 IP 鉴权失败桶（防 403 洪水）；
+    429 审计按 token+端点在窗口内节流，只记首条。
+    """
     if required_scopes is not None:
         for scope in required_scopes:
             if scope not in agent_tokens.ALLOWED_SCOPES:
@@ -1156,8 +1167,42 @@ def _require_agent_scopes(required_scopes: tuple[str, ...] | None):
         ctx = getattr(request.state, "agent_ctx", None)
         if ctx is None:
             ctx = _authenticate_agent_token(request)
+
+        # 限流先于 scope 校验：缺 scope 的 403 同样消耗配额，否则有效 token
+        # 可无限刷 403（每次都写审计）绕过按 token+端点的限流
+        endpoint_key = _agent_endpoint_key(request)
+        allowed, retry_after = _check_agent_rate_limit(ctx.id, endpoint_key)
+        if not allowed:
+            # 429 审计按 token+端点节流：窗口内只记首条，防拒绝风暴刷爆审计表
+            audit_key = f"{ctx.id}:{endpoint_key}"
+            now = time.time()
+            last = _AGENT_RATE_AUDIT_TS.get(audit_key)
+            if last is None or now - last >= _AGENT_RATE_WINDOW:
+                _AGENT_RATE_AUDIT_TS[audit_key] = now
+                if len(_AGENT_RATE_AUDIT_TS) > 10000:
+                    for k in [k for k, t in _AGENT_RATE_AUDIT_TS.items()
+                              if now - t > 2 * _AGENT_RATE_WINDOW]:
+                        _AGENT_RATE_AUDIT_TS.pop(k, None)
+                db.log_audit(
+                    "agent_rate_limited", ip=_get_client_ip(request),
+                    detail={"path": request.url.path, "token_id": ctx.id,
+                            "request_id": api_errors.get_request_id(),
+                            "token_prefix": ctx.prefix, "retry_after": retry_after},
+                )
+            raise api_errors.ApiError(
+                status_code=429,
+                detail=f"请求过于频繁，请 {retry_after} 秒后再试",
+                code="rate_limited",
+                retryable=True,
+                retry_after=retry_after,
+                headers={"Retry-After": str(retry_after)},
+            )
+
         if (required_scopes is not None
                 and not any(s in ctx.scopes for s in required_scopes)):
+            # 403 计入 IP 鉴权失败桶：超限后由 agent_auth_middleware 直接 429，
+            # 不再触发哈希查询与审计写入，堵住有效 token 的 403 洪水
+            _record_agent_auth_fail(_get_client_ip(request))
             db.log_audit(
                 "agent_auth_failed", ip=_get_client_ip(request),
                 detail={"path": request.url.path, "scope": scope_label,
@@ -1169,24 +1214,6 @@ def _require_agent_scopes(required_scopes: tuple[str, ...] | None):
                 status_code=403,
                 detail=f"Agent token 缺少权限：{' / '.join(required_scopes)}",
                 code="insufficient_scope",
-            )
-
-        allowed, retry_after = _check_agent_rate_limit(
-            ctx.id, _agent_endpoint_key(request))
-        if not allowed:
-            db.log_audit(
-                "agent_rate_limited", ip=_get_client_ip(request),
-                detail={"path": request.url.path, "token_id": ctx.id,
-                        "request_id": api_errors.get_request_id(),
-                        "token_prefix": ctx.prefix, "retry_after": retry_after},
-            )
-            raise api_errors.ApiError(
-                status_code=429,
-                detail=f"请求过于频繁，请 {retry_after} 秒后再试",
-                code="rate_limited",
-                retryable=True,
-                retry_after=retry_after,
-                headers={"Retry-After": str(retry_after)},
             )
 
         db.log_audit(
@@ -1256,7 +1283,8 @@ async def agent_auth_middleware(request: Request, call_next):
 async def request_id_middleware(request: Request, call_next):
     """为每个请求分配/透传 ``X-Request-ID``，供错误包与日志关联。
 
-    必须最后注册（最外层），这样内层鉴权/限流的直接响应也会带上该头。
+    须在鉴权/限流中间件之后注册（更外层），这样内层鉴权/限流的直接响应
+    也会带上该头；CORS 最后注册（最外层），保证这些直接响应同样带 CORS 头。
     """
     request_id = api_errors.normalize_request_id(
         request.headers.get("X-Request-ID"))
@@ -1268,6 +1296,21 @@ async def request_id_middleware(request: Request, call_next):
         api_errors.reset_request_id(token)
     response.headers["X-Request-ID"] = request_id
     return response
+
+
+# CORS 必须最后注册（最外层）：Starlette 后注册的中间件包在外面。
+# 此前 CORS 在 auth/agent 中间件内层，鉴权/限流直接返回的 401/403/429
+# 不带 CORS 头，浏览器跨域时前端只能看到 CORS 错误而非真实状态码；
+# 预检 OPTIONS 也会被内层鉴权拦截。移到最外层后两者都正确。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=config.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    # 浏览器跨域时，只有显式暴露的响应头才能被前端 JS 读取。
+    expose_headers=["X-Request-ID", "Retry-After"],
+)
 
 
 # --- Agent 只读工具（首期 4 个）--------------------------------------------
@@ -4083,7 +4126,12 @@ def update_transaction(request: Request, tx_id: int, body: TransactionCreate) ->
     tx.normalize()
     if not tx.is_valid():
         raise HTTPException(400, "交易信息不完整")
-    db.update_transaction(tx)
+    # 存在性复查 + 更新放同一写事务：预检与写入之间可能被并发删除（TOCTOU），
+    # 事务内复查确保不会更新到已不存在的流水（静默 0 行却返回成功）
+    with db.get_connection(write=True) as conn:
+        if db.get_transaction_conn(conn, tx_id) is None:
+            raise HTTPException(404, "交易不存在")
+        db.update_transaction_conn(conn, tx)
     if not db.get_latest_nav(body.fund_code):
         fetch_fund.update_fund_nav(body.fund_code)
     analysis.clear_analysis_cache()
@@ -4099,7 +4147,11 @@ def update_transaction(request: Request, tx_id: int, body: TransactionCreate) ->
 def delete_transaction(request: Request, tx_id: int) -> dict[str, bool]:
     if db.get_transaction(tx_id) is None:
         raise HTTPException(404, "交易不存在")
-    db.delete_transaction(tx_id)
+    # 存在性复查 + 删除放同一写事务（TOCTOU）：并发删除下避免重复解关联/空删
+    with db.get_connection(write=True) as conn:
+        if db.get_transaction_conn(conn, tx_id) is None:
+            raise HTTPException(404, "交易不存在")
+        db.delete_transaction_conn(conn, tx_id)
     analysis.clear_analysis_cache()
     db.log_audit("delete_transaction", ip=_get_client_ip(request),
                   username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
@@ -5455,21 +5507,26 @@ def confirm_import(request: Request, body: CSVImportConfirm) -> dict[str, Any]:
             if not db.get_fund(code):
                 db.upsert_fund(Fund(code, code))
 
-    # 清空 + 导入放同一写事务：中途失败整体回滚，旧账本不丢。
+    # 清空 + 导入 + 审计放同一写事务：中途失败整体回滚，旧账本不丢，
+    # 也不会留下「已导入但无审计」或「有审计但未导入」的半截状态。
     # 基金注册含联网抓取，保持在事务外，避免长时间持写锁。
     with db.get_connection(write=True) as conn:
         if body.clear_existing:
             conn.execute("DELETE FROM transactions")
         for tx in txs:
             db.insert_transaction(conn, tx)
-
-    db.log_audit("clear_then_import" if body.clear_existing else "csv_import",
-                  ip=_get_client_ip(request),
-                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
-                  detail={"import_count": len(txs)})
+        db.log_audit("clear_then_import" if body.clear_existing else "csv_import",
+                      ip=_get_client_ip(request),
+                      username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                      detail={"import_count": len(txs)},
+                      conn=conn)
+    # 净值补抓是 best-effort：导入已提交，单只基金抓取失败不应把成功导入变成 500
     for code in codes:
-        if not db.get_latest_nav(code):
-            fetch_fund.update_fund_nav(code)
+        try:
+            if not db.get_latest_nav(code):
+                fetch_fund.update_fund_nav(code)
+        except Exception:  # noqa: BLE001
+            logger.warning("CSV 导入后净值补抓失败: %s", code, exc_info=True)
     analysis.clear_analysis_cache()
     return {"imported": len(txs)}
 
@@ -5562,11 +5619,16 @@ def update_audit_retention(
     """更新审计日志保留天数（下限 30 天，越界 422）。
 
     修改在下次清理（启动或每日任务）生效，不立即删除日志。
+    偏好写入与审计同事务提交，避免「改了保留期但审计缺失」。
     """
     previous = _audit_retention_view()["retention_days"]
-    db.upsert_preference(config.AUDIT_RETENTION_PREF_KEY, str(body.retention_days))
-    db.log_audit("audit_retention_update", ip=_get_client_ip(request),
-                 detail={"from": previous, "to": body.retention_days})
+    with db.get_connection(write=True) as conn:
+        db.upsert_preference(config.AUDIT_RETENTION_PREF_KEY,
+                             str(body.retention_days), conn=conn)
+        db.log_audit("audit_retention_update", ip=_get_client_ip(request),
+                     username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
+                     detail={"from": previous, "to": body.retention_days},
+                     conn=conn)
     return _audit_retention_view()
 
 
@@ -5705,14 +5767,15 @@ def execute_auto_invest_plan(request: Request, plan_id: int) -> dict[str, Any]:
     plan = db.get_auto_invest_plan(plan_id)
     if not plan:
         raise HTTPException(404, "定投计划不存在")
-    result = auto_invest.execute_plan(plan, manual=True)
+    # 执行事实审计与流水/簿记同事务提交（execute_plan 内部），避免提交后
+    # 审计写入失败留下「已买入但无审计」，使历史补记防重失效
+    result = auto_invest.execute_plan(
+        plan, manual=True,
+        audit={"ip": _get_client_ip(request),
+               "username": config.AUTH_USERNAME if config.AUTH_ENABLED else None})
     if result.get("skipped"):
         raise HTTPException(409, "该定投计划今日已执行")
     analysis.clear_analysis_cache()
-    db.log_audit("auto_invest_execute", ip=_get_client_ip(request),
-                  username=config.AUTH_USERNAME if config.AUTH_ENABLED else None,
-                  detail={"plan_id": plan_id, "fund_code": plan["fund_code"],
-                          "amount": plan["amount"], "tx_id": result.get("tx_id")})
     return {"ok": True, **result}
 
 

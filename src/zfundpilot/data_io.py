@@ -114,7 +114,12 @@ def _to_float(value):
 def _clean_str(value):
     if value is None:
         return ""
-    s = str(value).strip()
+    s = str(value)
+    # 对称剥离导出侧公式防护前缀：仅当去掉前导单引号后命中危险前缀
+    # （含前导空白）才剥离，避免误伤以单引号开头的普通文本（如 'hello'）
+    if s.startswith("'") and s[1:].lstrip(" ").startswith(_FORMULA_PREFIXES):
+        s = s[1:]
+    s = s.strip()
     return "" if s.lower() == "nan" else s
 
 
@@ -202,10 +207,12 @@ _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 def _sanitize_csv_cell(value):
     """导出侧公式注入防护：危险开头的字符串单元格前缀单引号。
 
-    仅处理字符串单元格（数值列不受影响）；只作用于导出路径，
-    导入解析不做剥离。
+    仅处理字符串单元格（数值列不受影响）；只作用于导出路径。
+    前导空白后命中危险前缀同样转义（Excel/WPS 会忽略前导空格再解析公式，
+    如 `` =HYPERLINK(...)`` 仍会被当公式执行）。导入侧 ``_clean_str`` 对称
+    剥离该前缀，保证导出→导入往返不改变原始文本。
     """
-    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
+    if isinstance(value, str) and value.lstrip(" ").startswith(_FORMULA_PREFIXES):
         return "'" + value
     return value
 

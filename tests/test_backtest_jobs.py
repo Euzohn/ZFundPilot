@@ -34,6 +34,8 @@ def client(temp_db, monkeypatch):
     # 限流桶是进程内全局状态，按 (token_id, endpoint) 计数；临时库的 token id
     # 会从 1 重新分配，必须清空以免命中其他测试留下的额度。
     monkeypatch.setattr(api, "_AGENT_REQ_LOGS", {})
+    monkeypatch.setattr(api, "_AGENT_AUTH_FAILS", {})
+    monkeypatch.setattr(api, "_AGENT_RATE_AUDIT_TS", {})
     return TestClient(api.app)
 
 

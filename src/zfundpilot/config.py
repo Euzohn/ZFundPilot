@@ -275,6 +275,12 @@ def migrate_password_hash(new_password: str) -> None:
     用于用户登录时从旧 SHA-256 无感升级为 bcrypt。
     """
     global AUTH_PASSWORD_HASH
+    # bcrypt 上限 72 字节：超长密码的旧 SHA-256 账户登录校验能过，但升级
+    # 会在 hashpw 抛异常把成功登录变成 500。保持原哈希（登录仍可用），
+    # 用户经 change-password 改短密码后自然完成升级。
+    if len(new_password.encode("utf-8")) > 72:
+        logger.warning("密码超过 bcrypt 72 字节上限，跳过 SHA-256 → bcrypt 自动升级")
+        return
     AUTH_PASSWORD_HASH = _hash_password(new_password)
     _persist_auth()
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { MemoryRouter } from "react-router-dom"
 import { LanguageProvider } from "@/i18n/LanguageContext"
@@ -260,6 +260,35 @@ describe("Settings 自定义关键词保存失败处理", () => {
     await waitFor(() => expect(vi.mocked(toast.success)).toHaveBeenCalledWith("已重置所有自定义关键词"))
     expect(mocks.saveKeywordMaps).toHaveBeenCalledWith("[]", "[]")
     expect(within(card).queryByText("白酒")).not.toBeInTheDocument()
+  })
+
+  it("先发起的保存失败不覆盖后续已成功的改动（代际守卫回滚）", async () => {
+    const resolvers: ((v: { ok: boolean }) => void)[] = []
+    const rejecters: ((e: Error) => void)[] = []
+    mocks.saveKeywordMaps.mockImplementation(
+      () => new Promise((res, rej) => { resolvers.push(res); rejecters.push(rej) }))
+    renderPage()
+    await screen.findByText("关键词映射")
+    const card = keywordCard()
+
+    // A：新增 新能源车（保存在途）
+    fireEvent.change(within(card).getByPlaceholderText("如 新能源车"), { target: { value: "新能源车" } })
+    fireEvent.change(within(card).getByRole("combobox"), { target: { value: "科技" } })
+    fireEvent.click(within(card).getByRole("button", { name: "新增" }))
+    // B：新增 医药（建立在 A 的乐观值之上，ref 已含 新能源车）
+    fireEvent.change(within(card).getByPlaceholderText("如 新能源车"), { target: { value: "医药" } })
+    fireEvent.click(within(card).getByRole("button", { name: "新增" }))
+    expect(mocks.saveKeywordMaps).toHaveBeenCalledTimes(2)
+    // B 的持久化内容包含 A 的新增（不丢失更新）
+    expect(mocks.saveKeywordMaps.mock.calls[1][1]).toContain("新能源车")
+    expect(mocks.saveKeywordMaps.mock.calls[1][1]).toContain("医药")
+
+    // B 先成功，A 后失败：代际守卫不应回滚掉 B 的成果
+    await act(async () => { resolvers[1]({ ok: true }) })
+    await act(async () => { rejecters[0](new Error("500")) })
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalledWith(expect.stringContaining("保存失败")))
+    expect(within(card).getByText("新能源车")).toBeInTheDocument()
+    expect(within(card).getByText("医药")).toBeInTheDocument()
   })
 })
 

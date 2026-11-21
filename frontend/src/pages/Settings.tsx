@@ -1272,6 +1272,10 @@ export default function Settings() {
 
   // --- Keyword Maps ---
   const [keywordMaps, setKeywordMaps] = useState<KeywordMaps | null>(null)
+  // 权威最新值（同步更新）：调用方据此构建 next，避免快速连续操作读到陈旧 state
+  // 造成丢失更新；kwGenRef 代际号保证失败回滚不覆盖后续已发起的保存。
+  const kwMapsRef = useRef<KeywordMaps | null>(null)
+  const kwGenRef = useRef(0)
   const [kwTab, setKwTab] = useState("sector")
   const [kwSearch, setKwSearch] = useState("")
   const [kwShowDefaults, setKwShowDefaults] = useState(false)
@@ -1282,7 +1286,7 @@ export default function Settings() {
   // kwData 仅在挂载与备份恢复后 reload 时变化，直接同步到本地状态；
   // 本地增删改不会触发 kwData 变化，故不会覆盖用户编辑。
   useEffect(() => {
-    if (kwData) setKeywordMaps(kwData)
+    if (kwData) { kwMapsRef.current = kwData; setKeywordMaps(kwData) }
   }, [kwData])
 
   const kwCustom = keywordMaps ? (kwTab === "sector" ? keywordMaps.sector_custom : keywordMaps.type_custom) : []
@@ -1293,15 +1297,21 @@ export default function Settings() {
 
   // 乐观更新自定义关键词并持久化（增/删/排序/重置共用）：
   // 保存失败时 toast 提示并回滚到保存前快照，避免界面显示未持久化的改动。
+  // 代际守卫：若回滚时已有更新的保存发起，则不回滚（避免覆盖后续改动）。
   const persistKeywordMaps = async (next: KeywordMaps, successToast?: string): Promise<boolean> => {
-    const prev = keywordMaps
+    const gen = ++kwGenRef.current
+    const prev = kwMapsRef.current
+    kwMapsRef.current = next
     setKeywordMaps(next)
     try {
       await api.saveKeywordMaps(JSON.stringify(next.type_custom), JSON.stringify(next.sector_custom))
       if (successToast) toast.success(successToast)
       return true
     } catch (e) {
-      setKeywordMaps(prev)
+      if (kwGenRef.current === gen) {
+        kwMapsRef.current = prev
+        setKeywordMaps(prev)
+      }
       toast.error(`${t.common.saveFailed}: ${e}`)
       return false
     }
@@ -1311,9 +1321,13 @@ export default function Settings() {
     const keyword = newKwKeyword.trim()
     const mapped = newKwMapped.trim()
     if (!keyword || !mapped) { toast.warning(t.settings.kwKeywordMappedRequired); return }
-    if (kwCustom.some((e) => e.keyword === keyword)) { toast.warning(t.settings.kwKeywordExists); return }
-    const next = [...kwCustom, { keyword, mapped }]
-    const nextMaps: KeywordMaps = { ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next }
+    // 从权威 ref 读取最新值构建 next：快速连续添加不致丢失前一次改动
+    const base = kwMapsRef.current
+    if (!base) return
+    const field = kwTab === "sector" ? "sector_custom" : "type_custom"
+    const custom = base[field]
+    if (custom.some((e) => e.keyword === keyword)) { toast.warning(t.settings.kwKeywordExists); return }
+    const nextMaps: KeywordMaps = { ...base, [field]: [...custom, { keyword, mapped }] }
     // 保存成功后再清空输入；失败时保留用户输入便于重试
     if (await persistKeywordMaps(nextMaps)) {
       setNewKwKeyword(""); setNewKwMapped("")
@@ -1321,17 +1335,22 @@ export default function Settings() {
   }
 
   const deleteCustomKeyword = async (idx: number) => {
-    const next = kwCustom.filter((_, i) => i !== idx)
-    const nextMaps: KeywordMaps = { ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next }
+    const base = kwMapsRef.current
+    if (!base) return
+    const field = kwTab === "sector" ? "sector_custom" : "type_custom"
+    const nextMaps: KeywordMaps = { ...base, [field]: base[field].filter((_, i) => i !== idx) }
     await persistKeywordMaps(nextMaps)
   }
 
   const moveCustomKeyword = async (idx: number, dir: -1 | 1) => {
-    const next = [...kwCustom]
+    const base = kwMapsRef.current
+    if (!base) return
+    const field = kwTab === "sector" ? "sector_custom" : "type_custom"
+    const next = [...base[field]]
     const target = idx + dir
     if (target < 0 || target >= next.length) return
     ;[next[idx], next[target]] = [next[target], next[idx]]
-    const nextMaps: KeywordMaps = { ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next }
+    const nextMaps: KeywordMaps = { ...base, [field]: next }
     await persistKeywordMaps(nextMaps)
   }
 
@@ -2342,8 +2361,9 @@ export default function Settings() {
         title={t.settings.resetCustom}
         tone="destructive"
         onConfirm={async () => {
-          if (!keywordMaps) return
-          await persistKeywordMaps({ ...keywordMaps, type_custom: [], sector_custom: [] }, t.settings.allCustomKwReset)
+          const base = kwMapsRef.current ?? keywordMaps
+          if (!base) return
+          await persistKeywordMaps({ ...base, type_custom: [], sector_custom: [] }, t.settings.allCustomKwReset)
         }}
       />
       <ConfirmDialog

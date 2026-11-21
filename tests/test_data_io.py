@@ -102,11 +102,37 @@ class TestExportFormulaInjection:
         assert len(txs) == 1
         assert errors == []
 
-    def test_import_does_not_strip_prefix(self):
-        """防护只在导出路径：导入解析不剥离前缀（原样读回）。"""
+    def test_import_strips_export_prefix_roundtrip(self):
+        """导出→导入往返对称：导出加的危险前缀单引号在导入时剥离，还原原始文本。"""
         tx = Transaction(fund_code="001", action="buy", date="2025-01-01",
-                         amount=1000, nav=2.0, note="=1+1")
+                         amount=1000, nav=2.0, note="=1+1", channel="+SUM(A1)")
         txs, errors = parse_transactions_csv(transactions_to_csv_bytes([tx]))
         assert len(txs) == 1
         assert errors == []
-        assert txs[0].note == "'=1+1"
+        assert txs[0].note == "=1+1"
+        assert txs[0].channel == "+SUM(A1)"
+
+    def test_import_keeps_literal_quote_non_dangerous(self):
+        """以单引号开头但去掉引号后非危险前缀的普通文本不被剥离（避免误伤）。"""
+        tx = Transaction(fund_code="001", action="buy", date="2025-01-01",
+                         amount=1000, nav=2.0, note="'hello'")
+        txs, errors = parse_transactions_csv(transactions_to_csv_bytes([tx]))
+        assert len(txs) == 1
+        assert txs[0].note == "'hello'"
+
+    def test_export_escapes_leading_whitespace_formula(self):
+        """前导空白后命中危险前缀同样转义（Excel/WPS 忽略前导空格再解析公式）。"""
+        tx = Transaction(fund_code="001", action="buy", date="2025-01-01",
+                         amount=1000, nav=2.0, note=" =HYPERLINK(\"http://evil\")")
+        rows = _export_rows([tx])
+        assert rows[0]["note"] == "' =HYPERLINK(\"http://evil\")"
+        # 往返还原（_clean_str 会 trim 前导空白，与既有导入行为一致）
+        txs, _ = parse_transactions_csv(transactions_to_csv_bytes([tx]))
+        assert txs[0].note == "=HYPERLINK(\"http://evil\")"
+
+    def test_export_normal_leading_whitespace_unchanged(self):
+        """前导空白但非危险前缀的普通文本不加前缀。"""
+        tx = Transaction(fund_code="001", action="buy", date="2025-01-01",
+                         amount=1000, nav=2.0, note="  普通备注")
+        rows = _export_rows([tx])
+        assert rows[0]["note"] == "  普通备注"

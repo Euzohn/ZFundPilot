@@ -313,7 +313,8 @@ def plan_row_digest(row: dict | sqlite3.Row) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
+def execute_plan(plan: dict, manual: bool = False, *,
+                 audit: dict[str, Any] | None = None) -> dict[str, Any]:
     """执行一次定投计划。
 
     创建一笔买入交易（nav=NULL，等 T+1 回填），
@@ -323,6 +324,11 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
 
     幂等保护：加锁后重新拉取 plan，检查 last_run == today 则跳过，
     防止定时+手动或双击导致重复买入交易。
+
+    ``audit`` 传入 ``{"ip": ..., "username": ...}`` 时，执行事实审计
+    （``auto_invest_execute``，detail 带 plan_id/tx_id）与流水/簿记同事务
+    提交，避免「已买入但审计缺失」让历史补记防重失效；不传则不写审计
+    （由调用方自行记录，兼容旧行为）。
 
     返回执行结果 dict。
     """
@@ -390,14 +396,23 @@ def execute_plan(plan: dict, manual: bool = False) -> dict[str, Any]:
             # 先算 next_run（自开只读连接，不占写锁），再进写事务。
             update_fields["next_run"] = calculate_next_run(fresh)
 
-        # 买入流水 + 计划簿记单事务原子提交：若先落流水再更新计划，中途失败
-        # （写锁超时/磁盘错误/崩溃）会留下 next_run<=today 且 last_run!=today
-        # 的中间态，调度器下次会再次选中该计划重复买入；手动 500 后重试同理。
+        # 买入流水 + 计划簿记 + 执行审计单事务原子提交：若先落流水再更新计划，
+        # 中途失败（写锁超时/磁盘错误/崩溃）会留下 next_run<=today 且
+        # last_run!=today 的中间态，调度器下次会再次选中该计划重复买入；
+        # 手动 500 后重试同理。审计同事务确保「已买入必有执行事实」，
+        # 历史补记防重（_executed_plan_trade_exists）不会因审计缺失而放行。
         tx.normalize()
         with db.get_connection(write=True) as conn:
             tx_id = db.insert_transaction(conn, tx)
             update_fields["last_tx_id"] = tx_id
             db.update_auto_invest_plan_conn(conn, plan["id"], **update_fields)
+            if audit is not None:
+                db.log_audit(
+                    "auto_invest_execute", ip=audit.get("ip"),
+                    username=audit.get("username"),
+                    detail={"plan_id": plan["id"], "fund_code": fund_code,
+                            "amount": amount, "tx_id": tx_id},
+                    conn=conn)
         analysis.clear_analysis_cache()
 
         return {
@@ -452,7 +467,8 @@ def run_all_due() -> list[dict[str, Any]]:
                 })
                 logger.info("[auto_invest] plan#%d %s 美股休市跳过", p["id"], p["fund_code"])
                 continue
-            result = execute_plan(p, manual=False)
+            result = execute_plan(p, manual=False,
+                                  audit={"ip": None, "username": None})
             result["plan_id"] = p["id"]
             if result.get("skipped"):
                 skip_code = result.get("skip_code")

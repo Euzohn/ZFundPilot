@@ -205,6 +205,33 @@ class TestExecutePlanManual:
             assert env.mock_db.insert_transaction.call_args[0][0] is conn
             assert env.mock_db.update_auto_invest_plan_conn.call_args[0][0] is conn
 
+    def test_audit_shares_write_transaction_when_context_given(self):
+        """传入 audit 上下文：执行审计与流水/簿记复用同一写事务连接。"""
+        mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan()
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            execute_plan(plan, manual=True,
+                         audit={"ip": "1.2.3.4", "username": "admin"})
+            env.mock_db.log_audit.assert_called_once()
+            call = env.mock_db.log_audit.call_args
+            assert call.args[0] == "auto_invest_execute"
+            assert call.kwargs["ip"] == "1.2.3.4"
+            assert call.kwargs["username"] == "admin"
+            assert call.kwargs["detail"]["plan_id"] == plan["id"]
+            assert call.kwargs["detail"]["tx_id"] == 42
+            conn = env.mock_db.get_connection.return_value.__enter__.return_value
+            assert call.kwargs["conn"] is conn  # 同事务原子提交
+
+    def test_no_audit_when_context_absent(self):
+        """不传 audit：execute_plan 不写审计（兼容旧行为，由调用方记录）。"""
+        mock_dt = datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)
+        plan = _make_plan()
+        with _PatchEnv(mock_dt) as env:
+            env.mock_db.get_auto_invest_plan.return_value = plan
+            execute_plan(plan, manual=True)
+            env.mock_db.log_audit.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # calculate_next_run 测试

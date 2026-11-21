@@ -199,3 +199,48 @@ describe("fetchFundMeta URL 编码", () => {
     )
   })
 })
+
+describe("422 数组 detail 可读化", () => {
+  it("FastAPI 校验错误数组拼接各 msg，不把原始 JSON 甩给用户", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(422, {
+      detail: [
+        { loc: ["body", "new_password"], msg: "新密码过长（UTF-8 编码不能超过 72 字节）", type: "value_error" },
+        { loc: ["body", "x"], msg: "字段必填", type: "missing" },
+      ],
+    }))
+    await expect(api.changePassword("old", "x".repeat(73))).rejects.toMatchObject({
+      message: "新密码过长（UTF-8 编码不能超过 72 字节）; 字段必填",
+      status: 422,
+    })
+  })
+
+  it("数组元素缺 msg 时跳过，全空则回退 JSON", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(422, { detail: [{ type: "missing" }] }))
+    await expect(api.getSummary()).rejects.toMatchObject({ status: 422 })
+  })
+})
+
+describe("uploadWithAuth 统一错误解析", () => {
+  const zip = () => new File(["x"], "b.zip", { type: "application/zip" })
+
+  it("error.message/code/status 与 request 路径一致（此前内联解析丢失 code/status）", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(400, { error: { message: "备份格式无效", code: "BAD_BACKUP" } }))
+    await expect(api.preflightBackup(zip())).rejects.toMatchObject({
+      message: "备份格式无效", code: "BAD_BACKUP", status: 400,
+    })
+  })
+
+  it("422 数组 detail 同样可读化", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(422, { detail: [{ msg: "文件为空", type: "value_error" }] }))
+    await expect(api.restoreBackup(zip(), "RESTORE")).rejects.toMatchObject({
+      message: "文件为空", status: 422,
+    })
+  })
+
+  it("401 清 token 并刷新页面", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, {}))
+    await expect(api.preflightBackup(zip())).rejects.toThrow("未登录或登录已过期")
+    expect(reloadMock).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem("zfundpilot_token")).toBeNull()
+  })
+})

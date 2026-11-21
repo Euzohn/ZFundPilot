@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { act, render } from "@testing-library/react"
 import { LanguageProvider } from "@/i18n/LanguageContext"
-import { ChatProvider, useChat } from "./ChatContext"
+import { ChatProvider, extractToolCall, useChat } from "./ChatContext"
 
 const mocks = vi.hoisted(() => ({
   getSystemPrompt: vi.fn(),
@@ -176,5 +176,40 @@ describe("ChatContext 确认交易 payload", () => {
     await act(async () => { ctx.handleConfirmTx(0, { ...baseTx, after_three: false }) })
     expect(mocks.addTransaction.mock.calls[0][0]).toEqual(
       expect.objectContaining({ is_t1: false }))
+  })
+})
+
+describe("extractToolCall 数值字段 NaN 守卫", () => {
+  const wrap = (obj: Record<string, unknown>) =>
+    "```json\n" + JSON.stringify({ tool: "add_transaction", ...obj }) + "\n```"
+
+  it("非法数值（字符串/对象）归一为 null，不传播 NaN", () => {
+    const tx = extractToolCall(wrap({
+      fund_code: "000001", action: "buy", date: "2026-01-05",
+      amount: "abc", shares: {}, nav: "n/a", fee: "xyz",
+    }))
+    expect(tx).not.toBeNull()
+    expect(tx!.amount).toBeNull()
+    expect(tx!.shares).toBeNull()
+    expect(tx!.nav).toBeNull()
+    expect(tx!.fee).toBe(0)
+  })
+
+  it("合法数值正常解析", () => {
+    const tx = extractToolCall(wrap({
+      fund_code: "000001", action: "buy", date: "2026-01-05",
+      amount: 1000, shares: null, nav: 1.5, fee: 2.5,
+    }))
+    expect(tx!.amount).toBe(1000)
+    expect(tx!.shares).toBeNull()
+    expect(tx!.nav).toBe(1.5)
+    expect(tx!.fee).toBe(2.5)
+  })
+
+  it("Infinity 也归一为 null（非有限数）", () => {
+    const tx = extractToolCall(wrap({
+      fund_code: "000001", action: "buy", date: "2026-01-05", amount: Infinity,
+    }))
+    expect(tx!.amount).toBeNull()
   })
 })

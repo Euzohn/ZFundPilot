@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -102,6 +103,33 @@ class TestAuditRetentionHttp:
                               json={"retention_days": days})
             assert resp.status_code == 200, resp.text
             assert resp.json()["retention_days"] == days
+
+    def test_put_records_username_when_auth_enabled(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        monkeypatch.setattr(config, "AUTH_SECRET", "test-secret")
+        monkeypatch.setattr(config, "AUTH_USERNAME", "admin")
+        monkeypatch.setattr(api, "_REQ_LOGS", {})
+        client = TestClient(api.app)
+        headers = {"Authorization": f"Bearer {api._create_token()}"}
+        resp = client.put("/api/settings/audit-retention",
+                          json={"retention_days": 45}, headers=headers)
+        assert resp.status_code == 200, resp.text
+        row = db.fetch_audit_logs(1)[0]
+        assert row["action"] == "audit_retention_update"
+        assert row["username"] == "admin"
+
+    def test_put_audit_failure_rolls_back_preference(self, client, monkeypatch):
+        """偏好写入与审计同事务：审计失败则保留期不被改写。"""
+        def bad_audit(*args, **kwargs):
+            if kwargs.get("conn") is not None:
+                raise sqlite3.OperationalError("audit down")
+            return None
+
+        monkeypatch.setattr(db, "log_audit", bad_audit)
+        resp = client.put("/api/settings/audit-retention",
+                          json={"retention_days": 45})
+        assert resp.status_code == 500
+        assert db.get_preference(config.AUDIT_RETENTION_PREF_KEY) is None
 
 
 class TestSchedulerUsesConfiguredRetention:

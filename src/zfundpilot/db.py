@@ -1586,13 +1586,16 @@ def get_ai_usage_daily(days: int = 7) -> list[dict]:
 # ---------------------------------------------------------------------------
 # 偏好设置（key-value 存储）
 # ---------------------------------------------------------------------------
-def upsert_preference(key: str, value: str) -> None:
-    with get_connection() as conn:
-        conn.execute(
-            "INSERT INTO preferences(key,value) VALUES(?,?)"
-            " ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            (key, value),
-        )
+def upsert_preference(key: str, value: str, *,
+                      conn: sqlite3.Connection | None = None) -> None:
+    """写入偏好设置；传入 ``conn`` 时复用调用方事务（与审计同提交/同回滚）。"""
+    sql = ("INSERT INTO preferences(key,value) VALUES(?,?)"
+           " ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+    if conn is not None:
+        conn.execute(sql, (key, value))
+        return
+    with get_connection() as own_conn:
+        own_conn.execute(sql, (key, value))
 
 
 def get_preference(key: str) -> str | None:
@@ -1653,6 +1656,38 @@ def log_audit(action: str, ip: str | None = None,
         return own_conn.execute(sql, params).lastrowid
 
 
+# 审计 ts 统一比较格式：SQLite strftime 把任意时区偏移的 ISO 串换算为 UTC，
+# 定宽输出使字典序等价时间序（毫秒精度，亚毫秒四舍五入误差可忽略）。
+# 存量行可能带旧时区偏移（改过 ZFUNDPILOT_TIMEZONE），不能直接按原始串字典序比较。
+_AUDIT_TS_FMT = "%Y-%m-%dT%H:%M:%f"
+
+
+def _audit_ts_expr(column: str) -> str:
+    return f"strftime('{_AUDIT_TS_FMT}', {column})"
+
+
+def _audit_ts_bound(value: str, *, end_of_day: bool = False) -> str:
+    """把筛选边界规范化为带时区 ISO 串，交给 SQLite 统一换算 UTC 比较。
+
+    纯日期按本地时区整天处理（from 取 00:00，to 取次日 00:00）；
+    无时区 ISO 串按本地时区解释；带时区的保持原样。
+    无法解析的值原样返回（SQLite 换算为 NULL，比较不命中任何行）。
+    """
+    try:
+        day = datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return value
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=config.TIMEZONE)
+        return dt.isoformat()
+    if end_of_day:
+        day += timedelta(days=1)
+    return day.replace(tzinfo=config.TIMEZONE).isoformat()
+
+
 def fetch_audit_logs(
     limit: int = 100,
     *,
@@ -1666,7 +1701,8 @@ def fetch_audit_logs(
 
     ``action``/``username`` 为精确匹配。``ts_from`` 接受 ``YYYY-MM-DD`` 或
     ISO 时间串，按 ``ts >=`` 比较；``ts_to`` 为纯日期时按「次日零点前」包含
-    当天全部记录，否则按 ``ts <=`` 比较。``limit`` 保持既有位置参数语义，
+    当天全部记录，否则按 ``ts <=`` 比较。时间比较经 SQLite 统一换算 UTC，
+    混用不同偏移的存量行也能正确命中。``limit`` 保持既有位置参数语义，
     其余参数仅限关键字，避免旧调用受影响。
     """
     where: list[str] = []
@@ -1677,19 +1713,21 @@ def fetch_audit_logs(
     if username:
         where.append("username = ?")
         params.append(username)
+    ts_col = _audit_ts_expr("ts")
+    ts_bound = _audit_ts_expr("?")
     if ts_from:
-        where.append("ts >= ?")
-        params.append(ts_from)
+        where.append(f"{ts_col} >= {ts_bound}")
+        params.append(_audit_ts_bound(ts_from))
     if ts_to:
         try:
-            day = datetime.strptime(ts_to, "%Y-%m-%d")
+            datetime.strptime(ts_to, "%Y-%m-%d")
         except ValueError:
-            where.append("ts <= ?")
-            params.append(ts_to)
+            where.append(f"{ts_col} <= {ts_bound}")
+            params.append(_audit_ts_bound(ts_to))
         else:
             # 纯日期按「次日零点前」处理，包含 to 当天的全部记录。
-            where.append("ts < ?")
-            params.append((day + timedelta(days=1)).strftime("%Y-%m-%d"))
+            where.append(f"{ts_col} < {ts_bound}")
+            params.append(_audit_ts_bound(ts_to, end_of_day=True))
     sql = "SELECT * FROM audit_log"
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -1703,14 +1741,17 @@ def fetch_audit_logs(
 def purge_audit_logs(retention_days: int = 90) -> int:
     """删除早于保留期的审计日志，返回删除行数。
 
-    供调度器每日清理调用。ts 与 ``log_audit`` 同为本地时区 ISO 串，
-    字典序与时间序一致，可直接比较。
+    供调度器每日清理调用。ts 与 ``log_audit`` 同为本地时区 ISO 串，但存量
+    行可能带旧时区偏移（改过 ZFUNDPILOT_TIMEZONE），字典序不再可靠；
+    经 SQLite strftime 统一换算 UTC 后比较。无法解析的 ts 不被清理。
     """
     cutoff = (
         datetime.now(config.TIMEZONE) - timedelta(days=retention_days)
     ).isoformat()
     with get_connection(write=True) as conn:
-        cur = conn.execute("DELETE FROM audit_log WHERE ts < ?", (cutoff,))
+        cur = conn.execute(
+            f"DELETE FROM audit_log WHERE {_audit_ts_expr('ts')} < {_audit_ts_expr('?')}",
+            (cutoff,))
         return int(cur.rowcount)
 
 

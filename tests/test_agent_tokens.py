@@ -27,6 +27,12 @@ def temp_db(monkeypatch):
         monkeypatch.setattr(config, "DB_PATH", str(Path(d) / "test.db"))
         db.init_db()
         analysis.clear_analysis_cache()
+        # 限流/鉴权失败桶是进程内全局状态：临时库 token id 从 1 重新分配、
+        # 客户端 IP 恒为 testclient，必须清空以免跨测试累积误触发 429
+        monkeypatch.setattr(api, "_AGENT_REQ_LOGS", {})
+        monkeypatch.setattr(api, "_AGENT_AUTH_FAILS", {})
+        monkeypatch.setattr(api, "_AGENT_RATE_AUDIT_TS", {})
+        monkeypatch.setattr(api, "_REQ_LOGS", {})
         yield
         analysis.clear_analysis_cache()
 
@@ -316,6 +322,40 @@ class TestRequireAgentScope:
         resp = TestClient(_probe_app("portfolio:read")).get(
             "/probe", headers={"Authorization": "Bearer zfag_whatever"})
         assert resp.status_code == 403
+
+    def test_rate_limit_applies_before_scope_check(self, temp_db, monkeypatch):
+        """缺 scope 的 403 也消耗限流配额：限流先于 scope，堵 403 洪水。"""
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        monkeypatch.setattr(api, "_AGENT_RATE_MAX", 1)
+        plaintext, _ = agent_tokens.issue_token("agent", ["portfolio:read"])
+        client = TestClient(_probe_app("funds:read"))  # token 缺 funds:read
+        headers = {"Authorization": f"Bearer {plaintext}"}
+        first = client.get("/probe", headers=headers)
+        second = client.get("/probe", headers=headers)
+        assert first.status_code == 403      # 首次：过限流，scope 不足 403
+        assert second.status_code == 429     # 再次：限流先拦截（旧实现会恒 403）
+
+    def test_insufficient_scope_records_ip_auth_fail(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        plaintext, _ = agent_tokens.issue_token("agent", ["portfolio:read"])
+        client = TestClient(_probe_app("funds:read"))
+        resp = client.get("/probe", headers={"Authorization": f"Bearer {plaintext}"})
+        assert resp.status_code == 403
+        # 403 计入 IP 鉴权失败桶，供 agent_auth_middleware 超限直接 429
+        assert api._AGENT_AUTH_FAILS.get("testclient")
+
+    def test_429_audit_throttled_within_window(self, temp_db, monkeypatch):
+        """429 审计按 token+端点窗口内只记首条，防拒绝风暴刷爆审计表。"""
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        monkeypatch.setattr(api, "_AGENT_RATE_MAX", 1)
+        plaintext, _ = agent_tokens.issue_token("agent", ["portfolio:read"])
+        client = TestClient(_probe_app("portfolio:read"))
+        headers = {"Authorization": f"Bearer {plaintext}"}
+        assert client.get("/probe", headers=headers).status_code == 200
+        assert client.get("/probe", headers=headers).status_code == 429
+        assert client.get("/probe", headers=headers).status_code == 429
+        rows = db.fetch_audit_logs(500, action="agent_rate_limited")
+        assert len(rows) == 1
 
 
 # ---------------------------------------------------------------------------

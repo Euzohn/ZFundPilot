@@ -128,9 +128,55 @@ class TestFetchFundDividends:
                 fetch_dividend._fetch_fund_dividends("000001")
                 assert fake.fund_open_fund_info_em.call_count == 1
 
-    def test_error_returns_empty(self):
+    def test_error_without_cache_returns_none(self):
+        """抓取失败且无缓存 → None（失败），不得与「无分红」([]) 混淆。
+
+        旧实现返回 []，重启后首次扫描的瞬时失败会被当成「成功抓取且无
+        分红」，_cleanup_stale_alerts 误把该基金全部 pending 提醒 ignored。
+        """
         fake = ModuleType("akshare")
         fake.fund_open_fund_info_em = MagicMock(side_effect=Exception("network"))
+        with patch.dict(sys.modules, {"akshare": fake}):
+            with patch.dict(fetch_dividend._DIV_CACHE, {}, clear=True):
+                result = fetch_dividend._fetch_fund_dividends("000001")
+                assert result is None
+
+    def test_error_with_stale_cache_returns_cached(self):
+        """抓取失败但有过期缓存 → 回退 stale 数据。"""
+        stale = [{"除息日": "2025-09-22", "每份分红": "0.01"}]
+        fake = ModuleType("akshare")
+        fake.fund_open_fund_info_em = MagicMock(side_effect=Exception("network"))
+        with patch.dict(sys.modules, {"akshare": fake}):
+            with patch.dict(fetch_dividend._DIV_CACHE, {
+                "000001": {"ts": 0.0, "data": stale},  # ts=0 必然过期
+            }, clear=True):
+                result = fetch_dividend._fetch_fund_dividends("000001")
+                assert result == stale
+
+    def test_empty_df_returns_empty_list(self):
+        """上游返回空表（真正无分红）→ []，不是 None。"""
+        fake = _fake_akshare(_div_df([]))
+        with patch.dict(sys.modules, {"akshare": fake}):
+            with patch.dict(fetch_dividend._DIV_CACHE, {}, clear=True):
+                result = fetch_dividend._fetch_fund_dividends("000001")
+                assert result == []
+
+    def test_empty_df_falls_back_to_stale_cache(self):
+        """空响应优先回退过期缓存，避免瞬时空响应被当成「无分红」。"""
+        stale = [{"除息日": "2025-09-22", "每份分红": "0.01"}]
+        fake = _fake_akshare(_div_df([]))
+        with patch.dict(sys.modules, {"akshare": fake}):
+            with patch.dict(fetch_dividend._DIV_CACHE, {
+                "000001": {"ts": 0.0, "data": stale},
+            }, clear=True):
+                result = fetch_dividend._fetch_fund_dividends("000001")
+                assert result == stale
+
+    def test_no_tables_exception_returns_empty_list(self):
+        """「No tables found」是上游明确的空响应（无分红记录）→ []。"""
+        fake = ModuleType("akshare")
+        fake.fund_open_fund_info_em = MagicMock(
+            side_effect=Exception("No tables found"))
         with patch.dict(sys.modules, {"akshare": fake}):
             with patch.dict(fetch_dividend._DIV_CACHE, {}, clear=True):
                 result = fetch_dividend._fetch_fund_dividends("000001")
@@ -934,6 +980,33 @@ class TestCheckDividendsGhostCleanup:
 
         assert mock_update.call_count == 1
         assert mock_update.call_args[1]["status"] == "ignored"
+
+    def test_none_fetch_preserves_alert(self):
+        """fetch 返回 None（失败无缓存）：不加入 fetched_funds → 提醒保留。
+
+        复现重启后首次扫描瞬时失败场景：若把 None 当空数据，pending 提醒
+        会被误标 ignored 且永不重建（dividend_alert_exists 查所有状态）。
+        """
+        from zfundpilot import analysis
+
+        pos = MagicMock(fund_code="000001", is_open=True, held_shares=1000, channel="")
+        fund = MagicMock(fund_code="000001", fund_name="基金A", dividend_method="cash")
+
+        with (
+            patch.object(analysis, "calculate_positions", return_value=[pos]),
+            patch("zfundpilot.fetch_dividend.db.get_funds", return_value=[fund]),
+            patch("zfundpilot.fetch_dividend._fetch_fund_dividends",
+                  return_value=None),
+            patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=[
+                {"id": 1, "fund_code": "000001", "ex_date": "2026-06-26"},
+            ]),
+            patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+            patch("zfundpilot.fetch_dividend.db.get_transactions", return_value=[]),
+        ):
+            events = fetch_dividend.check_dividends()
+
+        assert events == []
+        mock_update.assert_not_called()
 
     def test_exception_fetch_preserves_alert(self):
         """fetch 异常的基金：不加入 fetched_funds → ghost 不被清理。"""

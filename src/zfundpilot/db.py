@@ -127,10 +127,9 @@ def init_db() -> None:
                 value TEXT NOT NULL DEFAULT ''
             );
 
-            CREATE INDEX IF NOT EXISTS idx_tx_code ON transactions(fund_code);
+            -- idx_tx_code / idx_nav_code_date 已被 _migrate_add_indexes 判为冗余
+            -- （分别被 idx_tx_code_date 与 UNIQUE(fund_code,date) 覆盖），不再创建。
             CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
-            CREATE INDEX IF NOT EXISTS idx_nav_code_date
-                ON nav_history(fund_code, date);
 
             CREATE TABLE IF NOT EXISTS audit_log (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -300,7 +299,7 @@ def init_db() -> None:
                 created_at TEXT DEFAULT (datetime('now','localtime')),
                 UNIQUE(code, date)
             );
-            CREATE INDEX IF NOT EXISTS idx_index_code_date ON index_history(code, date);
+            -- idx_index_code_date 与 UNIQUE(code,date) 自带索引重复，不再创建。
 
             CREATE TABLE IF NOT EXISTS trade_calendar (
                 date       TEXT PRIMARY KEY,
@@ -520,19 +519,17 @@ def _migrate_relax_transactions_schema() -> None:
         if not has_old_check and has_new_check:
             return  # 已是最终 schema，无需迁移
 
-        # Step 1: 清理脏数据（违反新 CHECK 约束的行）
-        if has_old_check or not has_new_check:
-            # 移除无效 action 值 + 负金额（否则重建时 CHECK 会失败）
-            valid_actions = ("buy", "sell", "dividend", "reinvest")
-            placeholders = ",".join("?" * len(valid_actions))
-            conn.execute(
-                f"DELETE FROM transactions WHERE action NOT IN ({placeholders}) "
-                "OR amount < 0",
-                valid_actions,
-            )
-
+        # 重建脚本用 BEGIN/COMMIT 包裹：executescript 会先隐式提交挂起事务，
+        # 故脏数据清理必须放进脚本内部，才能与重建同事务原子完成；
+        # 中途失败整体回滚（正式表不丢），残留 *_new 先清理保证可重入。
         conn.executescript(
             """
+            BEGIN;
+            DROP TABLE IF EXISTS transactions_new;
+            -- 清理脏数据：无效 action 值 + 负金额（否则重建时 CHECK 会失败）
+            DELETE FROM transactions
+                WHERE action NOT IN ('buy', 'sell', 'dividend', 'reinvest')
+                   OR amount < 0;
             CREATE TABLE transactions_new (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 fund_code  TEXT NOT NULL,
@@ -556,6 +553,7 @@ def _migrate_relax_transactions_schema() -> None:
             DROP TABLE transactions;
             ALTER TABLE transactions_new RENAME TO transactions;
             CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(date);
+            COMMIT;
             """
         )
 
@@ -663,17 +661,18 @@ def _migrate_dividend_alerts_unique() -> None:
         if not sql_text or "UNIQUE(fund_code, ex_date, alert_type" in sql_text["sql"]:
             return
 
-        # 清理重复数据：仅对 ex_date 非空的 dividend 行去重（保留每组最早 id）。
-        # tp_sl 行 ex_date 为 NULL，SQLite UNIQUE 视 NULL 互异，不受约束，不能去重。
-        conn.execute(
-            """DELETE FROM dividend_alerts WHERE ex_date IS NOT NULL AND id NOT IN (
-                   SELECT MIN(id) FROM dividend_alerts WHERE ex_date IS NOT NULL
-                   GROUP BY fund_code, ex_date, COALESCE(alert_type, 'dividend')
-               )"""
-        )
-
+        # 去重 + 重建同事务原子完成（executescript 会先隐式提交挂起事务，
+        # 故清理放进脚本内部）；残留 *_new 先清理保证失败后可重入。
         conn.executescript(
             """
+            BEGIN;
+            DROP TABLE IF EXISTS dividend_alerts_new;
+            -- 清理重复数据：仅对 ex_date 非空的 dividend 行去重（保留每组最早 id）。
+            -- tp_sl 行 ex_date 为 NULL，SQLite UNIQUE 视 NULL 互异，不受约束，不能去重。
+            DELETE FROM dividend_alerts WHERE ex_date IS NOT NULL AND id NOT IN (
+                SELECT MIN(id) FROM dividend_alerts WHERE ex_date IS NOT NULL
+                GROUP BY fund_code, ex_date, COALESCE(alert_type, 'dividend')
+            );
             CREATE TABLE dividend_alerts_new (
                 id               INTEGER PRIMARY KEY AUTOINCREMENT,
                 fund_code        TEXT NOT NULL,
@@ -709,6 +708,7 @@ def _migrate_dividend_alerts_unique() -> None:
             CREATE INDEX IF NOT EXISTS idx_alert_status ON dividend_alerts(status);
             CREATE INDEX IF NOT EXISTS idx_alert_code_ex ON dividend_alerts(fund_code, ex_date);
             CREATE INDEX IF NOT EXISTS idx_alert_type_status ON dividend_alerts(alert_type, status);
+            COMMIT;
             """
         )
 
@@ -734,24 +734,26 @@ def _migrate_dividend_alerts_channel() -> None:
         # 去重（保留每组最早 id）：tp_sl 行 ex_date 为 NULL，
         # SQLite UNIQUE 视 NULL 互异，不受约束，不能去重。
         if has_channel:
-            conn.execute(
-                """DELETE FROM dividend_alerts WHERE ex_date IS NOT NULL AND id NOT IN (
-                       SELECT MIN(id) FROM dividend_alerts WHERE ex_date IS NOT NULL
-                       GROUP BY fund_code, ex_date, COALESCE(alert_type, 'dividend'),
-                                COALESCE(channel, '')
-                   )"""
+            dedup_sql = (
+                "DELETE FROM dividend_alerts WHERE ex_date IS NOT NULL AND id NOT IN ("
+                " SELECT MIN(id) FROM dividend_alerts WHERE ex_date IS NOT NULL"
+                " GROUP BY fund_code, ex_date, COALESCE(alert_type, 'dividend'),"
+                " COALESCE(channel, ''))"
             )
         else:
-            conn.execute(
-                """DELETE FROM dividend_alerts WHERE ex_date IS NOT NULL AND id NOT IN (
-                       SELECT MIN(id) FROM dividend_alerts WHERE ex_date IS NOT NULL
-                       GROUP BY fund_code, ex_date, COALESCE(alert_type, 'dividend')
-                   )"""
+            dedup_sql = (
+                "DELETE FROM dividend_alerts WHERE ex_date IS NOT NULL AND id NOT IN ("
+                " SELECT MIN(id) FROM dividend_alerts WHERE ex_date IS NOT NULL"
+                " GROUP BY fund_code, ex_date, COALESCE(alert_type, 'dividend'))"
             )
 
         channel_sel = "COALESCE(channel, '')" if has_channel else "''"
+        # 去重 + 重建同事务原子完成；残留 *_new 先清理保证失败后可重入。
         conn.executescript(
             f"""
+            BEGIN;
+            DROP TABLE IF EXISTS dividend_alerts_new;
+            {dedup_sql};
             CREATE TABLE dividend_alerts_new (
                 id               INTEGER PRIMARY KEY AUTOINCREMENT,
                 fund_code        TEXT NOT NULL,
@@ -789,6 +791,7 @@ def _migrate_dividend_alerts_channel() -> None:
             CREATE INDEX IF NOT EXISTS idx_alert_status ON dividend_alerts(status);
             CREATE INDEX IF NOT EXISTS idx_alert_code_ex ON dividend_alerts(fund_code, ex_date);
             CREATE INDEX IF NOT EXISTS idx_alert_type_status ON dividend_alerts(alert_type, status);
+            COMMIT;
             """
         )
 
@@ -841,11 +844,12 @@ def _migrate_auto_invest_plans_check() -> None:
         if not sql_text or "amount > 0" in sql_text["sql"]:
             return
 
-        # 清理无效数据
-        conn.execute("DELETE FROM auto_invest_plans WHERE amount <= 0")
-
+        # 清理 + 重建同事务原子完成；残留 *_new 先清理保证失败后可重入。
         conn.executescript(
             """
+            BEGIN;
+            DROP TABLE IF EXISTS auto_invest_plans_new;
+            DELETE FROM auto_invest_plans WHERE amount <= 0;
             CREATE TABLE auto_invest_plans_new (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 fund_code    TEXT NOT NULL,
@@ -866,6 +870,7 @@ def _migrate_auto_invest_plans_check() -> None:
                 SELECT * FROM auto_invest_plans;
             DROP TABLE auto_invest_plans;
             ALTER TABLE auto_invest_plans_new RENAME TO auto_invest_plans;
+            COMMIT;
             """
         )
 
@@ -879,11 +884,12 @@ def _migrate_nav_history_check() -> None:
         if not sql_text or "nav > 0" in sql_text["sql"]:
             return
 
-        # 清理无效数据
-        conn.execute("DELETE FROM nav_history WHERE nav <= 0")
-
+        # 清理 + 重建同事务原子完成；残留 *_new 先清理保证失败后可重入。
         conn.executescript(
             """
+            BEGIN;
+            DROP TABLE IF EXISTS nav_history_new;
+            DELETE FROM nav_history WHERE nav <= 0;
             CREATE TABLE nav_history_new (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 fund_code       TEXT NOT NULL,
@@ -899,6 +905,7 @@ def _migrate_nav_history_check() -> None:
                 FROM nav_history;
             DROP TABLE nav_history;
             ALTER TABLE nav_history_new RENAME TO nav_history;
+            COMMIT;
             """
         )
 
@@ -1100,7 +1107,9 @@ def delete_transaction_conn(conn: sqlite3.Connection, tx_id: int) -> None:
 
 
 def delete_transaction(tx_id: int) -> None:
-    with get_connection() as conn:
+    # 先读后写（查 conversion_id 再解关联/删除），须用 BEGIN IMMEDIATE 写事务，
+    # 避免 WAL 下延迟事务升级写锁时 SQLITE_BUSY。
+    with get_connection(write=True) as conn:
         delete_transaction_conn(conn, tx_id)
 
 
@@ -1689,6 +1698,20 @@ def fetch_audit_logs(
     with get_connection() as conn:
         rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
+
+
+def purge_audit_logs(retention_days: int = 90) -> int:
+    """删除早于保留期的审计日志，返回删除行数。
+
+    供调度器每日清理调用。ts 与 ``log_audit`` 同为本地时区 ISO 串，
+    字典序与时间序一致，可直接比较。
+    """
+    cutoff = (
+        datetime.now(config.TIMEZONE) - timedelta(days=retention_days)
+    ).isoformat()
+    with get_connection(write=True) as conn:
+        cur = conn.execute("DELETE FROM audit_log WHERE ts < ?", (cutoff,))
+        return int(cur.rowcount)
 
 
 # ---------------------------------------------------------------------------
@@ -2325,7 +2348,11 @@ def purge_proposals(cutoff: str) -> int:
 # 分红提醒 (dividend_alerts) CRUD
 # ---------------------------------------------------------------------------
 def add_dividend_alert(alert: dict) -> int:
-    """新增一条分红提醒（INSERT OR IGNORE 防 UNIQUE 竞态），返回 id。"""
+    """新增一条分红提醒（INSERT OR IGNORE 防 UNIQUE 竞态），返回 id。
+
+    UNIQUE 冲突被忽略时查回已有行的 id 返回，保证调用方（定时扫描与
+    手动触发并发）拿到的始终是有效 id，通知 source_id 不悬空。
+    """
     with get_connection() as conn:
         cur = conn.execute(
             """INSERT OR IGNORE INTO dividend_alerts
@@ -2340,7 +2367,17 @@ def add_dividend_alert(alert: dict) -> int:
              alert.get("dividend_method", "cash"),
              alert.get("channel") or ""),
         )
-        return int(cur.lastrowid)
+        if cur.rowcount:
+            return int(cur.lastrowid)
+        # 冲突被忽略：按唯一键查回已有行 id（alert_type 默认 'dividend'）
+        row = conn.execute(
+            "SELECT id FROM dividend_alerts WHERE fund_code=? AND ex_date=? "
+            "AND COALESCE(alert_type, 'dividend')='dividend' "
+            "AND COALESCE(channel, '')=?",
+            (alert["fund_code"], alert.get("ex_date"),
+             alert.get("channel") or ""),
+        ).fetchone()
+        return int(row["id"]) if row else 0
 
 
 def get_dividend_alerts(status: str | None = None) -> list[dict]:

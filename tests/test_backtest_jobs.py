@@ -298,3 +298,35 @@ class TestBacktestParamValidation:
                 "amount_per_period": 1_000_001,
             })
         assert exc.value.field == "amount_per_period"
+
+
+class TestBacktestSpawnFailure:
+    def test_spawn_failure_releases_gate_and_marks_failed(
+            self, temp_db, monkeypatch):
+        """spawn 失败必须归还并发名额并标记任务失败，否则回测永久 429。"""
+        _install_stub(monkeypatch)
+
+        def boom(fn):
+            raise RuntimeError("can't start new thread")
+
+        monkeypatch.setattr(svc, "_spawn", boom)
+        principal = svc.Principal("agent_token", "1", "agent:test1")
+        with pytest.raises(RuntimeError, match="can't start new thread"):
+            svc.start_backtest(
+                principal, params=_body(), idempotency_key=KEY)
+
+        # 两个并发名额都必须归还（创建阶段占用的那一个不能泄漏）。
+        assert svc._backtest_gate.acquire(blocking=False)
+        assert svc._backtest_gate.acquire(blocking=False)
+        svc._backtest_gate.release()
+        svc._backtest_gate.release()
+
+        assert _latest_job()["status"] == "failed"
+
+        # 名额归还后：新键任务可正常创建并执行，不再 429。
+        monkeypatch.setattr(svc, "_spawn", lambda fn: fn())
+        result = svc.start_backtest(
+            principal, params=_body(), idempotency_key=KEY + "-retry")
+        assert result.http_status == 202
+        assert result.code == "queued"
+        assert _latest_job()["status"] == "succeeded"

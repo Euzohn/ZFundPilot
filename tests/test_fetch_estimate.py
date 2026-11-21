@@ -354,12 +354,18 @@ class TestIndexHistoryDB:
         db_path = os.path.join(str(tmp_path), "test.db")
         original = config.DB_PATH
         config.DB_PATH = db_path
+        # 交易日历内存缓存可能来自其他测试的 DB，切换 DB 时失效
+        db_module._trade_cal_cache = None
+        db_module._trade_cal_max = None
         db_module.init_db()
         return db_module, original
 
     def _teardown(self, original):
         from zfundpilot import config
+        import zfundpilot.db as db_module
         config.DB_PATH = original
+        db_module._trade_cal_cache = None
+        db_module._trade_cal_max = None
         # 清空内存缓存
         from zfundpilot.fetch_estimate import clear_index_hist_cache
         clear_index_hist_cache()
@@ -438,15 +444,22 @@ class TestIndexHistoryDB:
                 ("2026-01-01", 3800.0),
                 ("2026-01-02", 3850.0),
             ])
-            # 模拟今天日期 = 2026-01-03（DB 最新 01-02 < today → need_fetch=True）
-            # AkShare 失败 → fallback DB
+            # 模拟今天 = 2026-01-05 周一（交易日，DB 最新 01-02 < today
+            # → need_fetch=True）；AkShare 失败 → fallback DB。
+            # 用 datetime 子类只覆写 now，保留 strptime 等真实行为
+            # （新鲜度判断需要做日期回溯）。
+            from datetime import datetime as real_dt
+
+            class _FixedDT(real_dt):
+                @classmethod
+                def now(cls, tz=None):
+                    return real_dt(2026, 1, 5, 12, 0, tzinfo=tz)
+
             with (
                 patch("zfundpilot.fetch_estimate._fetch_index_daily_sina",
                       side_effect=Exception("network error")),
-                patch("zfundpilot.fetch_estimate.datetime") as mock_dt,
+                patch("zfundpilot.fetch_estimate.datetime", _FixedDT),
             ):
-                from datetime import datetime as real_dt
-                mock_dt.now.return_value = real_dt(2026, 1, 3)
                 from zfundpilot.fetch_estimate import fetch_index_history
                 result = fetch_index_history("000300", "2026-01-01", "2026-01-02")
             # 离线 fallback：返回 DB 缓存数据
@@ -475,6 +488,231 @@ class TestIndexHistoryDB:
         finally:
             self._teardown(original)
 
+
+
+# ---------------------------------------------------------------------------
+# fetch_index_history 新鲜度：非交易日不触发全量在线拉取
+# ---------------------------------------------------------------------------
+class TestIndexHistoryFreshness:
+    """周末/节假日 db_latest 永远 < today，旧逻辑每个 L1 周期后都全量重拉。
+
+    修复：trade_calendar 判断今日是否交易日；非交易日 db_latest 覆盖到
+    最近一个交易日即视为新鲜。日历缺失时 db.is_trading_day 退化为周末
+    判断（fail-open），等价于周末容忍策略。
+    """
+
+    def _setup(self, tmp_path, monkeypatch, calendar=None):
+        import zfundpilot.db as db_module
+        from zfundpilot import config, fetch_estimate
+
+        monkeypatch.setattr(config, "DB_PATH", str(tmp_path / "test.db"))
+        monkeypatch.setattr(db_module, "_trade_cal_cache", None)
+        monkeypatch.setattr(db_module, "_trade_cal_max", None)
+        db_module.init_db()
+        fetch_estimate.clear_index_hist_cache()
+        if calendar:
+            db_module.upsert_trade_calendar(calendar)
+        return db_module
+
+    def _fix_today(self, monkeypatch, date_str):
+        from datetime import datetime as real_dt
+
+        from zfundpilot import fetch_estimate
+
+        y, m, d = map(int, date_str.split("-"))
+
+        class _FixedDT(real_dt):
+            @classmethod
+            def now(cls, tz=None):
+                return real_dt(y, m, d, 12, 0, tzinfo=tz)
+
+        monkeypatch.setattr(fetch_estimate, "datetime", _FixedDT)
+
+    def test_weekend_skip_with_calendar(self, tmp_path, monkeypatch):
+        """周六 + DB 已覆盖周五（最近交易日）→ 不在线拉取。"""
+        db = self._setup(tmp_path, monkeypatch,
+                         calendar=["2026-01-02", "2026-01-05"])
+        db.upsert_index_history("000300", [("2026-01-02", 3850.0)])
+        self._fix_today(monkeypatch, "2026-01-03")  # 周六
+        with patch("zfundpilot.fetch_estimate._fetch_index_daily_sina") as mock_ak:
+            from zfundpilot.fetch_estimate import fetch_index_history
+            result = fetch_index_history("000300", "2026-01-01", "2026-01-03")
+            mock_ak.assert_not_called()
+        assert result == [{"date": "2026-01-02", "close": 3850.0}]
+
+    def test_holiday_skip_with_calendar(self, tmp_path, monkeypatch):
+        """元旦（周四休市）+ DB 覆盖节前最后交易日 → 不在线拉取。"""
+        db = self._setup(tmp_path, monkeypatch,
+                         calendar=["2025-12-31", "2026-01-02", "2026-01-05"])
+        db.upsert_index_history("000300", [("2025-12-31", 3800.0)])
+        self._fix_today(monkeypatch, "2026-01-01")
+        with patch("zfundpilot.fetch_estimate._fetch_index_daily_sina") as mock_ak:
+            from zfundpilot.fetch_estimate import fetch_index_history
+            result = fetch_index_history("000300", "2025-12-01", "2026-01-01")
+            mock_ak.assert_not_called()
+        assert result == [{"date": "2025-12-31", "close": 3800.0}]
+
+    def test_trading_day_still_fetches(self, tmp_path, monkeypatch):
+        """交易日 DB 落后 → 仍在线拉取今日 bar。"""
+        import pandas as pd
+
+        db = self._setup(tmp_path, monkeypatch,
+                         calendar=["2026-01-02", "2026-01-05"])
+        db.upsert_index_history("000300", [("2026-01-02", 3850.0)])
+        self._fix_today(monkeypatch, "2026-01-05")  # 周一
+        mock_df = pd.DataFrame({
+            "date": ["2026-01-02", "2026-01-05"],
+            "close": [3850.0, 3900.0],
+        })
+        with patch("zfundpilot.fetch_estimate._fetch_index_daily_sina",
+                   return_value=mock_df) as mock_ak:
+            from zfundpilot.fetch_estimate import fetch_index_history
+            result = fetch_index_history("000300", "2026-01-01", "2026-01-05")
+            mock_ak.assert_called_once()
+        assert result[-1] == {"date": "2026-01-05", "close": 3900.0}
+
+    def test_weekend_skip_without_calendar(self, tmp_path, monkeypatch):
+        """日历缺失（fail-open 周末判断）：周六 + DB 覆盖周五 → 跳过。"""
+        db = self._setup(tmp_path, monkeypatch)  # 不写日历
+        db.upsert_index_history("000300", [("2026-01-02", 3850.0)])
+        self._fix_today(monkeypatch, "2026-01-03")  # 周六
+        with patch("zfundpilot.fetch_estimate._fetch_index_daily_sina") as mock_ak:
+            from zfundpilot.fetch_estimate import fetch_index_history
+            result = fetch_index_history("000300", "2026-01-01", "2026-01-03")
+            mock_ak.assert_not_called()
+        assert len(result) == 1
+
+    def test_stale_beyond_last_trading_day_fetches(self, tmp_path, monkeypatch):
+        """周六但 DB 只到上周三（落后于最近交易日周五）→ 仍拉取。"""
+        import pandas as pd
+
+        db = self._setup(tmp_path, monkeypatch)
+        db.upsert_index_history("000300", [("2025-12-31", 3800.0)])
+        self._fix_today(monkeypatch, "2026-01-03")  # 周六
+        mock_df = pd.DataFrame({
+            "date": ["2025-12-31", "2026-01-02"],
+            "close": [3800.0, 3850.0],
+        })
+        with patch("zfundpilot.fetch_estimate._fetch_index_daily_sina",
+                   return_value=mock_df) as mock_ak:
+            from zfundpilot.fetch_estimate import fetch_index_history
+            fetch_index_history("000300", "2025-12-01", "2026-01-03")
+            mock_ak.assert_called_once()
+
+    def test_empty_db_always_fetches(self, tmp_path, monkeypatch):
+        """DB 无数据：即使非交易日也需首次全量拉取。"""
+        import pandas as pd
+
+        self._setup(tmp_path, monkeypatch)
+        self._fix_today(monkeypatch, "2026-01-03")  # 周六
+        mock_df = pd.DataFrame({"date": ["2026-01-02"], "close": [3850.0]})
+        with patch("zfundpilot.fetch_estimate._fetch_index_daily_sina",
+                   return_value=mock_df) as mock_ak:
+            from zfundpilot.fetch_estimate import fetch_index_history
+            result = fetch_index_history("000300", "2026-01-01", "2026-01-03")
+            mock_ak.assert_called_once()
+        assert len(result) == 1
+
+
+# ---------------------------------------------------------------------------
+# _fetch_index_daily_sina 的 V8 全生命周期锁
+# ---------------------------------------------------------------------------
+class _CountingLock:
+    """带并发计数的上下文锁（与 tests/test_v8_serialized_coverage.py 一致）。"""
+
+    def __init__(self):
+        import threading
+
+        self._lock = threading.RLock()
+        self._guard = threading.Lock()
+        self._depth = threading.local()
+        self.entries = 0
+        self.max_entries = 0
+
+    def __enter__(self):
+        self._lock.acquire()
+        depth = getattr(self._depth, "value", 0)
+        with self._guard:
+            if depth == 0:
+                self.entries += 1
+                self.max_entries = max(self.max_entries, self.entries)
+        self._depth.value = depth + 1
+        return self
+
+    def __exit__(self, *exc_info):
+        depth = self._depth.value
+        self._depth.value = depth - 1
+        with self._guard:
+            if depth == 1:
+                self.entries -= 1
+        self._lock.release()
+
+
+class TestIndexDailySinaSerialized:
+    """新浪指数日线内部创建 MiniRacer（V8），整段调用必须持全生命周期锁。
+
+    调度器后台线程（_update_benchmark_indices）与 FastAPI 线程池
+    （get_portfolio_benchmark）可并发进入，未串行时「创建+销毁」竞态
+    触发 libmini_racer.so 段错误。
+    """
+
+    def test_holds_miniracer_lock(self, monkeypatch):
+        import sys
+        from types import ModuleType
+
+        from zfundpilot import ak_compat, fetch_estimate
+
+        counting = _CountingLock()
+        monkeypatch.setattr(ak_compat, "_MINIRACER_LOCK", counting)
+        seen: list[int] = []
+
+        def stub(symbol):
+            seen.append(counting.entries)
+            return "df"
+
+        fake = ModuleType("akshare")
+        fake.index_zh_daily_sina = stub
+        with patch.dict(sys.modules, {"akshare": fake}):
+            assert fetch_estimate._fetch_index_daily_sina("sh000300") == "df"
+        assert seen and all(e >= 1 for e in seen), (
+            "新浪指数日线调用期间必须持 ak_compat.serialized() 锁（含 V8 上下文销毁）"
+        )
+
+    def test_concurrent_calls_serialized(self, monkeypatch):
+        """多线程并发调用必须串行（max_entries == 1）。"""
+        import sys
+        import threading
+        import time
+        from types import ModuleType
+
+        from zfundpilot import ak_compat, fetch_estimate
+
+        counting = _CountingLock()
+        monkeypatch.setattr(ak_compat, "_MINIRACER_LOCK", counting)
+
+        def stub(symbol):
+            time.sleep(0.002)  # 制造窗口：未串行时必然重叠
+            return "df"
+
+        fake = ModuleType("akshare")
+        fake.index_zh_daily_sina = stub
+        errors: list[Exception] = []
+
+        def worker():
+            try:
+                for _ in range(5):
+                    fetch_estimate._fetch_index_daily_sina("sh000300")
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        with patch.dict(sys.modules, {"akshare": fake}):
+            threads = [threading.Thread(target=worker) for _ in range(4)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        assert not errors
+        assert counting.max_entries == 1
 
 
 class TestIndexDailySinaCompat:

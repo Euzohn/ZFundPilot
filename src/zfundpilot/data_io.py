@@ -194,12 +194,28 @@ def parse_transactions_csv(source: bytes | str | io.BytesIO) -> tuple[list[Trans
     return transactions, errors
 
 
+# CSV 公式注入（CWE-1236）危险前缀：Excel/WPS 会把以这些字符开头的单元格
+# 当公式执行（如 =HYPERLINK(...) / DDE），导出时须转义。
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _sanitize_csv_cell(value):
+    """导出侧公式注入防护：危险开头的字符串单元格前缀单引号。
+
+    仅处理字符串单元格（数值列不受影响）；只作用于导出路径，
+    导入解析不做剥离。
+    """
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def transactions_to_csv_bytes(transactions: list[Transaction]) -> bytes:
-    """导出交易流水为 CSV。"""
+    """导出交易流水为 CSV（自由文本单元格做公式注入防护）。"""
     rows = []
     for t in transactions:
         d = t.to_dict()
-        rows.append({c: d.get(c, "") for c in CSV_COLUMNS})
+        rows.append({c: _sanitize_csv_cell(d.get(c, "")) for c in CSV_COLUMNS})
     df = pd.DataFrame(rows, columns=CSV_COLUMNS)
     return df.to_csv(index=False).encode("utf-8-sig")
 

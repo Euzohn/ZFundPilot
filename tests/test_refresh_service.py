@@ -176,3 +176,66 @@ class TestOwnershipAndInterrupt:
         result = json.loads(row["result_json"])
         assert result["ok"] is True
         assert result["updated"] == 1
+
+
+class TestSpawnFailureRollback:
+    def test_spawn_failure_rolls_back_running_state(
+            self, temp_db, sync_refresh, monkeypatch):
+        """spawn 失败必须回滚运行态并标记任务失败，否则刷新永久 busy。"""
+        def boom(fn):
+            raise RuntimeError("can't start new thread")
+
+        monkeypatch.setattr(svc, "_spawn", boom)
+        with pytest.raises(RuntimeError, match="can't start new thread"):
+            _start(["005827"])
+
+        assert svc.nav_update_state["running"] is False
+        assert svc._current_job_id is None
+        with db.get_connection() as conn:
+            row = conn.execute(
+                "SELECT status, error FROM refresh_jobs "
+                "ORDER BY id DESC LIMIT 1").fetchone()
+        assert row["status"] == "failed"
+        assert "can't start new thread" in row["error"]
+
+        # 同幂等键重放拿回的是已失败任务，而不是永久 queued 的死任务。
+        replay = _start(["005827"])
+        assert replay.replayed is True
+        status = svc.get_job_status(_agent(), replay.data["job_id"])
+        assert status.data["status"] == "failed"
+
+        # 运行态已回滚：新键任务可正常创建并执行。
+        monkeypatch.setattr(svc, "_spawn", lambda fn: fn())
+        second = _start(["005827"], key=KEY_B)
+        assert second.http_status == 202
+        assert second.code == "queued"
+        assert svc.get_job_status(
+            _agent(), second.data["job_id"]).data["status"] == "succeeded"
+
+    def test_spawn_failure_db_mark_is_best_effort(
+            self, temp_db, sync_refresh, monkeypatch):
+        """回滚写入失败不掩盖 spawn 原始异常，运行态仍须复位。"""
+        def boom(fn):
+            raise RuntimeError("can't start new thread")
+
+        def db_down(*args, **kwargs):
+            raise RuntimeError("database is locked")
+
+        monkeypatch.setattr(svc, "_spawn", boom)
+        monkeypatch.setattr(svc.db, "update_refresh_job", db_down)
+        with pytest.raises(RuntimeError, match="can't start new thread"):
+            _start(["005827"])
+        assert svc.nav_update_state["running"] is False
+        assert svc._current_job_id is None
+
+    def test_start_refresh_resets_results(self, temp_db, monkeypatch):
+        """声明运行态时清空上次 results（对齐 scheduler/网页更新路径）。"""
+        monkeypatch.setitem(
+            svc.nav_update_state, "results", [{"fund_code": "stale"}])
+        monkeypatch.setitem(svc.nav_update_state, "running", False)
+        monkeypatch.setattr(svc, "_current_job_id", None)
+        monkeypatch.setattr(svc, "_spawn", lambda fn: None)  # 不执行，只验声明
+        result = _start(["005827"])
+        assert result.http_status == 202
+        assert svc.nav_update_state["running"] is True
+        assert svc.nav_update_state["results"] == []

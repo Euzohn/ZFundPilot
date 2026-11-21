@@ -1574,7 +1574,7 @@ def precheck_reconciliation(input_data: dict) -> dict:
             "validation_error",
             f"channel 不能超过 {CHANNEL_MAX_LEN} 个字符", "channel")
 
-    # 基金解析前置 + shares 校验：只保留 exact/verified 且 shares 合法的条目参与对账
+    # 基金解析前置 + shares/market_value 校验：只保留 exact/verified 且数值合法的条目参与对账
     resolved_items: list[dict] = []
     resolved_by_code: dict[str, dict] = {}
     resolution_errors: list[dict] = []
@@ -1620,12 +1620,39 @@ def precheck_reconciliation(input_data: dict) -> dict:
                     "reason": "invalid_shares",
                     "message": shares_error})
                 continue
+            # market_value 校验：可省略；提供时与 shares 同口径（有限非负数字）。
+            # 非法值若透传，下游 reconcile_holdings 估算净值 float() 会抛
+            # 未捕获的 ValueError，最终 500 而非条目级校验问题。
             market_value = raw.get("market_value")
+            mv_num: float | None = None
+            mv_error = ""
+            if market_value is not None:
+                if isinstance(market_value, bool) or not isinstance(
+                        market_value, (int, float)):
+                    mv_error = "market_value 必须是数字"
+                else:
+                    try:
+                        mv_num = float(market_value)
+                        if not math.isfinite(mv_num):
+                            mv_error = "market_value 必须是有限数字"
+                        elif mv_num < 0:
+                            mv_error = "market_value 不能为负数"
+                    except (TypeError, ValueError):
+                        mv_error = "market_value 必须是数字"
+            if mv_error:
+                resolution_errors.append({
+                    "index": idx, "input": resolution["input"],
+                    "status": resolution["status"],
+                    "candidates": resolution["candidates"],
+                    "resolved_code": code,
+                    "reason": "invalid_market_value",
+                    "message": mv_error})
+                continue
             resolved_by_code[code] = resolution
             resolved_items.append({
                 "fund_code": code,
                 "shares": shares_num,
-                "market_value": market_value,
+                "market_value": mv_num,
             })
 
     # 被剔除的条目（如 shares 非法）不得再产生「疑似清仓」建议：

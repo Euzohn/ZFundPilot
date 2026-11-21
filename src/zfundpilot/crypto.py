@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -24,30 +25,49 @@ logger = logging.getLogger(__name__)
 
 _PREFIX = "enc:"
 _fernet: Fernet | None = None
+# 主密钥生成锁：FastAPI 同步端点跑在线程池，首次并发保存时两个线程可能
+# 各自生成密钥互相覆盖，被覆盖密钥加密的字段将永久无法解密
+_key_lock = threading.Lock()
 
 
 def _get_fernet() -> Fernet:
-    """获取（必要时生成）Fernet 实例。主密钥存于 data/secret.key。"""
+    """获取（必要时生成）Fernet 实例。主密钥存于 data/secret.key。
+
+    生成路径双重防护：
+    - threading.Lock 串行化进程内并发（双重检查，避免重复生成）；
+    - os.open(O_CREAT|O_EXCL, 0o600) 原子创建，跨进程竞态失败方读已有密钥；
+      创建即 0600，消除先 0644 再 chmod 的全局可读窗口。
+    """
     global _fernet
     if _fernet is not None:
         return _fernet
-    # 延迟导入 config 以避免循环依赖
-    from . import config
-    key_path = Path(config.DATA_DIR) / "secret.key"
-    if key_path.exists():
-        key = key_path.read_bytes()
-    else:
+    with _key_lock:
+        if _fernet is not None:
+            return _fernet
+        # 延迟导入 config 以避免循环依赖
+        from . import config
+        key_path = Path(config.DATA_DIR) / "secret.key"
         key_path.parent.mkdir(parents=True, exist_ok=True)
-        key = Fernet.generate_key()
-        key_path.write_bytes(key)
         try:
-            os.chmod(key_path, 0o600)
-        except OSError:
-            # Windows/非 POSIX 平台无 chmod，忽略
-            pass
-        logger.info("已生成新的加密主密钥 %s", key_path)
-    _fernet = Fernet(key)
-    return _fernet
+            fd = os.open(key_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            # 竞态失败方（或已有密钥）：直接读已有密钥
+            key = key_path.read_bytes()
+        else:
+            key = Fernet.generate_key()
+            try:
+                # umask 可能削减权限位，显式补足 0600（失败至少告警）
+                if os.name == "posix":
+                    try:
+                        os.fchmod(fd, 0o600)
+                    except OSError:
+                        logger.warning("主密钥文件权限设置 0600 失败: %s", key_path)
+                os.write(fd, key)
+            finally:
+                os.close(fd)
+            logger.info("已生成新的加密主密钥 %s", key_path)
+        _fernet = Fernet(key)
+        return _fernet
 
 
 def is_encrypted(value: str) -> bool:

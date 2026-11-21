@@ -27,7 +27,7 @@ import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import akshare as ak
 import pandas as pd
@@ -462,10 +462,17 @@ def _fetch_index_daily_sina(sina_symbol: str):
 
     akshare 1.20.44 起 ``stock_zh_index_daily`` 改名为
     ``index_zh_daily_sina``（同为新浪源、返回列一致）。
+
+    该接口内部创建 py_mini_racer.MiniRacer（V8）：类级 patch 只串行化
+    init/eval/call，上下文销毁不在类级锁内。整段调用持
+    ak_compat.serialized() 全生命周期锁（与 fetch_fund/fetch_dividend 一致），
+    否则调度器后台线程与 FastAPI 线程池并发「创建+销毁」会触发
+    libmini_racer.so 段错误。
     """
-    return ak_compat.call(
-        "index_zh_daily_sina", "stock_zh_index_daily", symbol=sina_symbol
-    )
+    with ak_compat.serialized():
+        return ak_compat.call(
+            "index_zh_daily_sina", "stock_zh_index_daily", symbol=sina_symbol
+        )
 
 
 def _fetch_index_full_from_sina(symbol: str) -> list[dict]:
@@ -489,6 +496,34 @@ def _fetch_index_full_from_sina(symbol: str) -> list[dict]:
     except Exception:  # noqa: BLE001
         logger.exception("fetch_index_history failed: %s", symbol)
         return []
+
+
+def _index_hist_need_fetch(db_latest: str | None, today: str) -> bool:
+    """指数历史新鲜度判断：是否需要在线全量拉取。
+
+    非交易日（周末/节假日）今日不会产生新 bar，db_latest 覆盖到最近一个
+    交易日即视为新鲜——否则每个 L1 缓存周期（1h）过期后都会全量重拉新浪
+    历史（2010 年至今数千条）并全量重写 DB，即使数据毫无变化。
+
+    交易日判断用 db.is_trading_day（trade_calendar 表为准）；日历缺失/
+    超出覆盖范围时其内部退化为周末判断（fail-open），等价于「周末且
+    db_latest 已覆盖上周五则跳过」的容忍策略。回溯上限 10 天（最长春节
+    休市约 9 天）；回溯不到交易日时保守拉取。
+    """
+    if not db_latest:
+        return True
+    if db_latest >= today:
+        return False
+    from . import db  # 延迟导入，避免循环依赖
+    if db.is_trading_day(today):
+        return True
+    d = datetime.strptime(today, "%Y-%m-%d")
+    for _ in range(10):
+        d -= timedelta(days=1)
+        prev = d.strftime("%Y-%m-%d")
+        if db.is_trading_day(prev):
+            return db_latest < prev
+    return True
 
 
 def fetch_index_history(symbol: str, start_date: str, end_date: str) -> list[dict]:
@@ -522,7 +557,7 @@ def fetch_index_history(symbol: str, start_date: str, end_date: str) -> list[dic
     db_latest = db.get_index_latest_date(symbol)
     today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
 
-    need_fetch = not db_latest or db_latest < today
+    need_fetch = _index_hist_need_fetch(db_latest, today)
 
     if need_fetch:
         full = _fetch_index_full_from_sina(symbol)

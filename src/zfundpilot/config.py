@@ -222,14 +222,29 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def _load_auth_data() -> dict | None:
-    """从 auth.json 读取认证数据。"""
+    """从 auth.json 读取认证数据。
+
+    fail-closed：文件不存在返回 None（首次运行）；文件存在但损坏/不可读
+    （JSONDecodeError/OSError/非对象 JSON）时抛 RuntimeError 拒绝启动——
+    静默返回 None 会把已启用密码认证的系统降级为无密码开放访问。
+    """
     if not os.path.exists(AUTH_DATA_PATH):
         return None
     try:
         with open(AUTH_DATA_PATH, encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return None
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as exc:
+        raise RuntimeError(
+            f"认证文件 {AUTH_DATA_PATH} 损坏或不可读，拒绝启动以避免降级为"
+            f"无密码开放访问。请修复或从备份恢复该文件"
+            f"（确认要重置认证时才可删除后重启）：{exc}"
+        ) from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(
+            f"认证文件 {AUTH_DATA_PATH} 内容不是 JSON 对象，拒绝启动以避免"
+            f"降级为无密码开放访问。请修复或从备份恢复该文件"
+        )
+    return data
 
 
 def _save_auth_data(data: dict) -> None:
@@ -381,15 +396,22 @@ AGENT_TX_DAILY_AMOUNT = _env_positive_float(
     "ZFUNDPILOT_AGENT_TX_DAILY_AMOUNT", 1_000_000.0)
 
 # 信任代理网段（用于登录限流时安全读取 X-Forwarded-For 头）
-# 逗号分隔 CIDR，默认空 = 不信任任何代理
-TRUSTED_PROXIES: list[ipaddress.IPv4Network] = []
-_env_trusted = os.environ.get("ZFUNDPILOT_TRUSTED_PROXIES", "")
-if _env_trusted:
-    TRUSTED_PROXIES = [
-        ipaddress.IPv4Network(cidr.strip())
-        for cidr in _env_trusted.split(",")
+# 逗号分隔 CIDR，支持 IPv4/IPv6（与 _get_client_ip 的 IPv6 识别配套），
+# 默认空 = 不信任任何代理
+def _parse_trusted_proxies(
+    raw: str,
+) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    """解析逗号分隔的信任代理网段；非法 CIDR 抛 ValueError（启动即暴露配置错误）。"""
+    return [
+        ipaddress.ip_network(cidr.strip())
+        for cidr in raw.split(",")
         if cidr.strip()
     ]
+
+
+TRUSTED_PROXIES: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = (
+    _parse_trusted_proxies(os.environ.get("ZFUNDPILOT_TRUSTED_PROXIES", ""))
+)
 
 
 # ---------------------------------------------------------------------------

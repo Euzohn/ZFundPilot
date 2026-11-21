@@ -39,6 +39,8 @@ _MAX_METRICS_FUNDS = 30
 _ENRICH_MAX_CONCURRENCY = 2
 _ENRICH_TIMEOUT = 20.0
 _ENRICH_GATE = threading.BoundedSemaphore(_ENRICH_MAX_CONCURRENCY)
+# 网页筛选路径的指标增强总等待预算：超时项不写回（快照式，见 _enrich_with_metrics）。
+_ENRICH_WITH_METRICS_TIMEOUT = 60.0
 
 
 class EnrichmentBusy(RuntimeError):
@@ -191,16 +193,8 @@ def _enrich_snapshot(item: FundFilterItem) -> dict:
     return snapshot
 
 
-def _enrich_one(item: FundFilterItem) -> None:
-    """为单个 FundFilterItem 补充规模/经理/成立日期/收益/风险指标。"""
-    try:
-        snapshot = _enrich_snapshot(item)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("指标补充失败 %s: %s", item.code, exc)
-        item.returns = {}
-        item.risk = {}
-        return
-
+def _apply_enrich_snapshot(item: FundFilterItem, snapshot: dict) -> None:
+    """把已完成的指标快照写回 item；只在任务结束后调用，避免并发改写。"""
     item.scale = snapshot["scale"]
     item.manager = snapshot["manager"]
     item.inception_date = snapshot["inception_date"]
@@ -212,15 +206,40 @@ def _enrich_one(item: FundFilterItem) -> None:
     item.risk = snapshot["risk"]
 
 
+def _enrich_one(item: FundFilterItem) -> None:
+    """为单个 FundFilterItem 补充规模/经理/成立日期/收益/风险指标。"""
+    try:
+        snapshot = _enrich_snapshot(item)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("指标补充失败 %s: %s", item.code, exc)
+        item.returns = {}
+        item.risk = {}
+        return
+    _apply_enrich_snapshot(item, snapshot)
+
+
 def _enrich_with_metrics(items: list[FundFilterItem]) -> None:
-    """用线程池对 items 并发补充收益/风险指标（最多 _MAX_METRICS_FUNDS 只）。"""
+    """用线程池对 items 并发补充收益/风险指标（最多 _MAX_METRICS_FUNDS 只）。
+
+    快照式写回（对齐 ``enrich_page_metrics``）：后台任务只产出快照、不触碰
+    items，仅已完成项在返回前写回；超时/失败项不再被后台线程改写，避免
+    响应序列化时对象仍在被修改（半新半旧指标）。
+    """
     targets = items[:_MAX_METRICS_FUNDS]
-    futures = [_EXECUTOR.submit(_enrich_one, it) for it in targets]
-    for f in futures:
+    futures = {_EXECUTOR.submit(_enrich_snapshot, it): it for it in targets}
+    wait(set(futures), timeout=_ENRICH_WITH_METRICS_TIMEOUT)
+    for fut, item in futures.items():
+        if not fut.done():
+            logger.warning("指标补充超时: %s", item.code)
+            continue
         try:
-            f.result(timeout=60)
-        except Exception as exc:
-            logger.warning("指标补充超时或失败: %s", exc)
+            snapshot = fut.result()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("指标补充失败 %s: %s", item.code, exc)
+            item.returns = {}
+            item.risk = {}
+            continue
+        _apply_enrich_snapshot(item, snapshot)
 
 
 def enrich_page_metrics(

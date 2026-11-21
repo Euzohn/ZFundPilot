@@ -1,6 +1,9 @@
 """crypto 加解密测试：Fernet 加密、解密、旧版明文兼容、主密钥隔离。"""
 import json
 import os
+import threading
+
+from cryptography.fernet import Fernet
 
 from zfundpilot import config, crypto
 
@@ -103,6 +106,54 @@ class TestCrypto:
         if os.name == "posix":
             mode = key_path.stat().st_mode & 0o777
             assert mode == 0o600
+
+    def test_concurrent_first_use_single_key(self, tmp_path, monkeypatch):
+        """线程池并发首次加密：只生成一把主密钥，所有密文都可解密。
+
+        旧实现无锁「检查存在→生成→写入」，并发线程各自生成密钥互相覆盖，
+        被覆盖密钥加密的字段永久无法解密（decrypt 返回空串）。
+        """
+        self._setup_key(tmp_path, monkeypatch)
+        n = 8
+        barrier = threading.Barrier(n)
+        ciphers: list[str] = []
+        errors: list[Exception] = []
+        lock = threading.Lock()
+
+        def worker():
+            try:
+                barrier.wait(timeout=10)
+                c = crypto.encrypt("concurrent-secret")
+                with lock:
+                    ciphers.append(c)
+            except Exception as e:  # noqa: BLE001
+                with lock:
+                    errors.append(e)
+
+        threads = [threading.Thread(target=worker) for _ in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+        assert not errors, f"并发加密出现异常: {errors}"
+        assert len(ciphers) == n
+        for c in ciphers:
+            assert crypto.decrypt(c) == "concurrent-secret", (
+                "存在被覆盖密钥加密的密文（主密钥生成竞态）"
+            )
+        key_path = tmp_path / "secret.key"
+        assert key_path.exists()
+        if os.name == "posix":
+            assert key_path.stat().st_mode & 0o777 == 0o600
+
+    def test_existing_key_not_overwritten(self, tmp_path, monkeypatch):
+        """已有密钥（竞态失败方路径）：直接读取，不重新生成覆盖。"""
+        self._setup_key(tmp_path, monkeypatch)
+        key = Fernet.generate_key()
+        (tmp_path / "secret.key").write_bytes(key)
+        cipher = crypto.encrypt("keep-key")
+        assert (tmp_path / "secret.key").read_bytes() == key
+        assert crypto.decrypt(cipher) == "keep-key"
 
     def test_different_data_dirs_isolated(self, tmp_path, monkeypatch):
         """不同 data 目录的主密钥应不同，互相无法解密。"""

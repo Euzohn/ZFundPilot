@@ -60,7 +60,7 @@ class PatchAutoInvest:
     用法:
         with PatchAutoInvest(datetime(2026, 1, 5, 9, 0, tzinfo=_TZ)) as env:
             result = execute_plan(plan, manual=True)
-            tx = env.mock_db.add_transaction.call_args[0][0]
+            tx = env.mock_db.insert_transaction.call_args[0][1]
     """
 
     def __init__(self, mock_dt: datetime):
@@ -77,8 +77,8 @@ class PatchAutoInvest:
 
         db_patch = patch("zfundpilot.auto_invest.db")
         self.mock_db = db_patch.start()
-        self.mock_db.add_transaction.return_value = 42
-        self.mock_db.update_auto_invest_plan = MagicMock()
+        self.mock_db.insert_transaction.return_value = 42
+        self.mock_db.update_auto_invest_plan_conn = MagicMock()
         self._patches.append(db_patch)
 
         fee_patch = patch("zfundpilot.auto_invest.fetch_fund")

@@ -211,24 +211,53 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+class _UncompressedBudget:
+    """整包解压总量预算：按实际读出的解压字节扣减，超限即停。
+
+    ZIP 头声明的 ``file_size`` 可被恶意构造低报，总量防线不能只信任头信息；
+    头信息合计仅作预检，实际解压字节才是强制上限的依据。
+    """
+
+    def __init__(self, limit: int) -> None:
+        self.remaining = limit
+
+    def consume(self, size: int) -> None:
+        self.remaining -= size
+        if self.remaining < 0:
+            raise BackupValidationError(
+                "file_too_large", "备份解压后总大小超出限制")
+
+
 def _read_limited(zf: zipfile.ZipFile, info: zipfile.ZipInfo,
-                  limit: int) -> bytes:
-    """分块读取并限制解压后大小，防止 ZIP 炸弹。"""
+                  limit: int,
+                  budget: _UncompressedBudget | None = None) -> bytes:
+    """分块读取并限制解压后大小，防止 ZIP 炸弹。
+
+    ``budget`` 为整包解压总量预算（可选），按实际解压字节累计扣减。
+    """
     if info.file_size > limit:
         raise BackupValidationError(
             "file_too_large", f"备份条目过大：{info.filename}")
-    with zf.open(info) as fh:
-        parts: list[bytes] = []
-        total = 0
-        while True:
-            chunk = fh.read(64 * 1024)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > limit:
-                raise BackupValidationError(
-                    "file_too_large", f"备份条目解压后过大：{info.filename}")
-            parts.append(chunk)
+    try:
+        with zf.open(info) as fh:
+            parts: list[bytes] = []
+            total = 0
+            while True:
+                chunk = fh.read(64 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > limit:
+                    raise BackupValidationError(
+                        "file_too_large", f"备份条目解压后过大：{info.filename}")
+                if budget is not None:
+                    budget.consume(len(chunk))
+                parts.append(chunk)
+    except zipfile.BadZipFile as exc:
+        # 头声明与实际压缩流不符（如低报 file_size）或数据损坏：结构化拒绝。
+        raise BackupValidationError(
+            "invalid_zip", f"备份条目解压失败，文件可能已损坏：{info.filename}",
+        ) from exc
     return b"".join(parts)
 
 
@@ -289,7 +318,8 @@ def export_backup_zip() -> bytes:
     return buf.getvalue()
 
 
-def _load_manifest(zf: zipfile.ZipFile) -> dict[str, Any]:
+def _load_manifest(zf: zipfile.ZipFile,
+                   budget: _UncompressedBudget | None = None) -> dict[str, Any]:
     try:
         info = zf.getinfo(MANIFEST_NAME)
     except KeyError as exc:
@@ -297,7 +327,7 @@ def _load_manifest(zf: zipfile.ZipFile) -> dict[str, Any]:
             "missing_manifest",
             "备份缺少 manifest.json，可能是旧版备份或文件损坏",
         ) from exc
-    raw = _read_limited(zf, info, 4 * 1024 * 1024)
+    raw = _read_limited(zf, info, 4 * 1024 * 1024, budget)
     try:
         manifest = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -334,6 +364,8 @@ def _zip_members(zf: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
         if info.flag_bits & 0x1:
             raise BackupValidationError(
                 "encrypted", "不支持加密 ZIP，请导出未加密备份")
+        # 头声明合计仅作预检：file_size 可被低报，实际总量上限由
+        # _read_limited 按真实解压字节累计强制（见 _UncompressedBudget）。
         total += info.file_size
         if total > MAX_UNCOMPRESSED_BYTES:
             raise BackupValidationError(
@@ -407,7 +439,9 @@ def _inspect(data: bytes) -> tuple[Preview, dict[str, list[dict[str, Any]]]]:
 
     with zf:
         members = _zip_members(zf)
-        manifest = _load_manifest(zf)
+        # 总量上限按实际解压字节强制，不信任 ZIP 头声明值。
+        budget = _UncompressedBudget(MAX_UNCOMPRESSED_BYTES)
+        manifest = _load_manifest(zf, budget)
         tables_meta = manifest.get("tables")
         if not isinstance(tables_meta, dict):
             raise BackupValidationError(
@@ -441,7 +475,7 @@ def _inspect(data: bytes) -> tuple[Preview, dict[str, list[dict[str, Any]]]]:
             if info is None:
                 raise BackupValidationError(
                     "missing_table", f"备份缺少数据文件：{path}")
-            raw = _read_limited(zf, info, MAX_SINGLE_FILE_BYTES)
+            raw = _read_limited(zf, info, MAX_SINGLE_FILE_BYTES, budget)
             expected = meta.get("sha256")
             if not isinstance(expected, str) or not SHA256_RE.fullmatch(expected):
                 raise BackupValidationError(

@@ -490,6 +490,28 @@ class TestPrecheckReconciliation:
         assert item["fund_resolution"]["fund_name"] == "易方达蓝筹精选"
         assert item["issues"] == []
 
+    def test_reconcile_invalid_market_value(self, client):
+        """非数字 market_value 必须条目级报错，而不是下游 float() 抛 500。"""
+        r = _precheck_rec(client, {"holdings": [
+            {"fund_code": "005827", "shares": 10.0,
+             "market_value": "--"}]})
+        assert r.status_code == 200
+        data = r.json()["data"]
+        errs = data["fund_resolution_errors"]
+        assert any(e.get("reason") == "invalid_market_value" for e in errs)
+        assert not [i for i in data["items"] if i["fund_code"] == "005827"]
+
+    def test_reconcile_invalid_market_value_suppresses_maybe_sold(self, client):
+        _record_holding()
+        r = _precheck_rec(client, {"channel": "支付宝", "holdings": [
+            {"fund_code": "005827", "shares": 100.0,
+             "market_value": "未知"}]})
+        data = r.json()["data"]
+        assert data["fund_resolution_errors"]
+        assert not [i for i in data["items"]
+                    if i["fund_code"] == "005827"
+                    and i["status"] == "maybe_sold"]
+
     def test_reconcile_audit_recorded(self, client):
         with db.get_connection() as conn:
             before = conn.execute(
@@ -507,3 +529,34 @@ class TestPrecheckReconciliation:
         r = _precheck_rec(client, {"holdings": ["str"]})
         data = r.json()["data"]
         assert len(data["fund_resolution_errors"]) == 1
+
+
+class TestPrecheckReconciliationMarketValue:
+    """market_value 与 shares 同口径：可省略；提供时必须是有限非负数字。
+
+    服务层直测，覆盖 NaN/Infinity/布尔等无法经标准 JSON 传输的非法值。
+    """
+
+    @pytest.mark.parametrize("bad", [
+        "--", "12.5", True, -1.0, float("inf"), float("nan"),
+    ])
+    def test_invalid_market_value_rejected(self, temp_db, bad):
+        result = transaction_service.precheck_reconciliation({"holdings": [
+            {"fund_code": "005827", "shares": 10.0, "market_value": bad}]})
+        errs = result["fund_resolution_errors"]
+        assert len(errs) == 1
+        assert errs[0]["reason"] == "invalid_market_value"
+        assert errs[0]["resolved_code"] == "005827"
+        assert result["items"] == []
+
+    def test_missing_market_value_allowed(self, temp_db):
+        result = transaction_service.precheck_reconciliation({"holdings": [
+            {"fund_code": "005827", "shares": 10.0}]})
+        assert result["fund_resolution_errors"] == []
+        assert len(result["items"]) == 1
+
+    def test_zero_market_value_allowed(self, temp_db):
+        result = transaction_service.precheck_reconciliation({"holdings": [
+            {"fund_code": "005827", "shares": 10.0, "market_value": 0}]})
+        assert result["fund_resolution_errors"] == []
+        assert len(result["items"]) == 1

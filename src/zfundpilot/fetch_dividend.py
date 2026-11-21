@@ -60,8 +60,16 @@ class DividendEvent:
     already_recorded: bool = False  # 是否已有对应渠道的交易
 
 
-def _fetch_fund_dividends(fund_code: str) -> list[dict]:
-    """获取单只基金的完整分红历史（带缓存）。失败返回空列表。"""
+def _fetch_fund_dividends(fund_code: str) -> list[dict] | None:
+    """获取单只基金的完整分红历史（带缓存）。
+
+    返回值区分「失败」与「真正无分红」：
+    - None：抓取失败且无可用缓存。调用方不得把该基金视为「已成功抓取」，
+      否则瞬时失败会被当成「无分红」，_cleanup_stale_alerts 会误把其
+      pending 提醒全部 ignored（ignored 后不再重建，提醒永久丢失）。
+    - []：上游确认无分红记录（空表/空响应）。
+    - 有过期缓存时优先回退 stale 数据（含空响应路径），避免瞬时抖动。
+    """
     now = time.time()
     cached = _DIV_CACHE.get(fund_code)
     if cached and now - cached["ts"] < _DIV_CACHE_TTL:
@@ -73,6 +81,9 @@ def _fetch_fund_dividends(fund_code: str) -> list[dict]:
         with ak_compat.serialized():
             df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="分红送配详情")
         if df is None or df.empty:
+            # 空响应：优先回退过期缓存，避免瞬时空响应被当成「无分红」
+            if cached:
+                return cached["data"]
             return []
         records = df.to_dict("records")
         _DIV_CACHE[fund_code] = {"ts": now, "data": records}
@@ -80,12 +91,15 @@ def _fetch_fund_dividends(fund_code: str) -> list[dict]:
     except Exception as e:
         msg = str(e)
         if "no text parsed" in msg or "No tables found" in msg:
+            # 上游明确返回空表：该基金无分红记录，属「真正空」而非失败
             logger.debug("[fetch_dividend] %s 无分红记录（空响应）", fund_code)
-        else:
-            logger.warning("[fetch_dividend] 获取 %s 分红数据失败: %s", fund_code, e)
+            if cached:
+                return cached["data"]
+            return []
+        logger.warning("[fetch_dividend] 获取 %s 分红数据失败: %s", fund_code, e)
         if cached:
             return cached["data"]
-        return []
+        return None
 
 
 def _parse_per_share(raw) -> float | None:
@@ -257,6 +271,11 @@ def check_dividends() -> list[DividendEvent]:
                 rows = future.result()
             except Exception:
                 logger.debug("分红数据拉取失败 %s", code, exc_info=True)
+                continue
+            if rows is None:
+                # 抓取失败（无缓存）：不计入 fetched_funds，保留其 pending
+                # 提醒交由 90 天兜底处理，避免瞬时失败误清理分红提醒
+                logger.debug("[fetch_dividend] %s 分红抓取失败，本轮跳过其提醒清理", code)
                 continue
             fetched_funds.add(code)
             if not rows:

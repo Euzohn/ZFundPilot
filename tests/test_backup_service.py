@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import struct
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -55,6 +56,25 @@ def _mutate_manifest(payload: bytes, mutate) -> bytes:
         for key, value in files.items():
             zf.writestr(key, value)
     return buf.getvalue()
+
+
+def _understate_sizes(payload: bytes, declared: int) -> bytes:
+    """把各条目中央目录与本地头声明的解压大小低报为 declared（模拟恶意构造）。"""
+    data = bytearray(payload)
+    eocd = data.rfind(b"PK\x05\x06")
+    assert eocd >= 0
+    count = struct.unpack_from("<H", data, eocd + 10)[0]
+    pos = struct.unpack_from("<I", data, eocd + 16)[0]
+    for _ in range(count):
+        assert data[pos:pos + 4] == b"PK\x01\x02"
+        fname_len, extra_len, comment_len = struct.unpack_from(
+            "<HHH", data, pos + 28)
+        local = struct.unpack_from("<I", data, pos + 42)[0]
+        struct.pack_into("<I", data, pos + 24, declared)
+        assert data[local:local + 4] == b"PK\x03\x04"
+        struct.pack_into("<I", data, local + 22, declared)
+        pos += 46 + fname_len + extra_len + comment_len
+    return bytes(data)
 
 
 class TestExport:
@@ -225,3 +245,66 @@ class TestRestore:
                 bs.restore_backup(payload)
         finally:
             bs._restore_guard.release()
+
+
+class TestZipUncompressedLimits:
+    def test_header_total_precheck(self, temp_env, monkeypatch):
+        """头声明合计超限：预检即拒绝。"""
+        monkeypatch.setattr(bs, "MAX_UNCOMPRESSED_BYTES", 100)
+        payload = bs.export_backup_zip()
+        with pytest.raises(bs.BackupValidationError) as exc:
+            bs.preview_backup(payload)
+        assert exc.value.code == "file_too_large"
+
+    def test_underreported_sizes_cannot_bypass(self, temp_env, monkeypatch):
+        """低报 ZIP 头 file_size 不能绕过总量防线：必须被结构化拒绝。
+
+        头合计（14×1 字节）远低于预算，预检放行；真实解压字节远超预算。
+        不同 zipfile 实现下表现为预算超限或压缩流校验失败，均不得放行。
+        """
+        monkeypatch.setattr(bs, "MAX_UNCOMPRESSED_BYTES", 1024)
+        payload = _understate_sizes(bs.export_backup_zip(), 1)
+        with pytest.raises(bs.BackupValidationError) as exc:
+            bs.preview_backup(payload)
+        assert exc.value.code in ("file_too_large", "invalid_zip")
+
+    def test_read_limited_budget_counts_actual_bytes(self):
+        """总量预算按实际解压字节累计，头声明低报不影响强制上限。"""
+        actual = b"x" * 3000
+        info = zipfile.ZipInfo("tables/funds.jsonl")
+        info.file_size = 10  # 恶意低报，单条目预检放行
+
+        class _FakeZip:
+            def open(self, _info):
+                return io.BytesIO(actual)
+
+        budget = bs._UncompressedBudget(1024)
+        with pytest.raises(bs.BackupValidationError) as exc:
+            bs._read_limited(
+                _FakeZip(), info, bs.MAX_SINGLE_FILE_BYTES, budget)
+        assert exc.value.code == "file_too_large"
+        assert "总大小" in exc.value.message
+
+    def test_budget_accumulates_across_entries(self):
+        """预算跨条目累计：单条目不超限但合计超限仍拒绝。"""
+        info = zipfile.ZipInfo("tables/funds.jsonl")
+        info.file_size = 600
+
+        class _FakeZip:
+            def open(self, _info):
+                return io.BytesIO(b"x" * 600)
+
+        budget = bs._UncompressedBudget(1024)
+        bs._read_limited(_FakeZip(), info, bs.MAX_SINGLE_FILE_BYTES, budget)
+        assert budget.remaining == 424
+        with pytest.raises(bs.BackupValidationError) as exc:
+            bs._read_limited(
+                _FakeZip(), info, bs.MAX_SINGLE_FILE_BYTES, budget)
+        assert exc.value.code == "file_too_large"
+
+    def test_corrupt_entry_stream_is_structured_error(self, temp_env):
+        """条目压缩流损坏（如低报大小触发 CRC 失败）返回结构化校验错误。"""
+        payload = _understate_sizes(bs.export_backup_zip(), 1)
+        with pytest.raises(bs.BackupValidationError) as exc:
+            bs.preview_backup(payload)
+        assert exc.value.code in ("invalid_zip", "file_too_large")

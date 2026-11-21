@@ -240,11 +240,21 @@ def start_refresh(principal: Any, *, fund_codes: object,
 
         nav_update_state.update({
             "running": True, "total": len(codes), "done": 0,
-            "current": "", "phase": "", "error": "",
+            "current": "", "phase": "", "error": "", "results": [],
         })
         _current_job_id = job_id
 
-    _spawn(lambda: _run_job(job_id, codes, principal))
+    try:
+        _spawn(lambda: _run_job(job_id, codes, principal))
+    except BaseException as exc:
+        # spawn 失败（如线程资源耗尽）：回滚运行态并标记任务失败，否则
+        # running 永久为 True，后续网页/调度器/Agent 刷新全部被 busy 阻塞。
+        with nav_update_lock:
+            nav_update_state.update({
+                "running": False, "current": "", "phase": ""})
+            _current_job_id = None
+        _mark_spawn_failed(job_id, JOB_TYPE, principal, exc)
+        raise
     return RefreshResult(202, "queued", "刷新任务已创建", data, replayed=False)
 
 
@@ -279,6 +289,25 @@ def _replay(conn: sqlite3.Connection, principal: Any, key_hash: str,
 def _job_audit_action(job_type: str, suffix: str) -> str:
     prefix = "dca_backtest" if job_type == BACKTEST_JOB_TYPE else "data_refresh"
     return f"{prefix}_{suffix}"
+
+
+def _mark_spawn_failed(job_id: int, job_type: str, principal: Any,
+                       exc: BaseException) -> None:
+    """spawn 失败后 best-effort 标记任务失败；不掩盖原始异常。
+
+    任务不会进入后台执行（_run_job/_run_backtest_job 的失败兜底不会触发），
+    创建方必须自行落终态，避免任务行永久 queued、同幂等键重放死任务。
+    """
+    try:
+        with db.get_connection(write=True) as conn:
+            db.update_refresh_job(
+                conn, job_id, status="failed", error=str(exc),
+                result_json=json.dumps({"ok": False}, ensure_ascii=False),
+                updated_at=_now().isoformat())
+            _audit(conn, principal, None, _job_audit_action(job_type, "failed"),
+                   {"job_id": job_id, "error": str(exc)[:200]})
+    except Exception:  # noqa: BLE001
+        pass  # 回滚写入失败不应掩盖 spawn 的原始异常
 
 
 def _backtest_date(value: object, field_name: str) -> str:
@@ -440,7 +469,14 @@ def start_backtest(principal: Any, *, params: object,
             _backtest_gate.release()
             raise
 
-    _spawn(lambda: _run_backtest_job(job_id, clean, principal))
+    try:
+        _spawn(lambda: _run_backtest_job(job_id, clean, principal))
+    except BaseException as exc:
+        # spawn 失败：归还并发名额并标记任务失败，否则名额泄漏，
+        # 两次失败后回测永久 429（_run_backtest_job 的 finally 不会执行）。
+        _backtest_gate.release()
+        _mark_spawn_failed(job_id, BACKTEST_JOB_TYPE, principal, exc)
+        raise
     return RefreshResult(202, "queued", "回测任务已创建", data, replayed=False)
 
 

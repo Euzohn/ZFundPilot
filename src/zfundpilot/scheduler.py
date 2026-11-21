@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-import re
 import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -166,10 +165,55 @@ def _run_nav_update() -> None:
 
 
 def _convert_dow(dow: str) -> str:
-    """将标准 cron day_of_week 数值（0=周日, 1=周一）转为 APScheduler 编号（0=周一, 6=周日）。"""
-    def _shift(m: re.Match) -> str:
-        return str((int(m.group(0)) - 1) % 7)
-    return re.sub(r'(?<!/)\d+', _shift, dow)
+    """将标准 cron day_of_week（0/7=周日, 1=周一）转为 APScheduler 编号（0=周一, 6=周日）。
+
+    不能逐数字做 (n-1)%7 平移：以周日开头的范围/步进会变成 APScheduler
+    非法表达式（'0-6'→'6-5'、'0/2'→'6/2'，CronTrigger 直接抛 ValueError，
+    配在 NAV_CRON 里会导致启动失败）。因此先解析成星期集合（展开
+    range/step，0 与 7 均为周日），再映射为 APScheduler 编号并压缩成
+    连续区间输出（必要时多段 list）。
+    """
+    days: set[int] = set()
+    for part in dow.split(","):
+        part = part.strip()
+        if not part:
+            raise ValueError(f"无效的 day_of_week: {dow!r}")
+        body = part
+        step = 1
+        if "/" in part:
+            body, step_str = part.split("/", 1)
+            step = int(step_str)
+            if step <= 0:
+                raise ValueError(f"无效的 day_of_week 步进: {dow!r}")
+        if body == "*":
+            start, end = 0, 7
+        elif "-" in body:
+            a, b = body.split("-", 1)
+            start, end = int(a), int(b)
+        else:
+            start = int(body)
+            # 带步进时单个数字语义为「该日起至周末」，如 0/2 → 0,2,4,6
+            end = 7 if "/" in part else start
+        if not 0 <= start <= end <= 7:
+            raise ValueError(f"无效的 day_of_week 范围: {dow!r}")
+        days.update(range(start, end + 1, step))
+    if not days:
+        raise ValueError(f"无效的 day_of_week: {dow!r}")
+    # 0/7 均为周日；映射到 APScheduler 编号（0=周一 … 6=周日）
+    aps = sorted({(d % 7 - 1) % 7 for d in days})
+    if len(aps) == 7:
+        return "*"
+    # 压缩连续区间，如 [1,3,5,6] → "1,3,5-6"
+    segments: list[str] = []
+    start = prev = aps[0]
+    for n in aps[1:]:
+        if n == prev + 1:
+            prev = n
+            continue
+        segments.append(str(start) if start == prev else f"{start}-{prev}")
+        start = prev = n
+    segments.append(str(start) if start == prev else f"{start}-{prev}")
+    return ",".join(segments)
 
 
 def _parse_cron(expr: str) -> CronTrigger:
@@ -542,16 +586,28 @@ AGENT_OPERATIONS_PURGE_GRACE_DAYS = 30
 # dismissed 通知保留期：30 天（按创建时间起算），read 永久保留。
 NOTIFICATIONS_PURGE_DAYS = 30
 
+# 审计日志保留期：90 天（与分红提醒兜底窗口一致）。
+AUDIT_LOG_RETENTION_DAYS = 90
+
 
 def purge_agent_operations_daily() -> int:
-    """清理过期较久的幂等操作记录（agent_operations），启动与每日任务共用。
+    """清理过期较久的幂等操作记录（agent_operations）与审计日志，启动与每日任务共用。
 
-    只删除 expires_at 已过期且早于「now − 30 天宽限」的记录；TTL 内的重放/
-    拒绝语义不受影响。失败由调用方决定是否吞掉（每日任务吞掉并记日志）。
+    幂等操作只删除 expires_at 已过期且早于「now − 30 天宽限」的记录；TTL 内的
+    重放/拒绝语义不受影响。审计日志保留 90 天（db.purge_audit_logs，B4 契约），
+    其失败不影响幂等记录清理。失败由调用方决定是否吞掉（每日任务吞掉并记日志）。
     """
     now = datetime.now(config.TIMEZONE)
     cutoff = (now - timedelta(days=AGENT_OPERATIONS_PURGE_GRACE_DAYS)).isoformat()
-    return db.purge_agent_operations(cutoff)
+    removed = db.purge_agent_operations(cutoff)
+    try:
+        purged = db.purge_audit_logs(AUDIT_LOG_RETENTION_DAYS)
+        if purged:
+            logger.info("[scheduler] 清理 %d 条超过 %d 天的审计日志",
+                        purged, AUDIT_LOG_RETENTION_DAYS)
+    except Exception:
+        logger.exception("[scheduler] 清理审计日志异常")
+    return removed
 
 
 def purge_notifications_daily() -> int:
@@ -638,6 +694,24 @@ def shutdown_scheduler() -> None:
         _scheduler.shutdown(wait=False)
         _scheduler = None
         logger.info("[scheduler] 调度器已停止")
+
+
+def reset_scheduler() -> None:
+    """安全清空调度器引用，供初始化失败后降级重建使用。
+
+    init_scheduler 可能在创建实例后、start 之前抛错（如 cron 非法），
+    此时实例未运行，shutdown_scheduler 会抛 SchedulerNotRunningError。
+    本方法容忍未启动/半初始化实例，确保引用被清空、可重新 init。
+    """
+    global _scheduler
+    if _scheduler is None:
+        return
+    try:
+        _scheduler.shutdown(wait=False)
+    except Exception:
+        # 未 start 的实例 shutdown 会抛错，忽略即可
+        logger.debug("[scheduler] 停止半初始化调度器异常（忽略）", exc_info=True)
+    _scheduler = None
 
 
 def _get_enabled() -> bool:

@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -75,3 +76,47 @@ class TestPurgeAgentOperations:
         removed = scheduler.purge_agent_operations_daily()
         assert removed == 1
         assert _keys() == ["just_under"]
+
+
+class TestAuditLogPurge:
+    """每日清理同时调用 db.purge_audit_logs(90)（B4 契约）。
+
+    B4 与本修复并行开发：db.purge_audit_logs 缺席时用 mock 钉住调用契约
+    （raising=False），合入后集成用例自动生效。
+    """
+
+    def test_daily_purge_calls_audit_logs_90(self, temp_db, monkeypatch):
+        mock_purge = MagicMock(return_value=3)
+        monkeypatch.setattr(db, "purge_audit_logs", mock_purge, raising=False)
+        scheduler.purge_agent_operations_daily()
+        mock_purge.assert_called_once_with(90)
+
+    def test_audit_purge_failure_does_not_break_ops_purge(self, temp_db, monkeypatch):
+        """审计清理失败（含 B4 未合入时的 AttributeError）不影响幂等记录清理。"""
+        now = datetime.now(config.TIMEZONE)
+        _insert("old", expires_at=(now - timedelta(days=60)).isoformat(),
+                created_at=(now - timedelta(days=150)).isoformat())
+        monkeypatch.setattr(
+            db, "purge_audit_logs",
+            MagicMock(side_effect=RuntimeError("boom")), raising=False)
+        removed = scheduler.purge_agent_operations_daily()
+        assert removed == 1
+        assert _keys() == []
+
+    def test_audit_purge_integration_when_available(self, temp_db):
+        """B4 合入后：真实 purge_audit_logs 只删 90 天前的审计行。"""
+        if not hasattr(db, "purge_audit_logs"):
+            pytest.skip("db.purge_audit_logs 尚未由 B4 提供")
+        now = datetime.now(config.TIMEZONE)
+        with db.get_connection(write=True) as conn:
+            conn.execute(
+                "INSERT INTO audit_log(ts, action) VALUES(?, ?)",
+                ((now - timedelta(days=120)).isoformat(), "old_action"))
+            conn.execute(
+                "INSERT INTO audit_log(ts, action) VALUES(?, ?)",
+                ((now - timedelta(days=10)).isoformat(), "recent_action"))
+        scheduler.purge_agent_operations_daily()
+        with db.get_connection() as conn:
+            actions = [r["action"] for r in
+                       conn.execute("SELECT action FROM audit_log")]
+        assert actions == ["recent_action"]

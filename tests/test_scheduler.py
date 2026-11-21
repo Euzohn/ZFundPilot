@@ -9,11 +9,13 @@
 6. _bootstrap_risk_levels 仅补全 risk_level 为空的基金
 7. 分红检测启动引导的崩溃循环防护（落盘「今日已尝试」）
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
+
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from zfundpilot import config, db, scheduler
 from zfundpilot.scheduler import _convert_dow, _parse_cron
@@ -121,11 +123,19 @@ class TestRefreshFundMetadata:
 
 
 class TestConvertDow:
-    """验证 _convert_dow 数值转换。"""
+    """验证 _convert_dow：先解析成星期集合，再输出 APScheduler 合法表达式。
+
+    旧实现逐数字 (n-1)%7 平移，把 '0-6'→'6-5'、'0/2'→'6/2' 等合法标准
+    cron 转成 CronTrigger 拒绝的非法表达式；此处钉住正确转换。
+    """
 
     def test_single_sunday(self):
         """0（周日）→ 6（APScheduler 周日）。"""
         assert _convert_dow("0") == "6"
+
+    def test_single_sunday_7(self):
+        """7 也是周日 → 6。"""
+        assert _convert_dow("7") == "6"
 
     def test_single_monday(self):
         """1（周一）→ 0（APScheduler 周一）。"""
@@ -143,17 +153,81 @@ class TestConvertDow:
         """1,3,5 → 0,2,4。"""
         assert _convert_dow("1,3,5") == "0,2,4"
 
-    def test_step_not_converted(self):
-        """*/2 的步进值 2 不应被转换。"""
-        assert _convert_dow("*/2") == "*/2"
+    def test_full_week_range(self):
+        """0-6（每天）→ 全集 '*'，不得产出非法的 '6-5'。"""
+        assert _convert_dow("0-6") == "*"
+
+    def test_star_with_step(self):
+        """*/2 → 周日/二/四/六 → APScheduler '1,3,5-6'（步进值不被平移）。"""
+        assert _convert_dow("*/2") == "1,3,5-6"
 
     def test_range_with_step(self):
-        """0-6/2 → 6-5/2（日值转换，步进值保留）。"""
-        assert _convert_dow("0-6/2") == "6-5/2"
+        """0-6/2 → 与 */2 同集合；旧实现产出非法 '6-5/2'。"""
+        assert _convert_dow("0-6/2") == "1,3,5-6"
 
     def test_single_with_step(self):
-        """0/2 → 6/2（日值转换，步进值保留）。"""
-        assert _convert_dow("0/2") == "6/2"
+        """0/2 → 0,2,4,6（周日/二/四/六）；旧实现产出非法 '6/2'。"""
+        assert _convert_dow("0/2") == "1,3,5-6"
+
+    def test_range_cross_sunday(self):
+        """5-7（周五/六/日）→ 4-6。"""
+        assert _convert_dow("5-7") == "4-6"
+
+    def test_dedup_sunday_aliases(self):
+        """0,7 同为周日 → 6。"""
+        assert _convert_dow("0,7") == "6"
+
+    def test_invalid_range_raises(self):
+        with pytest.raises(ValueError):
+            _convert_dow("6-2")
+
+    def test_out_of_range_raises(self):
+        with pytest.raises(ValueError):
+            _convert_dow("8")
+
+
+class TestConvertDowCronTrigger:
+    """转换产物必须被 CronTrigger 接受，且触发星期与标准 cron 语义一致。"""
+
+    @pytest.mark.parametrize("expr", [
+        "0 21 * * 0-6",
+        "0 21 * * 0/2",
+        "0 21 * * */2",
+        "0 21 * * 0-6/2",
+        "0 21 * * 1-5",
+        "0 21 * * 5-7",
+        "0 21 * * 0,7",
+    ])
+    def test_trigger_accepts_converted(self, expr):
+        """旧实现下 0-6 / 0/2 / */2 等会抛 ValueError（启动崩溃）。"""
+        assert _parse_cron(expr) is not None
+
+    def _fire_weekdays(self, expr: str, n: int = 14) -> set[int]:
+        """收集连续 n 次触发的 Python weekday（0=周一 … 6=周日）。"""
+        trigger = _parse_cron(expr)
+        t = datetime(2026, 11, 16, 0, 0, tzinfo=config.TIMEZONE)  # 周一
+        seen: set[int] = set()
+        for _ in range(n):
+            t = trigger.get_next_fire_time(None, t)
+            seen.add(t.weekday())
+            t = t + timedelta(seconds=1)
+        return seen
+
+    def test_every_day_fires_all_week(self):
+        assert self._fire_weekdays("0 21 * * 0-6") == set(range(7))
+
+    def test_step_fires_sun_tue_thu_sat(self):
+        # 标准 cron 0/2 = 周日(0)/二(2)/四(4)/六(6) → weekday {6,1,3,5}
+        assert self._fire_weekdays("0 21 * * 0/2") == {1, 3, 5, 6}
+        assert self._fire_weekdays("0 21 * * */2") == {1, 3, 5, 6}
+        assert self._fire_weekdays("0 21 * * 0-6/2") == {1, 3, 5, 6}
+
+    def test_weekdays_fires_mon_to_fri(self):
+        assert self._fire_weekdays("0 21 * * 1-5") == {0, 1, 2, 3, 4}
+
+    def test_cross_sunday_range(self):
+        # 5-7 = 周五/六/日 → weekday {4,5,6}
+        assert self._fire_weekdays("0 21 * * 5-7") == {4, 5, 6}
 
 
 class TestTimezoneConfig:
@@ -256,3 +330,52 @@ class TestDividendBootstrapCrashGuard:
         monkeypatch.setattr(scheduler, "_run_dividend_check", spy)
         scheduler._bootstrap_dividend_check()
         spy.assert_not_called()
+
+
+class TestResetScheduler:
+    """reset_scheduler：安全清空未启动/运行中的实例，供 lifespan 降级重建。
+
+    init_scheduler 可能在创建实例后、start 之前抛错（如 cron 非法），
+    此时 shutdown_scheduler 会抛 SchedulerNotRunningError；
+    reset_scheduler 必须容忍半初始化实例并清空引用。
+    """
+
+    def test_reset_none_is_noop(self, monkeypatch):
+        monkeypatch.setattr(scheduler, "_scheduler", None)
+        scheduler.reset_scheduler()
+        assert scheduler._scheduler is None
+
+    def test_reset_unstarted_instance(self, monkeypatch):
+        inst = BackgroundScheduler(timezone=config.TIMEZONE_STR)
+        monkeypatch.setattr(scheduler, "_scheduler", inst)
+        scheduler.reset_scheduler()  # 不得抛 SchedulerNotRunningError
+        assert scheduler._scheduler is None
+
+    def test_reset_running_instance_stops_it(self, monkeypatch):
+        inst = BackgroundScheduler(timezone=config.TIMEZONE_STR)
+        inst.start()
+        monkeypatch.setattr(scheduler, "_scheduler", inst)
+        try:
+            scheduler.reset_scheduler()
+            assert scheduler._scheduler is None
+            assert not inst.running
+        finally:
+            if inst.running:
+                inst.shutdown(wait=False)
+
+    def test_init_rebuilds_after_reset(self, temp_db, monkeypatch):
+        """reset 后可重新 init（降级路径的核心契约）。"""
+        monkeypatch.setattr(scheduler, "_get_enabled", lambda: False)
+        monkeypatch.setattr(scheduler, "_get_dividend_enabled", lambda: False)
+        monkeypatch.setattr(scheduler, "_bootstrap_auto_invest", lambda: None)
+        monkeypatch.setattr(scheduler, "_bootstrap_risk_levels", lambda: None)
+        # 模拟半初始化：实例已创建但未 start
+        inst = BackgroundScheduler(timezone=config.TIMEZONE_STR)
+        monkeypatch.setattr(scheduler, "_scheduler", inst)
+        scheduler.reset_scheduler()
+        try:
+            scheduler.init_scheduler()
+            assert scheduler._scheduler is not None
+            assert scheduler._scheduler.running
+        finally:
+            scheduler.shutdown_scheduler()

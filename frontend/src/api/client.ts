@@ -70,6 +70,36 @@ function newIdempotencyKey(): string {
   return `web-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
 }
 
+// 解析后端错误体（FastAPI {"detail": ...} 或 {"error": {message, code}}），
+// 返回附带 status/body/code 的 Error，供各请求路径统一复用。
+async function apiErrorFromResponse(res: Response): Promise<Error & { code?: string; status?: number; body?: unknown }> {
+  const text = await res.text().catch(() => res.statusText)
+  let msg = text || `${res.status}`
+  let code: string | undefined
+  let body: unknown
+  try {
+    const j = JSON.parse(text)
+    body = j
+    const apiError = j?.error
+    const detail = j?.detail
+    if (apiError && typeof apiError === "object") {
+      if (typeof apiError.message === "string") msg = apiError.message
+      if (typeof apiError.code === "string") code = apiError.code
+    } else if (detail) {
+      if (typeof detail === "string") msg = detail
+      else if (typeof detail.message === "string") msg = detail.message
+      else msg = JSON.stringify(detail)
+      if (typeof detail?.code === "string") code = detail.code
+    }
+    if (!code && typeof j?.code === "string") code = j.code
+  } catch { /* not json */ }
+  const err = new Error(msg) as Error & { code?: string; status?: number; body?: unknown }
+  err.code = code
+  err.status = res.status
+  err.body = body
+  return err
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const token = getToken()
   const headers: Record<string, string> = { "Content-Type": "application/json" }
@@ -80,34 +110,13 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     headers: { ...headers, ...options?.headers },
   })
 
-  if (res.status === 401) {
+  // 登录接口的 401 表示用户名/密码错误，交给登录页展示错误文案，不触发全局重新登录
+  if (res.status === 401 && url !== "/auth/login") {
     clearToken()
     window.location.reload()
     throw new Error(ERR_401[getCurrentLang()])
   }
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText)
-    let msg = text || `${res.status}`
-    let code: string | undefined
-    try {
-      const j = JSON.parse(text)
-      const apiError = j?.error
-      const detail = j?.detail
-      if (apiError && typeof apiError === "object") {
-        if (typeof apiError.message === "string") msg = apiError.message
-        if (typeof apiError.code === "string") code = apiError.code
-      } else if (detail) {
-        if (typeof detail === "string") msg = detail
-        else if (typeof detail.message === "string") msg = detail.message
-        else msg = JSON.stringify(detail)
-        if (typeof detail?.code === "string") code = detail.code
-      }
-      if (!code && typeof j?.code === "string") code = j.code
-    } catch { /* not json */ }
-    const err = new Error(msg) as Error & { code?: string }
-    err.code = code
-    throw err
-  }
+  if (!res.ok) throw await apiErrorFromResponse(res)
   return res.json()
 }
 
@@ -116,7 +125,12 @@ async function downloadWithAuth(url: string, filename: string) {
   const headers: Record<string, string> = {}
   if (token) headers["Authorization"] = `Bearer ${token}`
   const res = await fetch(`${BASE}${url}`, { headers })
-  if (!res.ok) throw new Error(await res.text().catch(() => res.statusText))
+  if (res.status === 401) {
+    clearToken()
+    window.location.reload()
+    throw new Error(ERR_401[getCurrentLang()])
+  }
+  if (!res.ok) throw await apiErrorFromResponse(res)
   const blob = await res.blob()
   const a = document.createElement("a")
   a.href = URL.createObjectURL(blob)
@@ -248,7 +262,7 @@ export const api = {
       throw new Error(ERR_401[getCurrentLang()])
     }
     if (!res.ok) {
-      throw new Error(await res.text().catch(() => res.statusText))
+      throw await apiErrorFromResponse(res)
     }
 
     const reader = res.body!.getReader()
@@ -314,7 +328,7 @@ export const api = {
   getFunds: () => request<FundMeta[]>("/funds"),
   getFund: (code: string) => request<FundMeta>(`/funds/${encodeURIComponent(code)}`),
   fetchFundMeta: (code: string) =>
-    request<FundMeta>(`/funds/${code}/fetch`, { method: "POST" }),
+    request<FundMeta>(`/funds/${encodeURIComponent(code)}/fetch`, { method: "POST" }),
 
   // Fee rates
   getFundFeeRates: (code: string) =>
@@ -395,7 +409,7 @@ export const api = {
       window.location.reload()
       throw new Error(ERR_401[getCurrentLang()])
     }
-    if (!res.ok) throw new Error(await res.text().catch(() => res.statusText))
+    if (!res.ok) throw await apiErrorFromResponse(res)
     return res.json()
   },
   resetSectors: () => request<{ reset: number }>("/sectors/reset", { method: "POST" }),
@@ -428,7 +442,7 @@ export const api = {
       window.location.reload()
       throw new Error(ERR_401[getCurrentLang()])
     }
-    if (!res.ok) throw new Error(await res.text().catch(() => res.statusText))
+    if (!res.ok) throw await apiErrorFromResponse(res)
     return res.json()
   },
 

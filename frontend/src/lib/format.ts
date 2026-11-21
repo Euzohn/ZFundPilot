@@ -32,7 +32,8 @@ export function formatLargeCN(v: number | null | undefined): string {
   const yi = v / 10000
   if (lang === "zh") return `${yi.toFixed(2)}亿`
   if (yi >= 10000) return `${(yi / 10000).toFixed(2)}T`
-  if (yi >= 100) return `${yi.toFixed(2)}B`
+  // 1B = 1e9 元 = 10 亿，故 B 值为 yi / 10
+  if (yi >= 100) return `${(yi / 10).toFixed(2)}B`
   return `${(yi * 100).toFixed(2)}M`
 }
 
@@ -70,21 +71,24 @@ const RELATIVE_TIME_EN = {
  * 后端存的是 UTC（datetime('now')），格式 "YYYY-MM-DD HH:MM:SS"
  */
 export function formatRelativeTime(iso: string): string {
-  const t = new Date(iso.replace(" ", "T") + "Z").getTime()
+  const d = new Date(iso.replace(" ", "T") + "Z")
+  const t = d.getTime()
   if (isNaN(t)) return ""
-  return relativeTimeFromDiff(Date.now() - t, iso)
+  return relativeTimeFromDiff(Date.now() - t, d)
 }
 
 /**
  * 相对时间格式化（带时区的 ISO 串，如 notifications.created_at "…+08:00"）。
  */
 export function formatRelativeTimeTz(iso: string): string {
-  const t = new Date(iso).getTime()
+  const d = new Date(iso)
+  const t = d.getTime()
   if (isNaN(t)) return ""
-  return relativeTimeFromDiff(Date.now() - t, iso)
+  return relativeTimeFromDiff(Date.now() - t, d)
 }
 
-function relativeTimeFromDiff(diff: number, iso: string): string {
+// 入口已按各自语义解析好时间，回退的月/日展示直接复用，避免二次解析口径不一致
+function relativeTimeFromDiff(diff: number, d: Date): string {
   const min = Math.floor(diff / 60000)
   const tr = getCurrentLang() === "zh" ? RELATIVE_TIME_ZH : RELATIVE_TIME_EN
   if (min < 1) return tr.justNow
@@ -94,7 +98,6 @@ function relativeTimeFromDiff(diff: number, iso: string): string {
   const day = Math.floor(hr / 24)
   if (day === 1) return tr.yesterday
   if (day < 30) return tr.daysAgo(day)
-  const d = new Date(iso)
   return tr.monthDay(d.getMonth() + 1, d.getDate())
 }
 

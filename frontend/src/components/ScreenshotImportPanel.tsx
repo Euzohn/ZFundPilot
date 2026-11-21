@@ -25,10 +25,24 @@ function todayStr(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
+// 完整性校验（与手工新增表单一致）：买入需金额，卖出/再投资需份额，分红需金额
+function isTxComplete(it: ParsedTxItem): boolean {
+  const action = it.action || "buy"
+  if (action === "sell" || action === "reinvest") return !!(it.shares && it.shares > 0)
+  return !!(it.amount && it.amount > 0)
+}
+
+// 可导入行：代码合法、非重复且信息完整（残缺行不计入有效数，避免污染流水账）
+function isImportableTx(it: ParsedTxItem): boolean {
+  return it.fund_code != null && /^\d{6}$/.test(it.fund_code) && !it.is_duplicate && isTxComplete(it)
+}
+
 export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPanelProps) {
   const { t } = useLang()
   const channels = getChannels()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // 解析代际号：换图/移除/切换模式/卸载时自增，令在途解析的旧结果失效
+  const parseGenRef = useRef(0)
 
   const [mode, setMode] = useState<Mode>("transactions")
   const [channel, setChannel] = useState(channels[0] || "")
@@ -49,7 +63,11 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
     if (imagePreview) return () => URL.revokeObjectURL(imagePreview)
   }, [imagePreview])
 
+  // 卸载后在途解析结果不再写入状态
+  useEffect(() => () => { parseGenRef.current += 1 }, [])
+
   const resetState = () => {
+    parseGenRef.current += 1
     setImage(null)
     setImagePreview("")
     setParseError("")
@@ -68,6 +86,8 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
       toast.error(t.transactions.screenshotParseFailed.replace("{error}", t.transactions.screenshotNotImage))
       return
     }
+    parseGenRef.current += 1
+    setParsing(false)
     setImage(file)
     setImagePreview(URL.createObjectURL(file))
     setParseError("")
@@ -92,8 +112,16 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
     if (file) handleImageSelect(file)
   }, [t])
 
+  const handleRemoveImage = () => {
+    parseGenRef.current += 1
+    setParsing(false)
+    setImage(null)
+    setImagePreview("")
+  }
+
   const handleParse = async () => {
     if (!image) return
+    const gen = ++parseGenRef.current
     setParsing(true)
     setParseError("")
     setTxItems([])
@@ -101,6 +129,8 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
     setReconcileResult(null)
     try {
       const result = await api.parseScreenshot(image, mode, channel, userHint)
+      // 代际守卫：解析期间换图/移除/切换模式/卸载，则丢弃过期结果
+      if (gen !== parseGenRef.current) return
       if (!result.ok) {
         setParseError(translateBackendError(result.error))
         return
@@ -111,9 +141,10 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
         setHoldingItems(result.items as ParsedHoldingItem[])
       }
     } catch (e) {
+      if (gen !== parseGenRef.current) return
       setParseError(translateBackendError(String(e)))
     } finally {
-      setParsing(false)
+      if (gen === parseGenRef.current) setParsing(false)
     }
   }
 
@@ -155,7 +186,7 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
     let txs: Transaction[] = []
     if (mode === "transactions") {
       txs = txItems
-        .filter(it => it.fund_code && /^\d{6}$/.test(it.fund_code) && !it.is_duplicate)
+        .filter(isImportableTx)
         .map(it => ({
           fund_code: it.fund_code!,
           action: it.action || "buy",
@@ -211,7 +242,7 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
 
   const hasImage = !!image
   const hasParsed = mode === "transactions" ? txItems.length > 0 : holdingItems.length > 0
-  const validTxCount = txItems.filter(it => it.fund_code && /^\d{6}$/.test(it.fund_code) && !it.is_duplicate).length
+  const validTxCount = txItems.filter(isImportableTx).length
   const dupCount = txItems.filter(it => it.is_duplicate).length
   const selectedTxCount = mode === "transactions"
     ? validTxCount
@@ -244,14 +275,14 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
             </div>
             <div className="flex gap-1 rounded-lg border border-border p-0.5">
               <button
-                onClick={() => { setMode("transactions"); setTxItems([]); setReconcileResult(null) }}
+                onClick={() => { parseGenRef.current += 1; setParsing(false); setMode("transactions"); setTxItems([]); setReconcileResult(null) }}
                 className={cn("rounded px-3 py-1 text-xs font-medium transition-colors",
                   mode === "transactions" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}
               >
                 {t.transactions.screenshotModeTx}
               </button>
               <button
-                onClick={() => { setMode("holdings"); setHoldingItems([]); setReconcileResult(null) }}
+                onClick={() => { parseGenRef.current += 1; setParsing(false); setMode("holdings"); setHoldingItems([]); setReconcileResult(null) }}
                 className={cn("rounded px-3 py-1 text-xs font-medium transition-colors",
                   mode === "holdings" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}
               >
@@ -290,7 +321,7 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
                 <div className="relative">
                   <img src={imagePreview} alt="preview" className="max-h-48 rounded-md object-contain" />
                   <button
-                    onClick={() => { setImage(null); setImagePreview("") }}
+                    onClick={handleRemoveImage}
                     title={t.common.remove}
                     className="absolute -top-2 -right-2 rounded-full bg-destructive text-destructive-foreground p-1"
                   >
@@ -359,10 +390,18 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
                   </tr>
                 </thead>
                 <tbody>
-                  {txItems.map((it, idx) => (
+                  {txItems.map((it, idx) => {
+                    const action = it.action || "buy"
+                    // 残缺行提示（不计入有效数，也不会被导入）
+                    const incompleteHint = isTxComplete(it) ? null
+                      : action === "sell" ? t.transactions.sellSharesRequired
+                      : action === "reinvest" ? t.transactions.reinvestSharesRequired
+                      : action === "dividend" ? t.transactions.dividendAmountRequired
+                      : t.transactions.buyAmountRequired
+                    return (
                     <tr key={idx} className={cn("border-t",
                       it.is_duplicate ? "bg-muted/30" : "",
-                      !it.fund_code || !/^\d{6}$/.test(it.fund_code) ? "bg-destructive/5" : "",
+                      !it.fund_code || !/^\d{6}$/.test(it.fund_code) || incompleteHint ? "bg-destructive/5" : "",
                     )}>
                       <td className="px-2 py-1">
                         <div className="flex items-center gap-1">
@@ -372,6 +411,9 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
                           )}
                         </div>
                         <span className="block text-[10px] text-muted-foreground truncate max-w-[120px]">{it.fund_name}</span>
+                        {incompleteHint && (
+                          <span className="block text-[10px] text-destructive max-w-[120px]">{incompleteHint}</span>
+                        )}
                       </td>
                       <td className="px-2 py-1">
                         <select
@@ -421,7 +463,8 @@ export default function ScreenshotImportPanel({ onImported }: ScreenshotImportPa
                         />
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

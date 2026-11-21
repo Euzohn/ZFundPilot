@@ -128,6 +128,67 @@ describe("proposalTitle", () => {
     ).toBe("Delete Sell 005827")
   })
 
+  it("方向全量映射 buy/sell/dividend/reinvest，中英文", () => {
+    mocks.lang = "zh"
+    expect(
+      proposalTitle(
+        planSummary({ operation_type: "add_transaction", action: "dividend", action_label: "现金分红" }),
+      ),
+    ).toBe("分红 005827")
+    expect(
+      proposalTitle(
+        planSummary({ operation_type: "add_transaction", action: "reinvest", action_label: "红利再投资" }),
+      ),
+    ).toBe("再投资 005827")
+    expect(
+      proposalTitle(
+        planSummary({ operation_type: "update_transaction", action: "dividend", action_label: "现金分红" }),
+      ),
+    ).toBe("修改 分红 005827")
+    expect(
+      proposalTitle(
+        planSummary({ operation_type: "delete_transaction", action: "reinvest", action_label: "红利再投资" }),
+      ),
+    ).toBe("删除 再投资 005827")
+    mocks.lang = "en"
+    expect(
+      proposalTitle(
+        planSummary({ operation_type: "add_transaction", action: "dividend", action_label: "现金分红" }),
+      ),
+    ).toBe("Dividend 005827")
+    expect(
+      proposalTitle(
+        planSummary({ operation_type: "add_transaction", action: "reinvest", action_label: "红利再投资" }),
+      ),
+    ).toBe("Reinvest 005827")
+    expect(
+      proposalTitle(planSummary({ operation_type: "update_transaction", action: "sell" })),
+    ).toBe("Update Sell 005827")
+    expect(
+      proposalTitle(
+        planSummary({ operation_type: "delete_transaction", action: "dividend", action_label: "现金分红" }),
+      ),
+    ).toBe("Delete Dividend 005827")
+  })
+
+  it("未知/缺失 action 不默认买入，回退后端标签或原始 code", () => {
+    mocks.lang = "zh"
+    expect(
+      proposalTitle(
+        planSummary({ operation_type: "add_transaction", action: "mystery", action_label: "mystery" }),
+      ),
+    ).toBe("mystery 005827")
+    expect(
+      proposalTitle(
+        planSummary({
+          operation_type: "add_transaction",
+          action: undefined as unknown as string,
+          action_label: "现金分红",
+        }),
+      ),
+    ).toBe("现金分红 005827")
+  })
+
   it("计划类：含计划编号", () => {
     expect(proposalTitle(planSummary({ operation_type: "update_plan", plan_id: 7 }))).toBe(
       "修改定投计划 #7",

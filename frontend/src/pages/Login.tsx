@@ -9,6 +9,7 @@ import { Package, Lock, User } from "lucide-react"
 import { toast } from "sonner"
 import { useLang } from "@/i18n/LanguageContext"
 import FieldError from "@/components/FieldError"
+import { translateBackendError } from "@/lib/backendLabels"
 
 export default function Login({ onSuccess }: { onSuccess: () => void }) {
   const { t } = useLang()
@@ -31,7 +32,11 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
       toast.success(t.login.loginSuccess)
       onSuccess()
     } catch (e) {
-      toast.error(`${t.login.loginFailed}: ${e}`)
+      // F-A 已豁免 /auth/login 的 401 全局刷新，这里能正常展示失败文案
+      const msg = translateBackendError(e instanceof Error ? e.message : String(e))
+      toast.error(`${t.login.loginFailed}: ${msg}`)
+      // 401 = 用户名/密码错误：同步显示在密码字段下，避免 toast 消失后错误被忽略
+      if ((e as { status?: number }).status === 401) setErrors({ password: msg })
     } finally {
       setLoading(false)
     }

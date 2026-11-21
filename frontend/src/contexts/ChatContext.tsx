@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, createContext, useContext, type ReactNode } from "react"
+import { useState, useEffect, useCallback, useRef, createContext, useContext, type ReactNode } from "react"
 import { useApi } from "@/lib/useApi"
 import { api } from "@/api/client"
 import type { Transaction, AIUsageStats } from "@/api/types"
@@ -181,6 +181,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [lastUsage, setLastUsage] = useState<{ prompt: number; completion: number; total: number } | null>(null)
   const { data: usageStats, reload: reloadUsage } = useApi<AIUsageStats>(() => api.getAIUsage(), [])
 
+  // 流式写入兜底：updater 内校验会话归属，防止切换会话后写入错误会话
+  const activeIdRef = useRef(activeId)
+  useEffect(() => { activeIdRef.current = activeId }, [activeId])
+
   // localStorage persistence
   useEffect(() => {
     try {
@@ -209,6 +213,18 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setSearching(false)
 
     const aiIndex = newMessages.length
+    const sendActiveId = activeId
+
+    // 写入前校验会话归属与目标消息有效性：会话已切换或 aiIndex 失效时原样返回，
+    // 防止 state updater 内读取 undefined 崩溃或把流式内容写进别的会话
+    const updateAiMessage = (prev: ChatMessage[], make: (old: ChatMessage) => ChatMessage): ChatMessage[] => {
+      if (activeIdRef.current !== sendActiveId) return prev
+      const target = prev[aiIndex]
+      if (!target || target.role !== "assistant") return prev
+      const updated = [...prev]
+      updated[aiIndex] = make(target)
+      return updated
+    }
 
     try {
       let sysPrompt = systemPrompt
@@ -230,35 +246,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             setSearching(true)
           } else if (chunk.content) {
             setSearching(false)
-            setMessages((prev) => {
-              const updated = [...prev]
-              updated[aiIndex] = { role: "assistant", content: updated[aiIndex].content + chunk.content }
-              return updated
-            })
+            setMessages((prev) => updateAiMessage(prev, (old) => ({ role: "assistant", content: old.content + chunk.content })))
           } else if (chunk.usage) {
             setLastUsage(chunk.usage)
           } else if (chunk.error) {
             setSearching(false)
-            setMessages((prev) => {
-              const updated = [...prev]
-              updated[aiIndex] = { role: "assistant", content: `❌ ${chunk.error}` }
-              return updated
-            })
+            setMessages((prev) => updateAiMessage(prev, () => ({ role: "assistant", content: `❌ ${chunk.error}` })))
           }
         },
       )
     } catch (e) {
-      setMessages((prev) => {
-        const updated = [...prev]
-        updated[aiIndex] = { role: "assistant", content: `❌ ${t.aiChat.requestFailed}: ${e}` }
-        return updated
-      })
+      setMessages((prev) => updateAiMessage(prev, () => ({ role: "assistant", content: `❌ ${t.aiChat.requestFailed}: ${e}` })))
     } finally {
       setStreaming(false)
       setSearching(false)
       reloadUsage()
     }
-  }, [messages, streaming, systemPrompt, includeContext, t.aiChat.requestFailed, reloadUsage])
+  }, [messages, streaming, activeId, systemPrompt, includeContext, t.aiChat.requestFailed, reloadUsage])
 
   const handleConfirmTx = useCallback(async (msgIndex: number, tx: ExtractedTx) => {
     if (!tx.fund_code || !tx.date) {
@@ -305,15 +309,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, [messages, activeId, currentTitle, txStatus, systemPrompt, archive, t.aiChat.newChat])
 
   const handleNewChat = useCallback(() => {
+    if (streaming) return // 流式期间禁止新建会话，避免 onChunk 写入错乱
     setArchive(archiveCurrent())
     setActiveId(newId())
     setCurrentTitle(generateTimeTitle())
     setMessages([])
     setTxStatus({})
     setSystemPrompt("")
-  }, [archiveCurrent])
+  }, [archiveCurrent, streaming])
 
   const handleSwitchChat = useCallback((id: string) => {
+    if (streaming) return // 流式期间禁止切换会话，避免崩溃/跨会话污染
     const target = archive.find((s) => s.id === id)
     if (!target) return
     setArchive(archiveCurrent().filter((s) => s.id !== id))
@@ -322,7 +328,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setMessages(target.messages)
     setTxStatus(target.txStatus)
     setSystemPrompt(target.systemPrompt)
-  }, [archive, archiveCurrent])
+  }, [archive, archiveCurrent, streaming])
 
   const handleDeleteArchived = useCallback((id: string) => {
     setArchive((prev) => prev.filter((s) => s.id !== id))

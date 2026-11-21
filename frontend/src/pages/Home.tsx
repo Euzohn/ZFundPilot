@@ -85,11 +85,11 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    if (reducedMotion) return
     let lastMin = -1
     const tick = () => {
       const d = new Date()
-      if (clockRef.current) clockRef.current.textContent = formatDateTime(d)
+      // 减少动效模式下不逐秒改写时钟文本，但 now 仍按分钟更新（跨天日期派生依赖它）
+      if (!reducedMotion && clockRef.current) clockRef.current.textContent = formatDateTime(d)
       const min = d.getHours() * 60 + d.getMinutes()
       if (min !== lastMin) {
         lastMin = min
@@ -110,8 +110,9 @@ export default function Home() {
   }, [handleVisibility])
 
   const mkt = useMemo(() => isMarketOpen(now), [now])
-  const todayStr = useMemo(() => localDateStr(), [])
-  const yesterdayStr = useMemo(() => localDateStr(new Date(Date.now() - 86400000)), [])
+  // 随每分钟更新的 now 派生：页面长时间挂起跨天后「今天/昨天」标签自动滚动，无需整页刷新
+  const todayStr = useMemo(() => localDateStr(now), [now])
+  const yesterdayStr = useMemo(() => localDateStr(new Date(now.getTime() - 86400000)), [now])
   const navStatus = summary?.as_of_date
     ? summary.as_of_date === todayStr
       ? tr.navLatest

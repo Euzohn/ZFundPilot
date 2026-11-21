@@ -30,7 +30,8 @@ export async function getColorThemeAsync(): Promise<ColorTheme> {
 }
 
 export async function saveColorTheme(theme: ColorTheme): Promise<void> {
-  localStorage.setItem(STORAGE_KEY, theme)
+  // 本地写入失败（配额满/隐私模式）不阻断服务端同步，与 saveUiTheme 一致。
+  try { localStorage.setItem(STORAGE_KEY, theme) } catch {}
   try {
     await api.savePreferences({ color_theme: theme })
   } catch {

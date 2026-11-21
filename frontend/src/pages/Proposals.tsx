@@ -108,6 +108,30 @@ function batchDateRange(summary: ProposalSummary): string {
   return `${range.from} ~ ${range.to}`
 }
 
+// 列表「操作」列：按 operation_type 分派，早返回替代嵌套三元
+function actionCellText(summary: ProposalSummary): string {
+  if (isBatchSummary(summary)) return batchActionsText(summary)
+  if (isPlanSummary(summary) || isExecutePlanSummary(summary)) return planScheduleLabel(summary)
+  if (isAlertSummary(summary)) return alertTypeLabel(summary.alert_type)
+  return actionLabel(summary.action)
+}
+
+// 列表「日期」列：按 operation_type 分派
+function dateCellText(summary: ProposalSummary): string {
+  if (isBatchSummary(summary)) return batchDateRange(summary)
+  if (isPlanSummary(summary)) return summary.next_run ?? "—"
+  if (isExecutePlanSummary(summary)) return summary.trade_date ?? summary.date
+  if (isAlertSummary(summary)) return summary.record_date ?? summary.ex_date ?? "—"
+  return summary.date
+}
+
+// 列表「金额」列：按 operation_type 取对应金额字段
+function amountCellValue(summary: ProposalSummary): number | null | undefined {
+  if (isBatchSummary(summary)) return summary.amount_total
+  if (isAlertSummary(summary)) return summary.estimated_amount ?? null
+  return summary.amount
+}
+
 function statusVariant(status: ProposalStatus): BadgeProps["variant"] {
   switch (status) {
     case "pending":
@@ -333,35 +357,13 @@ export default function Proposals() {
                         )}
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
-                        {isBatchSummary(item.summary)
-                          ? batchActionsText(item.summary)
-                          : isPlanSummary(item.summary)
-                            ? planScheduleLabel(item.summary)
-                            : isExecutePlanSummary(item.summary)
-                              ? planScheduleLabel(item.summary)
-                              : isAlertSummary(item.summary)
-                                ? alertTypeLabel(item.summary.alert_type)
-                                : actionLabel(item.summary.action)}
+                        {actionCellText(item.summary)}
                       </TableCell>
                       <TableCell className="hidden md:table-cell tabular-nums">
-                        {isBatchSummary(item.summary)
-                          ? batchDateRange(item.summary)
-                          : isPlanSummary(item.summary)
-                            ? item.summary.next_run ?? "—"
-                            : isExecutePlanSummary(item.summary)
-                              ? item.summary.trade_date ?? item.summary.date
-                              : isAlertSummary(item.summary)
-                                ? item.summary.record_date ?? item.summary.ex_date ?? "—"
-                                : item.summary.date}
+                        {dateCellText(item.summary)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {money(
-                          isBatchSummary(item.summary)
-                            ? item.summary.amount_total
-                            : isAlertSummary(item.summary)
-                              ? item.summary.estimated_amount ?? null
-                              : item.summary.amount,
-                        )}
+                        {money(amountCellValue(item.summary))}
                       </TableCell>
                       <TableCell>
                         <Badge variant={statusVariant(item.status)}>

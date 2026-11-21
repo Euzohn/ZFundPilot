@@ -1,5 +1,6 @@
 import { getCurrentLang } from "@/i18n/LanguageContext"
 import type { ProposalSummary } from "@/api/types"
+import { actionLabel } from "./actionLabels"
 
 // 账本操作类型（operation_type）标签，双语；与后端 OPERATION_LABELS code 对应。
 const OPERATION_LABELS: Record<string, string> = {
@@ -133,7 +134,7 @@ export function proposalTitle(summary: ProposalSummary): string {
     case "add_transaction":
     case "update_transaction":
     case "delete_transaction": {
-      const verb = actionVerb(op, summary.action, zh)
+      const verb = actionVerb(op, summary.action, zh, summary.action_label)
       return `${verb} ${summary.fund_code}`.trim()
     }
     case "add_conversion":
@@ -188,12 +189,15 @@ export function proposalTitle(summary: ProposalSummary): string {
 }
 
 // 新增/修改/删除交易标题里的动词（含方向）。
+// 方向全量映射 buy/sell/dividend/reinvest（复用 actionLabel，双语）；
+// 未知 action 回退后端标签或原始 code，不默认「买入」，避免审批页误导方向。
 function actionVerb(
   op: string,
   action: string | undefined,
   zh: boolean,
+  fallbackLabel?: string,
 ): string {
-  const side = action === "sell" ? (zh ? "卖出" : "Sell") : zh ? "买入" : "Buy"
+  const side = action ? actionLabel(action) : fallbackLabel ?? ""
   if (op === "update_transaction") return `${zh ? "修改" : "Update"} ${side}`
   if (op === "delete_transaction") return `${zh ? "删除" : "Delete"} ${side}`
   return side

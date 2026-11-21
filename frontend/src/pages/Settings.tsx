@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from "react"
 import { LineChart, Line, ResponsiveContainer } from "recharts"
 import { getChannels, getChannelsAsync, saveChannels, getDefaultChannels } from "@/lib/channels"
 import { getChannelColors, getChannelColorsAsync, saveChannelColors, getDefaultChannelColors, getPalette } from "@/lib/channelColors"
@@ -94,6 +94,15 @@ const AGENT_SCOPE_KEYS = [
 
 // 新 scope 默认不勾选，避免签发时静默扩权；需要时由用户显式勾选。
 const AGENT_DEFAULT_SCOPES = ["portfolio:read", "funds:read", "health:read"] as const
+
+// 新签发令牌的明文（仅显示一次）。状态提升到 Settings 父级保存：
+// Radix Tabs 切换会卸载非活动面板，留在父级内存可保证切回 tab 仍可见/可复制，
+// 且不写入浏览器存储（刷新页面即清除，与“仅显示一次”的安全提示一致）。
+interface CreatedAgentToken {
+  id: number
+  token: string
+  name: string
+}
 
 function AgentWritePanel() {
   const { t } = useLang()
@@ -248,14 +257,19 @@ function AgentWritePanel() {
   )
 }
 
-function AgentTokenPanel() {
+function AgentTokenPanel({
+  created,
+  onCreatedChange,
+}: {
+  created: CreatedAgentToken | null
+  onCreatedChange: Dispatch<SetStateAction<CreatedAgentToken | null>>
+}) {
   const { t } = useLang()
   const { data, loading, error, reload } = useApi<AgentTokenListResponse>(() => api.getAgentTokens(), [])
   const [name, setName] = useState("")
   const [scopes, setScopes] = useState<string[]>([...AGENT_DEFAULT_SCOPES])
   const [expires, setExpires] = useState("90")
   const [creating, setCreating] = useState(false)
-  const [created, setCreated] = useState<{ id: number; token: string; name: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const tokenInputRef = useRef<HTMLInputElement>(null)
   const [revokeTarget, setRevokeTarget] = useState<AgentTokenInfo | null>(null)
@@ -302,7 +316,7 @@ function AgentTokenPanel() {
     setCreating(true)
     try {
       const res = await api.createAgentToken(trimmed, scopes, ttl)
-      setCreated({ id: res.token_info.id, token: res.token, name: res.token_info.name })
+      onCreatedChange({ id: res.token_info.id, token: res.token, name: res.token_info.name })
       setCopied(false)
       setName("")
       await reload()
@@ -341,7 +355,7 @@ function AgentTokenPanel() {
     try {
       await api.revokeAgentToken(target.id)
       toast.success(t.settings.agentTokenRevokedToast)
-      setCreated((prev) => (prev?.id === target.id ? null : prev))
+      onCreatedChange((prev) => (prev?.id === target.id ? null : prev))
       setRevokeTarget(null)
       await reload()
     } catch (e) {
@@ -387,7 +401,7 @@ function AgentTokenPanel() {
                   size="sm"
                   variant="ghost"
                   className="h-7 w-7 p-0"
-                  onClick={() => setCreated(null)}
+                  onClick={() => onCreatedChange(null)}
                   aria-label={t.common.close}
                 >
                   <X className="h-3.5 w-3.5" />
@@ -850,6 +864,10 @@ export default function Settings() {
   const [backupBusy, setBackupBusy] = useState(false)
   const [restoreOpen, setRestoreOpen] = useState(false)
 
+  // 新签发 Agent 令牌明文提升到父级：切换 tab 会卸载 AgentTokenPanel，
+  // 留在父级内存可保证切回 tab 仍可见/可复制（刷新页面即清除）。
+  const [createdAgentToken, setCreatedAgentToken] = useState<CreatedAgentToken | null>(null)
+
   // Scheduler
   const { data: schedulerStatus, error: schedulerError, reload: reloadScheduler } = useApi<SchedulerStatus>(() => api.getSchedulerStatus(), [])
   const [schedulerToggling, setSchedulerToggling] = useState(false)
@@ -1196,9 +1214,11 @@ export default function Settings() {
   const [newKwKeyword, setNewKwKeyword] = useState("")
   const [newKwMapped, setNewKwMapped] = useState("")
 
-  const { data: kwData } = useApi(() => api.getKeywordMaps(), [])
+  const { data: kwData, reload: reloadKeywordMaps } = useApi(() => api.getKeywordMaps(), [])
+  // kwData 仅在挂载与备份恢复后 reload 时变化，直接同步到本地状态；
+  // 本地增删改不会触发 kwData 变化，故不会覆盖用户编辑。
   useEffect(() => {
-    if (kwData && !keywordMaps) setKeywordMaps(kwData)
+    if (kwData) setKeywordMaps(kwData)
   }, [kwData])
 
   const kwCustom = keywordMaps ? (kwTab === "sector" ? keywordMaps.sector_custom : keywordMaps.type_custom) : []
@@ -1207,25 +1227,39 @@ export default function Settings() {
 
   const kwFilteredDefaults = kwDefaults.filter((e) => !kwSearch || e.keyword.includes(kwSearch) || e.mapped.includes(kwSearch))
 
+  // 乐观更新自定义关键词并持久化（增/删/排序/重置共用）：
+  // 保存失败时 toast 提示并回滚到保存前快照，避免界面显示未持久化的改动。
+  const persistKeywordMaps = async (next: KeywordMaps, successToast?: string): Promise<boolean> => {
+    const prev = keywordMaps
+    setKeywordMaps(next)
+    try {
+      await api.saveKeywordMaps(JSON.stringify(next.type_custom), JSON.stringify(next.sector_custom))
+      if (successToast) toast.success(successToast)
+      return true
+    } catch (e) {
+      setKeywordMaps(prev)
+      toast.error(`${t.common.saveFailed}: ${e}`)
+      return false
+    }
+  }
+
   const addCustomKeyword = async () => {
     const keyword = newKwKeyword.trim()
     const mapped = newKwMapped.trim()
     if (!keyword || !mapped) { toast.warning(t.settings.kwKeywordMappedRequired); return }
     if (kwCustom.some((e) => e.keyword === keyword)) { toast.warning(t.settings.kwKeywordExists); return }
     const next = [...kwCustom, { keyword, mapped }]
-    const typeCustom = kwTab === "sector" ? keywordMaps!.type_custom : next
-    const sectorCustom = kwTab === "sector" ? next : keywordMaps!.sector_custom
-    setKeywordMaps({ ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next })
-    setNewKwKeyword(""); setNewKwMapped("")
-    try { await api.saveKeywordMaps(JSON.stringify(typeCustom), JSON.stringify(sectorCustom)) } catch {}
+    const nextMaps: KeywordMaps = { ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next }
+    // 保存成功后再清空输入；失败时保留用户输入便于重试
+    if (await persistKeywordMaps(nextMaps)) {
+      setNewKwKeyword(""); setNewKwMapped("")
+    }
   }
 
   const deleteCustomKeyword = async (idx: number) => {
     const next = kwCustom.filter((_, i) => i !== idx)
-    const typeCustom = kwTab === "sector" ? keywordMaps!.type_custom : next
-    const sectorCustom = kwTab === "sector" ? next : keywordMaps!.sector_custom
-    setKeywordMaps({ ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next })
-    try { await api.saveKeywordMaps(JSON.stringify(typeCustom), JSON.stringify(sectorCustom)) } catch {}
+    const nextMaps: KeywordMaps = { ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next }
+    await persistKeywordMaps(nextMaps)
   }
 
   const moveCustomKeyword = async (idx: number, dir: -1 | 1) => {
@@ -1233,10 +1267,8 @@ export default function Settings() {
     const target = idx + dir
     if (target < 0 || target >= next.length) return
     ;[next[idx], next[target]] = [next[target], next[idx]]
-    const typeCustom = kwTab === "sector" ? keywordMaps!.type_custom : next
-    const sectorCustom = kwTab === "sector" ? next : keywordMaps!.sector_custom
-    setKeywordMaps({ ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next })
-    try { await api.saveKeywordMaps(JSON.stringify(typeCustom), JSON.stringify(sectorCustom)) } catch {}
+    const nextMaps: KeywordMaps = { ...keywordMaps!, [kwTab === "sector" ? "sector_custom" : "type_custom"]: next }
+    await persistKeywordMaps(nextMaps)
   }
 
   const handleBackupPreflight = async (file: File) => {
@@ -1255,6 +1287,39 @@ export default function Settings() {
     }
   }
 
+  // 备份恢复后重读偏好类配置。channels/channelColors 的异步 getter 首次加载后会缓存，
+  // 无法反映恢复后的服务端值，这里直接重读 preferences，并经 save* 回写刷新
+  // 内存/localStorage/服务端各级缓存，保证本页及后续挂载读到的都是恢复后的数据。
+  const reloadChannelPreferences = async () => {
+    let prefs: Record<string, string>
+    try {
+      prefs = await api.getPreferences()
+    } catch {
+      return
+    }
+    if (prefs.channels) {
+      try {
+        const parsed = JSON.parse(prefs.channels)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setChannels(parsed)
+          await saveChannels(parsed)
+        }
+      } catch { /* 非法 JSON：保留现值 */ }
+    }
+    if (prefs.channel_colors) {
+      try {
+        const parsed = JSON.parse(prefs.channel_colors)
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          setChannelColors(parsed)
+          await saveChannelColors(parsed)
+        }
+      } catch { /* 非法 JSON：保留现值 */ }
+    }
+    const theme = await getColorThemeAsync()
+    setColorTheme(theme)
+    applyColorTheme(theme)
+  }
+
   const handleRestoreBackup = async () => {
     if (!backupFile) return
     setBackupBusy(true)
@@ -1263,6 +1328,14 @@ export default function Settings() {
       toast.success(`${t.settings.backupRestoreDone} (${result.total_rows})`)
       setBackupPreview(null)
       setBackupFile(null)
+      // 恢复会整体替换 preferences 等数据表：重新拉取本页已加载的各项配置，
+      // 避免陈旧内存值在后续保存时覆盖恢复后的数据。
+      reloadScheduler()
+      reloadTpSlConfig()
+      reloadAIConfig()
+      reloadVisionConfig()
+      reloadKeywordMaps()
+      await reloadChannelPreferences()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t.settings.backupRestoreFailed)
     } finally {
@@ -1419,7 +1492,7 @@ export default function Settings() {
             <AgentWritePanel />
 
             {/* ── Agent 访问令牌 ── */}
-            <AgentTokenPanel />
+            <AgentTokenPanel created={createdAgentToken} onCreatedChange={setCreatedAgentToken} />
           </TabsContent>
         )}
 
@@ -2225,9 +2298,8 @@ export default function Settings() {
         title={t.settings.resetCustom}
         tone="destructive"
         onConfirm={async () => {
-          if (keywordMaps) setKeywordMaps({ ...keywordMaps, type_custom: [], sector_custom: [] })
-          try { await api.saveKeywordMaps("[]", "[]"); toast.success(t.settings.allCustomKwReset) } catch {}
-          setShowResetKeywords(false)
+          if (!keywordMaps) return
+          await persistKeywordMaps({ ...keywordMaps, type_custom: [], sector_custom: [] }, t.settings.allCustomKwReset)
         }}
       />
       <ConfirmDialog

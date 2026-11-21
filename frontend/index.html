@@ -20,6 +20,12 @@
               window.matchMedia("(prefers-color-scheme: dark)").matches);
           if (isDark) document.documentElement.classList.add("dark");
         } catch (e) {}
+        // 涨跌配色同样首屏前预置，避免「中国惯例」用户首帧按国际惯例渲染后翻转。
+        try {
+          if (localStorage.getItem("zfundpilot_color_theme") === "china") {
+            document.documentElement.classList.add("color-theme-cn");
+          }
+        } catch (e) {}
       })();
     </script>
   </head>

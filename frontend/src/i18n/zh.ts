@@ -1536,6 +1536,7 @@ const zh = {
     restore: "恢复",
     restored: "已恢复自选",
     restoreFailed: "恢复失败",
+    loadDeletedFailed: "加载最近删除失败",
     deletedAt: "删除于",
   },
   screener: {

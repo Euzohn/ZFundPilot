@@ -87,6 +87,7 @@ export default function Backtest() {
   const [results, setResults] = useState<BacktestResult[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selectedFund, setSelectedFund] = useState<string>("")
 
   const addFundCode = useCallback(() => {
     const codes = fundCodeInput
@@ -129,6 +130,8 @@ export default function Backtest() {
         include_lumpsum: includeLumpsum,
       })
       setResults(res.results)
+      // 新结果不含当前选中基金时重置，避免图表/明细停留在已不存在的基金上
+      setSelectedFund((prev) => (res.results.some((r) => r.fund_code === prev) ? prev : ""))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -149,7 +152,6 @@ export default function Backtest() {
   }, [results])
 
   // 图表数据：选定第一个基金的 dca vs lumpsum 曲线合并
-  const [selectedFund, setSelectedFund] = useState<string>("")
   const chartFund = selectedFund || groupedResults[0]?.code || ""
   const chartData = useMemo(() => {
     const group = groupedResults.find((g) => g.code === chartFund)
@@ -171,7 +173,10 @@ export default function Backtest() {
     }))
   }, [groupedResults, chartFund])
 
-  const selectedDca = groupedResults.find((g) => g.code === chartFund)?.dca
+  const chartGroup = groupedResults.find((g) => g.code === chartFund)
+  const selectedDca = chartGroup?.dca
+  // lumpsum 曲线按本次结果是否含 lumpsum 渲染（表单勾选只影响下一次回测）
+  const hasLumpsum = chartGroup?.lumpsum != null
 
   return (
     <div className="space-y-6">
@@ -363,7 +368,7 @@ export default function Backtest() {
                           labelFormatter={(l: string) => l}
                         />
                         <Legend />
-                        {includeLumpsum && (
+                        {hasLumpsum && (
                           <>
                             <Line
                               yAxisId="left"

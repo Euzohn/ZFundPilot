@@ -80,11 +80,20 @@ function ReturnCell({ value }: { value: number | null | undefined }) {
   return <span className={cn("tabular-nums font-medium", color)}>{pct(value)}</span>
 }
 
-function CompareTable({ funds, labelMap, valueKey, format }: {
+// 无量纲比值（夏普/卡玛）：原样保留 2 位小数，不做百分比换算
+function RatioCell({ value }: { value: number | null | undefined }) {
+  if (value == null) return <span className="text-muted-foreground">—</span>
+  return <span className="tabular-nums">{value.toFixed(2)}</span>
+}
+
+type CellFormat = "pct" | "number" | "ratio"
+
+function CompareTable({ funds, labelMap, valueKey, format, formatOverrides }: {
   funds: FundCompareItem[]
   labelMap: Record<string, string>
   valueKey: "returns" | "risk"
-  format: "pct" | "number"
+  format: CellFormat
+  formatOverrides?: Record<string, CellFormat>
 }) {
   const { t } = useLang()
   const keys = Object.keys(labelMap)
@@ -100,19 +109,27 @@ function CompareTable({ funds, labelMap, valueKey, format }: {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {keys.map((key) => (
-            <TableRow key={key} className="border-t border-border/50">
-              <TableCell className="sticky left-0 bg-background px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{labelMap[key]}</TableCell>
-              {funds.map((f) => (
-                <TableCell key={f.code} className="px-3 py-2 text-right text-xs">
-                  {format === "pct"
-                    ? <ReturnCell value={f[valueKey]?.[key] as number | null | undefined} />
-                    : <Cell value={f[valueKey]?.[key] as number | null | undefined} />
-                  }
-                </TableCell>
-              ))}
-            </TableRow>
-          ))}
+          {keys.map((key) => {
+            const fmt = formatOverrides?.[key] ?? format
+            return (
+              <TableRow key={key} className="border-t border-border/50">
+                <TableCell className="sticky left-0 bg-background px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{labelMap[key]}</TableCell>
+                {funds.map((f) => {
+                  const value = f[valueKey]?.[key] as number | null | undefined
+                  return (
+                    <TableCell key={f.code} className="px-3 py-2 text-right text-xs">
+                      {fmt === "pct"
+                        ? <ReturnCell value={value} />
+                        : fmt === "ratio"
+                          ? <RatioCell value={value} />
+                          : <Cell value={value} />
+                      }
+                    </TableCell>
+                  )
+                })}
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
     </div>
@@ -168,17 +185,15 @@ function NavChart({ navSeries }: { navSeries: Record<string, { date: string; val
   const codes = Object.keys(navSeries).filter((c) => navSeries[c].length > 0)
   if (codes.length === 0) return <EmptyState title={t.compare.noNavData} size="lg" />
 
-  const merged = navSeries[codes[0]].map((p) => {
-    const row: Record<string, string | number | null> = { date: p.date }
-    row[codes[0]] = p.value
+  // x 轴取所有基金日期的并集（排序）：各基金成立日/交易日历不同，
+  // 仅用第一只基金的日期会静默截断其他基金的早期走势
+  const dates = [...new Set(codes.flatMap((c) => navSeries[c].map((p) => p.date)))].sort()
+  const valueMaps = codes.map((c) => new Map(navSeries[c].map((p) => [p.date, p.value])))
+  const merged = dates.map((date) => {
+    const row: Record<string, string | number | null> = { date }
+    codes.forEach((c, i) => { row[c] = valueMaps[i].get(date) ?? null })
     return row
   })
-  for (let i = 1; i < codes.length; i++) {
-    const map = new Map(navSeries[codes[i]].map((p) => [p.date, p.value]))
-    for (const row of merged) {
-      row[codes[i]] = map.get(row.date as string) ?? null
-    }
-  }
 
   return (
     <ResponsiveContainer width="100%" height={400}>
@@ -415,7 +430,7 @@ export default function FundCompare() {
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-sm">{t.compare.riskCompare}</CardTitle></CardHeader>
                 <CardContent>
-                  <CompareTable funds={okFunds} labelMap={RISK_LABELS} valueKey="risk" format="pct" />
+                  <CompareTable funds={okFunds} labelMap={RISK_LABELS} valueKey="risk" format="pct" formatOverrides={{ sharpe: "ratio", calmar: "ratio" }} />
                 </CardContent>
               </Card>
             </TabsContent>

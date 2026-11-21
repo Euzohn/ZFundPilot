@@ -20,6 +20,7 @@ import { getChannelColors, getChannelColorsAsync, getPalette } from "@/lib/chann
 import { RANGE_DAYS } from "@/lib/rangeLabels"
 import { makeSortHeader } from "@/components/SortHeader"
 import { useLang } from "@/i18n/LanguageContext"
+import { toast } from "sonner"
 import { CHART_COLORS } from "@/lib/chartPalette"
 import { translateChannel, translateRiskLevel, RISK_LEVEL_DOT } from "@/lib/taxonomyLabels"
 
@@ -57,9 +58,9 @@ function ChannelTooltip({ active, payload, label }: { active?: boolean; payload?
 
 export default function Returns() {
   const { data: summary, loading: sl, error: se, reload: reloadSummary } = useApi<PortfolioSummary>(() => api.getSummary())
-  const { data: curve, loading: curveLoading } = useApi<CurvePoint[]>(() => api.getPortfolioCurve())
-  const { data: channelPnl, loading: channelPnlLoading } = useApi<ChannelPnLPoint[]>(() => api.getChannelPnl())
-  const { data: positions, loading: positionsLoading } = useApi<Position[]>(() => api.getPositions(true))
+  const { data: curve, loading: curveLoading, error: curveError, reload: reloadCurve } = useApi<CurvePoint[]>(() => api.getPortfolioCurve())
+  const { data: channelPnl, loading: channelPnlLoading, error: channelPnlError, reload: reloadChannelPnl } = useApi<ChannelPnLPoint[]>(() => api.getChannelPnl())
+  const { data: positions, loading: positionsLoading, error: positionsError, reload: reloadPositions } = useApi<Position[]>(() => api.getPositions(true))
   const [sortField, setSortField] = useState("return_rate")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [pnlMode, setPnlMode] = useState<"day" | "week" | "month" | "year">("day")
@@ -98,7 +99,11 @@ export default function Returns() {
     let active = true
     api.getPortfolioBenchmark([...benchmarks])
       .then(data => { if (active) setBenchmarkData(data) })
-      .catch(() => { if (active) setBenchmarkData(null) })
+      .catch(() => {
+        // 失败时保留已加载的基准曲线（瞬时失败不应清空旧数据），仅提示用户；
+        // 再次点击基准按钮即可重试
+        if (active) toast.error(t.common.loadFailed)
+      })
     return () => { active = false }
   }, [benchmarks])
 
@@ -308,7 +313,9 @@ export default function Returns() {
       <TpSlAlertsPanel />
 
       {/* P&L fluctuation chart — 日/周/月/年收益波动 */}
-      {channelPnlLoading ? <LoadingState size="sm" className="py-4" /> : pnlData.length > 0 && (
+      {channelPnlLoading ? <LoadingState size="sm" className="py-4" /> : channelPnlError ? (
+        <ErrorState message={channelPnlError} onRetry={reloadChannelPnl} size="sm" />
+      ) : pnlData.length > 0 && (
         <Card className="card-hover">
           <CardHeader className="pb-2 flex-row items-center justify-between flex-wrap gap-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">{t.returns.pnlFluctuation}</CardTitle>
@@ -413,7 +420,9 @@ export default function Returns() {
           </div>
         </CardHeader>
         <CardContent>
-          {curveLoading ? <LoadingState size="sm" /> : filteredCurve.length >= 2 ? (
+          {curveLoading ? <LoadingState size="sm" /> : curveError ? (
+            <ErrorState message={curveError} onRetry={reloadCurve} size="sm" />
+          ) : filteredCurve.length >= 2 ? (
             <ResponsiveContainer width="100%" height={300}>
               <ComposedChart data={filteredCurve} margin={{ left: 10, right: 5, top: 5 }}>
                 <defs>
@@ -453,7 +462,9 @@ export default function Returns() {
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">{t.returns.perFundDetail}</CardTitle></CardHeader>
         <CardContent>
-          {positionsLoading ? <LoadingState size="sm" /> : allPositions.length === 0 ? (
+          {positionsLoading ? <LoadingState size="sm" /> : positionsError ? (
+            <ErrorState message={positionsError} onRetry={reloadPositions} size="sm" />
+          ) : allPositions.length === 0 ? (
             <EmptyState title={t.returns.noPositions} />
           ) : (
             <Table>

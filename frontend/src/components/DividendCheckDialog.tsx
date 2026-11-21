@@ -101,10 +101,11 @@ export default function DividendCheckDialog({ open, onOpenChange }: DividendChec
   const handleDelete = async (alertId: number) => {
     try {
       await api.deleteDividendAlert(alertId)
+      // 仅删除成功后才移除列表项（与 handleIgnore 一致），失败时保留以免误导用户
+      setAlerts(prev => prev.filter(a => a.id !== alertId))
     } catch {
       toast.error(t.common.deleteFailed)
     }
-    setAlerts(prev => prev.filter(a => a.id !== alertId))
   }
 
   return (

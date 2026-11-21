@@ -61,7 +61,7 @@ export default function FeeBreakdownCard({ result, action, className }: Props) {
                 <div key={i} className="flex items-center justify-between text-[11px]">
                   <span className="text-muted-foreground">
                     {lot.buy_date ? (
-                      <>{t.transactions.buy} {lot.buy_date.slice(2).replace("-", "/")}</>
+                      <>{t.transactions.buy} {lot.buy_date.slice(2).replaceAll("-", "/")}</>
                     ) : (
                       <>{t.components.excessPart}</>
                     )}

@@ -333,9 +333,10 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
   const effectiveNavDate = useMemo(() => {
     if (!date) return ""
     if (!afterThree) return date
-    const d = new Date(date)
-    d.setDate(d.getDate() + 1)
-    return localDateStr(d)
+    // 按本地日期解析再 +1 天：new Date("YYYY-MM-DD") 是 UTC 午夜，
+    // 西时区下 getDate() 会落到前一天，导致 T+1 算回当天
+    const [y, m, d] = date.split("-").map(Number)
+    return localDateStr(new Date(y, m - 1, d + 1))
   }, [date, afterThree])
 
   useEffect(() => {
@@ -443,6 +444,16 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
   const handleFeeChange = (v: string) => {
     feeManuallyEdited.current = true
     setFee(v)
+  }
+
+  // 切换操作方向：分红/再投资无手续费，清掉上一次操作残留的 fee，避免误提交
+  const handleActionChange = (next: string) => {
+    setAction(next)
+    if (next === "dividend" || next === "reinvest") {
+      setFee("0")
+      setFeeCalcResult(null)
+      feeManuallyEdited.current = false
+    }
   }
 
   // 买入：金额 - 手续费 → 份额；卖出：份额 × 净值 - 手续费 → 金额
@@ -580,9 +591,13 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
     // 买入：优先手动输入的份额，无则用自动计算值
     const manualShares = parseFloat(shares) || null
     const finalShares = action === "buy" ? (manualShares || parseFloat(autoShares) || null) : (manualShares || null)
-    const finalAmount = action === "sell" || action === "reinvest"
-      ? (parseFloat(amount) || parseFloat(autoAmount) || null)
-      : (parseFloat(amount) || null)
+    // 再投资金额框只读、显示 autoAmount（份额×净值），提交必须用同一值，
+    // 避免残留的 amount state（如分红预填的估算金额）覆盖显示值
+    const finalAmount = action === "reinvest"
+      ? (parseFloat(autoAmount) || null)
+      : action === "sell"
+        ? (parseFloat(amount) || parseFloat(autoAmount) || null)
+        : (parseFloat(amount) || null)
     const finalNav = action === "dividend" ? null : (parseFloat(nav) || null)
 
     // 买入至少有金额，卖出/再投资至少有份额，分红至少有金额（净值可能尚未公布，留空则待确认）
@@ -606,7 +621,8 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
       amount: finalAmount,
       shares: finalShares,
       nav: finalNav,
-      fee: parseFloat(fee) || 0,
+      // 分红/再投资无手续费：强制 0，避免带上一次操作残留的 fee
+      fee: action === "dividend" || action === "reinvest" ? 0 : (parseFloat(fee) || 0),
       channel: customChannel.trim() || channel,
       note: note.trim(),
       is_t1: afterThree,
@@ -747,7 +763,7 @@ function TransactionForm({ editingTx, prefill, onPrefillConsumed, onDone, onChec
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div>
               <Label className="mb-1.5 block text-xs text-muted-foreground">{t.common.actions}</Label>
-              <Select value={action} onChange={(e) => setAction(e.target.value)} className="h-9">
+              <Select value={action} onChange={(e) => handleActionChange(e.target.value)} className="h-9">
                 <option value="buy">{t.transactions.buy}</option>
                 <option value="sell">{t.transactions.sell}</option>
                 <option value="dividend">{t.transactions.dividend}</option>
@@ -1469,7 +1485,7 @@ function CSVImportExport() {
             <code className="rounded bg-muted px-1">amount</code>/<code className="rounded bg-muted px-1">shares</code>/<code className="rounded bg-muted px-1">nav</code> {t.transactions.csvAtLeastTwo}
           </p>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => api.downloadTemplate()}>
+            <Button variant="outline" onClick={async () => { try { await api.downloadTemplate() } catch (e) { toast.error(translateBackendError(String(e))) } }}>
               <Download className="mr-1 h-4 w-4" /> {t.transactions.downloadTemplate}
             </Button>
             <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]">
@@ -1540,7 +1556,7 @@ function CSVImportExport() {
       <Card>
         <CardHeader><CardTitle className="text-base">{t.transactions.exportTitle}</CardTitle></CardHeader>
         <CardContent>
-          <Button variant="outline" onClick={() => api.exportCsv()}>
+          <Button variant="outline" onClick={async () => { try { await api.exportCsv(); toast.success(t.transactions.csvExported) } catch (e) { toast.error(translateBackendError(String(e))) } }}>
             <FileDown className="mr-1 h-4 w-4" /> {t.transactions.exportAsCsv}
           </Button>
         </CardContent>

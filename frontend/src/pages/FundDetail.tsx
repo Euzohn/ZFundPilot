@@ -38,13 +38,14 @@ export default function FundDetail() {
   const watchlistItem = watchlist?.find(w => w.fund_code === code)
   const inWatchlist = Boolean(watchlistItem)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [viewingTx, setViewingTx] = useState<Transaction | null>(null)
   const [navRange, setNavRange] = useState<"1m" | "3m" | "6m" | "1y" | "hold" | "tx" | "custom">("1y")
   const [customStart, setCustomStart] = useState("")
   const [customEnd, setCustomEnd] = useState("")
 
   const { data: fund, loading: fundLoading, error: fundError, reload: reloadFund } = useApi<Fund>(() => api.getFund(code!), [code])
-  const { data: positions } = useApi<Position[]>(() => api.getPositions(true), [])
+  const { data: positions, reload: reloadPositions } = useApi<Position[]>(() => api.getPositions(true), [])
   const { data: txs, loading: txsLoading, reload: reloadTxs } = useApi<Transaction[]>(() =>
     api.getTransactionsByFund(code!).then((rows) =>
       rows.sort((a, b) => b.date.localeCompare(a.date) || (b.id ?? 0) - (a.id ?? 0)),
@@ -58,7 +59,7 @@ export default function FundDetail() {
   const { data: industryData } = useApi<FundIndustryAllocationType>(() => api.getFundIndustryAllocation(code!), [code])
   const { data: rankingData } = useApi<FundRanking>(() => api.getFundRanking(code!), [code])
   const { data: profileData } = useApi<FundProfile>(() => api.getFundProfile(code!), [code])
-  const { data: xirrData } = useApi<FundXirr>(() => api.getFundXirr(code!), [code])
+  const { data: xirrData, reload: reloadXirr } = useApi<FundXirr>(() => api.getFundXirr(code!), [code])
   useEffect(() => {
     if (!fundEstimate?.ok) return
     const interval = setInterval(() => {
@@ -155,7 +156,7 @@ export default function FundDetail() {
       }
       return { ...d, pnl, pnlReturn, _tx: txMap[d.date] || null }
     })
-  }, [navHistory, navRange, txs])
+  }, [navHistory, navRange, txs, customStart, customEnd])
 
   if (fundError) return <ErrorState message={fundError} onRetry={reloadFund} />
   if (fundLoading) return <LoadingState />
@@ -175,17 +176,27 @@ export default function FundDetail() {
   const latestDate = openPositions[0]?.latest_date ?? null
   const returnRate = totalCost > 0 ? totalValue / totalCost - 1 : null
   const showEstimate = fundEstimate?.ok && (!latestDate || latestDate <= fundEstimate.jzrq)
+  // 最新净值卡片 sub：无持仓时 latestDate 为 null，仅显示估算部分，不渲染字面量 "null"
+  const latestNavSub = showEstimate
+    ? `${latestDate ? `${latestDate} · ` : ""}${t.fundDetail.estimate} ${navStr(fundEstimate!.gsz)} ${pct(fundEstimate!.gszzl / 100)} · ${fundEstimate!.gztime.slice(5, 16)}`
+    : latestDate ?? undefined
 
   const handleEdit = (tx: Transaction) => {
     navigate("/transactions", { state: { editTx: tx } })
   }
 
-const handleDelete = async (txId: number) => {
+  const handleDelete = async (txId: number) => {
+    if (deleting) return // 删除进行中，防止重复提交
+    setDeleting(true)
     try {
       await api.deleteTransaction(txId)
       toast.success(t.common.deleted)
+      // 交易变化后同步刷新持仓与 XIRR，避免汇总指标与交易列表不一致
       reloadTxs()
+      reloadPositions()
+      reloadXirr()
     } catch (e) { toast.error(`${t.common.deleteFailed}: ${e}`) }
+    finally { setDeleting(false) }
   }
 
   return (
@@ -365,7 +376,7 @@ const handleDelete = async (txId: number) => {
         <MetricCard size="sm" label={t.fundDetail.heldShares} value={totalShares.toFixed(2)} />
         <MetricCard size="sm" label={t.positions.cost} value={money(totalCost)} />
         <MetricCard size="sm" label={t.fundDetail.avgCost} value={navStr(avgCost)} />
-        <MetricCard size="sm" label={t.positions.latestNav} value={navStr(latestNav)} sub={showEstimate ? `${latestDate} · ${t.fundDetail.estimate} ${navStr(fundEstimate!.gsz)} ${pct(fundEstimate!.gszzl / 100)} · ${fundEstimate!.gztime.slice(5, 16)}` : latestDate ?? undefined} subColor={showEstimate ? pnlColor(fundEstimate!.gszzl / 100) : undefined} />
+        <MetricCard size="sm" label={t.positions.latestNav} value={navStr(latestNav)} sub={latestNavSub} subColor={showEstimate ? pnlColor(fundEstimate!.gszzl / 100) : undefined} />
         <MetricCard size="sm" label={t.positions.marketValue} value={money(totalValue)} />
         <MetricCard size="sm" label={t.fundDetail.unrealizedPnl} value={signedMoney(totalUnrealized)} color={pnlColor(totalUnrealized)} />
         <MetricCard size="sm" label={t.fundDetail.realizedPnl} value={signedMoney(totalRealized)} color={pnlColor(totalRealized)} />
@@ -859,6 +870,7 @@ const handleDelete = async (txId: number) => {
         }
         confirmText={t.common.delete}
         tone="destructive"
+        loading={deleting}
         onConfirm={async () => {
           if (confirmDeleteId != null) await handleDelete(confirmDeleteId)
         }}

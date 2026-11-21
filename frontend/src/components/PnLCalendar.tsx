@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import { money, localDateStr } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { ChevronLeft, ChevronRight } from "lucide-react"
@@ -113,6 +113,17 @@ export default function PnLCalendar({ data, mode = "day" }: Props) {
     if (data.length > 0) return new Date(data[data.length - 1].date + "T00:00:00").getMonth()
     return new Date().getMonth()
   })
+
+  // 挂载时 data 可能为空（父级各请求独立返回），首次到达时再定位到最近有数据的月份；
+  // 之后的数据更新不再覆盖用户手动翻页的位置
+  const positionedRef = useRef(data.length > 0)
+  useEffect(() => {
+    if (data.length === 0 || positionedRef.current) return
+    positionedRef.current = true
+    const last = new Date(data[data.length - 1].date + "T00:00:00")
+    setViewYear(last.getFullYear())
+    setViewMonth(last.getMonth())
+  }, [data])
 
   const prevMonth = () => {
     if (viewMonth === 0) { setViewMonth(11); setViewYear((y) => y - 1) }

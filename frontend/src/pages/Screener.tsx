@@ -194,10 +194,28 @@ export default function Screener() {
   }
 
   const handleAddSelectedToWatchlist = async () => {
-    for (const code of selected) {
-      try { await api.addToWatchlist(code) } catch { /* skip duplicates */ }
+    const codes = Array.from(selected)
+    if (codes.length === 0) return
+    // 各添加请求相互独立，并行执行；重复添加（already_exists）视为已存在，不算失败
+    const outcomes = await Promise.all(codes.map(async (c) => {
+      try {
+        await api.addToWatchlist(c)
+        return true
+      } catch (e) {
+        return (e as { code?: string }).code === "already_exists" || (e as { status?: number }).status === 409
+      }
+    }))
+    const failed = outcomes.filter((ok) => !ok).length
+    if (failed === codes.length) {
+      // 全部失败：如实报错并保留选中集，便于重试
+      toast.error(t.watchlist.addFailed)
+      return
     }
-    toast.success(t.watchlist.added)
+    if (failed > 0) {
+      toast.warning(`${t.watchlist.addFailed} (${failed}/${codes.length})`)
+    } else {
+      toast.success(t.watchlist.added)
+    }
     setSelected(new Set())
   }
 

@@ -1,5 +1,5 @@
 import { useApi } from "@/lib/useApi"
-import { useMemo, useEffect } from "react"
+import { useMemo, useEffect, type ReactNode } from "react"
 import { api } from "@/api/client"
 import type { PortfolioSummary, DistributionItem, EstimateSummary } from "@/api/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -101,6 +101,21 @@ function DataStatusBanner({ summary }: { summary: PortfolioSummary }) {
   )
 }
 
+// 分布卡片内容：加载中 / 失败（可重试）/ 空数据 / 图表，早返回避免嵌套三元
+function distContent(opts: {
+  loading: boolean
+  error: string | null
+  data: DistributionItem[] | null
+  onRetry: () => void
+  emptyTitle: string
+  chart: ReactNode
+}) {
+  if (opts.loading) return <LoadingState size="sm" />
+  if (opts.error) return <ErrorState message={opts.error} onRetry={opts.onRetry} size="sm" />
+  if (opts.data && opts.data.length > 0) return opts.chart
+  return <EmptyState title={opts.emptyTitle} size="lg" />
+}
+
 export default function Overview() {
   const { t } = useLang()
   const { data: summary, loading: sl, error: se, reload: reloadSummary } = useApi<PortfolioSummary>(() => api.getSummary())
@@ -114,12 +129,12 @@ export default function Overview() {
     const d = new Date(summary.as_of_date + "T00:00:00")
     return `${d.getMonth() + 1}/${d.getDate()}${t.overview.pnlSuffix}`
   }, [summary, t])
-  const { data: typeDist, loading: typeDistLoading } = useApi<DistributionItem[]>(() => api.getDistribution("fund_type"))
-  const { data: channelDist, loading: channelDistLoading } = useApi<DistributionItem[]>(() => api.getDistribution("channel"))
-  const { data: sectorDist, loading: sectorDistLoading } = useApi<DistributionItem[]>(() => api.getDistribution("sector"))
-  const { data: riskDist, loading: riskDistLoading } = useApi<DistributionItem[]>(() => api.getDistribution("risk_level"))
+  const { data: typeDist, loading: typeDistLoading, error: typeDistError, reload: reloadTypeDist } = useApi<DistributionItem[]>(() => api.getDistribution("fund_type"))
+  const { data: channelDist, loading: channelDistLoading, error: channelDistError, reload: reloadChannelDist } = useApi<DistributionItem[]>(() => api.getDistribution("channel"))
+  const { data: sectorDist, loading: sectorDistLoading, error: sectorDistError, reload: reloadSectorDist } = useApi<DistributionItem[]>(() => api.getDistribution("sector"))
+  const { data: riskDist, loading: riskDistLoading, error: riskDistError, reload: reloadRiskDist } = useApi<DistributionItem[]>(() => api.getDistribution("risk_level"))
 
-  const { data: estimate, reload: reloadEstimate } = useApi<EstimateSummary>(() => api.getEstimate())
+  const { data: estimate, error: estimateError, reload: reloadEstimate } = useApi<EstimateSummary>(() => api.getEstimate())
 
   const hasEstimate = estimate?.funds.some(f => f.ok) ?? false
 
@@ -155,7 +170,17 @@ export default function Overview() {
 
       {/* Row 1: Period returns — compact cards, no icons */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
-        <MetricCard label={t.overview.estNav} value={hasEstimate ? signedMoney(estimate!.total_estimated_pnl) : "—"} sub={hasEstimate ? `${pct(estimate!.estimated_return)} · ${estimate!.gztime.slice(11, 16) || ""}` : undefined} color={hasEstimate ? pnlColor(estimate!.total_estimated_pnl) : undefined} />
+        {estimateError ? (
+          // 估算失败不再静默显示 "—"：展示错误并允许手动重试
+          <Card className="card-hover">
+            <CardContent className="p-3 md:p-4">
+              <p className="text-xs font-medium text-muted-foreground">{t.overview.estNav}</p>
+              <ErrorState message={estimateError} onRetry={reloadEstimate} size="sm" />
+            </CardContent>
+          </Card>
+        ) : (
+          <MetricCard label={t.overview.estNav} value={hasEstimate ? signedMoney(estimate!.total_estimated_pnl) : "—"} sub={hasEstimate ? `${pct(estimate!.estimated_return)} · ${estimate!.gztime.slice(11, 16) || ""}` : undefined} color={hasEstimate ? pnlColor(estimate!.total_estimated_pnl) : undefined} />
+        )}
         <MetricCard label={dailyLabel} value={signedMoney(summary.daily_pnl)} sub={pct(summary.daily_return)} color={pnlColor(summary.daily_pnl)} />
         <MetricCard label={t.overview.weekPnl} value={signedMoney(summary.week_pnl)} sub={pct(summary.week_return)} color={pnlColor(summary.week_pnl)} />
         <MetricCard label={t.overview.monthPnl} value={signedMoney(summary.month_pnl)} sub={pct(summary.month_return)} color={pnlColor(summary.month_pnl)} />
@@ -217,65 +242,93 @@ export default function Overview() {
         <Card className="card-hover lg:col-span-2">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t.overview.sectorDist}</CardTitle></CardHeader>
           <CardContent>
-            {sectorDistLoading ? <LoadingState size="sm" /> : sectorDist && sectorDist.length > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={sectorDist.slice(0, 12)} layout="vertical" margin={{ left: 10, right: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
-                  <XAxis type="number" tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-                  <YAxis type="category" dataKey="sector" width={65} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
-                  <Bar dataKey="market_value" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} barSize={14} />
-                  <Tooltip content={<ChartTooltip nameKey="sector" />} cursor={{ fill: 'hsl(var(--primary))', opacity: 0.08 }} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : <EmptyState title={t.common.noData} size="lg" />}
+            {distContent({
+              loading: sectorDistLoading,
+              error: sectorDistError,
+              data: sectorDist,
+              onRetry: reloadSectorDist,
+              emptyTitle: t.common.noData,
+              chart: (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={sectorDist?.slice(0, 12)} layout="vertical" margin={{ left: 10, right: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="hsl(var(--border))" />
+                    <XAxis type="number" tickFormatter={(v: number) => `${(v / 1000).toFixed(0)}k`} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                    <YAxis type="category" dataKey="sector" width={65} fontSize={11} tick={{ fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                    <Bar dataKey="market_value" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} barSize={14} />
+                    <Tooltip content={<ChartTooltip nameKey="sector" />} cursor={{ fill: 'hsl(var(--primary))', opacity: 0.08 }} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ),
+            })}
           </CardContent>
         </Card>
 
         <Card className="card-hover">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t.overview.typeDist}</CardTitle></CardHeader>
           <CardContent>
-            {typeDistLoading ? <LoadingState size="sm" /> : typeDist && typeDist.length > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie data={typeDist.map(d => ({ ...d, fund_type: translateFundType(String(d.fund_type)) }))} dataKey="market_value" nameKey="fund_type" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
-                    {typeDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
-                  </Pie>
-                  <Tooltip content={<ChartTooltip nameKey="fund_type" />} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : <EmptyState title={t.common.noData} size="lg" />}
+            {distContent({
+              loading: typeDistLoading,
+              error: typeDistError,
+              data: typeDist,
+              onRetry: reloadTypeDist,
+              emptyTitle: t.common.noData,
+              chart: (
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie data={typeDist?.map(d => ({ ...d, fund_type: translateFundType(String(d.fund_type)) }))} dataKey="market_value" nameKey="fund_type" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
+                      {typeDist?.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip nameKey="fund_type" />} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ),
+            })}
           </CardContent>
         </Card>
 
         <Card className="card-hover">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t.overview.riskDist}</CardTitle></CardHeader>
           <CardContent>
-            {riskDistLoading ? <LoadingState size="sm" /> : riskDist && riskDist.length > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie data={riskDist.map(d => ({ ...d, risk_level: translateRiskLevel(String(d.risk_level)) }))} dataKey="market_value" nameKey="risk_level" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
-                    {riskDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
-                  </Pie>
-                  <Tooltip content={<ChartTooltip nameKey="risk_level" />} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : <EmptyState title={t.common.noData} size="lg" />}
+            {distContent({
+              loading: riskDistLoading,
+              error: riskDistError,
+              data: riskDist,
+              onRetry: reloadRiskDist,
+              emptyTitle: t.common.noData,
+              chart: (
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie data={riskDist?.map(d => ({ ...d, risk_level: translateRiskLevel(String(d.risk_level)) }))} dataKey="market_value" nameKey="risk_level" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
+                      {riskDist?.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip nameKey="risk_level" />} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ),
+            })}
           </CardContent>
         </Card>
 
         <Card className="card-hover">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t.overview.channelDist}</CardTitle></CardHeader>
           <CardContent>
-            {channelDistLoading ? <LoadingState size="sm" /> : channelDist && channelDist.length > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie data={channelDist.map(d => ({ ...d, channel: translateChannel(String(d.channel || t.common.unlabeled)) }))} dataKey="market_value" nameKey="channel" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
-                    {channelDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
-                  </Pie>
-                  <Tooltip content={<ChartTooltip nameKey="channel" />} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : <EmptyState title={t.common.noData} size="lg" />}
+            {distContent({
+              loading: channelDistLoading,
+              error: channelDistError,
+              data: channelDist,
+              onRetry: reloadChannelDist,
+              emptyTitle: t.common.noData,
+              chart: (
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie data={channelDist?.map(d => ({ ...d, channel: translateChannel(String(d.channel || t.common.unlabeled)) }))} dataKey="market_value" nameKey="channel" cx="50%" cy="50%" outerRadius={75} innerRadius={40} paddingAngle={2}>
+                      {channelDist?.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} stroke="none" />)}
+                    </Pie>
+                    <Tooltip content={<ChartTooltip nameKey="channel" />} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ),
+            })}
           </CardContent>
         </Card>
       </div>

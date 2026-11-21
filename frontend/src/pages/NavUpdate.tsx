@@ -154,6 +154,31 @@ export default function NavUpdate() {
     })
   }, [displayRows, todayStr])
 
+  // 状态列渲染：更新结果优先，其次按净值新鲜度给出徽章/图标（早返回，避免嵌套三元）
+  const renderStatus = (r: (typeof displayRows)[number]) => {
+    if (r.hasResult) {
+      if (r.ok) {
+        return <span title={t.navUpdate.updateSuccess}><CheckCircle2 className="h-4 w-4 text-success inline" /></span>
+      }
+      return <span title={translateMessage(r.code, r.message)}><XCircle className="h-4 w-4 text-destructive inline" /></span>
+    }
+    if (!r.date) {
+      return (
+        <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10 text-[11px] px-1.5 py-0">
+          {t.navUpdate.outdated}
+        </Badge>
+      )
+    }
+    if (r.date < todayStr) {
+      return (
+        <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10 text-[11px] px-1.5 py-0">
+          {t.navUpdate.stale}
+        </Badge>
+      )
+    }
+    return <span title={t.navUpdate.upToDate}><CheckCircle2 className="h-4 w-4 text-success inline" /></span>
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader title={t.navUpdate.title} icon={<RefreshCw className="h-5 w-5" />} />
@@ -314,23 +339,7 @@ export default function NavUpdate() {
                       <TableCell className="tabular-nums">{r.date ?? "—"}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{navStr(r.nav)}</TableCell>
                       <TableCell className="text-center">
-                        {r.hasResult ? (
-                          r.ok ? (
-                            <span title={t.navUpdate.updateSuccess}><CheckCircle2 className="h-4 w-4 text-success inline" /></span>
-                          ) : (
-                            <span title={translateMessage(r.code, r.message)}><XCircle className="h-4 w-4 text-destructive inline" /></span>
-                          )
-                        ) : !r.date ? (
-                          <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10 text-[11px] px-1.5 py-0">
-                            {t.navUpdate.outdated}
-                          </Badge>
-                        ) : outdated ? (
-                          <Badge variant="outline" className="text-warning border-warning/40 bg-warning/10 text-[11px] px-1.5 py-0">
-                            {t.navUpdate.stale}
-                          </Badge>
-                        ) : (
-                          <span title={t.navUpdate.upToDate}><CheckCircle2 className="h-4 w-4 text-success inline" /></span>
-                        )}
+                        {renderStatus(r)}
                       </TableCell>
                     </TableRow>
                   )

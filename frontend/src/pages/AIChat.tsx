@@ -25,7 +25,7 @@ const QUICK_PROMPT_ICONS = [ShieldAlert, Lightbulb, PlusCircle, Newspaper]
 export default function AIChat() {
   const { t } = useLang()
   const {
-    messages, streaming, searching, currentTitle, archive, txStatus, systemPrompt,
+    messages, streaming, searching, activeId, currentTitle, archive, txStatus, systemPrompt,
     includeContext, lastUsage, usageStats,
     handleSend, handleNewChat, handleSwitchChat, handleDeleteArchived, handleRenameArchived,
     handleConfirmTx, handleDiscardTx, setIncludeContext, setCurrentTitle,
@@ -118,7 +118,8 @@ export default function AIChat() {
                 <PopoverTrigger asChild>
                   <button
                     type="button"
-                    className="flex items-center gap-1 text-base font-bold hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98]"
+                    disabled={streaming}
+                    className="flex items-center gap-1 text-base font-bold hover:text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
                   >
                     <span className="truncate max-w-[100px] sm:max-w-[180px]">{currentTitle}</span>
                     <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${dropdownOpen ? "rotate-180" : ""}`} />
@@ -145,8 +146,9 @@ export default function AIChat() {
                     {archive.map((s) => (
                       <div
                         key={s.id}
-                        className="group flex items-center gap-2 px-3 py-2 hover:bg-muted/50 cursor-pointer"
-                        onClick={() => { handleSwitchChat(s.id); setDropdownOpen(false); setEditingTitle(false) }}
+                        aria-disabled={streaming}
+                        className={`group flex items-center gap-2 px-3 py-2 ${streaming ? "cursor-not-allowed opacity-50" : "hover:bg-muted/50 cursor-pointer"}`}
+                        onClick={() => { if (streaming) return; handleSwitchChat(s.id); setDropdownOpen(false); setEditingTitle(false) }}
                       >
                         <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                         <div className="flex-1 min-w-0">
@@ -290,7 +292,6 @@ export default function AIChat() {
               </div>
             )}
             {messages.map((msg, i) => {
-              const tx = msg.role === "assistant" ? extractToolCall(msg.content) : null
               const display = msg.role === "assistant" ? stripJsonBlock(msg.content) : msg.content
               return (
                 <div key={i} className={msg.role === "user" ? "flex justify-end" : "flex justify-start gap-2.5"}>
@@ -315,9 +316,6 @@ export default function AIChat() {
                       </span>
                     ) : null}
                   </div>
-                  {tx && !streaming && (
-                    <div className="hidden" />
-                  )}
                 </div>
               )
             })}
@@ -325,7 +323,7 @@ export default function AIChat() {
               const tx = msg.role === "assistant" ? extractToolCall(msg.content) : null
               const status = txStatus[i]
               return tx && !streaming ? (
-                <div key={`tx-${i}`} className="flex justify-start gap-2.5">
+                <div key={`tx-${activeId}-${i}`} className="flex justify-start gap-2.5">
                   <div className="w-7 shrink-0" />
                   <div className="max-w-[80%] flex-1">
                     <TxConfirmCard
@@ -450,7 +448,7 @@ export default function AIChat() {
   )
 }
 
-function TxConfirmCard({
+export function TxConfirmCard({
   tx,
   status,
   adding,
@@ -472,31 +470,45 @@ function TxConfirmCard({
   const [estimatedAmount, setEstimatedAmount] = useState<number | null>(null)
   const [estimatedNav, setEstimatedNav] = useState<number | null>(null)
 
+  // tx 身份变化（切换会话/消息复用同一卡片实例）时重置全部本地编辑与估算状态，
+  // 避免把上一笔交易的手续费/估算金额/净值带入新交易
   useEffect(() => {
     setEditDate(tx.date)
     setAfterThree(tx.after_three)
-  }, [tx.date, tx.after_three])
+    setEditFee(tx.fee ? String(tx.fee) : "")
+    setFeeCalcResult(null)
+    setFeeCalcLoading(false)
+    setEstimatedAmount(null)
+    setEstimatedNav(null)
+  }, [tx.fund_code, tx.action, tx.date, tx.after_three, tx.amount, tx.shares, tx.nav, tx.fee])
+
+  // 卖出估算日期：tx 自带日期优先；LLM 缺日期时用用户补填的 editDate（补填即触发估算）
+  const calcDate = tx.date || editDate
 
   useEffect(() => {
     if (!tx.fund_code) return
     const amt = tx.amount ?? 0
     const sh = tx.shares ?? 0
-    const dt = tx.date
+    const dt = calcDate
+    // stale 守卫：tx/日期变化或卸载后，过期响应不再覆盖当前估算
+    let stale = false
     if (tx.action === "buy" && amt > 0) {
       setFeeCalcLoading(true)
       api.calcFundFee(tx.fund_code, { action: "buy", amount: amt })
         .then((res) => {
+          if (stale) return
           setFeeCalcResult(res)
           if (!tx.fee && res.fee > 0) {
             setEditFee(res.fee.toFixed(2))
           }
         })
         .catch(() => {})
-        .finally(() => setFeeCalcLoading(false))
+        .finally(() => { if (!stale) setFeeCalcLoading(false) })
     } else if (tx.action === "sell" && sh > 0 && dt) {
       setFeeCalcLoading(true)
       api.calcFundFee(tx.fund_code, { action: "sell", shares: sh, date: dt })
         .then((res) => {
+          if (stale) return
           setFeeCalcResult(res)
           if (!tx.fee && res.fee > 0) {
             setEditFee(res.fee.toFixed(2))
@@ -505,9 +517,12 @@ function TxConfirmCard({
           if (res.amount > 0) setEstimatedAmount(res.amount)
         })
         .catch(() => {})
-        .finally(() => setFeeCalcLoading(false))
+        .finally(() => { if (!stale) setFeeCalcLoading(false) })
+    } else {
+      setFeeCalcLoading(false)
     }
-  }, [tx.fund_code, tx.action, tx.amount, tx.shares, tx.date])
+    return () => { stale = true }
+  }, [tx.fund_code, tx.action, tx.amount, tx.shares, calcDate])
 
   if (status?.state === "added") {
     return (

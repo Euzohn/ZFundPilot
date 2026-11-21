@@ -1538,6 +1538,7 @@ const en: typeof zh = {
     restore: "Restore",
     restored: "Watchlist item restored",
     restoreFailed: "Restore failed",
+    loadDeletedFailed: "Failed to load deleted items",
     deletedAt: "Deleted",
   },
   screener: {

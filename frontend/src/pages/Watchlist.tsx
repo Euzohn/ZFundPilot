@@ -155,7 +155,7 @@ export default function Watchlist() {
       const data = await api.getDeletedWatchlist()
       setDeleted(data.items)
     } catch {
-      toast.error(t.watchlist.restoreFailed)
+      toast.error(t.watchlist.loadDeletedFailed)
     } finally {
       setDeletedLoading(false)
     }

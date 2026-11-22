@@ -519,12 +519,15 @@ def _migrate_relax_transactions_schema() -> None:
         if not has_old_check and has_new_check:
             return  # 已是最终 schema，无需迁移
 
-        # 重建脚本用 BEGIN/COMMIT 包裹：executescript 会先隐式提交挂起事务，
-        # 故脏数据清理必须放进脚本内部，才能与重建同事务原子完成；
+        # 重建脚本用 BEGIN IMMEDIATE/COMMIT 包裹：executescript 会先隐式提交
+        # 挂起事务，故脏数据清理必须放进脚本内部，才能与重建同事务原子完成；
         # 中途失败整体回滚（正式表不丢），残留 *_new 先清理保证可重入。
+        # IMMEDIATE：先取写锁再读，避免 deferred 读→写升级撞上并发写推进 WAL
+        # 时立即 BUSY（busy_timeout 对该死锁形态不生效，多 worker 启动并发
+        # init_db 与调度器写库时可复现）。
         conn.executescript(
             """
-            BEGIN;
+            BEGIN IMMEDIATE;
             DROP TABLE IF EXISTS transactions_new;
             -- 清理脏数据：无效 action 值 + 负金额（否则重建时 CHECK 会失败）
             DELETE FROM transactions
@@ -663,9 +666,10 @@ def _migrate_dividend_alerts_unique() -> None:
 
         # 去重 + 重建同事务原子完成（executescript 会先隐式提交挂起事务，
         # 故清理放进脚本内部）；残留 *_new 先清理保证失败后可重入。
+        # BEGIN IMMEDIATE 理由见 _migrate_relax_transactions_schema。
         conn.executescript(
             """
-            BEGIN;
+            BEGIN IMMEDIATE;
             DROP TABLE IF EXISTS dividend_alerts_new;
             -- 清理重复数据：仅对 ex_date 非空的 dividend 行去重（保留每组最早 id）。
             -- tp_sl 行 ex_date 为 NULL，SQLite UNIQUE 视 NULL 互异，不受约束，不能去重。
@@ -751,7 +755,7 @@ def _migrate_dividend_alerts_channel() -> None:
         # 去重 + 重建同事务原子完成；残留 *_new 先清理保证失败后可重入。
         conn.executescript(
             f"""
-            BEGIN;
+            BEGIN IMMEDIATE;
             DROP TABLE IF EXISTS dividend_alerts_new;
             {dedup_sql};
             CREATE TABLE dividend_alerts_new (
@@ -847,7 +851,7 @@ def _migrate_auto_invest_plans_check() -> None:
         # 清理 + 重建同事务原子完成；残留 *_new 先清理保证失败后可重入。
         conn.executescript(
             """
-            BEGIN;
+            BEGIN IMMEDIATE;
             DROP TABLE IF EXISTS auto_invest_plans_new;
             DELETE FROM auto_invest_plans WHERE amount <= 0;
             CREATE TABLE auto_invest_plans_new (
@@ -887,7 +891,7 @@ def _migrate_nav_history_check() -> None:
         # 清理 + 重建同事务原子完成；残留 *_new 先清理保证失败后可重入。
         conn.executescript(
             """
-            BEGIN;
+            BEGIN IMMEDIATE;
             DROP TABLE IF EXISTS nav_history_new;
             DELETE FROM nav_history WHERE nav <= 0;
             CREATE TABLE nav_history_new (

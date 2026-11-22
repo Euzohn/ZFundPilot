@@ -473,6 +473,90 @@ def test_rebuild_migration_atomic_and_reentrant(case, fail_point):
                 assert schema_mark in sql
 
 
+class _ScriptCaptureConn:
+    """连接代理：捕获 executescript 的脚本文本，其余透传。"""
+
+    def __init__(self, conn: sqlite3.Connection, scripts: list[str]):
+        self._conn = conn
+        self.scripts = scripts
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def executescript(self, script: str):
+        self.scripts.append(script)
+        return self._conn.executescript(script)
+
+
+@pytest.mark.parametrize(
+    "case", _REBUILD_CASES, ids=[c[0] for c in _REBUILD_CASES]
+)
+def test_rebuild_migration_takes_write_lock_upfront(case):
+    """重建迁移脚本必须以 BEGIN IMMEDIATE 开头（先取写锁再读）。
+
+    deferred BEGIN 的读→写升级遇并发写推进 WAL 时立即 database is locked
+    （busy_timeout 对该形态不生效，机制见
+    test_wal_deferred_upgrade_immediate_busy），CI 曾因此挂在 init_db 的
+    nav_history 迁移：交易日历引导线程在后续测试 init_db 期间并发写库。
+    """
+    name, table, migrate_name, *_ = case
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            with db.get_connection() as conn:
+                conn.executescript(_REBUILD_SETUPS[name])
+            migrate = getattr(db, migrate_name)
+            scripts: list[str] = []
+            real_gc = db.get_connection
+
+            @contextmanager
+            def capturing_gc(write=False):
+                with real_gc(write=write) as conn:
+                    yield _ScriptCaptureConn(conn, scripts)
+
+            with patch.object(db, "get_connection", capturing_gc):
+                migrate()
+            assert scripts, "迁移未执行重建脚本（schema 判断异常？）"
+            assert all(s.strip().startswith("BEGIN IMMEDIATE") for s in scripts)
+
+
+def test_wal_deferred_upgrade_immediate_busy():
+    """WAL 下 deferred 先读后写升级，遇并发写推进 WAL 立即 database is
+    locked（busy_timeout 不生效）；BEGIN IMMEDIATE 先取写锁故不受影响。
+
+    这是重建迁移用 BEGIN IMMEDIATE 的原因（见
+    test_rebuild_migration_takes_write_lock_upfront）。
+    """
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            with db.get_connection(write=True) as conn:
+                conn.execute(
+                    "INSERT INTO trade_calendar(date) VALUES('2026-01-05')")
+
+            # 旧形态：deferred BEGIN → 先读（建快照）→ 并发写提交推进 WAL
+            # → 升级写立即 BUSY（不等待 busy_timeout）
+            with db.get_connection() as a:
+                a.execute("BEGIN")
+                a.execute("SELECT COUNT(*) FROM trade_calendar").fetchone()
+                with db.get_connection() as b:
+                    b.execute(
+                        "INSERT INTO trade_calendar(date) VALUES('2026-01-06')")
+                with pytest.raises(sqlite3.OperationalError,
+                                   match="database is locked"):
+                    a.execute(
+                        "INSERT INTO trade_calendar(date) VALUES('2026-01-07')")
+                a.rollback()
+
+            # 新形态：BEGIN IMMEDIATE 先持写锁，读+写都在锁内，不撞升级
+            with db.get_connection() as a:
+                a.execute("BEGIN IMMEDIATE")
+                a.execute("SELECT COUNT(*) FROM trade_calendar").fetchone()
+                a.execute(
+                    "INSERT INTO trade_calendar(date) VALUES('2026-01-07')")
+                a.commit()
+
+
 def test_init_db_skips_redundant_indexes():
     """被判冗余的三个索引不再于 init_db 创建（消除每次启动建了又删）。"""
     with TemporaryDirectory() as d:

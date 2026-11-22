@@ -302,6 +302,9 @@ class TestLifespanSchedulerReset:
         monkeypatch.setattr(scheduler, "_get_dividend_enabled", lambda: False)
         monkeypatch.setattr(scheduler, "_bootstrap_auto_invest", lambda: None)
         monkeypatch.setattr(scheduler, "_bootstrap_risk_levels", lambda: None)
+        # 交易日历引导线程同样避免真实联网拉日历后写库：拉取慢于测试生命周期
+        # 时会写进后续测试的临时库，曾致 init_db 迁移撞 database is locked
+        monkeypatch.setattr(scheduler, "_bootstrap_trade_calendar", lambda: None)
         monkeypatch.setattr(scheduler, "_scheduler", None)
         # 非法 cron：init_scheduler 创建实例后 _parse_cron 抛 ValueError
         db.upsert_preference("nav_cron", "99 99 * * *")

@@ -160,6 +160,18 @@ def notify_auto_invest_task_error(error: str) -> None:
 
 
 @_best_effort
+def notify_trade_calendar_degraded(date: str) -> bool | None:
+    """定投检查日未被交易日历覆盖（fail-open 退化，节假日可能照常执行）。
+
+    按日期去重：同日多次检查（手动刷新/重启引导）不重发。
+    返回是否新插入（False = 同日已发或写入失败）。
+    """
+    return notify("auto_invest", date,
+                  f"auto_invest:trade_calendar_degraded:{date}",
+                  "trade_calendar_degraded", {"date": date})
+
+
+@_best_effort
 def notify_job_failed(job_id: int, job_type: str, error: str) -> None:
     """Agent 刷新/回测任务落 failed 后（两类 job 同模式）。"""
     notify("job", job_id, f"job:failed:{job_id}", "job_failed",

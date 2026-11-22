@@ -396,6 +396,7 @@ class TestResetScheduler:
         monkeypatch.setattr(scheduler, "_get_dividend_enabled", lambda: False)
         monkeypatch.setattr(scheduler, "_bootstrap_auto_invest", lambda: None)
         monkeypatch.setattr(scheduler, "_bootstrap_risk_levels", lambda: None)
+        monkeypatch.setattr(scheduler, "_bootstrap_trade_calendar", lambda: None)
         # 模拟半初始化：实例已创建但未 start
         inst = BackgroundScheduler(timezone=config.TIMEZONE_STR)
         monkeypatch.setattr(scheduler, "_scheduler", inst)
@@ -406,3 +407,73 @@ class TestResetScheduler:
             assert scheduler._scheduler.running
         finally:
             scheduler.shutdown_scheduler()
+
+
+class TestTradeCalendarCoverageAndDegradeNotify:
+    """P3-2：日历覆盖不足强制刷新 + 定投执行日降级通知。"""
+
+    def test_ensure_coverage_force_refreshes_when_not_covered(self):
+        with (
+            patch.object(db, "trade_calendar_covers", return_value=False),
+            patch.object(scheduler.fetch_fund, "refresh_trade_calendar",
+                         return_value=100) as refresh,
+        ):
+            scheduler._ensure_trade_calendar_coverage()
+        refresh.assert_called_once_with(force=True)
+
+    def test_ensure_coverage_skips_when_covered(self):
+        with (
+            patch.object(db, "trade_calendar_covers", return_value=True),
+            patch.object(scheduler.fetch_fund, "refresh_trade_calendar") as refresh,
+        ):
+            scheduler._ensure_trade_calendar_coverage()
+        refresh.assert_not_called()
+
+    def test_refresh_trade_calendar_always_checks_coverage(self):
+        with (
+            patch.object(scheduler.fetch_fund, "refresh_trade_calendar",
+                         return_value=10),
+            patch.object(scheduler, "_ensure_trade_calendar_coverage") as ensure,
+        ):
+            scheduler._refresh_trade_calendar()
+        ensure.assert_called_once_with()
+
+    def test_run_auto_invest_notifies_when_calendar_degraded(self):
+        with (
+            patch.object(scheduler.fetch_fund, "clear_purchase_status_cache"),
+            patch.object(scheduler, "_refresh_purchase_status"),
+            patch.object(scheduler, "_refresh_trade_calendar"),
+            patch.object(db, "trade_calendar_covers", return_value=False),
+            patch.object(scheduler.auto_invest, "run_all_due", return_value=[]),
+            patch.object(scheduler.db, "log_audit"),
+            patch.object(scheduler.notification_service,
+                         "notify_trade_calendar_degraded") as notify,
+        ):
+            scheduler._run_auto_invest()
+        notify.assert_called_once()
+        today = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
+        assert notify.call_args.args[0] == today
+
+    def test_run_auto_invest_no_notify_when_covered(self):
+        with (
+            patch.object(scheduler.fetch_fund, "clear_purchase_status_cache"),
+            patch.object(scheduler, "_refresh_purchase_status"),
+            patch.object(scheduler, "_refresh_trade_calendar"),
+            patch.object(db, "trade_calendar_covers", return_value=True),
+            patch.object(scheduler.auto_invest, "run_all_due", return_value=[]),
+            patch.object(scheduler.db, "log_audit"),
+            patch.object(scheduler.notification_service,
+                         "notify_trade_calendar_degraded") as notify,
+        ):
+            scheduler._run_auto_invest()
+        notify.assert_not_called()
+
+    def test_bootstrap_trade_calendar_is_best_effort(self):
+        """启动引导线程忽略一切异常（_refresh_trade_calendar 内部兜底）。"""
+        with (
+            patch.object(scheduler.fetch_fund, "refresh_trade_calendar",
+                         side_effect=RuntimeError("boom")),
+            patch.object(scheduler, "_ensure_trade_calendar_coverage") as ensure,
+        ):
+            scheduler._bootstrap_trade_calendar()  # 不抛异常
+        ensure.assert_not_called()

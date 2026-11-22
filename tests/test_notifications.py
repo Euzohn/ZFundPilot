@@ -76,6 +76,12 @@ class TestBestEffort:
                             MagicMock(side_effect=RuntimeError("db down")))
         assert ns.notify("dividend", "1", "k", "dividend_detected") is False
 
+    def test_trade_calendar_degraded_swallows_db_error(self, temp_db, monkeypatch):
+        """降级通知走 best-effort：db 失败不抛，不影响定投主流程。"""
+        monkeypatch.setattr(db, "add_notification",
+                            MagicMock(side_effect=RuntimeError("db down")))
+        assert ns.notify_trade_calendar_degraded("2026-10-01") is False  # 不抛
+
     def test_sync_swallows_db_error(self, temp_db, monkeypatch):
         monkeypatch.setattr(db, "sync_notification_by_source",
                             MagicMock(side_effect=RuntimeError("db down")))
@@ -90,6 +96,24 @@ class TestBestEffort:
         monkeypatch.setattr("zfundpilot.analysis.calculate_positions",
                             MagicMock(side_effect=RuntimeError("boom")))
         ns.evaluate_data_health()  # 不抛
+
+
+class TestTradeCalendarDegraded:
+    """P3-2：定投执行日日历未覆盖 → auto_invest 来源降级通知，按日去重。"""
+
+    def test_creates_notification_row(self, temp_db):
+        assert ns.notify_trade_calendar_degraded("2026-10-01") is True
+        row = _rows()[0]
+        assert row["source_type"] == "auto_invest"
+        assert row["title_code"] == "trade_calendar_degraded"
+        assert json.loads(row["title_params"]) == {"date": "2026-10-01"}
+        assert row["status"] == "unread"
+
+    def test_dedupe_by_date(self, temp_db):
+        assert ns.notify_trade_calendar_degraded("2026-10-01") is True
+        assert ns.notify_trade_calendar_degraded("2026-10-01") is False  # 同日不重发
+        assert ns.notify_trade_calendar_degraded("2026-10-02") is True
+        assert len(_rows()) == 2
 
 
 class TestFaultInjection:

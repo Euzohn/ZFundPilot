@@ -1,4 +1,5 @@
 """db 层测试：SQLite 并发 PRAGMA（WAL + busy_timeout）与 AI 用量时区。"""
+import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -224,6 +225,39 @@ def test_trade_calendar_upsert_idempotent():
                     "SELECT COUNT(*) AS c FROM trade_calendar"
                 ).fetchone()["c"]
             assert cnt == 1
+
+
+def test_trade_calendar_covers():
+    """trade_calendar_covers 三态：空表 False / 覆盖上限内 True / 超上限 False。"""
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            assert db.trade_calendar_covers("2026-10-01") is False  # 空表
+            db.upsert_trade_calendar(["2026-09-30", "2026-10-08", "2026-10-09"])
+            # 上限内（含国庆休市日）= 有权威日历判定，属「已覆盖」
+            assert db.trade_calendar_covers("2026-10-01") is True
+            assert db.trade_calendar_covers("2026-10-09") is True  # 恰为上限
+            assert db.trade_calendar_covers("2026-12-31") is False  # 超上限
+
+
+def test_cal_degrade_warning_throttled(caplog):
+    """日历降级 warning 按（原因, 日期）每进程节流一次，避免刷日志。"""
+    with TemporaryDirectory() as d:
+        with patch.object(config, "DB_PATH", _tmp_db_path(d)):
+            db.init_db()
+            # 模块级日历缓存跨测试残留（指向已删除的临时库），显式重置
+            db._trade_cal_cache = None
+            db._trade_cal_max = None
+            db._cal_degrade_warned.clear()
+            with caplog.at_level(logging.WARNING, logger="zfundpilot.db"):
+                assert db.is_trading_day("2026-10-01") is True   # 空表退化（周四放行）
+                assert db.is_trading_day("2026-10-01") is True   # 同原因同日 → 节流
+                db.upsert_trade_calendar(["2026-09-30", "2026-10-08"])
+                assert db.is_trading_day("2027-01-04") is True   # 超覆盖（周一放行）
+                assert db.is_trading_day("2027-01-04") is True   # 同原因同日 → 节流
+                db._cal_degrade_warned.clear()
+    degrade_msgs = [r.message for r in caplog.records if "交易日历降级" in r.message]
+    assert len(degrade_msgs) == 2
 
 
 # ---------------------------------------------------------------------------

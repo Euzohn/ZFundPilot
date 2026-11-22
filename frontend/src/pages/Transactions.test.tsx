@@ -240,6 +240,18 @@ describe("定投立即执行 409 分支", () => {
   })
 })
 
+describe("定投立即执行成功提示（P3 手动执行透明化）", () => {
+  it("成功 toast 附带下次定时说明：手动执行不影响定投计划", async () => {
+    renderPage("/transactions?tab=auto-invest")
+    const btn = await screen.findByRole("button", { name: "立即执行" })
+    fireEvent.click(btn)
+
+    await waitFor(() => expect(toastMocks.success).toHaveBeenCalledWith(
+      "定投执行成功，交易 ID: 7 下次定时：2026-11-23（不受本次执行影响）",
+    ))
+  })
+})
+
 describe("CSV 导出 / 模板下载错误处理", () => {
   it("导出失败时 toast 错误提示", async () => {
     renderPage("/transactions?tab=csv")

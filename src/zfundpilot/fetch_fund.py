@@ -1200,6 +1200,12 @@ def calc_redemption_fee(
     先按日期回放该基金历史流水得到各买入批次剩余份额：更早的卖出按 FIFO
     消耗批次，reinvest（红利再投资）作为新批次（起算日=其日期）；再对本次
     卖出按剩余批次的持有天数匹配费率档。
+
+    持有期口径（刻意保守，按流水日期计）：起算日为买入流水日期，持有天数
+    = 卖出日 − 起算日。同日买入按 0 天计（落 <7 天惩罚档）；同日卖出不回放
+    （回填场景下无法与本次卖出区分）。边界模糊时按高档计费——宁可高估
+    费用、不静默少计成本。真实基金按确认日（T+1）计持有期，精确口径需
+    依赖权威交易日历，留待后续。
     """
     rates = fetch_fund_fee_rates(fund_code)
     if not rates.ok or not rates.redemption:
@@ -1941,16 +1947,20 @@ _TRADE_CAL_CACHE_TTL = 24 * 3600  # 24 小时（日历按年更新）
 _trade_cal_lock = threading.Lock()
 
 
-def fetch_trade_calendar() -> set[str]:
+def fetch_trade_calendar(force: bool = False) -> set[str]:
     """获取 A 股交易日历（akshare 新浪交易日历），24h 缓存。
 
     返回 "YYYY-MM-DD" 字符串集合。交易所官方日历，含法定节假日 + 调休。
     网络失败时优先返回过期缓存（stale-if-error），无缓存则返回空集。
+
+    ``force=True``（调度器检测到日历未覆盖未来 30 天，如跨年/长休期后）
+    绕过 TTL 直接重拉；重拉失败仍返回旧缓存，不破坏 stale-if-error 保底。
     """
     global _trade_cal_cache_ts
     now = time.time()
     with _trade_cal_lock:
-        if _trade_cal_cache and now - _trade_cal_cache_ts < _TRADE_CAL_CACHE_TTL:
+        if (not force and _trade_cal_cache
+                and now - _trade_cal_cache_ts < _TRADE_CAL_CACHE_TTL):
             return _trade_cal_cache
         try:
             # 整段调用持进程级全生命周期锁（含 V8 上下文销毁），与乐咕估值等
@@ -1970,9 +1980,12 @@ def fetch_trade_calendar() -> set[str]:
             return _trade_cal_cache
 
 
-def refresh_trade_calendar() -> int:
-    """拉取交易日历并持久化到 trade_calendar 表，返回天数。"""
-    dates = fetch_trade_calendar()
+def refresh_trade_calendar(force: bool = False) -> int:
+    """拉取交易日历并持久化到 trade_calendar 表，返回天数。
+
+    ``force=True`` 绕过 24h 缓存（见 fetch_trade_calendar）。
+    """
+    dates = fetch_trade_calendar(force)
     if dates:
         db.upsert_trade_calendar(sorted(dates))
     return len(dates)

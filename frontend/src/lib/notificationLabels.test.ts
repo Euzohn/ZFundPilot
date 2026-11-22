@@ -31,6 +31,7 @@ const SAMPLE_PARAMS: Record<string, Record<string, unknown>> = {
   },
   auto_invest_error: { plan_id: 1, fund_code: "005827", error: "boom" },
   auto_invest_task_error: { date: "2026-11-19", error: "boom" },
+  trade_calendar_degraded: { date: "2026-10-01" },
   job_failed: { job_id: 11, job_type: "data_refresh", error: "timeout" },
   job_interrupted: { job_id: 12 },
   nav_update_failed: { date: "2026-11-19", count: 3, funds: [] },
@@ -115,6 +116,16 @@ describe("notification titles", () => {
     expect(notificationTitle("nav_update_failed", { count: 3 })).toContain("3 只基金")
     mocks.lang = "en"
     expect(notificationTitle("nav_update_failed", { count: 3 })).toContain("3 fund(s)")
+  })
+
+  it("trade_calendar_degraded interpolates date and stays bilingual", () => {
+    const zh = notificationTitle("trade_calendar_degraded", { date: "2026-10-01" })
+    expect(zh).toContain("2026-10-01")
+    expect(zh).toContain("交易")
+    mocks.lang = "en"
+    const en = notificationTitle("trade_calendar_degraded", { date: "2026-10-01" })
+    expect(en).toContain("2026-10-01")
+    expect(en).not.toMatch(/[\u4e00-\u9fff]/)
   })
 
   it("data_health only lists non-zero parts with neutral separator", () => {

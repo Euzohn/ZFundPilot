@@ -586,6 +586,31 @@ class TestFetchTradeCalendar:
         assert n == 3
         assert saved == [["2026-09-30", "2026-10-08", "2026-10-09"]]
 
+    def test_refresh_force_passthrough(self, trade_cal_cache):
+        """refresh_trade_calendar(force=True) 将 force 透传给 fetch_trade_calendar。"""
+        forced: list[bool] = []
+        with (
+            patch.object(fetch_fund, "fetch_trade_calendar",
+                         side_effect=lambda force=False:
+                             (forced.append(force) or {"2026-10-09"})),
+            patch.object(fetch_fund.db, "upsert_trade_calendar",
+                         lambda dates: len(dates)),
+        ):
+            assert fetch_fund.refresh_trade_calendar(force=True) == 1
+            assert fetch_fund.refresh_trade_calendar() == 1
+        assert forced == [True, False]
+
+    def test_force_bypasses_fresh_cache(self, trade_cal_cache):
+        """force=True 绕过 TTL 强制重拉；force=False 命中缓存不再请求。"""
+        fake = _fake_akshare_calendar(_calendar_df())
+        with patch.dict(sys.modules, {"akshare": fake}):
+            fetch_fund.fetch_trade_calendar()  # 建立新鲜缓存
+            assert fake.tool_trade_date_hist_sina.call_count == 1
+            fetch_fund.fetch_trade_calendar()  # 命中缓存
+            assert fake.tool_trade_date_hist_sina.call_count == 1
+            fetch_fund.fetch_trade_calendar(force=True)  # 绕过 TTL 重拉
+            assert fake.tool_trade_date_hist_sina.call_count == 2
+
 
 # ---------------------------------------------------------------------------
 # 赎回费 FIFO（回放历史 sell/reinvest）+ update_fund_nav 容错

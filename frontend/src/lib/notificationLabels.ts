@@ -88,6 +88,10 @@ export const NOTIFICATION_TITLES: Record<string, TitleFn> = {
     zh: "定投任务异常（本次未执行）",
     en: "Auto-invest task error (run aborted)",
   }),
+  trade_calendar_degraded: (p) => ({
+    zh: `交易日历未覆盖 ${str(p.date)}，定投退化为周末规则判断（节假日可能照常执行）`,
+    en: `Trade calendar doesn't cover ${str(p.date)}; auto-invest fell back to the weekend rule`,
+  }),
   job_failed: (p) => {
     const job = JOB_TYPES[str(p.job_type)] ?? { zh: str(p.job_type), en: str(p.job_type) }
     return {

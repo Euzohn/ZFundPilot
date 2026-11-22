@@ -1724,7 +1724,11 @@ function AutoInvestPlansPanel({ prefillCode, prefillChannel, onPrefillConsumed }
     setExecuting(plan.id)
     try {
       const res = await api.executeAutoInvestPlan(plan.id)
-      toast.success(t.transactions.planExecuteSuccess.replace("{id}", String(res.tx_id)))
+      // 手动执行不顺延/取消定时计划（与真实基金平台一致），成功提示里讲清楚
+      const nextRunHint = plan.next_run
+        ? " " + t.transactions.planExecuteNextRun.replace("{date}", plan.next_run)
+        : ""
+      toast.success(t.transactions.planExecuteSuccess.replace("{id}", String(res.tx_id)) + nextRunHint)
       if (res.warnings?.length) {
         const warnText = (w: string): string => {
           if (w === "suspended") return t.transactions.planSuspended.replace("{status}", translatePurchaseStatus(plan.purchase_status || ""))

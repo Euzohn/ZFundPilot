@@ -303,8 +303,33 @@ def _refresh_trade_calendar() -> None:
     try:
         n = fetch_fund.refresh_trade_calendar()
         logger.info("[scheduler] 交易日历刷新: %d 天", n)
+        _ensure_trade_calendar_coverage()
     except Exception:  # noqa: BLE001
         logger.warning("[scheduler] 交易日历刷新失败", exc_info=True)
+
+
+def _ensure_trade_calendar_coverage() -> None:
+    """日历未覆盖未来 30 天（跨年/长休期更常见）时强制绕过 24h 缓存重拉。"""
+    try:
+        horizon = (datetime.now(config.TIMEZONE)
+                   + timedelta(days=30)).strftime("%Y-%m-%d")
+        if db.trade_calendar_covers(horizon):
+            return
+        logger.warning("[scheduler] 交易日历未覆盖 %s，强制刷新一次", horizon)
+        n = fetch_fund.refresh_trade_calendar(force=True)
+        logger.info("[scheduler] 交易日历强制刷新: %d 天", n)
+    except Exception:  # noqa: BLE001
+        logger.warning("[scheduler] 交易日历覆盖检查/强制刷新失败", exc_info=True)
+
+
+def _bootstrap_trade_calendar() -> None:
+    """启动时刷新交易日历并做覆盖检查（24h 缓存内则轻量返回）。
+
+    覆盖「调度器主任务尚未触达」的启动窗口：首启即拿到最新日历与覆盖
+    告警，缩小 fail-open（日历为空/超范围退化周末判断）的暴露时间。
+    ``_refresh_trade_calendar`` 内部已兜底，作为线程目标安全。
+    """
+    _refresh_trade_calendar()
 
 
 def _refresh_risk_levels() -> None:
@@ -369,6 +394,11 @@ def _run_auto_invest() -> None:
             _refresh_purchase_status()
             # 执行前刷新交易日历，确保节假日 gate 用最新日历
             _refresh_trade_calendar()
+            # 降级检测：执行日未被日历覆盖（fail-open 退化周末判断）时提醒，
+            # 避免节假日照常执行而用户不知情（通知按日去重，best-effort）
+            today_str = datetime.now(config.TIMEZONE).strftime("%Y-%m-%d")
+            if not db.trade_calendar_covers(today_str):
+                notification_service.notify_trade_calendar_degraded(today_str)
             results = auto_invest.run_all_due()
             _last_auto_invest_run = datetime.now(config.TIMEZONE)
             # 通知中心（best-effort）：三类 skip_code / error 逐计划发，holiday 不发
@@ -628,6 +658,9 @@ def init_scheduler() -> None:
 
     # 启动补全缺失的风险等级（部署后无需等待定时任务即可展示）
     threading.Thread(target=_bootstrap_risk_levels, daemon=True).start()
+
+    # 启动刷新交易日历 + 覆盖检查（缩小 fail-open 降级窗口）
+    threading.Thread(target=_bootstrap_trade_calendar, daemon=True).start()
 
 
 # 幂等操作记录保留期：TTL 90 天 + 30 天排障宽限，之后清理。

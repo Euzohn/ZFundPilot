@@ -333,6 +333,7 @@ const en: typeof zh = {
     planCreated: "Plan created",
     paused: "Paused",
     planExecuteSuccess: "Executed, tx ID: {id}",
+    planExecuteNextRun: "Next scheduled run: {date} (unaffected by this run)",
     executeFailed: "Execute failed",
     alreadyExecutedToday: "This plan was already executed today",
     planSuspended: "Fund {status} — auto-invest will skip",

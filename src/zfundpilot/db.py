@@ -1475,6 +1475,41 @@ def get_index_valuation(index_code: str) -> sqlite3.Row | None:
 _trade_cal_cache: frozenset[str] | None = None
 _trade_cal_max: str | None = None
 
+# 日历 fail-open 降级告警节流：每进程按（原因, 日期）最多记一条 warning，
+# 避免日历缺失（首启未刷新/网络失败）时每次判断都刷日志。
+_cal_degrade_warned: set[tuple[str, str]] = set()
+
+
+def _warn_cal_degrade(reason: str, date_str: str) -> None:
+    key = (reason, date_str)
+    if key in _cal_degrade_warned:
+        return
+    _cal_degrade_warned.add(key)
+    logger.warning(
+        "交易日历降级（%s）: %s，按周末规则判断，定投可能照常执行",
+        reason, date_str,
+    )
+
+
+def trade_calendar_covers(date_str: str) -> bool:
+    """交易日历是否覆盖 date_str（表非空且 date_str 不晚于覆盖上限）。
+
+    覆盖 ≠ 交易日：区间内的法定节假日/调休也在覆盖范围内（有权威日历
+    判定）。「未覆盖」即 fail-open 退化为周末判断的两种情形之一（表空/
+    超出上限），供调度器检测降级并告警/发通知。新浪日历自 1990 年起，
+    业务日期恒不早于下限，故不检查下限。
+    """
+    global _trade_cal_cache, _trade_cal_max
+    cal = _trade_cal_cache
+    cal_max = _trade_cal_max
+    if cal is None:
+        with get_connection() as conn:
+            rows = conn.execute("SELECT date FROM trade_calendar").fetchall()
+        cal = frozenset(r["date"] for r in rows)
+        cal_max = max(cal) if cal else None
+        _trade_cal_cache, _trade_cal_max = cal, cal_max
+    return bool(cal) and cal_max is not None and date_str <= cal_max
+
 
 def upsert_trade_calendar(dates: list[str]) -> int:
     """批量写入交易日历（幂等）。失效内存缓存，返回写入行数。"""
@@ -1511,11 +1546,13 @@ def is_trading_day(date_str: str) -> bool:
         cal_max = max(cal) if cal else None
         _trade_cal_cache, _trade_cal_max = cal, cal_max
     if not cal:
+        _warn_cal_degrade("日历为空", date_str)
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         return d.weekday() < 5
     if date_str in cal:
         return True
     if cal_max and date_str > cal_max:
+        _warn_cal_degrade("超出覆盖范围", date_str)
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         return d.weekday() < 5
     return False
@@ -2024,11 +2061,13 @@ def is_trading_day_conn(
         cal_max = max(cal) if cal else None
         _trade_cal_cache, _trade_cal_max = cal, cal_max
     if not cal:
+        _warn_cal_degrade("日历为空", date_str)
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         return d.weekday() < 5
     if date_str in cal:
         return True
     if cal_max and date_str > cal_max:
+        _warn_cal_degrade("超出覆盖范围", date_str)
         d = datetime.strptime(date_str, "%Y-%m-%d").date()
         return d.weekday() < 5
     return False

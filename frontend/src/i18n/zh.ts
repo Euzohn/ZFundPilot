@@ -331,6 +331,7 @@ const zh = {
     planCreated: "定投计划已创建",
     paused: "已暂停",
     planExecuteSuccess: "定投执行成功，交易 ID: {id}",
+    planExecuteNextRun: "下次定时：{date}（不受本次执行影响）",
     executeFailed: "执行失败",
     alreadyExecutedToday: "该定投计划今日已执行",
     planSuspended: "基金当前{status}，定投将跳过",

@@ -44,7 +44,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.security import HTTPBearer
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Match, Mount
 
@@ -3713,6 +3713,7 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
 
     messages: list[ChatMessage]
+    sent_at: AwareDatetime | None = None
 
     @field_validator("messages")
     @classmethod
@@ -3912,12 +3913,19 @@ def get_ai_usage_daily(days: Annotated[int, Query(ge=1, le=365)] = 7) -> list[di
 @app.post("/api/ai/chat")
 async def ai_chat(body: ChatRequest):
     """AI 投顾对话（SSE 流式）。前端已携带 system 消息时跳过重建持仓上下文。"""
+    messages_dicts = [{"role": m.role, "content": m.content} for m in body.messages]
+    if messages_dicts and messages_dicts[-1]["role"] == "user":
+        local_time = body.sent_at.astimezone(config.TIMEZONE) if body.sent_at else datetime.now(config.TIMEZONE)
+        timestamp = local_time.isoformat(sep=" ", timespec="minutes")
+        # 仅给本轮消息添加时间，保留系统提示词和历史消息的前缀以供模型缓存。
+        current_message = messages_dicts[-1]
+        current_message["content"] = f"[本轮发送时间 {timestamp}]\n{current_message['content']}"
+
     has_system = any(m.role == "system" for m in body.messages)
     # 上下文构建含 DB 查询与 akshare 行情抓取（同步阻塞），
     # 必须在流式响应开始前放入线程完成，否则冻结事件循环
     context = (await anyio.to_thread.run_sync(ai.build_portfolio_context)
                if not has_system else "")
-    messages_dicts = [{"role": m.role, "content": m.content} for m in body.messages]
 
     async def generate():
         try:

@@ -213,6 +213,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const content = (text ?? "").trim()
     if (!content || streaming) return
 
+    const sentAt = new Date().toISOString()
     const userMsg: ChatMessage = { role: "user", content }
     const newMessages = [...messages, userMsg]
     setMessages([...newMessages, { role: "assistant", content: "" }])
@@ -248,6 +249,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       ]
       await api.streamChat(
         messagesToSend,
+        sentAt,
         (chunk) => {
           if (chunk.status === "searching") {
             setSearching(true)

@@ -243,6 +243,7 @@ export const api = {
   // AI Chat (SSE streaming — bypasses standard request() wrapper)
   streamChat: async (
     messages: { role: string; content: string }[],
+    sentAt: string,
     onChunk: (data: { content?: string; status?: string; error?: string; done?: boolean; usage?: { prompt: number; completion: number; total: number } }) => void,
   ) => {
     const token = getToken()
@@ -252,7 +253,7 @@ export const api = {
     const res = await fetch(`${BASE}/ai/chat`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages, sent_at: sentAt }),
     })
 
     if (res.status === 401) {

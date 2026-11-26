@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   getAuthStatus: vi.fn(),
   getMe: vi.fn(),
   getAIConfig: vi.fn(),
+  testAIConnection: vi.fn(),
+  updateAIConfig: vi.fn(),
   getVisionConfig: vi.fn(),
   getAIUsage: vi.fn(),
   getAIUsageDaily: vi.fn(),
@@ -461,5 +463,43 @@ describe("Settings 审计日志保留期", () => {
     fireEvent.change(input, { target: { value: "60" } })
     fireEvent.click(within(retentionRow()).getByRole("button", { name: "保存" }))
     await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalledWith("网络错误"))
+  })
+})
+
+describe("AI 投顾连接测试", () => {
+  beforeEach(() => {
+    mocks.getAIConfig.mockResolvedValue({
+      base_url: "", model: "", has_key: false, web_search: true, custom_prompt: "",
+    })
+  })
+
+  it("首次点击使用表单当前值并且不保存配置", async () => {
+    mocks.testAIConnection.mockResolvedValue({ ok: true, provider: "deepseek", model: "deepseek-flash" })
+    renderPage("/?tab=ai")
+    const keyInput = await screen.findByPlaceholderText("sk-...")
+
+    fireEvent.change(screen.getByPlaceholderText("https://api.moonshot.cn/v1"), {
+      target: { value: " https://api.deepseek.com/v1 " },
+    })
+    fireEvent.change(keyInput, { target: { value: " test-key " } })
+    const modelInput = screen.getByPlaceholderText(/glm-4-plus/)
+    fireEvent.change(modelInput, {
+      target: { value: " deepseek-flash " },
+    })
+    const chatSettings = within(modelInput.closest(".rounded-xl") as HTMLElement)
+    fireEvent.click(chatSettings.getAllByRole("button", { name: "测试连接" })[0])
+
+    expect(await screen.findByText(/连接成功 · deepseek · deepseek-flash/)).toBeVisible()
+    expect(mocks.testAIConnection).toHaveBeenCalledTimes(1)
+    expect(mocks.testAIConnection).toHaveBeenCalledWith("https://api.deepseek.com/v1", "test-key", "deepseek-flash", true)
+    expect(mocks.updateAIConfig).not.toHaveBeenCalled()
+  })
+
+  it("DeepSeek 预设填入支持联网搜索的 Flash 模型", async () => {
+    renderPage("/?tab=ai")
+    fireEvent.click(await screen.findByRole("button", { name: "DeepSeek" }))
+
+    expect(screen.getByPlaceholderText("https://api.moonshot.cn/v1")).toHaveValue("https://api.deepseek.com/v1")
+    expect(screen.getByPlaceholderText(/glm-4-plus/)).toHaveValue("deepseek-flash")
   })
 })

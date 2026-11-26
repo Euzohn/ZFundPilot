@@ -3641,17 +3641,20 @@ def _validate_base_url(v: str) -> str:
     return v
 
 
-class AIConfigUpdate(BaseModel):
+class AIConnectionTest(BaseModel):
     base_url: str
     api_key: str = ""
     model: str
     web_search: bool = True
-    custom_prompt: str = ""
 
     @field_validator("base_url")
     @classmethod
     def validate_base_url(cls, v: str) -> str:
         return _validate_base_url(v)
+
+
+class AIConfigUpdate(AIConnectionTest):
+    custom_prompt: str = ""
 
 
 class VisionConfigUpdate(BaseModel):
@@ -3759,9 +3762,17 @@ def get_system_prompt(include_context: bool = True) -> dict[str, Any]:
 
 
 @app.post("/api/ai/test")
-def test_ai_connection() -> dict[str, Any]:
-    """测试当前 AI 配置是否可用。"""
-    return ai.test_connection()
+def test_ai_connection(body: AIConnectionTest | None = None) -> dict[str, Any]:
+    """测试表单中的 AI 配置，兼容使用已保存配置的无请求体调用。"""
+    if body is None:
+        return ai.test_connection(
+            config.AI_BASE_URL, config.AI_API_KEY, config.AI_MODEL, config.AI_WEB_SEARCH,
+        )
+
+    api_key = body.api_key.strip()
+    if not api_key and body.base_url.rstrip("/") == config.AI_BASE_URL.rstrip("/"):
+        api_key = config.AI_API_KEY
+    return ai.test_connection(body.base_url, api_key, body.model.strip(), body.web_search)
 
 
 @app.get("/api/settings/vision")

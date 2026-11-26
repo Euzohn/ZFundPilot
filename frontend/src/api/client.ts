@@ -220,8 +220,11 @@ export const api = {
     request<{ system_prompt: string }>(`/ai/system-prompt?include_context=${includeContext ?? true}`),
 
   // AI Connection Test
-  testAIConnection: () =>
-    request<{ ok: boolean; provider?: string; model?: string; has_search?: boolean; error?: string }>("/ai/test", { method: "POST" }),
+  testAIConnection: (base_url: string, api_key: string, model: string, web_search: boolean) =>
+    request<{ ok: boolean; provider?: string; model?: string; has_search?: boolean; error?: string }>("/ai/test", {
+      method: "POST",
+      body: JSON.stringify({ base_url, api_key, model, web_search }),
+    }),
 
   // Vision Model Config
   getVisionConfig: () =>

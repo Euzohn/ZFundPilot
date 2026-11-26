@@ -1,6 +1,6 @@
 """AI 投顾模块 — 持仓上下文构建 + 提供商识别 + LLM 流式调用（含联网搜索）。
 
-支持 OpenAI 兼容 API，根据 base_url 自动识别提供商（智谱/Kimi/通义千问），
+支持 OpenAI 兼容 API，根据 base_url 自动识别提供商（智谱/Kimi/通义千问/DeepSeek），
 并启用对应格式的联网搜索（web_search）。
 """
 
@@ -13,6 +13,7 @@ import re
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -203,13 +204,16 @@ def detect_provider(base_url: str) -> str:
     return "default"
 
 
-def _build_tools(provider: str) -> tuple[list | None, dict[str, Any]]:
+def _build_tools(base_url: str, model: str, web_search: bool) -> tuple[list | None, dict[str, Any]]:
     """根据提供商构建 web_search 工具参数。
 
     返回 (tools, extra_params):
     - tools: 请求体中的 tools 字段，None 表示不启用
     - extra_params: 额外请求体参数
     """
+    if not web_search:
+        return None, {}
+    provider = detect_provider(base_url)
     if provider == "kimi":
         return (
             [{"type": "builtin_function", "function": {"name": "$web_search"}}],
@@ -225,12 +229,13 @@ def _build_tools(provider: str) -> tuple[list | None, dict[str, Any]]:
             "enable_search": True,
             "search_options": {"forced_search": True},
         }
-    if provider == "deepseek":
-        return (
-            [{"type": "web_search"}],
-            {},
-        )
-    # default / none: 不启用联网搜索
+    if (
+        provider == "deepseek"
+        and urlsplit(base_url).hostname == "api.deepseek.com"
+        and model == "deepseek-flash"
+    ):
+        return [{"type": "deepseek_web_search"}], {}
+    # 通用接口或不支持搜索的模型仅发送普通聊天请求
     return None, {}
 
 
@@ -320,32 +325,33 @@ def _build_system_prompt(context: str, has_search: bool = True) -> str:
 def build_system_prompt(include_context: bool = True) -> str:
     """构建当前配置下的系统提示（含持仓快照 + 搜索能力判断）。供 API 端点调用。"""
     context = build_portfolio_context() if include_context else ""
-    provider = detect_provider(config.AI_BASE_URL) if config.AI_WEB_SEARCH else "none"
-    has_search = provider in ("kimi", "zhipu", "qwen", "deepseek")
-    return _build_system_prompt(context, has_search)
+    tools, extra_params = _build_tools(config.AI_BASE_URL, config.AI_MODEL, config.AI_WEB_SEARCH)
+    return _build_system_prompt(context, bool(tools or extra_params))
 
 
-def test_connection() -> dict:
-    """测试当前 AI 配置是否可用（发最小非流式请求）。"""
-    if not config.AI_BASE_URL or not config.AI_API_KEY or not config.AI_MODEL:
+def test_connection(base_url: str, api_key: str, model: str, web_search: bool) -> dict:
+    """发送最小非流式请求验证连接，不保存配置。"""
+    if not base_url or not api_key or not model:
         return {"ok": False, "error": "配置不完整（Base URL / API Key / Model）"}
     try:
-        url = f"{config.AI_BASE_URL.rstrip('/')}/chat/completions"
+        url = f"{base_url.rstrip('/')}/chat/completions"
         headers = {
-            "Authorization": f"Bearer {config.AI_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
         body = {
-            "model": config.AI_MODEL,
+            "model": model,
             "messages": [{"role": "user", "content": "hi"}],
             "max_tokens": 1,
             "stream": False,
         }
         resp = httpx.post(url, headers=headers, json=body, timeout=config.AI_TIMEOUT_TEST)
         if resp.status_code == 200:
-            provider = detect_provider(config.AI_BASE_URL)
-            has_search = config.AI_WEB_SEARCH and provider in ("kimi", "zhipu", "qwen", "deepseek")
-            return {"ok": True, "provider": provider, "model": config.AI_MODEL, "has_search": has_search}
+            tools, extra_params = _build_tools(base_url, model, web_search)
+            return {
+                "ok": True, "provider": detect_provider(base_url), "model": model,
+                "has_search": bool(tools or extra_params),
+            }
         logger.error("AI 测试连接返回 %s: %s", resp.status_code, resp.text[:300])
         return {"ok": False, "error": f"API 返回 {resp.status_code}"}
     except httpx.ConnectError:
@@ -402,30 +408,29 @@ async def chat_stream(
     - {"error": "错误信息"}    — 出错
     - {"done": true}          — 结束
     """
-    if not config.AI_BASE_URL or not config.AI_API_KEY or not config.AI_MODEL:
+    base_url, api_key, model = config.AI_BASE_URL, config.AI_API_KEY, config.AI_MODEL
+    if not base_url or not api_key or not model:
         yield json.dumps({"error": "AI 模型未配置，请先到设置页面配置。"}, ensure_ascii=False)
         return
 
-    provider = detect_provider(config.AI_BASE_URL) if config.AI_WEB_SEARCH else "none"
-    tools, extra_params = _build_tools(provider)
-    has_search = provider in ("kimi", "zhipu", "qwen", "deepseek")
+    tools, extra_params = _build_tools(base_url, model, config.AI_WEB_SEARCH)
 
     # 若前端已携带 system 消息（新对话首条已取过），直接用；否则构建并前置（向后兼容）
     has_system = any(m.get("role") == "system" for m in messages)
     if has_system:
         full_messages = messages
     else:
-        system_prompt = _build_system_prompt(context, has_search)
+        system_prompt = _build_system_prompt(context, bool(tools or extra_params))
         full_messages = [{"role": "system", "content": system_prompt}] + messages
 
-    url = f"{config.AI_BASE_URL.rstrip('/')}/chat/completions"
+    url = f"{base_url.rstrip('/')}/chat/completions"
     headers = {
-        "Authorization": f"Bearer {config.AI_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 
     body: dict[str, Any] = {
-        "model": config.AI_MODEL,
+        "model": model,
         "messages": full_messages,
         "stream": True,
         "stream_options": {"include_usage": True},
@@ -439,6 +444,7 @@ async def chat_stream(
             # 第一轮流式请求
             tool_calls_deltas: list = []
             has_tool_calls = False
+            search_started = False
             usage_acc = {"prompt": 0, "completion": 0, "total": 0}
 
             async with client.stream("POST", url, headers=headers, json=body) as resp:
@@ -473,6 +479,12 @@ async def chat_stream(
 
                         choice = choices[0]
                         delta = choice.get("delta", {})
+
+                        # DeepSeek 在服务端执行搜索，通过独立事件报告进度。
+                        server_tool_event = choice.get("server_tool_event") or {}
+                        if not search_started and server_tool_event.get("type") == "call_started":
+                            search_started = True
+                            yield json.dumps({"status": "searching"}, ensure_ascii=False)
 
                         # 直接流式输出内容
                         content = delta.get("content")
@@ -555,7 +567,7 @@ async def chat_stream(
             # 有 token 用量 → 持久化 + 通知前端
             if usage_acc["total"] > 0:
                 db.add_ai_usage(
-                    config.AI_MODEL, usage_acc["prompt"],
+                    model, usage_acc["prompt"],
                     usage_acc["completion"], usage_acc["total"],
                     len(messages),
                 )

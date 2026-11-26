@@ -899,7 +899,7 @@ function AuditLogPanel() {
 const PROVIDER_PRESETS = [
   { name: { zh: "智谱 GLM", en: "Zhipu GLM" }, baseUrl: "https://open.bigmodel.cn/v1", model: "glm-4-plus" },
   { name: { zh: "Kimi", en: "Kimi" }, baseUrl: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
-  { name: { zh: "DeepSeek", en: "DeepSeek" }, baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  { name: { zh: "DeepSeek", en: "DeepSeek" }, baseUrl: "https://api.deepseek.com/v1", model: "deepseek-flash" },
   { name: { zh: "通义千问", en: "Qwen" }, baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
 ]
 
@@ -1220,10 +1220,13 @@ export default function Settings() {
   }
 
   const handleTestConnection = async () => {
+    const baseUrl = aiBaseUrl.trim()
+    const model = aiModel.trim()
+    if (!baseUrl || !model) { toast.error(t.settings.aiConfigRequired); return }
     setTesting(true)
     setTestResult(null)
     try {
-      const res = await api.testAIConnection()
+      const res = await api.testAIConnection(baseUrl, aiApiKey.trim(), model, aiWebSearch)
       setTestResult(res)
       if (res.ok) toast.success(`${t.settings.connectionSuccess} · ${res.provider} · ${res.model}`)
       else toast.error(`${t.settings.connectionFailed}: ${translateBackendError(res.error || "")}`)
@@ -1587,7 +1590,7 @@ export default function Settings() {
                   <div>
                     <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.aiModel}</Label>
                     <Input value={aiModel} onChange={(e) => setAiModel(e.target.value)}
-                      className="h-8 text-xs" placeholder="glm-4-plus / moonshot-v1-8k / deepseek-chat" />
+                      className="h-8 text-xs" placeholder="glm-4-plus / moonshot-v1-8k / deepseek-flash" />
                   </div>
                 </div>
 

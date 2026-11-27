@@ -1068,6 +1068,28 @@ async def get_industry_exposure() -> dict[str, Any]:
 
 
 @mcp.tool(annotations=_ANNOT_READ_ONLY)
+async def get_index_valuation(code: str | None = None) -> dict[str, Any]:
+    """Read broad-based index valuations: PE/PB percentiles and temperature.
+
+    Percentiles are computed from history over a trailing 10-year window (full
+    history when shorter, flagged per index). Temperature tiers follow the PE
+    percentile: <30 low, 30-70 fair, >70 high. Reads cached data (24h TTL) and
+    never forces a full upstream refresh; stale entries keep old values with
+    stale=true, unavailable ones degrade to ok=false per index. Check degraded
+    and per-index ok/message before interpreting. For reference only, not
+    investment advice.
+
+    Args:
+        code: Optional index code (e.g. "000300") to read a single index;
+            omit to read all supported indices.
+    """
+    params: dict[str, Any] = {}
+    if code is not None and code.strip():
+        params["code"] = code.strip()
+    return await _request("/api/agent/tools/valuation", params)
+
+
+@mcp.tool(annotations=_ANNOT_READ_ONLY)
 async def search_funds(
     keyword: str,
     limit: Annotated[int, Field(ge=1, le=200)] = 50,

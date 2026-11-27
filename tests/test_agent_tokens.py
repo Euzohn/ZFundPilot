@@ -1029,6 +1029,75 @@ class TestAgentTools:
             "/api/agent/tools/industry-exposure",
             headers=self._headers("health:read")).status_code == 403
 
+    def test_index_valuation_scope_shape_and_code_filter(
+            self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        client = TestClient(api.app)
+        headers = self._headers("funds:read")
+
+        sample = api.valuation.IndexValuation(
+            index_code="000300", index_name="沪深300", keyword="沪深300",
+            pe=12.5, pe_percentile=45.0, pb=1.4, pb_percentile=40.0,
+            temperature="fair", data_date="2026-11-26", source="jiucaishuo")
+        seen: dict = {}
+
+        def fake_list(codes=None, **kwargs):
+            seen["codes"] = codes
+            return [sample]
+
+        monkeypatch.setattr(api.valuation, "list_valuations", fake_list)
+        resp = client.get("/api/agent/tools/valuation", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["tool"] == "get_index_valuation"
+        data = resp.json()["data"]
+        assert data["ok"] is True
+        assert data["degraded"] is False
+        assert data["as_of"] == "2026-11-26"
+        assert data["window"] == "10y"
+        assert seen["codes"] is None  # 不传 code → 全量
+        item = data["indices"][0]
+        assert item["index_code"] == "000300"
+        assert item["pe_percentile"] == 45.0
+        assert item["temperature"] == "fair"
+
+        # code 过滤透传给 list_valuations
+        resp = client.get(
+            "/api/agent/tools/valuation?code=000300", headers=headers)
+        assert resp.status_code == 200
+        assert seen["codes"] == ["000300"]
+
+        # 未知指数代码 → 404；错误 scope → 403
+        assert client.get(
+            "/api/agent/tools/valuation?code=999999",
+            headers=headers).status_code == 404
+        assert client.get(
+            "/api/agent/tools/valuation",
+            headers=self._headers("portfolio:read")).status_code == 403
+
+    def test_index_valuation_degraded_state(self, temp_db, monkeypatch):
+        monkeypatch.setattr(config, "AUTH_ENABLED", True)
+        client = TestClient(api.app)
+        headers = self._headers("funds:read")
+
+        stale = api.valuation.IndexValuation(
+            index_code="000300", index_name="沪深300",
+            pe=12.5, pe_percentile=45.0, temperature="fair",
+            data_date="2026-11-20", stale=True)
+        unavailable = api.valuation.IndexValuation(
+            index_code="000905", index_name="中证500",
+            ok=False, message="估值数据暂不可用")
+        monkeypatch.setattr(
+            api.valuation, "list_valuations",
+            lambda codes=None, **kw: [stale, unavailable])
+
+        data = client.get(
+            "/api/agent/tools/valuation", headers=headers).json()["data"]
+        assert data["ok"] is True  # 单只降级不拖垮整体
+        assert data["degraded"] is True
+        assert data["as_of"] == "2026-11-20"  # 只统计 ok 的指数
+        assert data["indices"][1]["ok"] is False
+        assert data["indices"][1]["message"] == "估值数据暂不可用"
+
     def test_capabilities_includes_batch2_tools(self, temp_db, monkeypatch):
         monkeypatch.setattr(config, "AUTH_ENABLED", True)
         client = TestClient(api.app)

@@ -7,6 +7,7 @@
 ## [Unreleased]
 
 ### Added
+- 新增只读 Agent/MCP 工具 `get_index_valuation`（`GET /api/agent/tools/valuation`，复用 `funds:read` scope，不新增 scope、无依赖变更）：宽基指数 PE/PB 百分位与估值温度，复用网页估值页 `valuation.list_valuations()` 读缓存（TTL 24h，过期限时抓取、超时转后台），**不暴露强制刷新参数**，Agent 无法触发上游全量重抓；可选 `code` 过滤单只指数（未知代码 `404 not_found`）。响应含 `indices[]`（百分位/温度/窗口 `10y`/`all` 标注/`stale`/`source`/`ok`/`message`）、`degraded`、`refreshing`/`progress`、`as_of`（仅统计 ok 指数）；单只降级不拖垮整体、不抛 500。MCP 同步暴露（`readOnlyHint` 只读注解），工具总数 33→34（只读 26→27）。新增 HTTP 端点测试 2 例（scope/形状/code 过滤/404/403 + 降级态）、MCP 路径测试 1 例，能力契约 33→34 同步，后端全量 1839 例、ruff 干净（前端零改动）；AGENT_API 中英（scope 表/能力表/5.26 节/MCP 段/变更记录）与 README 中英工具数同步
 - 审计日志保留期设置页可配：preferences 新增 `audit_retention_days`（默认 90 天不变，范围 30–3650）。**下限 30 天保护补记防重契约**——历史补记防重（`proposal_service._executed_plan_trade_exists`）依赖审计中的 `auto_invest_execute` 覆盖 7 天补记窗口，保留期过小会放行同一交易日重复买入；API `field_validator` 越界 422，解析器对缺失/非法/越界存量值退回默认（防手工改库双保险）。新增 `GET/PUT /api/settings/audit-retention` 返回当前值+上下限+默认值（前端不硬编码边界）；修改本身写 `audit_retention_update` 审计（含 from/to）；调度器每次清理实时解析配置，修改后下次清理（启动或每日任务）生效，不立即删日志。设置页审计日志面板新增保留期输入+保存（前端同范围预校验、失败提示、加载失败可重试），i18n en/zh 同步。新增 `tests/test_audit_retention.py`（29 例：解析器兜底/422 边界/持久化+审计/调度器读配置/30 天窗口集成删除）+ `Settings.test.tsx`（+8 例），后端全量 1768 例、前端全量 245 例。无依赖变更
 
 ### Changed

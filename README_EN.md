@@ -157,7 +157,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 **Supported today**
 
 - **Dedicated Agent tokens** — High-entropy tokens physically isolated from web login sessions; only SHA-256 digests are stored; authorized by read and optional write scopes, default-deny, revocable/expiring; disabled when no admin password is set
-- **26 read-only tools** — Portfolio summary, data status, positions, fund detail, health, returns, comparison, transactions, watchlist, alerts, plans, curve, benchmark, risk, industry exposure, fund search, screening, backtesting, job status, and capability discovery; stable response envelope and formal-NAV semantics, writing nothing to the ledger (precheck tools are still gated by the write switch)
+- **27 read-only tools** — Portfolio summary, data status, positions, fund detail, health, returns, comparison, transactions, watchlist, alerts, plans, curve, benchmark, risk, industry exposure, index valuation, fund search, screening, backtesting, job status, and capability discovery; stable response envelope and formal-NAV semantics, writing nothing to the ledger (precheck tools are still gated by the write switch)
 - **Write master switch** — Agent writes are off by default and toggled on the web Settings page ("Agent Access"), requiring the login password and persisting across restarts; cannot be enabled without a password
 - **Controlled writes: watchlist / refresh / trusted direct record** — Watchlist maintenance (`watchlist:write`) and NAV/metadata refresh (`data:refresh`) run directly; `record_transaction` (`transactions:create`) directly records a single ordinary buy/sell the user **explicitly states already happened on an external platform**, within quotas, downgrading to a pending proposal on precheck anomalies
 - **Approval-based bookkeeping: proposal tools** — Four proposal tools (`create_operation_proposal` and friends) submit pending proposals only, authorized via `transactions:propose`/`plans:propose`/`alerts:propose`, covering single add/update/delete, fund conversion and paired deletion, **batch import**, dividend-alert linking, plan create/update/toggle/delete, transaction NAV backfill, alert resolution, and manual plan execution; after web approval the server re-checks and writes in one transaction, never bypassing approval; mutations use `row_digest` as a version precondition. Manual plan execution inserts one buy and advances plan bookkeeping only — it never recomputes `next_run` or triggers the scheduler
@@ -246,7 +246,7 @@ ZFundPilot/
 │   ├── us_calendar.py         # US (NYSE) trading calendar
 │   ├── ak_compat.py      # akshare cross-version compat layer + process-wide V8 serialization
 │   ├── api_errors.py     # Request ID + unified error envelope
-│   ├── mcp_server.py     # MCP adapter layer (stdio, 33 tools)
+│   ├── mcp_server.py     # MCP adapter layer (stdio, 34 tools)
 │   ├── api.py            # FastAPI REST API (140+ routes + auth middleware)
 │   ├── ai.py             # AI advisor chat (portfolio context + web search)
 │   └── scheduler.py      # APScheduler NAV update + auto-invest + dividend check + TP/SL check

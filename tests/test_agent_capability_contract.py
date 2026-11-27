@@ -38,7 +38,7 @@ def _get_tools(client: TestClient) -> dict[str, dict]:
 class TestCapabilityContract:
     def test_every_tool_carries_contract_fields(self, client):
         tools = _get_tools(client)
-        assert len(tools) == 33
+        assert len(tools) == 34
         for name, tool in tools.items():
             assert "side_effect" in tool, name
             assert "idempotent" in tool, name
@@ -54,6 +54,7 @@ class TestCapabilityContract:
         # 只读分析
         assert tools["get_portfolio_summary"]["side_effect"] == "read"
         assert tools["run_dca_backtest"]["side_effect"] == "read"
+        assert tools["get_index_valuation"]["side_effect"] == "read"
         # precheck 虽是 POST 但只读、不写账本不建提案
         assert tools["precheck_transactions"]["side_effect"] == "read"
         # additive 写：只追加不覆盖
@@ -81,6 +82,9 @@ class TestCapabilityContract:
             "batch_import.items"] == "1-50"
         # 无上限的只读工具 limits 为空 dict
         assert tools["get_portfolio_summary"]["limits"] == {}
+        assert tools["get_index_valuation"]["limits"] == {}
+        # 指数估值未知代码走 not_found
+        assert "not_found" in tools["get_index_valuation"]["error_codes"]
 
     def test_error_codes_include_write_specific(self, client):
         tools = _get_tools(client)

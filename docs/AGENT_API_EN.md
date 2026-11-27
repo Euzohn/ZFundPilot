@@ -71,7 +71,7 @@ Request body:
 | Scope | Allowed tools |
 |---|---|
 | `portfolio:read` | `portfolio-summary`, `positions`, `returns`, `portfolio-curve`, `benchmark`, `industry-exposure` |
-| `funds:read` | `funds/{code}`, `funds/compare`, `search`, `screen`, `backtest/dca`, `refresh/{job_id}` (backtest jobs) |
+| `funds:read` | `funds/{code}`, `funds/compare`, `search`, `screen`, `backtest/dca`, `valuation`, `refresh/{job_id}` (backtest jobs) |
 | `health:read` | `data-status`, `portfolio-health`, `risk-report` |
 | `transactions:read` | `transactions`, `transactions/{tx_id}` |
 | `watchlist:read` | `watchlist` |
@@ -259,6 +259,7 @@ The table below summarizes the contract metadata for all Agent tools (matching t
 | `get_benchmark_comparison` | `GET` | `/api/agent/tools/benchmark` | portfolio:read | Read | Read | No | codes 1-20 | validation_error, insufficient_scope, rate_limited |
 | `get_data_status` | `GET` | `/api/agent/tools/data-status` | health:read | Read | Read | No | — | validation_error, insufficient_scope, rate_limited |
 | `get_fund_detail` | `GET` | `/api/agent/tools/funds/{code}` | funds:read | Read | Read | No | nav_limit 1-250 (default 30) | validation_error, insufficient_scope, rate_limited, not_found |
+| `get_index_valuation` | `GET` | `/api/agent/tools/valuation` | funds:read | Read | Read | No | — | validation_error, insufficient_scope, rate_limited, not_found |
 | `get_industry_exposure` | `GET` | `/api/agent/tools/industry-exposure` | portfolio:read | Read | Read | No | — | validation_error, insufficient_scope, rate_limited |
 | `get_job_status` | `GET` | `/api/agent/tools/refresh/{job_id}` | data:refresh / funds:read (checked by `job_type`) | Read | Read | No | — | validation_error, insufficient_scope, rate_limited, not_found |
 | `get_operation_proposal` | `GET` | `/api/agent/tools/proposals/{proposal_id}` | any of transactions/plans/alerts:propose | Read | Read | No | — | validation_error, insufficient_scope, rate_limited, not_found |
@@ -1270,6 +1271,20 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/precheck/backfill" \
 
 On success the two prechecks audit `agent_precheck_transactions` (token prefix, `format`, item counts) and `agent_precheck_reconciliation` (token prefix, `channel`, diff item count); the backfill precheck audits `agent_precheck_backfill` (token prefix, whether `tx_ids` was given, `total`/`ready`/`unavailable` counts). Item amounts and details are **never** recorded.
 
+### 5.26 `GET /api/agent/tools/valuation`
+
+Broad-based index PE/PB percentiles and valuation temperature, scope: `funds:read`. Reuses `valuation.list_valuations()` from the web valuation page: reads cached data by default (24h TTL), fetches with a time budget when expired and continues in the background on timeout; **no forced-refresh parameter is exposed**, so the Agent cannot trigger a full upstream re-fetch.
+
+Parameters:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `code` | string | empty (all) | Optional single index code (e.g. `000300`); unknown codes return `404 not_found` |
+
+`data` fields: `ok`, `indices[]`, `degraded`, `refreshing`, `progress`, `as_of`, `window`, `note`. Each `indices[]` item is `{index_code, index_name, keyword, pe, pe_percentile, pb, pb_percentile, window, window_months, history_months, temperature, data_date, updated_at, stale, source, ok, message}`.
+
+> Percentiles are computed from history: a trailing 10-year window by default (`window="10y"`), or full history when shorter (`window="all"`, with `history_months` showing the actual span). Temperature tiers follow the PE(TTM) percentile: <30 `low` / 30–70 `fair` / >70 `high`, `unknown` when data is missing. Failed fetches keep old values with `stale=true`; without old values a single index degrades to `ok=false` (with `message`) — never a 500, never affecting other indices. `degraded` flags any stale or unavailable index, `as_of` aggregates data dates of `ok` indices only, and `refreshing`/`progress` reflect background refresh state. For reference only, not investment advice.
+
 ### MCP adapter (optional)
 
 A stdio MCP bridge is bundled to expose the tools above to Claude Desktop, Cursor, and other MCP clients. It is only an HTTP client carrying an Agent token: it does not touch the database, and authentication, scopes, and rate limiting are identical to the HTTP entry point.
@@ -1301,12 +1316,12 @@ Claude Desktop example (`claude_desktop_config.json`):
 }
 ```
 
-Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`, `add_watchlist_item`, `update_watchlist_item`, `remove_watchlist_item`, `start_data_refresh`, `get_job_status`, `create_operation_proposal`, `list_operation_proposals`, `get_operation_proposal`, `cancel_operation_proposal`, `record_transaction`.
+Exposed MCP tools: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `get_index_valuation`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`, `add_watchlist_item`, `update_watchlist_item`, `remove_watchlist_item`, `start_data_refresh`, `get_job_status`, `create_operation_proposal`, `list_operation_proposals`, `get_operation_proposal`, `cancel_operation_proposal`, `record_transaction`.
 Write tools and the task-based backtest (`run_dca_backtest`) require an `idempotency_key` argument, mapped to the HTTP `Idempotency-Key` header. The MCP client only passes parameters; server-side auth, scope, and the write switch remain authoritative.
 
 Every MCP tool carries `ToolAnnotations` (`readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`) so MCP clients can distinguish read queries from writes in their UI:
 
-- **Read-only tools** (26: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `get_job_status`, `precheck_*`, `list_operation_proposals`, `get_operation_proposal`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`) set `readOnlyHint=True`.
+- **Read-only tools** (27: `get_portfolio_summary`, `get_data_status`, `list_positions`, `get_fund_detail`, `get_portfolio_health`, `get_returns`, `compare_funds`, `list_transactions`, `get_transaction`, `list_watchlist`, `get_job_status`, `precheck_*`, `list_operation_proposals`, `get_operation_proposal`, `list_alerts`, `list_auto_invest_plans`, `get_portfolio_curve`, `get_benchmark_comparison`, `get_risk_report`, `get_industry_exposure`, `get_index_valuation`, `search_funds`, `screen_funds`, `run_dca_backtest`, `get_agent_capabilities`) set `readOnlyHint=True`.
 - **Additive writes** (`add_watchlist_item`, `start_data_refresh`, `create_operation_proposal`, `record_transaction`) set `destructiveHint=False` + `idempotentHint=True`: they only append and are safe to retry with an idempotency key.
 - **Modify/delete/cancel writes** (`update_watchlist_item`, `remove_watchlist_item`, `cancel_operation_proposal`) set `destructiveHint=True` + `idempotentHint=True`.
 
@@ -1525,3 +1540,4 @@ Retry principles:
 | 2026-11-14 | R5: task-based backtesting — `backtest/dca` changes from synchronous `200` to **`202` + `job_id`** (breaking change; clients must poll `get_job_status`), reusing `refresh_jobs` (new `job_type="dca_backtest"`) and idempotency records, with a required `Idempotency-Key`; runs fund by fund in the background (`done` = completed count, `current` = fund being processed), returns `429 backtest_busy` when concurrency is full (`Retry-After: 60`; no job is created, so the same key can be retried); `get_job_status` is entered with either `data:refresh`/`funds:read` and re-checked by `job_type`; MCP `run_dca_backtest` gains a required `idempotency_key`. The synchronous web backtest endpoint is unchanged |
 | 2026-11-15 | `screen_funds` metric snapshots add four holder-structure fields: `institution_ratio`/`individual_ratio`/`internal_ratio` (percentages, latest reporting period) and `holder_report_date` (`YYYY-MM-DD`); missing values are `null` / empty string, never zero-filled (backward compatible; old clients may ignore them) |
 | 2026-11-19 | P3 Phase 1: each `advice` item in `portfolio-health` additively gains four explainable segments (`evidence`/`positions`/`simulation`/`risks`); `simulation` is a what-if hypothetical calculation (not an instruction), and `equity_to_bond` carries `side` to distinguish the equity/bond side; old fields, tool count and scopes unchanged, backward compatible |
+| 2026-11-27 | Added read-only tool `get_index_valuation` (`GET /api/agent/tools/valuation`, reusing `funds:read`, no new scope): broad-based index PE/PB percentiles and valuation temperature via `valuation.list_valuations()` cache reads (24h TTL), with no forced-refresh parameter; optional `code` filters a single index (unknown codes `404 not_found`), per-index degradation (`ok=false`/`stale`) never breaks the whole response; exposed over MCP with read-only annotations, total tools 33→34 |

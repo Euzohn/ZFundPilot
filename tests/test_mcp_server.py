@@ -58,6 +58,7 @@ def test_tools_registered():
         "get_benchmark_comparison",
         "get_risk_report",
         "get_industry_exposure",
+        "get_index_valuation",
         "search_funds",
         "screen_funds",
         "run_dca_backtest",
@@ -424,6 +425,25 @@ def test_industry_exposure_requests_expected_path(mock_api):
 
     assert seen["path"] == "/api/agent/tools/industry-exposure"
     assert result["data"]["ok"] is False
+
+
+def test_index_valuation_requests_expected_path(mock_api):
+    seen: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"data": {"indices": []}})
+
+    mock_api(handler)
+    result = _run(mcp_server.get_index_valuation())
+
+    assert seen["path"] == "/api/agent/tools/valuation"
+    assert seen["params"] == {}
+    assert result["data"]["indices"] == []
+
+    _run(mcp_server.get_index_valuation(code="000300"))
+    assert seen["params"] == {"code": "000300"}
 
 
 def test_search_funds_passes_keyword_and_paging(mock_api):

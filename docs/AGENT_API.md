@@ -71,7 +71,7 @@ export ZFUNDPILOT_BASE_URL=http://localhost:8000
 | Scope | 允许的工具 |
 |---|---|
 | `portfolio:read` | `portfolio-summary`、`positions`、`returns`、`portfolio-curve`、`benchmark`、`industry-exposure` |
-| `funds:read` | `funds/{code}`、`funds/compare`、`search`、`screen`、`backtest/dca`、`refresh/{job_id}`（回测任务） |
+| `funds:read` | `funds/{code}`、`funds/compare`、`search`、`screen`、`backtest/dca`、`valuation`、`refresh/{job_id}`（回测任务） |
 | `health:read` | `data-status`、`portfolio-health`、`risk-report` |
 | `transactions:read` | `transactions`、`transactions/{tx_id}` |
 | `watchlist:read` | `watchlist` |
@@ -258,6 +258,7 @@ FastAPI 自动生成以下页面：
 | `get_benchmark_comparison` | `GET` | `/api/agent/tools/benchmark` | portfolio:read | 只读 | 只读 | 否 | codes 1-20 | validation_error, insufficient_scope, rate_limited |
 | `get_data_status` | `GET` | `/api/agent/tools/data-status` | health:read | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited |
 | `get_fund_detail` | `GET` | `/api/agent/tools/funds/{code}` | funds:read | 只读 | 只读 | 否 | nav_limit 1-250 (default 30) | validation_error, insufficient_scope, rate_limited, not_found |
+| `get_index_valuation` | `GET` | `/api/agent/tools/valuation` | funds:read | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited, not_found |
 | `get_industry_exposure` | `GET` | `/api/agent/tools/industry-exposure` | portfolio:read | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited |
 | `get_job_status` | `GET` | `/api/agent/tools/refresh/{job_id}` | data:refresh / funds:read（按 `job_type` 复核） | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited, not_found |
 | `get_operation_proposal` | `GET` | `/api/agent/tools/proposals/{proposal_id}` | transactions/plans/alerts:propose 任一 | 只读 | 只读 | 否 | — | validation_error, insufficient_scope, rate_limited, not_found |
@@ -1273,6 +1274,20 @@ curl -s -X POST "$ZFUNDPILOT_BASE_URL/api/agent/tools/precheck/backfill" \
 
 两个预检成功时分别写审计 `agent_precheck_transactions`（token 前缀、`format`、条目计数）与 `agent_precheck_reconciliation`（token 前缀、`channel`、差额条目数）；回填预检写审计 `agent_precheck_backfill`（token 前缀、是否给定 `tx_ids`、`total`/`ready`/`unavailable` 计数）。三者均**不记录**条目金额或明细。
 
+### 5.26 `GET /api/agent/tools/valuation`
+
+宽基指数 PE/PB 百分位与估值温度，scope：`funds:read`。复用网页估值页的 `valuation.list_valuations()`：默认读缓存（TTL 24h），过期时限时抓取、超时转后台续抓；**不提供强制刷新参数**，Agent 无法触发上游全量重抓。
+
+参数：
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `code` | string | 空（全量） | 可选单只指数代码（如 `000300`）；未知代码返回 `404 not_found` |
+
+`data` 字段：`ok`、`indices[]`、`degraded`、`refreshing`、`progress`、`as_of`、`window`、`note`。`indices[]` 每项为 `{index_code, index_name, keyword, pe, pe_percentile, pb, pb_percentile, window, window_months, history_months, temperature, data_date, updated_at, stale, source, ok, message}`。
+
+> 百分位由历史序列自算：默认近 10 年窗口（`window="10y"`），历史不足 10 年用全历史（`window="all"`，`history_months` 标注实际跨度）；温度按 PE(TTM) 百分位分档：<30 `low` / 30–70 `fair` / >70 `high`，数据缺失为 `unknown`。抓取失败保留旧值并标 `stale=true`，无旧值单只降级 `ok=false`（附 `message`），不抛 500、不影响其他指数；`degraded` 表示存在 stale 或不可用指数，`as_of` 只统计 `ok` 指数的数据日期，`refreshing`/`progress` 反映后台刷新状态。仅供参考，非投资建议。
+
 ### MCP 适配层（可选）
 
 仓库内置一个 stdio MCP 桥接，把上述工具封装成 MCP 工具，供 Claude Desktop、Cursor 等客户端直接调用。它只是带 Agent token 的 HTTP 客户端，不访问数据库，鉴权、scope 与限流完全复用 HTTP 入口。
@@ -1304,12 +1319,12 @@ Claude Desktop 配置示例（`claude_desktop_config.json`）：
 }
 ```
 
-暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`search_funds`、`screen_funds`、`run_dca_backtest`、`get_agent_capabilities`、`add_watchlist_item`、`update_watchlist_item`、`remove_watchlist_item`、`start_data_refresh`、`get_job_status`、`create_operation_proposal`、`list_operation_proposals`、`get_operation_proposal`、`cancel_operation_proposal`、`record_transaction`。
+暴露的 MCP 工具：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`get_index_valuation`、`search_funds`、`screen_funds`、`run_dca_backtest`、`get_agent_capabilities`、`add_watchlist_item`、`update_watchlist_item`、`remove_watchlist_item`、`start_data_refresh`、`get_job_status`、`create_operation_proposal`、`list_operation_proposals`、`get_operation_proposal`、`cancel_operation_proposal`、`record_transaction`。
 写工具与任务化回测（`run_dca_backtest`）需要在客户端提供 `idempotency_key`，并映射到 HTTP 的 `Idempotency-Key`；MCP 客户端只负责传参，不能替代服务端鉴权、scope 与写开关。
 
 每个 MCP 工具都带 `ToolAnnotations`（`readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint`），便于 MCP 客户端在 UI 上区分只读查询与写操作：
 
-- **只读工具**（26 个：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`get_job_status`、`precheck_*`、`list_operation_proposals`、`get_operation_proposal`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`search_funds`、`screen_funds`、`run_dca_backtest`、`get_agent_capabilities`）设 `readOnlyHint=True`。
+- **只读工具**（27 个：`get_portfolio_summary`、`get_data_status`、`list_positions`、`get_fund_detail`、`get_portfolio_health`、`get_returns`、`compare_funds`、`list_transactions`、`get_transaction`、`list_watchlist`、`get_job_status`、`precheck_*`、`list_operation_proposals`、`get_operation_proposal`、`list_alerts`、`list_auto_invest_plans`、`get_portfolio_curve`、`get_benchmark_comparison`、`get_risk_report`、`get_industry_exposure`、`get_index_valuation`、`search_funds`、`screen_funds`、`run_dca_backtest`、`get_agent_capabilities`）设 `readOnlyHint=True`。
 - **追加型写**（`add_watchlist_item`、`start_data_refresh`、`create_operation_proposal`、`record_transaction`）设 `destructiveHint=False` + `idempotentHint=True`：只追加不覆盖，幂等键可安全重试。
 - **修改/删除/取消型写**（`update_watchlist_item`、`remove_watchlist_item`、`cancel_operation_proposal`）设 `destructiveHint=True` + `idempotentHint=True`。
 
@@ -1526,3 +1541,4 @@ curl -s -H "Authorization: Bearer $ZFUNDPILOT_AGENT_TOKEN" \
 | 2026-11-14 | R5：回测任务化——`backtest/dca` 由同步 `200` 改为 **`202` + `job_id`**（破坏性变更，客户端需改为轮询 `get_job_status`），复用 `refresh_jobs`（新增 `job_type="dca_backtest"`）与幂等记录，必带 `Idempotency-Key`；后台按基金逐个执行推进进度（`done` 为已完成数、`current` 为正在执行的基金），并发满返回 `429 backtest_busy`（`Retry-After: 60`，未建任务可用原键重试）；`get_job_status` 以 `data:refresh`/`funds:read` 任一进入并按 `job_type` 精确复核；MCP `run_dca_backtest` 新增必填 `idempotency_key`。网页同步回测端点不变 |
 | 2026-11-15 | `screen_funds` 指标快照新增持有结构 4 字段：`institution_ratio`/`individual_ratio`/`internal_ratio`（百分比，最新报告期）与 `holder_report_date`（`YYYY-MM-DD`）；无数据为 `null` / 空串，不补零（向后兼容，旧客户端可忽略） |
 | 2026-11-19 | P3 Phase 1：`portfolio-health` 的 `advice` 每项加性扩展四段可解释结构（`evidence`/`positions`/`simulation`/`risks`）；`simulation` 为 what-if 假设演算（非操作指令），`equity_to_bond` 带 `side` 区分权益/债券侧；旧字段与工具数/scope 不变，向后兼容 |
+| 2026-11-27 | 新增只读工具 `get_index_valuation`（`GET /api/agent/tools/valuation`，复用 `funds:read`，不新增 scope）：宽基指数 PE/PB 百分位与估值温度，复用 `valuation.list_valuations()` 读缓存（TTL 24h），不提供强制刷新参数；可选 `code` 过滤单只指数（未知代码 `404 not_found`），单只降级 `ok=false`/`stale` 不拖垮整体；MCP 同步暴露（只读注解），工具总数 33→34 |

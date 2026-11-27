@@ -2945,6 +2945,49 @@ def agent_get_industry_exposure(
     return _agent_tool_response("get_industry_exposure", data)
 
 
+@app.get("/api/agent/tools/valuation", tags=["agent"],
+         summary="指数估值（只读）", responses=_AGENT_ERROR_RESPONSES,
+         dependencies=[Security(_agent_bearer_scheme)])
+def agent_get_index_valuation(
+    ctx: Annotated[
+        agent_tokens.AgentTokenContext,
+        Depends(require_agent_scope(agent_tokens.SCOPE_FUNDS_READ)),
+    ],
+    code: str = "",
+) -> dict[str, Any]:
+    """宽基指数 PE/PB 百分位与估值温度（只读）。
+
+    复用 ``valuation.list_valuations()``：默认读缓存（TTL 24h），过期时
+    限时抓取、超时转后台续抓；不提供强制刷新参数，Agent 无法触发全量重抓。
+    ``code`` 可选过滤单只指数，未知代码 404。抓取失败保留旧值标 ``stale``，
+    无旧值单只降级 ``ok=false``，不抛 500、不影响其他指数。
+    """
+    del ctx
+    codes = None
+    if code:
+        if code not in valuation.INDEX_BY_CODE:
+            raise HTTPException(status_code=404, detail=f"未知指数代码: {code}")
+        codes = [code]
+    values = valuation.list_valuations(codes=codes)
+    items = [v.to_dict() for v in values]
+    degraded = any((not v.ok) or v.stale for v in values)
+    data_dates = [v.data_date for v in values if v.ok and v.data_date]
+    return _agent_tool_response("get_index_valuation", {
+        "ok": True,
+        "indices": items,
+        "degraded": degraded,
+        "refreshing": valuation.is_refreshing(),
+        "progress": valuation.refresh_progress(),
+        "as_of": max(data_dates) if data_dates else "",
+        "window": "10y",
+        "note": (
+            "百分位由历史序列自算：默认近10年窗口（历史不足10年用全历史并标注）；"
+            "温度按 PE(TTM) 百分位 <30 低估 / 30–70 合理 / >70 高估分档。"
+            "仅供参考，非投资建议。"
+        ),
+    })
+
+
 # ---------------------------------------------------------------------------
 # Agent 只读查询工具（P1.5-A 第 3 批：基金检索与筛选）
 # ---------------------------------------------------------------------------
@@ -3287,6 +3330,9 @@ _AGENT_TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
     {"name": "get_industry_exposure", "method": "GET",
      "path": "/api/agent/tools/industry-exposure",
      "scope": agent_tokens.SCOPE_PORTFOLIO_READ},
+    {"name": "get_index_valuation", "method": "GET",
+     "path": "/api/agent/tools/valuation",
+     "scope": agent_tokens.SCOPE_FUNDS_READ},
     {"name": "search_funds", "method": "GET",
      "path": "/api/agent/tools/search",
      "scope": agent_tokens.SCOPE_FUNDS_READ},
@@ -3421,6 +3467,9 @@ _AGENT_TOOL_CONTRACT: dict[str, dict[str, Any]] = {
                         "limits": {}, "error_codes": _COMMON_READ_ERROR_CODES},
     "get_industry_exposure": {"side_effect": "read", "idempotent": True,
                               "limits": {}, "error_codes": _COMMON_READ_ERROR_CODES},
+    "get_index_valuation": {"side_effect": "read", "idempotent": True,
+                            "limits": {},
+                            "error_codes": _COMMON_READ_ERROR_CODES + ("not_found",)},
     "search_funds": {"side_effect": "read", "idempotent": True,
                      "limits": {"limit": "1-200 (default 50)"},
                      "error_codes": _COMMON_READ_ERROR_CODES},

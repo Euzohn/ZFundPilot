@@ -268,7 +268,7 @@
 
 **兼容性**：`alert_type`/`triggered_return`/`threshold` 由 `_migrate_tp_sl()` 补充，旧数据 `alert_type` 默认为 `'dividend'` 无需回填；`channel` 与 4 列唯一约束由 `_migrate_dividend_alerts_channel()` 补充，旧库升级后对**单渠道持仓**的分红提醒自动回填渠道，多渠道/无法判定的保留空串（下次扫描按渠道重建，见下方幽灵清理）。
 
-**幽灵提醒自动清理**：`fetch_dividend.check_dividends()` 抓取数据时同步收集 `(基金, 除息日, 渠道)` 集合与已抓取基金集合，调用 `_cleanup_stale_alerts()` 校验现有 pending 分红提醒是否仍存在于源数据。不存在的 `(基金, 除息日, 渠道)` 自动标记为 `ignored`（`resolved_at` 设为当前时间）；旧库无渠道（`''`）的提醒在多渠道抓取结果中天然不匹配，会被清理后按渠道重建。仅校验成功获取非空数据的基金（`fetched_funds`），避免网络错误误清有效提醒。清理数量存入 `fetch_dividend._last_cleanup_count` 供 `POST /api/dividends/scan` 和 `scheduler._run_dividend_check` 读取。
+**幽灵提醒自动清理**：`fetch_dividend.check_dividends()` 抓取数据时同步收集 `(基金, 除息日, 渠道)` 集合与已抓取基金集合，调用 `_cleanup_stale_alerts()` 校验现有 pending 分红提醒是否仍存在于源数据。不存在的 `(基金, 除息日, 渠道)` 自动标记为 `ignored`（`resolved_at` 设为当前时间）；旧库无渠道（`''`）的提醒在多渠道抓取结果中天然不匹配，会被清理后按渠道重建。仅校验成功抓取的基金（`fetched_funds`，含空表；抓取失败不计入），避免网络错误误清有效提醒。「源确认无分红」（空表 / No tables found）路径仅在 48h 时效（`_STALE_FALLBACK_MAX_AGE`）内回退 stale 缓存，缓存老化即视为真正空——幽灵在源修正后约 2 天内自愈（无上限回退曾使坏缓存永生、幽灵永久残留）；真正的网络失败路径保留无上限回退，由 90 天 TTL 兜底。清理数量存入 `fetch_dividend._last_cleanup_count` 供 `POST /api/dividends/scan` 和 `scheduler._run_dividend_check` 读取。
 
 **相关函数**（db.py）：
 - `add_dividend_alert(alert: dict) -> int`: 新增分红提醒（`channel` 缺省为空串），返回 id

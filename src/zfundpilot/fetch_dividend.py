@@ -15,6 +15,15 @@ logger = logging.getLogger(__name__)
 _DIV_CACHE: dict[str, dict] = {}
 _DIV_CACHE_TTL = 6 * 3600
 
+# 「源确认无分红」（空表 / No tables found）回退 stale 缓存的最大时效：
+# 缓存超过此时效则视为真正空（返回 []），让 _cleanup_stale_alerts 能清掉
+# 源数据修正后残留的幽灵提醒。无上限回退曾把幽灵「养永生」：坏数据一旦
+# 入缓存，源修正为空后每次抓取仍回退坏缓存，fetched_ex_dates 永远含幽灵
+# 记录、清理永不触发（如 019172 摩根纳斯达克100 的假 2026-11-30 分红）。
+# 必须 > 扫描周期（每日）：有效分红每天非空抓取会刷新缓存（始终受保护），
+# 单次瞬时空响应命中昨日缓存仍回退；只有幽灵的缓存会老化超限被放行清理。
+_STALE_FALLBACK_MAX_AGE = 48 * 3600
+
 # 检测窗口：最近 N 天的分红事件
 _LOOKBACK_DAYS = 90
 
@@ -68,7 +77,8 @@ def _fetch_fund_dividends(fund_code: str) -> list[dict] | None:
       否则瞬时失败会被当成「无分红」，_cleanup_stale_alerts 会误把其
       pending 提醒全部 ignored（ignored 后不再重建，提醒永久丢失）。
     - []：上游确认无分红记录（空表/空响应）。
-    - 有过期缓存时优先回退 stale 数据（含空响应路径），避免瞬时抖动。
+    - 抓取失败或空响应时，缓存仍在 _STALE_FALLBACK_MAX_AGE 内则回退 stale
+      数据避免瞬时抖动；空响应且缓存已老化则视为真正空（放行幽灵清理）。
     """
     now = time.time()
     cached = _DIV_CACHE.get(fund_code)
@@ -81,8 +91,9 @@ def _fetch_fund_dividends(fund_code: str) -> list[dict] | None:
         with ak_compat.serialized():
             df = ak.fund_open_fund_info_em(symbol=fund_code, indicator="分红送配详情")
         if df is None or df.empty:
-            # 空响应：优先回退过期缓存，避免瞬时空响应被当成「无分红」
-            if cached:
+            # 空响应：缓存仍新鲜则回退，避免瞬时空响应被当成「无分红」；
+            # 缓存老化则视为源已确认无分红，放行幽灵清理（见常量注释）
+            if cached and now - cached["ts"] < _STALE_FALLBACK_MAX_AGE:
                 return cached["data"]
             return []
         records = df.to_dict("records")
@@ -93,7 +104,7 @@ def _fetch_fund_dividends(fund_code: str) -> list[dict] | None:
         if "no text parsed" in msg or "No tables found" in msg:
             # 上游明确返回空表：该基金无分红记录，属「真正空」而非失败
             logger.debug("[fetch_dividend] %s 无分红记录（空响应）", fund_code)
-            if cached:
+            if cached and now - cached["ts"] < _STALE_FALLBACK_MAX_AGE:
                 return cached["data"]
             return []
         logger.warning("[fetch_dividend] 获取 %s 分红数据失败: %s", fund_code, e)

@@ -198,7 +198,7 @@ function DividendAlertRow({ alert, onConfirm, onIgnore, onDelete }: {
             <span>·</span>
             <span>{(alert.per_share ?? 0).toFixed(4)} {t.transactions.perShare}</span>
             <span>·</span>
-            <span>{t.transactions.holding}: {(alert.held_shares ?? 0).toFixed(2)}</span>
+            <span>{t.transactions.holding.replace("{n}", (alert.held_shares ?? 0).toFixed(2))}</span>
           </div>
         </div>
         <div className="text-right shrink-0">

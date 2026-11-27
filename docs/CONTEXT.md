@@ -378,7 +378,7 @@ ZFundPilot/
 - **基金元数据刷新（共享）**：`refresh_fund_metadata()` = `_refresh_purchase_status()` + `_refresh_trade_calendar()` + `_refresh_risk_levels()` 三项。定时净值更新后（`_run_nav_update`）与手动刷新（`api.update_nav`）共用，刷新后清 `analysis` 缓存，确保两路行为一致、接口立即返回新值
 - **风险等级启动补全**：`_bootstrap_risk_levels()` 在调度器启动时补抓 `risk_level` 为空的基金（部署后无需等到 21:00 定时任务即可展示），仅处理空值避免每次重启全量抓取
 - **分红检测任务**：每天 09:30 执行 `_run_dividend_check()`（`dividend_check` cron job），扫描持仓基金的未记录分红事件，新发现的存入 `dividend_alerts` 表。开关存 `preferences` 表 key=`dividend_auto_check`，默认启用。`_bootstrap_dividend_check()` 启动时若已过 09:30 且今日未执行过，立即补跑
-- **幽灵分红提醒自动清理**：`check_dividends()` 抓取数据时同步收集 `fetched_ex_dates`/`fetched_funds`（`fetched_funds.add(code)` 在空响应检查之前执行，确保 AkShare 返回空 DataFrame 的基金如 QDII 其提醒也被清理），调用 `_cleanup_stale_alerts()` 校验现有 pending 提醒是否仍存在于源数据中，不存在则自动标记为 `ignored`。TTL 兜底：pending 超 90 天（`_LOOKBACK_DAYS`）自动 ignore，防 fetch 持续失败的基金提醒永久残留。SQLite `created_at` 是朴素无时区字符串，与 aware `cutoff` 比较前补 `config.TIMEZONE`。清理数量存入 `fetch_dividend._last_cleanup_count`，`POST /api/dividends/scan` 响应含 `cleaned` 字段，scheduler 日志/审计也含清理计数
+- **幽灵分红提醒自动清理**：`check_dividends()` 抓取数据时同步收集 `fetched_ex_dates`/`fetched_funds`（`fetched_funds.add(code)` 在空响应检查之前执行，确保 AkShare 返回空 DataFrame 的基金如 QDII 其提醒也被清理），调用 `_cleanup_stale_alerts()` 校验现有 pending 提醒是否仍存在于源数据中，不存在则自动标记为 `ignored`。「源确认无分红」（空表 / No tables found）抓取路径仅在 48h 时效（`_STALE_FALLBACK_MAX_AGE`）内回退 stale 缓存，缓存老化视为真正空放行清理——幽灵在源修正后约 2 天内自愈（无上限回退曾使幽灵永久残留，如 019172 假 2026-11-30 分红）；真正网络失败路径保留无上限回退。TTL 兜底：pending 超 90 天（`_LOOKBACK_DAYS`）自动 ignore，防 fetch 持续失败的基金提醒永久残留。SQLite `created_at` 是朴素无时区字符串，与 aware `cutoff` 比较前补 `config.TIMEZONE`。清理数量存入 `fetch_dividend._last_cleanup_count`，`POST /api/dividends/scan` 响应含 `cleaned` 字段，scheduler 日志/审计也含清理计数
 
 ---
 
@@ -579,6 +579,8 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 ## 十二、当前工作状态
 
 ### [Unreleased]
+
+- fix: 分红提醒两项——① 幽灵提醒永生：确认空（空表/No tables found）路径回退 stale 缓存无时效上限，坏数据入缓存后源修正为空仍永远回退坏缓存、清理永不触发（019172 摩根纳斯达克100 假 2026-11-30 分红，源分红页空表 + 不在 2026 全市场分红列表；点删除下次扫描又重建）。两条确认空路径加 `_STALE_FALLBACK_MAX_AGE=48h`：新鲜缓存仍回退（防瞬时误清，>每日扫描周期），老化视为真正空放行清理，幽灵源修正后约 2 天自愈；真正失败路径保留无上限回退（90 天 TTL 兜底）。② DividendCheckDialog「持有 {n}: 151.49」占位符泄露——holding 文案未 replace 直接渲染，改 .replace("{n}", …)。后端 +4 例（两路径×新鲜/老化 + 端到端自愈，test_fetch_dividend 60）、前端 +1 例，全量 1836/274，ruff/tsc 干净。无依赖变更
 
 - fix: 残留 V8 路径包锁统一（v0.28.1 跟进）——逐函数体 inspect 验证后确认其余 V8 使用方仅乐咕估值兜底（`_lg_call`）与新浪交易日历（`fetch_trade_calendar`）两处（fetch_estimate/宏观/重仓/行业/申购均纯 Python）；两处原各持域锁（_V8_LOCK/_trade_cal_lock）本域内已整段串行，但跨锁域「创建+销毁」仍有理论竞态。实际 akshare 调用外嵌套 `ak_compat.serialized()`，全进程 V8 生命周期统一一把锁；限频/退避 sleep 留锁外。新增 test_v8_serialized_coverage 3 例（含跨域并发 max_entries==1），全量 1514。无依赖变更。另顺手修正 CONTEXT 估值树注释过时「乐咕源/月频」→韭圈儿为主+乐咕兜底
 

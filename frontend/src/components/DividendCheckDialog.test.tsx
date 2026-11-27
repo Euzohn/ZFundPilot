@@ -94,6 +94,17 @@ describe("DividendCheckDialog 删除提醒", () => {
   })
 })
 
+describe("DividendCheckDialog 持有份额文案", () => {
+  it("持有份额插值渲染，不泄露 {n} 占位符", async () => {
+    renderDialog()
+    await screen.findByText("000001")
+
+    // fixture held_shares=1000 → 「持有 1000.00」，而非「持有 {n}: 1000.00」
+    expect(screen.getByText("持有 1000.00")).toBeInTheDocument()
+    expect(screen.queryByText(/\{n\}/)).toBeNull()
+  })
+})
+
 // 受控关闭的包装组件，供日期口径测试断言跳转 URL
 function ClosableDialog() {
   const [open, setOpen] = useState(true)

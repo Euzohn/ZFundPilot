@@ -1,6 +1,7 @@
 """fetch_dividend 测试：分红检测、去重、缓存、列名匹配。"""
 
 import sys
+import time
 from types import ModuleType
 from unittest.mock import MagicMock, patch
 
@@ -162,15 +163,58 @@ class TestFetchFundDividends:
                 assert result == []
 
     def test_empty_df_falls_back_to_stale_cache(self):
-        """空响应优先回退过期缓存，避免瞬时空响应被当成「无分红」。"""
+        """空响应且缓存仍在回退时效内 → 回退 stale 数据，防瞬时空响应误清。"""
         stale = [{"除息日": "2025-09-22", "每份分红": "0.01"}]
         fake = _fake_akshare(_div_df([]))
+        with patch.dict(sys.modules, {"akshare": fake}):
+            with patch.dict(fetch_dividend._DIV_CACHE, {
+                # 超过 6h 新鲜 TTL 但仍在 48h 回退时效内
+                "000001": {"ts": time.time() - 3600, "data": stale},
+            }, clear=True):
+                result = fetch_dividend._fetch_fund_dividends("000001")
+                assert result == stale
+
+    def test_empty_df_aged_cache_returns_empty(self):
+        """空响应且缓存老化超回退时效 → 视为真正空，放行幽灵清理。
+
+        无上限回退曾把幽灵「养永生」：坏数据一旦入缓存，源修正为空后
+        永远回退坏缓存，fetched_ex_dates 恒含幽灵记录、清理永不触发
+        （如 019172 摩根纳斯达克100 的假 2026-11-30 分红）。
+        """
+        stale = [{"除息日": "2025-09-22", "每份分红": "0.01"}]
+        fake = _fake_akshare(_div_df([]))
+        with patch.dict(sys.modules, {"akshare": fake}):
+            with patch.dict(fetch_dividend._DIV_CACHE, {
+                "000001": {"ts": 0.0, "data": stale},  # ts=0 必然老化
+            }, clear=True):
+                result = fetch_dividend._fetch_fund_dividends("000001")
+                assert result == []
+
+    def test_no_tables_falls_back_to_fresh_cache(self):
+        """「No tables found」空响应且缓存仍新鲜 → 回退 stale 数据。"""
+        stale = [{"除息日": "2025-09-22", "每份分红": "0.01"}]
+        fake = ModuleType("akshare")
+        fake.fund_open_fund_info_em = MagicMock(
+            side_effect=Exception("No tables found"))
+        with patch.dict(sys.modules, {"akshare": fake}):
+            with patch.dict(fetch_dividend._DIV_CACHE, {
+                "000001": {"ts": time.time() - 3600, "data": stale},
+            }, clear=True):
+                result = fetch_dividend._fetch_fund_dividends("000001")
+                assert result == stale
+
+    def test_no_tables_aged_cache_returns_empty(self):
+        """「No tables found」空响应且缓存老化 → 视为真正空，放行幽灵清理。"""
+        stale = [{"除息日": "2025-09-22", "每份分红": "0.01"}]
+        fake = ModuleType("akshare")
+        fake.fund_open_fund_info_em = MagicMock(
+            side_effect=Exception("No tables found"))
         with patch.dict(sys.modules, {"akshare": fake}):
             with patch.dict(fetch_dividend._DIV_CACHE, {
                 "000001": {"ts": 0.0, "data": stale},
             }, clear=True):
                 result = fetch_dividend._fetch_fund_dividends("000001")
-                assert result == stale
+                assert result == []
 
     def test_no_tables_exception_returns_empty_list(self):
         """「No tables found」是上游明确的空响应（无分红记录）→ []。"""
@@ -229,6 +273,38 @@ class TestCheckDividends:
         assert ev.estimated_amount == 100.0
         assert ev.dividend_method == "cash"
         assert not ev.already_recorded
+
+    def test_ghost_healed_when_source_corrected_to_empty(self):
+        """端到端：坏数据入缓存生成幽灵提醒 → 源修正为空表且缓存老化 →
+        下次扫描幽灵自动 ignored（此前无上限回退使幽灵永久残留）。"""
+        from datetime import datetime, timedelta
+        ghost_ex = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
+        bad_rows = [{"权益登记日": ghost_ex, "除息日": ghost_ex,
+                     "每10份分红": "每10份派现金2.4310元", "分红发放日": ghost_ex}]
+        pending = [{"id": 1, "fund_code": "000001", "ex_date": ghost_ex, "channel": ""}]
+        fake = _fake_akshare(_div_df([]))  # 源现已修正为空表
+        positions = [_make_position("000001")]
+        funds_list = [_make_fund("000001")]
+
+        with patch.dict(fetch_dividend._DIV_CACHE, {
+            "000001": {"ts": 0.0, "data": bad_rows},  # 坏缓存已老化
+        }, clear=True):
+            with (
+                patch("zfundpilot.fetch_dividend.analysis.calculate_positions", return_value=positions),
+                patch("zfundpilot.fetch_dividend.db.get_funds", return_value=funds_list),
+                patch("zfundpilot.fetch_dividend.db.get_transactions", return_value=[]),
+                patch("zfundpilot.fetch_dividend.db.get_dividend_alerts", return_value=pending),
+                patch("zfundpilot.fetch_dividend.db.update_dividend_alert") as mock_update,
+                patch("zfundpilot.fetch_dividend.notification_service.sync_alert_status"),
+                patch.dict(sys.modules, {"akshare": fake}),
+            ):
+                events = fetch_dividend.check_dividends()
+
+        assert events == []
+        assert fetch_dividend._last_cleanup_count == 1
+        mock_update.assert_called_once()
+        assert mock_update.call_args[0][0] == 1
+        assert mock_update.call_args[1]["status"] == "ignored"
 
     def test_already_recorded_dedup(self):
         from datetime import datetime, timedelta

@@ -3917,7 +3917,7 @@ async def ai_chat(body: ChatRequest):
     if messages_dicts and messages_dicts[-1]["role"] == "user":
         local_time = body.sent_at.astimezone(config.TIMEZONE) if body.sent_at else datetime.now(config.TIMEZONE)
         timestamp = local_time.isoformat(sep=" ", timespec="minutes")
-        # 仅给本轮消息添加时间，保留系统提示词和历史消息的前缀以供模型缓存。
+        # 时间只添加到发给模型的本轮消息，历史消息继续使用原文。
         current_message = messages_dicts[-1]
         current_message["content"] = f"[本轮发送时间 {timestamp}]\n{current_message['content']}"
 

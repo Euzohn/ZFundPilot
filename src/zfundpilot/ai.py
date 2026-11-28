@@ -445,6 +445,7 @@ async def chat_stream(
             tool_calls_deltas: list = []
             has_tool_calls = False
             search_started = False
+            stream_failed = False
             usage_acc = {"prompt": 0, "completion": 0, "total": 0}
 
             async with client.stream("POST", url, headers=headers, json=body) as resp:
@@ -472,6 +473,10 @@ async def chat_stream(
                             usage_acc["prompt"] += u.get("prompt_tokens", 0) or 0
                             usage_acc["completion"] += u.get("completion_tokens", 0) or 0
                             usage_acc["total"] += u.get("total_tokens", 0) or 0
+
+                        if chunk.get("error"):
+                            stream_failed = True
+                            break
 
                         choices = chunk.get("choices") or []
                         if not choices:
@@ -502,7 +507,7 @@ async def chat_stream(
                         continue
 
             # 如果返回了 tool_calls（Kimi 流程），处理多轮
-            if has_tool_calls and tool_calls_deltas:
+            if not stream_failed and has_tool_calls and tool_calls_deltas:
                 yield json.dumps({"status": "searching"}, ensure_ascii=False)
 
                 merged_tcs = _merge_tool_calls(tool_calls_deltas)
@@ -572,6 +577,11 @@ async def chat_stream(
                     len(messages),
                 )
                 yield json.dumps({"usage": usage_acc}, ensure_ascii=False)
+
+            if stream_failed:
+                logger.warning("AI 上游在生成过程中返回错误（model=%s）", model)
+                yield json.dumps({"error": "AI 生成中断，请重试。"}, ensure_ascii=False)
+                return
 
             yield json.dumps({"done": True}, ensure_ascii=False)
     except httpx.ConnectError as e:

@@ -495,6 +495,25 @@ describe("AI 投顾连接测试", () => {
     expect(mocks.updateAIConfig).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ["deepseek-flash", true],
+    ["deepseek-v4-pro", false],
+  ])("连接测试按后端结果显示 %s 的联网能力", async (model, hasSearch) => {
+    mocks.getAIConfig.mockResolvedValue({
+      base_url: "https://api.deepseek.com/v1", model, has_key: true, web_search: true, custom_prompt: "",
+    })
+    mocks.testAIConnection.mockResolvedValue({ ok: true, provider: "deepseek", model, has_search: hasSearch })
+    renderPage("/?tab=ai")
+    const modelInput = await screen.findByDisplayValue(model)
+    const chatSettings = within(modelInput.closest(".rounded-xl") as HTMLElement)
+    expect(chatSettings.queryByText("DeepSeek", { selector: "span" })).not.toBeInTheDocument()
+    fireEvent.click(chatSettings.getAllByRole("button", { name: "测试连接" })[0])
+
+    const result = await chatSettings.findByText(new RegExp(`连接成功 · deepseek · ${model}`))
+    if (hasSearch) expect(result).toHaveTextContent("联网搜索已启用")
+    else expect(result).not.toHaveTextContent("联网搜索已启用")
+  })
+
   it("DeepSeek 预设填入支持联网搜索的 Flash 模型", async () => {
     renderPage("/?tab=ai")
     fireEvent.click(await screen.findByRole("button", { name: "DeepSeek" }))

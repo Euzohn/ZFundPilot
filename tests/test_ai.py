@@ -76,6 +76,7 @@ def test_connection_only_reuses_key_for_saved_endpoint(ai_client, monkeypatch, b
     ("https://api.deepseek.com/v1", "deepseek-flash", True, "deepseek_web_search"),
     ("https://api.deepseek.com/v1", "deepseek-flash", False, None),
     ("https://api.deepseek.com/v1", "deepseek-chat", True, None),
+    ("https://api.deepseek.com/v1", "deepseek-v4-pro", True, None),
     ("https://deepseek.example/v1", "deepseek-flash", True, None),
 ])
 def test_deepseek_chat_uses_tools_supported_by_endpoint(
@@ -119,6 +120,31 @@ def test_deepseek_chat_uses_tools_supported_by_endpoint(
         assert "tools" not in request_bodies[0]
         assert events == [{"content": "回答"}, {"done": True}]
     assert len(request_bodies) == 1
+
+
+def test_search_stream_reports_terminal_error_without_choices(monkeypatch):
+    monkeypatch.setattr(config, "AI_BASE_URL", "https://api.deepseek.com/v1")
+    monkeypatch.setattr(config, "AI_API_KEY", "test-key")
+    monkeypatch.setattr(config, "AI_MODEL", "deepseek-flash")
+    monkeypatch.setattr(config, "AI_WEB_SEARCH", True)
+
+    stream = [
+        {"choices": [{"delta": {"content": "部分回答"}}]},
+        {"choices": [], "error": {"type": "api_error", "message": "上游错误详情"}},
+    ]
+    lines = "".join(f"data: {json.dumps(event)}\n\n" for event in stream)
+    async_client = httpx.AsyncClient
+    monkeypatch.setattr(ai.httpx, "AsyncClient", lambda **kwargs: async_client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, text=lines)), **kwargs,
+    ))
+
+    async def collect():
+        return [
+            json.loads(event)
+            async for event in ai.chat_stream([{"role": "user", "content": "请搜索最新资讯"}], "")
+        ]
+
+    assert asyncio.run(collect()) == [{"content": "部分回答"}, {"error": "AI 生成中断，请重试。"}]
 
 
 @pytest.mark.parametrize("sent_at, expected", [

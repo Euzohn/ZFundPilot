@@ -260,7 +260,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             setLastUsage(chunk.usage)
           } else if (chunk.error) {
             setSearching(false)
-            setMessages((prev) => updateAiMessage(prev, () => ({ role: "assistant", content: `❌ ${chunk.error}` })))
+            setMessages((prev) => updateAiMessage(prev, (old) => ({
+              role: "assistant",
+              content: `${old.content ? `${old.content}\n\n` : ""}❌ ${chunk.error}`,
+            })))
           }
         },
       )

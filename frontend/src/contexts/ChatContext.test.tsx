@@ -144,6 +144,18 @@ describe("ChatContext 流式期间会话守卫", () => {
     expect(ctx.messages).toEqual(B_MESSAGES)
   })
 
+  it("生成中断时保留已收到的正文并显示错误", async () => {
+    renderChat()
+    await act(async () => { ctx.handleSend("你好") })
+    act(() => { onChunk!({ status: "searching" }) })
+    act(() => { onChunk!({ content: "部分回答" }) })
+    act(() => { onChunk!({ error: "AI 生成中断，请重试。" }) })
+    await act(async () => { finishStream!() })
+
+    expect(ctx.searching).toBe(false)
+    expect(ctx.messages[1].content).toBe("部分回答\n\n❌ AI 生成中断，请重试。")
+  })
+
   it("未切换会话时错误正常写入 AI 消息", async () => {
     renderChat()
     await act(async () => { ctx.handleSend("你好") })

@@ -148,7 +148,7 @@ cd frontend && npm install && npm run dev
 
 ### AI 辅助
 
-- **AI 投顾对话** — 配置 OpenAI 兼容 API（智谱/Kimi/通义千问/DeepSeek），结合持仓数据给出调仓建议。启用联网后，支持搜索的模型可检索最新资讯。每轮对话提供发送时间，帮助模型理解「今天」「昨天」。DeepSeek 官方接口的 `deepseek-flash` 支持联网搜索，`deepseek-v4-pro` 在当前对话接口上支持普通对话。
+- **AI 投顾对话** — 配置 OpenAI 兼容 API（智谱/Kimi/通义千问/DeepSeek），结合持仓数据给出调仓建议。启用联网后，支持搜索的模型可检索最新资讯。每轮对话提供发送时间，帮助模型理解「今天」「昨天」。DeepSeek 官方接口使用 **Chat Completions API**（`/chat/completions`，请求字段为 `messages`），其中 `deepseek-flash` 支持联网搜索，`deepseek-v4-pro` 支持普通对话。
 - **AI 录入交易** — 自然语言描述交易，AI 自动解析结构化数据并计算手续费，确认后写入
 
 ### Agent 接入（API / MCP）

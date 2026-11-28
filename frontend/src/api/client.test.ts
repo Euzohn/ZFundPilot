@@ -112,9 +112,10 @@ describe("错误对象附带 status/body/code", () => {
 })
 
 describe("streamChat 错误解析", () => {
+  const sentAt = "2026-11-26T15:59:00.000Z"
   it("非 2xx 解析 detail 而非抛出原始 JSON", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(503, { detail: "AI 服务不可用" }))
-    await expect(api.streamChat([{ role: "user", content: "hi" }], vi.fn())).rejects.toMatchObject({
+    await expect(api.streamChat([{ role: "user", content: "hi" }], sentAt, vi.fn())).rejects.toMatchObject({
       message: "AI 服务不可用",
       status: 503,
     })
@@ -122,7 +123,7 @@ describe("streamChat 错误解析", () => {
 
   it("非 2xx 解析 error.message", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(429, { error: { message: "请求过于频繁" } }))
-    await expect(api.streamChat([{ role: "user", content: "hi" }], vi.fn())).rejects.toMatchObject({
+    await expect(api.streamChat([{ role: "user", content: "hi" }], sentAt, vi.fn())).rejects.toMatchObject({
       message: "请求过于频繁",
       status: 429,
     })
@@ -130,7 +131,7 @@ describe("streamChat 错误解析", () => {
 
   it("401 仍走清 token + 刷新", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(401, {}))
-    await expect(api.streamChat([{ role: "user", content: "hi" }], vi.fn())).rejects.toThrow("未登录或登录已过期")
+    await expect(api.streamChat([{ role: "user", content: "hi" }], sentAt, vi.fn())).rejects.toThrow("未登录或登录已过期")
     expect(reloadMock).toHaveBeenCalledTimes(1)
     expect(localStorage.getItem("zfundpilot_token")).toBeNull()
   })

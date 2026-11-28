@@ -67,7 +67,7 @@ beforeEach(() => {
   mocks.getSystemPrompt.mockReset().mockResolvedValue({ system_prompt: "sys" })
   mocks.getAIUsage.mockReset().mockResolvedValue({ today: 0, total: 0, recent: [] })
   mocks.addTransaction.mockReset().mockResolvedValue({ id: 9 })
-  mocks.streamChat.mockReset().mockImplementation((_msgs: unknown, cb: (c: Chunk) => void) => {
+  mocks.streamChat.mockReset().mockImplementation((_msgs: unknown, _sentAt: string, cb: (c: Chunk) => void) => {
     onChunk = cb
     return new Promise<void>((resolve, reject) => {
       finishStream = resolve
@@ -144,6 +144,18 @@ describe("ChatContext 流式期间会话守卫", () => {
     expect(ctx.messages).toEqual(B_MESSAGES)
   })
 
+  it("生成中断时保留已收到的正文并显示错误", async () => {
+    renderChat()
+    await act(async () => { ctx.handleSend("你好") })
+    act(() => { onChunk!({ status: "searching" }) })
+    act(() => { onChunk!({ content: "部分回答" }) })
+    act(() => { onChunk!({ error: "AI 生成中断，请重试。" }) })
+    await act(async () => { finishStream!() })
+
+    expect(ctx.searching).toBe(false)
+    expect(ctx.messages[1].content).toBe("部分回答\n\n❌ AI 生成中断，请重试。")
+  })
+
   it("未切换会话时错误正常写入 AI 消息", async () => {
     renderChat()
     await act(async () => { ctx.handleSend("你好") })
@@ -212,4 +224,33 @@ describe("extractToolCall 数值字段 NaN 守卫", () => {
     }))
     expect(tx!.amount).toBeNull()
   })
+})
+
+it("每轮发送只携带一次时间，历史消息保留原文", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] })
+  try {
+    vi.setSystemTime(new Date("2026-11-26T15:59:00Z"))
+    renderChat()
+    await act(async () => { ctx.handleSend("今天的行情") })
+    act(() => { onChunk!({ content: "回答" }) })
+    await act(async () => { finishStream!() })
+
+    vi.setSystemTime(new Date("2026-11-26T16:01:00Z"))
+    await act(async () => { ctx.handleSend("昨天的呢") })
+    await act(async () => { finishStream!() })
+
+    expect(mocks.streamChat).toHaveBeenNthCalledWith(1, [
+      { role: "system", content: "sys" },
+      { role: "user", content: "今天的行情" },
+    ], "2026-11-26T15:59:00.000Z", expect.any(Function))
+    expect(mocks.streamChat).toHaveBeenNthCalledWith(2, [
+      { role: "system", content: "sys" },
+      { role: "user", content: "今天的行情" },
+      { role: "assistant", content: "回答" },
+      { role: "user", content: "昨天的呢" },
+    ], "2026-11-26T16:01:00.000Z", expect.any(Function))
+    expect(ctx.messages[2].content).toBe("昨天的呢")
+  } finally {
+    vi.useRealTimers()
+  }
 })

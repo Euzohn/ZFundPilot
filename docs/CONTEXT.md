@@ -580,6 +580,10 @@ cd frontend && npx tsc --noEmit   # 前端类型检查
 
 ### [Unreleased]
 
+- fix: 修复 DeepSeek Flash 联网搜索和首次测试连接。聊天使用 Chat Completions（`/chat/completions`），只为官方 `deepseek-flash` 启用 `deepseek_web_search`。使用官方 API 实测两轮联网均成功，历史助手消息只回传正文。设置页按后端测试结果显示联网能力，生成中断时保留已收到的正文并提示重试。
+
+- feat: AI 对话按应用时区为本轮消息附加发送时间，适用于所有提供商。历史消息继续按原文发送。
+
 - feat: 新增只读 Agent/MCP 工具 `get_index_valuation`（`GET /api/agent/tools/valuation`，复用 `funds:read`，不新增 scope）——宽基指数 PE/PB 百分位与温度，复用 `valuation.list_valuations()` 读缓存（TTL 24h），不暴露强制刷新参数（Agent 无法触发上游全量重抓）；可选 `code` 过滤单只（未知代码 404 not_found），单只降级 ok=false/stale 不拖垮整体。MCP 同步暴露（只读注解），工具总数 33→34（只读 26→27）。HTTP 测试 +2、MCP +1、能力契约 33→34，全量 1839、ruff 干净（前端零改动）；AGENT_API 中英 + README 中英同步。无依赖变更
 
 - fix: 分红提醒两项——① 幽灵提醒永生：确认空（空表/No tables found）路径回退 stale 缓存无时效上限，坏数据入缓存后源修正为空仍永远回退坏缓存、清理永不触发（019172 摩根纳斯达克100 假 2026-11-30 分红，源分红页空表 + 不在 2026 全市场分红列表；点删除下次扫描又重建）。两条确认空路径加 `_STALE_FALLBACK_MAX_AGE=48h`：新鲜缓存仍回退（防瞬时误清，>每日扫描周期），老化视为真正空放行清理，幽灵源修正后约 2 天自愈；真正失败路径保留无上限回退（90 天 TTL 兜底）。② DividendCheckDialog「持有 {n}: 151.49」占位符泄露——holding 文案未 replace 直接渲染，改 .replace("{n}", …)。后端 +4 例（两路径×新鲜/老化 + 端到端自愈，test_fetch_dividend 60）、前端 +1 例，全量 1836/274，ruff/tsc 干净。无依赖变更

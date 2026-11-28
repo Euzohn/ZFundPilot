@@ -220,8 +220,11 @@ export const api = {
     request<{ system_prompt: string }>(`/ai/system-prompt?include_context=${includeContext ?? true}`),
 
   // AI Connection Test
-  testAIConnection: () =>
-    request<{ ok: boolean; provider?: string; model?: string; has_search?: boolean; error?: string }>("/ai/test", { method: "POST" }),
+  testAIConnection: (base_url: string, api_key: string, model: string, web_search: boolean) =>
+    request<{ ok: boolean; provider?: string; model?: string; has_search?: boolean; error?: string }>("/ai/test", {
+      method: "POST",
+      body: JSON.stringify({ base_url, api_key, model, web_search }),
+    }),
 
   // Vision Model Config
   getVisionConfig: () =>
@@ -240,6 +243,7 @@ export const api = {
   // AI Chat (SSE streaming — bypasses standard request() wrapper)
   streamChat: async (
     messages: { role: string; content: string }[],
+    sentAt: string,
     onChunk: (data: { content?: string; status?: string; error?: string; done?: boolean; usage?: { prompt: number; completion: number; total: number } }) => void,
   ) => {
     const token = getToken()
@@ -249,7 +253,7 @@ export const api = {
     const res = await fetch(`${BASE}/ai/chat`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages, sent_at: sentAt }),
     })
 
     if (res.status === 401) {

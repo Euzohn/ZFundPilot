@@ -149,7 +149,7 @@ See [DEPLOY.md](DEPLOY.md) for detailed deployment guide.
 
 ### AI Assistant
 
-- **AI Advisor Chat** — Configure any OpenAI-compatible API (Zhipu/Kimi/Qwen/DeepSeek). AI auto-searches the web for latest news + analyzes your portfolio context
+- **AI Advisor Chat** — Configure an OpenAI-compatible API (Zhipu/Kimi/Qwen/DeepSeek) for advice based on your portfolio. Models with web search support can look up recent news when search is enabled. Each turn carries its send time so the model can interpret dates like “today” and “yesterday.” The DeepSeek integration uses the **Chat Completions API** (`/chat/completions` with `messages`), with web search for `deepseek-flash` and regular chat for `deepseek-v4-pro`.
 - **AI-Assisted Transactions** — Describe a trade in natural language, AI parses structured data with auto fee calculation, confirm and save
 
 ### Agent Access (API / MCP)

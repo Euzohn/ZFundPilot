@@ -44,7 +44,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.security import HTTPBearer
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Match, Mount
 
@@ -3641,17 +3641,20 @@ def _validate_base_url(v: str) -> str:
     return v
 
 
-class AIConfigUpdate(BaseModel):
+class AIConnectionTest(BaseModel):
     base_url: str
     api_key: str = ""
     model: str
     web_search: bool = True
-    custom_prompt: str = ""
 
     @field_validator("base_url")
     @classmethod
     def validate_base_url(cls, v: str) -> str:
         return _validate_base_url(v)
+
+
+class AIConfigUpdate(AIConnectionTest):
+    custom_prompt: str = ""
 
 
 class VisionConfigUpdate(BaseModel):
@@ -3710,6 +3713,7 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
 
     messages: list[ChatMessage]
+    sent_at: AwareDatetime | None = None
 
     @field_validator("messages")
     @classmethod
@@ -3759,9 +3763,17 @@ def get_system_prompt(include_context: bool = True) -> dict[str, Any]:
 
 
 @app.post("/api/ai/test")
-def test_ai_connection() -> dict[str, Any]:
-    """测试当前 AI 配置是否可用。"""
-    return ai.test_connection()
+def test_ai_connection(body: AIConnectionTest | None = None) -> dict[str, Any]:
+    """测试表单中的 AI 配置，兼容使用已保存配置的无请求体调用。"""
+    if body is None:
+        return ai.test_connection(
+            config.AI_BASE_URL, config.AI_API_KEY, config.AI_MODEL, config.AI_WEB_SEARCH,
+        )
+
+    api_key = body.api_key.strip()
+    if not api_key and body.base_url.rstrip("/") == config.AI_BASE_URL.rstrip("/"):
+        api_key = config.AI_API_KEY
+    return ai.test_connection(body.base_url, api_key, body.model.strip(), body.web_search)
 
 
 @app.get("/api/settings/vision")
@@ -3901,12 +3913,19 @@ def get_ai_usage_daily(days: Annotated[int, Query(ge=1, le=365)] = 7) -> list[di
 @app.post("/api/ai/chat")
 async def ai_chat(body: ChatRequest):
     """AI 投顾对话（SSE 流式）。前端已携带 system 消息时跳过重建持仓上下文。"""
+    messages_dicts = [{"role": m.role, "content": m.content} for m in body.messages]
+    if messages_dicts and messages_dicts[-1]["role"] == "user":
+        local_time = body.sent_at.astimezone(config.TIMEZONE) if body.sent_at else datetime.now(config.TIMEZONE)
+        timestamp = local_time.isoformat(sep=" ", timespec="minutes")
+        # 时间只添加到发给模型的本轮消息，历史消息继续使用原文。
+        current_message = messages_dicts[-1]
+        current_message["content"] = f"[本轮发送时间 {timestamp}]\n{current_message['content']}"
+
     has_system = any(m.role == "system" for m in body.messages)
     # 上下文构建含 DB 查询与 akshare 行情抓取（同步阻塞），
     # 必须在流式响应开始前放入线程完成，否则冻结事件循环
     context = (await anyio.to_thread.run_sync(ai.build_portfolio_context)
                if not has_system else "")
-    messages_dicts = [{"role": m.role, "content": m.content} for m in body.messages]
 
     async def generate():
         try:

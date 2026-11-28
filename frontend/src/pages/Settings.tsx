@@ -33,7 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { toast } from "sonner"
-import { useLang, type Lang } from "@/i18n/LanguageContext"
+import { useLang } from "@/i18n/LanguageContext"
 import { cn } from "@/lib/utils"
 import { copyText } from "@/lib/clipboard"
 import { useTabParam } from "@/hooks/useTabParam"
@@ -45,24 +45,6 @@ import {
   Search, X, Palette, UserCircle, Clock, Archive, FileDown, Gift, Copy,
   Bell, TrendingUp, TrendingDown, Camera, Settings as SettingsIcon,
 } from "lucide-react"
-
-const PROVIDER_NAMES: Record<string, { zh: string; en: string }> = {
-  kimi: { zh: "Kimi (月之暗面)", en: "Kimi (Moonshot)" },
-  glm: { zh: "智谱 GLM", en: "Zhipu GLM" },
-  qwen: { zh: "通义千问 (百炼)", en: "Qwen (Bailian)" },
-  deepseek: { zh: "DeepSeek", en: "DeepSeek" },
-  generic: { zh: "通用 OpenAI 兼容", en: "Generic OpenAI Compatible" },
-}
-
-function detectProvider(baseUrl: string, lang: Lang): string {
-  const url = baseUrl.toLowerCase()
-  let key = "generic"
-  if (url.includes("moonshot") || url.includes("kimi")) key = "kimi"
-  else if (url.includes("bigmodel") || url.includes("zhipu") || url.includes("glm")) key = "glm"
-  else if (url.includes("dashscope") || url.includes("aliyun") || url.includes("aliyuncs") || url.includes("maas")) key = "qwen"
-  else if (url.includes("deepseek")) key = "deepseek"
-  return PROVIDER_NAMES[key][lang]
-}
 
 function Sparkline({ data }: { data: number[] }) {
   if (!data || data.length < 2) return null
@@ -899,7 +881,7 @@ function AuditLogPanel() {
 const PROVIDER_PRESETS = [
   { name: { zh: "智谱 GLM", en: "Zhipu GLM" }, baseUrl: "https://open.bigmodel.cn/v1", model: "glm-4-plus" },
   { name: { zh: "Kimi", en: "Kimi" }, baseUrl: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
-  { name: { zh: "DeepSeek", en: "DeepSeek" }, baseUrl: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  { name: { zh: "DeepSeek", en: "DeepSeek" }, baseUrl: "https://api.deepseek.com/v1", model: "deepseek-flash" },
   { name: { zh: "通义千问", en: "Qwen" }, baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
 ]
 
@@ -1220,10 +1202,13 @@ export default function Settings() {
   }
 
   const handleTestConnection = async () => {
+    const baseUrl = aiBaseUrl.trim()
+    const model = aiModel.trim()
+    if (!baseUrl || !model) { toast.error(t.settings.aiConfigRequired); return }
     setTesting(true)
     setTestResult(null)
     try {
-      const res = await api.testAIConnection()
+      const res = await api.testAIConnection(baseUrl, aiApiKey.trim(), model, aiWebSearch)
       setTestResult(res)
       if (res.ok) toast.success(`${t.settings.connectionSuccess} · ${res.provider} · ${res.model}`)
       else toast.error(`${t.settings.connectionFailed}: ${translateBackendError(res.error || "")}`)
@@ -1587,7 +1572,7 @@ export default function Settings() {
                   <div>
                     <Label className="mb-1 block text-xs text-muted-foreground">{t.settings.aiModel}</Label>
                     <Input value={aiModel} onChange={(e) => setAiModel(e.target.value)}
-                      className="h-8 text-xs" placeholder="glm-4-plus / moonshot-v1-8k / deepseek-chat" />
+                      className="h-8 text-xs" placeholder="glm-4-plus / moonshot-v1-8k / deepseek-flash" />
                   </div>
                 </div>
 
@@ -1612,11 +1597,6 @@ export default function Settings() {
                     <Checkbox checked={aiWebSearch} onCheckedChange={(v) => setAiWebSearch(!!v)} />
                     {t.settings.enableWebSearch}
                   </label>
-                  {aiWebSearch && aiBaseUrl && (
-                    <span className="text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-                      {detectProvider(aiBaseUrl, lang)}
-                    </span>
-                  )}
                 </div>
 
                 {/* 浅色分隔线 — 技术配置 / 个性化指令 */}
